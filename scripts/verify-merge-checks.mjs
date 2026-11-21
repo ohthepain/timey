@@ -32,7 +32,14 @@ function validArgv(argv) {
 }
 
 function focusedCommand([command, subcommand, ...args]) {
-  return focusedCommands.get(`${command} ${subcommand}`)?.(args);
+  const known = focusedCommands.get(`${command} ${subcommand}`);
+  if (known) return known(args);
+  return standaloneBrowserCheck(command, subcommand, args);
+}
+
+function standaloneBrowserCheck(command, script, args) {
+  if (command !== 'node' || args.length !== 0 || script === 'scripts/factory-browser.mjs') return false;
+  return /^scripts\/[\w-]+-browser\.mjs$/.test(script);
 }
 
 export function normalizeFocusedTests(value) {
@@ -48,7 +55,7 @@ export function normalizeFocusedTests(value) {
 function requireFocusedCommand(argv) {
   if (!validArgv(argv) || !focusedCommand(argv))
     throw Error(
-      'Record focused test commands using Node test files, a Flow browser scenario, a focused pnpm test script, or Vitest paths.'
+      'Record focused test commands using Node test files, a standalone browser check, a Flow browser scenario, a focused pnpm test script, or Vitest paths.'
     );
   return argv;
 }

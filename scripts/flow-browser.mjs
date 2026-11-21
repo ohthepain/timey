@@ -2013,6 +2013,7 @@ try {
     const flow = service.flows.read(service.flows.selected(issueId));
     assert.ok(flow.workspace?.checkout);
     const { checkout, branch } = flow.workspace;
+    const previewBranchRevision = git(project, 'rev-parse', branch);
     if (!service.lifecycleRuns[issueId]?.work) {
       saveLifecycle(
         service,
@@ -2027,7 +2028,7 @@ try {
     const previewPromise = page.waitForEvent('dialog');
     await menu.selectOption('delete');
     const preview = await previewPromise;
-    assert.match(preview.message(), /Delete this issue worktree/);
+    assert.match(preview.message(), /Delete this worktree and discard its uncommitted changes/);
     assert.ok(preview.message().includes(realpathSync(checkout)));
     await preview.dismiss();
     assert.ok(readFileSync(join(checkout, 'source.txt'), 'utf8'));
@@ -2036,17 +2037,12 @@ try {
     writeFileSync(uncommitted, 'Uncommitted work.');
     page.once('dialog', (dialog) => void dialog.accept());
     await menu.selectOption('delete');
-    await page.locator('#error-message').filter({ hasText: 'Unsaved workspace changes' }).waitFor();
-    assert.equal(readFileSync(uncommitted, 'utf8'), 'Uncommitted work.');
-    rmSync(uncommitted);
-
-    page.once('dialog', (dialog) => void dialog.accept());
-    await menu.selectOption('delete');
     await page.getByText('Worktree deleted.', { exact: true }).waitFor();
     assert.equal(await menu.isDisabled(), true);
     assert.equal(await menu.getAttribute('title'), 'This issue’s worktree has been deleted.');
     assert.throws(() => readFileSync(join(checkout, 'source.txt')), /ENOENT/);
-    assert.equal(git(project, 'branch', '--list', branch), '');
+    assert.equal(existsSync(uncommitted), false);
+    assert.equal(git(project, 'rev-parse', branch), previewBranchRevision);
     assert.equal(service.flows.selected(closedIssueId).closure.reason, 'fixed');
     issueId = closedId;
     await page.goto(new URL('/flow?issue=' + issueId, page.url()).href);
@@ -2151,11 +2147,25 @@ try {
       },
     ];
     flow.autoClose = false;
-    flow.destination = { ...flow.destination, pr: 17, url: 'https://github.com/test/fixture/pull/17' };
+    flow.destination = { ...flow.destination, branch: 'dev', pr: 17, url: 'https://github.com/test/fixture/pull/17' };
     service.flows.store.save(flow, flow.revision);
     let approved = false;
     let calls = 0;
     const run = executor.run;
+    const provider = service.flows.deliveryOptions.provider;
+    const inspect = provider.inspect;
+    provider.inspect = async (number) => {
+      assert.equal(number, 17);
+      const repo = { full_name: deliveryConfig.repository };
+      return {
+        number,
+        html_url: flow.destination.url,
+        state: 'open',
+        merged_at: null,
+        head: { ref: 'fixture-review', sha: 'fixture-head', repo },
+        base: { ref: 'dev', repo },
+      };
+    };
     executor.run = async (ctx) => {
       if (ctx.issue.id !== id) return run(ctx);
       calls++;
@@ -2236,6 +2246,8 @@ try {
       assert.equal(await page.locator('#issue-input-actions').isVisible(), false);
     } finally {
       executor.run = run;
+      if (inspect) provider.inspect = inspect;
+      else delete provider.inspect;
     }
     if (issueId) await page.goto('/?issue=' + issueId);
   });

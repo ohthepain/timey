@@ -47,6 +47,8 @@ missing-skill setup option, and saved No skill/skill selections in a disposable 
 `pnpm run test:factory:env` checks project `.env` credential loading, exported
 environment precedence, and idempotent setup that preserves unrelated values and
 rejects invalid PEM input before writing. It uses disposable directories and keys.
+Each test clears and restores the inherited GitHub App environment so the runner's
+credentials cannot replace the fixture values.
 
 `pnpm run test:project-discuss` checks saved project conversations, immutable
 message settings and attachment copies, explicit queue/Stop/Retry behavior,
@@ -97,7 +99,8 @@ the issue banner, independent playback status, and hiding empty results.
 Use `pnpm run test:flow:browser --human-input` for required-review instructions,
 PR links, sidebar and block indicators, persisted requests, explicit Continue,
 and the distinction between human input and technical failure. The fixture
-injects review readiness; it performs no live GitHub review or merge.
+injects review readiness and an open PR response for the merged-issue guard; it
+performs no live GitHub review or merge.
 Use `pnpm run test:folder-settings:browser` for the isolated folder settings,
 repair, search, grouping eligibility, and selected Open or Closed bulk actions.
 The fixture injects AI responses and execution, and uses disposable reports.
@@ -246,6 +249,10 @@ when an aggregate command would include unrelated tests. Work leaves aggregate
 suites such as `pnpm run test:factory` to full candidate verification, which
 Merge requires. Add a focused test when needed. Factory rechecks formatting and
 Fallow after Work's response.
+
+A standalone focused browser check can be recorded as `node scripts/<name>-browser.mjs`
+without extra arguments. The main Flow browser runner still requires a scenario
+flag, and the aggregate Factory browser runner belongs to full verification.
 
 Fallow 3.35.0 can miss CSS consumers in plain JavaScript HTML strings, and its
 source-location attribution can mark unchanged findings as introduced when an

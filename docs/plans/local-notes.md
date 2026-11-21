@@ -4,9 +4,11 @@ Local notes capture thoughts and todos without leaving the current work. They
 have a separate **Local notes** section in the Flow sidebar. Enter saves an
 inline note; Shift+Enter adds a line. **＋ Note** and Alt+N open a small editor.
 Notes retain the supplied text and support editing, completion, deletion and
-manual ordering. The section opens expanded. Its caret uses the same control as
-the sidebar folders and hides or shows the inline form and notes without losing
-the draft. The quick-note button remains available while collapsed.
+manual ordering. Each sidebar preview shows only the first sentence. Selecting
+the preview opens the full text in the editor. The section opens expanded. Its
+caret uses the same control as the sidebar folders and hides or shows the inline
+form and notes without losing the draft. The quick-note button remains available
+while collapsed.
 
 The bundled `local-note` skill uses the same store through project chat tools
 or the installed `scripts/local-note.mjs` command. Capturing a note starts no
@@ -46,7 +48,7 @@ retained note links back to the issue.
 
 `scripts/local-notes.check.mjs` exercises storage, worktree ownership, private
 Git exclusion, stale edits and quiet discussion preparation with disposable data.
-`scripts/flow-browser-local-notes.mjs` drives capture, reload, editing,
-completion, ordering, discussion and issue creation in the browser fixture.
+`scripts/flow-browser-local-notes.mjs` drives capture, first-sentence previews,
+reload, editing, completion, ordering, discussion and issue creation in the browser fixture.
 Provider fixtures establish transport behavior without contacting a live model.
 Human review remains useful for capture speed and layout taste.

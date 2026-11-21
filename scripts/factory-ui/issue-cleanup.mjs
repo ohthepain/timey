@@ -1,5 +1,5 @@
 import { flowOwnsIssue } from './flow-ownership.mjs';
-import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { lstat as lstatAsync, readdir as readdirAsync } from 'node:fs/promises';
 import { join, relative, resolve } from 'node:path';
 import { digest, git, readJson, requireThat, writeJson } from './common.mjs';
@@ -45,12 +45,8 @@ async function defaultFlowCleanup(service, issueId, resolution) {
   return [resource];
 }
 
-export function deleteIssueWorktree(service, { issueId, expected }) {
+export function deleteIssueWorktree(service, { issueId, expected, checkoutOnly = false }) {
   service.ownServer();
-  requireThat(
-    !service.flows?.closurePending?.(issueId),
-    'Finish the saved closure sequence before deleting resources.'
-  );
   const issue = cleanupIssue(service, issueId);
   const worktree = localWorktreeIdentity(service, issue);
   if (!expected) return worktree;
@@ -60,11 +56,71 @@ export function deleteIssueWorktree(service, { issueId, expected }) {
   );
   const tasks = cleanupTaskMap(service);
   requireThat(!tasks.has(issueId), 'Cleanup is already running for this issue.');
+  const remove = checkoutOnly ? detachLocalWorktree : deleteLocalWorktree;
   const task = Promise.resolve()
-    .then(() => deleteLocalWorktree(service, issue, worktree))
+    .then(() => remove(service, issue, worktree))
     .finally(() => tasks.delete(issueId));
   tasks.set(issueId, task);
   return task;
+}
+
+function detachedWorktreePath(root, issueId) {
+  return join(root, '.issues/factory-ui/cleanup', issueId, 'detached-worktree.json');
+}
+
+export function restoreDetachedWorktree(root, issueId, workspace) {
+  const record = detachedWorktreePath(root, issueId);
+  if (!existsSync(record)) return;
+  const { path, branch } = readJson(record);
+  requireThat(path === workspace.checkout && branch === workspace.branch, 'The detached issue worktree changed.');
+  git(root, 'worktree', 'add', '--', path, branch);
+  rmSync(record);
+}
+
+async function detachLocalWorktree(service, issue, expected) {
+  const { id } = issue;
+  assertWorktreeDeletion(service, issue, expected);
+  await requireDetachableChats(service, id);
+  assertWorktreeDeletion(service, issue, expected);
+  requireThat(
+    branchWorktreePath(service.root, expected.branch) === expected.path,
+    'The saved worktree is no longer registered.'
+  );
+  retainIssueHistory(service, id, expected.path);
+  const record = detachedWorktreePath(service.root, id);
+  const conversation = retainLocalConversation(service.root, id, expected.path);
+  try {
+    writeJson(record, expected);
+    git(service.root, 'worktree', 'remove', '--force', '--', expected.path);
+  } catch (error) {
+    if (existsSync(expected.path)) {
+      rmSync(record, { force: true });
+      if (conversation) rmSync(conversation, { recursive: true });
+    }
+    throw error;
+  }
+  return { issueId: id, deleted: true };
+}
+
+async function requireDetachableChats(service, id) {
+  const unavailable = (await chatResources(service, id)).find(
+    (chat) => !chat.eligible && chat.state !== 'already-archived'
+  );
+  requireThat(!unavailable, unavailable?.reason || 'The issue chat is still active.');
+}
+
+function retainLocalConversation(root, issueId, workspace) {
+  const source = join(workspace, '.issues/conversations', issueId);
+  if (!existsSync(source)) return;
+  const directory = join(root, '.issues/conversations');
+  const destination = join(directory, issueId);
+  requireThat(
+    !existsSync(destination),
+    'Issue conversation data is saved in two places. Reconcile it before deleting.'
+  );
+  mkdirSync(directory, { recursive: true });
+  cpSync(source, destination, { recursive: true, force: false, errorOnExist: true });
+  return destination;
 }
 
 function localWorktreeIdentity(service, issue) {
