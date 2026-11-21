@@ -4,6 +4,17 @@ window.timeyEscapeHTML = (value) =>
     (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]
   );
 window.timeyChatSendIcon = '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 16V4M5 9l5-5 5 5"/></svg>';
+function spokenInsertion(before, text, after) {
+  if (after) return before + text + after;
+  if (!before) return text;
+  if (/\s$/.test(before)) return before + text;
+  return before + ' ' + text;
+}
+function dictationParts(draft) {
+  const original = draft.value;
+  const caret = window.FactoryTextControls?.selection(draft) || { start: original.length, end: original.length };
+  return [original.slice(0, caret.start), original.slice(caret.end)];
+}
 window.createChatDictation = ({ button, draft, status, getConversationId, changed, submit }) => {
   let recognition = null;
   let disposed = false;
@@ -18,6 +29,7 @@ window.createChatDictation = ({ button, draft, status, getConversationId, change
       return;
     }
     const original = draft.value;
+    const [before, after] = dictationParts(draft);
     const dictation = { conversationId: getConversationId(), draft: original, finalTranscript: '' };
     const isCurrentDictation = () =>
       !disposed && getConversationId() === dictation.conversationId && draft.value === dictation.draft;
@@ -39,7 +51,7 @@ window.createChatDictation = ({ button, draft, status, getConversationId, change
       if (!isCurrentDictation()) return;
       const text = [...event.results].map((result) => result[0].transcript).join(' ');
       dictation.finalTranscript = [...event.results].every((result) => result.isFinal) ? text : '';
-      dictation.draft = [original, text].filter(Boolean).join(' ');
+      dictation.draft = spokenInsertion(before, text, after);
       draft.value = dictation.draft;
       changed();
     };
@@ -76,9 +88,15 @@ window.createChatDictation = ({ button, draft, status, getConversationId, change
   };
 };
 
-window.chatMessageMarkup = ({ id, user, label, meta = '', content = '', tail = '' }) => {
+function chatAiAttributes(user, source, key, id) {
+  if (user || source === undefined) return '';
   const escape = window.timeyEscapeHTML;
-  return `<article class="discuss-message ${user ? 'user' : 'assistant'}" data-discuss-message="${escape(id)}"><div class="discuss-message-heading"><strong>${escape(label || (user ? 'You' : 'Assistant'))}</strong><span class="muted">${escape(meta)}</span></div><div class="discuss-message-body">${content}</div>${tail}</article>`;
+  return ` data-ai-text data-ai-key="${escape(key || id)}" data-ai-source="${escape(source)}"`;
+}
+window.chatMessageMarkup = ({ id, user, label, meta = '', content = '', tail = '', aiSource, aiKey }) => {
+  const escape = window.timeyEscapeHTML;
+  const attributes = chatAiAttributes(user, aiSource, aiKey, id);
+  return `<article class="discuss-message ${user ? 'user' : 'assistant'}" data-discuss-message="${escape(id)}"><div class="discuss-message-heading"><strong>${escape(label || (user ? 'You' : 'Assistant'))}</strong><span class="muted">${escape(meta)}</span></div><div class="discuss-message-body"${attributes}>${content}</div>${tail}</article>`;
 };
 
 window.createSkillComposer = function createSkillComposer(form, draft, load) {
@@ -535,10 +553,18 @@ const issueChatUI = (() => {
   function sortedMessages() {
     return [...messages.values()].sort((a, b) => String(a.at).localeCompare(String(b.at)) || a.id.localeCompare(b.id));
   }
+  function markGeneratedMessage(text, entry) {
+    if (entry.actor === 'human') return;
+    if (['user', 'You', 'Original request'].includes(entry.role)) return;
+    text.dataset.aiText = '';
+    text.dataset.aiKey = 'issue-chat-' + current + '-' + entry.id;
+    text.dataset.aiSource = entry.body || '';
+  }
   function issueMessageEnvelope(entry) {
     const date = entry.at ? new Date(entry.at).toLocaleString() : 'Date not recorded';
     const text = node('p', entry.body);
     text.style.whiteSpace = 'pre-wrap';
+    markGeneratedMessage(text, entry);
     const holder = node('div');
     holder.innerHTML = window.chatMessageMarkup({
       id: entry.id,

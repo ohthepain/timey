@@ -295,12 +295,19 @@ const discussionUI = (() => {
       return '';
     }
     details.append(summary, notice, grill, reset);
+    function markGeneratedEntry(entry, who, text) {
+      if (who === 'You') return;
+      entry.dataset.aiText = '';
+      entry.dataset.aiSource = text;
+      entry.dataset.aiKey = 'discussion-' + issueId + '-' + log.children.length;
+    }
     function add(who, text, skills = []) {
       empty.remove();
       const entry = document.createElement('p');
       const speaker = document.createElement('strong');
       speaker.textContent = who;
       entry.append(speaker, document.createTextNode(text));
+      markGeneratedEntry(entry, who, text);
       if (skills.length) {
         for (const name of skills) {
           const token = document.createElement('span');

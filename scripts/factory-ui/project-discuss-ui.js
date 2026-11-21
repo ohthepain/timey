@@ -308,6 +308,8 @@
         user,
         meta: messageMetadata(message),
         content: markdown(messageText(message)),
+        aiSource: messageText(message),
+        aiKey: 'discuss-' + selectedId + '-' + message.id,
         tail: `${messageAttachments(message)}${eventsHtml(message.events)}<div class="discuss-message-actions"><button class="discuss-icon-button" type="button" data-discuss-copy="${escape(message.id)}" aria-label="Copy message" title="Copy message"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5" y="5" width="8" height="9" rx="1"/><path d="M3 11V3h8"/></svg></button>${messageEditAction(message, user)}</div>`,
       });
     }

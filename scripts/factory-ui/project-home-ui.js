@@ -7,6 +7,32 @@
       (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]
     );
   const busy = (session) => ['running', 'starting', 'stopping'].includes(session?.status);
+  function homeMessageAttributes(role, text, key) {
+    if (role === 'user') return '';
+    return ` data-ai-text data-ai-key="${escape(key)}" data-ai-source="${escape(text)}"`;
+  }
+  function homeMessage(message, index, id, sessionId) {
+    const text = message.text || message.content;
+    const key = `home-${id}-${sessionId}-${index}`;
+    const attributes = homeMessageAttributes(message.role, text, key);
+    return `<article data-home-message><strong>${message.role === 'user' ? 'You' : 'Assistant'}</strong><div${attributes}>${escape(text)}</div></article>`;
+  }
+  function renderMessages(id, messages, sessionId) {
+    const markup = (messages || []).map((message, index) => homeMessage(message, index, id, sessionId)).join('');
+    const scope = 'home-messages:' + id + ':' + sessionId;
+    const first = !window.timeyView.read(scope);
+    window.timeyView.render($(id), markup, scope);
+    if (first) $(id).scrollTop = $(id).scrollHeight;
+  }
+
+  function markAutomateContent(content, sessionId) {
+    const field = $('home-automate-content');
+    const block = field.closest('[data-ai-text]') || field.parentElement;
+    block.dataset.aiText = '';
+    block.dataset.aiKey = 'automate-content-' + sessionId;
+    block.dataset.aiSource = content;
+    window.FactoryTextControls.refresh();
+  }
   function saveProjectTab(tab) {
     const url = new URL(location.href);
     if (tab !== 'home') url.searchParams.set('projectTab', tab);
@@ -197,19 +223,6 @@
       $('home-investigation-reusable').checked = false;
     }
 
-    function renderMessages(id, messages, sessionId) {
-      const markup = (messages || [])
-        .map(
-          ({ role, text, content }) =>
-            `<article data-home-message><strong>${role === 'user' ? 'You' : 'Assistant'}</strong><div>${escape(text || content)}</div></article>`
-        )
-        .join('');
-      const scope = 'home-messages:' + id + ':' + sessionId;
-      const first = !window.timeyView.read(scope);
-      window.timeyView.render($(id), markup, scope);
-      if (first) $(id).scrollTop = $(id).scrollHeight;
-    }
-
     function operationStatus(kind, session) {
       $(`home-${kind}-status`).textContent = session.status === 'draft' ? '' : session.phase || session.status;
       if (session.error) $(`home-${kind}-error`).textContent = session.error;
@@ -283,6 +296,7 @@
     function writeAutomateDraft(draft) {
       $('home-automate-name').value = draft.name;
       $('home-automate-content').value = draft.content;
+      markAutomateContent(draft.content, state.automate.id);
       $('home-automate-current').value = draft.currentContent || 'No existing skill at this destination.';
       $('home-automate-path').textContent = draft.path;
       $('home-automate-destination').value = draft.destination;

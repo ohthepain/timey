@@ -773,6 +773,19 @@ live in `issue-chat-ui.js`. Project, report, and Classic issue chats reuse these
 controls. Flow conversation entries reuse the same message envelope.
 Open conversation tabs stay in creation order; closing a tab marks its conversation
 closed and retains its saved history.
+
+`ai-text-ui.js` and `ai-text.css` provide shared top-right Copy, Bro and Dictate
+controls for AI text. Renderers mark AI content with `data-ai-text`, a stable
+`data-ai-key` and its exact `data-ai-source`. Bro preserves the original and shows
+the simplified version until toggled off. `ai-text-bro.mjs` loads the installed bro
+skill and rewrites in a separate read-only model conversation. Dictating into an
+output opens a local editable copy. It does not rewrite retained AI evidence.
+Alt+D targets the hovered dictatable field, then the focused field, then the
+Discuss composer. Dictation preserves an existing caret or appends at the end.
+Editable AI drafts use their existing field and save controls. The shared
+`chatMessageMarkup` envelope accepts AI source text and a stable key, so project
+and report conversations retain these controls. Shared chat dictation uses the
+same caret tracking as the hover controls.
 `skills.mjs` retains invocation policy and discovers installed
 `factory/system/skills` as Factory skills alongside `user/skills` wrappers.
 The factory's `archive` skill submits issue numbers to the existing archive tool

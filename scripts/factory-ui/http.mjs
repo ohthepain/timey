@@ -1,4 +1,5 @@
 import { skillSetup } from './required-skills.mjs';
+import { simplifyAIText } from './ai-text-bro.mjs';
 import { flowOwnsIssue } from './flow-ownership.mjs';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -226,6 +227,7 @@ async function mutation(service, path, value, owner) {
   }
   if (Object.hasOwn(discussionRoutes, path)) return temporaryAction(discussionRoutes[path]);
   const routes = {
+    '/api/ai-text-bro': () => simplifyAIText(service, value),
     '/api/local-notes-action': () => localNoteAction(service, value, () => projectDiscuss(service)),
     '/api/project-discuss-action': () => projectDiscuss(service).action(value),
     '/api/report-discuss-action': () => reportChatAction(service, value),
@@ -632,6 +634,8 @@ function readResource(service, request, response, owner) {
     return response.end();
   }
   const scripts = {
+    '/ai-text-ui.js': 'ai-text-ui.js',
+    '/ai-text.css': 'ai-text.css',
     '/view-state.js': 'view-state.js',
     '/local-notes-ui.js': 'local-notes-ui.js',
     '/local-notes.css': 'local-notes.css',

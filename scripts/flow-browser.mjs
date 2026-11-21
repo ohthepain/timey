@@ -43,6 +43,7 @@ import { withQueueConfiguration } from './flow-browser-queue-configuration.mjs';
 import { projectNavigationBrowserChecks } from './flow-browser-project-navigation.mjs';
 import { projectHomeBrowserChecks, investigationFlowsBrowserChecks } from './flow-browser-project-home.mjs';
 import { projectDiscussBrowserChecks } from './flow-browser-project-discuss.mjs';
+import { aiTextBrowserChecks } from './flow-browser-ai-text.mjs';
 import { interfaceStateBrowserChecks } from './flow-browser-interface-state.mjs';
 import { localNotesBrowserChecks } from './flow-browser-local-notes.mjs';
 import { actionsMenuBrowserChecks } from './flow-browser-actions-menu.mjs';
@@ -79,6 +80,9 @@ git(project, 'update-ref', 'refs/remotes/origin/recent', recentBranchCommit);
 git(project, 'symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/recent');
 
 const assets = [
+  'ai-text-ui.js',
+  'ai-text.css',
+  'ai-text-bro.mjs',
   'view-state.js',
   'flow.html',
   'flow.css',
@@ -124,6 +128,7 @@ const homeCheck = 'Project home investigates selected branches and reviews Autom
 const reportsCheck = 'Investigation reports retain content, reading state and shared discussion';
 const investigationFlowsCheck = 'Investigations use ordinary flows and independent retained outputs';
 const discussCheck = 'Project Discuss retains independent conversations, settings and explicit controls';
+const aiTextCheck = 'AI text offers copy bro and caret-aware hovered dictation';
 const interfaceStateCheck = 'Refresh preserves expanded activity, editor size, drafts and copied selection';
 const issueResultsCheck = 'Issue results appear below the banner without replacing playback status';
 const humanInputCheck = 'Required PR review is visible and continues only after an explicit action';
@@ -280,6 +285,7 @@ function checkExcluded(name) {
     ['--project-home', homeCheck],
     ['--project-navigation', navigationCheck],
     ['--project-discuss', discussCheck],
+    ['--ai-text', aiTextCheck],
     ['--investigation-reports', reportsCheck],
     ['--investigation-flows', investigationFlowsCheck],
     ['--interface-state', interfaceStateCheck],
@@ -568,6 +574,7 @@ try {
     )
   );
   await check(discussCheck, () => projectDiscussBrowserChecks({ page, project, service, poll, screenshot }));
+  await check(aiTextCheck, () => aiTextBrowserChecks({ page, project, service, poll, screenshot }));
   await check(interfaceStateCheck, () => interfaceStateBrowserChecks({ page, project, service, poll, screenshot }));
   await check('Issues and Local notes use matching text styles', () =>
     withQueueConfiguration({ page, project, root }, async () => {
