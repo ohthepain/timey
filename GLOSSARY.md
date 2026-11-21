@@ -247,6 +247,10 @@ master issue as Fixed.
 Removal of a closed issue's worktree and any selected local or remote issue
 branches. Incomplete cleanup can be retried while the issue stays closed.
 
+**Worktree deletion**:
+Removal of an issue's local checkout, independent of its status or closure sequence.
+It discards uncommitted files and preserves the issue, branches, conversations, and retained evidence.
+
 **Issue archive**:
 A retained collection of issues outside the active views. Archiving preserves
 identity and history. Investigations can be archived without being closed.
