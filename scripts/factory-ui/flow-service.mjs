@@ -499,6 +499,8 @@ class IssueFlows {
       resolvedBranch: deliveryTarget(flow).branch,
       activeBlock: activeBlock ? { id: activeBlock.id, kind: activeBlock.kind } : null,
       humanInput: availableHumanInput(issue, flow),
+      paused: Boolean(this.autoplay.get(issue.id)?.userPaused),
+      waitingForApproval: this.autoplay.get(issue.id)?.mode === 'waiting',
       status: flowStatus(flow, issue, active),
     };
   }
@@ -1195,7 +1197,7 @@ class IssueFlows {
     if (input.action === 'pause' || input.action === 'cancel-confirmation') {
       const waiting = this.autoplay.get(issue.id);
       if (input.action === 'pause' || (waiting?.mode === 'waiting' && waiting.blockId === input.blockId))
-        this.pause(issue.id);
+        this.autoplay.set(issue.id, { mode: 'paused', userPaused: input.action === 'pause' });
       return this.view(issue.id);
     }
     if (branchActions.has(input.action)) return this.branchOperation(issue, flow, input);
@@ -2076,6 +2078,7 @@ class IssueFlows {
       throw error;
     }
     const waiting = this.autoplay.get(issue.id);
+    if (waiting?.userPaused) this.pause(issue.id, 'A block was started.');
     if (waiting?.mode === 'waiting') {
       if (waiting.blockId === block.id && input.confirmed === true) this.autoplay.set(issue.id, { mode: 'playing' });
       else this.pause(issue.id, 'A different block was started.');

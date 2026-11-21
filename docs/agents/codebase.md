@@ -30,6 +30,13 @@ share the store. See the [local notes design](../plans/local-notes.md).
 | Verification checkpoints | `scripts/verify.mjs`, `scripts/audit-result.mjs`, `.githooks/pre-commit`                                                                                                                                              | Isolated staged/working snapshots, strict audit and step evidence                                                                                                                                                   |
 | Factory controls         | `scripts/factory.mjs`, `scripts/factory-ledger.mjs`, `scripts/factory-interface.mjs`, `scripts/factory-status.mjs`, `scripts/factory-ui/index.html`, [interface guide](factory.md), [factory UI guide](factory-ui.md) | Issue listing and responsive navigation, ledger CLI, saved progress, timers, manual decisions, explicit strategy verification retries and guarded worker dispatch                                                   |
 
+The Flow sidebar's In progress and Blocked pseudo-folders derive membership from
+its project index in `scripts/factory-ui/flow-ui.js`. In progress contains running
+issues. Blocked contains blocked, interrupted and approval-waiting issues. Explicit
+Pause excludes an issue from both collections until execution resumes. This pause
+marker shares the existing in-memory autoplay lifetime and resets on server restart.
+The collections never write issue folder assignments.
+
 Factory UI folder organization is implemented in `scripts/factory-ui/issue-folders.mjs`;
 it stores folder assignments independently from report content and lifecycle metadata.
 
