@@ -4,10 +4,15 @@
   if (!root) return;
   const disclosure = document.getElementById('local-notes-toggle');
   const body = document.getElementById('local-notes-body');
+  function setCollapsed(collapsed) {
+    body.hidden = collapsed;
+    disclosure.setAttribute('aria-expanded', String(!collapsed));
+    disclosure.setAttribute('aria-label', (collapsed ? 'Expand ' : 'Collapse ') + 'Local notes');
+  }
+  setCollapsed(window.timeyView.read('local-notes-collapsed', false));
   disclosure.addEventListener('click', () => {
-    body.hidden = !body.hidden;
-    disclosure.setAttribute('aria-expanded', String(!body.hidden));
-    disclosure.setAttribute('aria-label', (body.hidden ? 'Expand ' : 'Collapse ') + 'Local notes');
+    setCollapsed(!body.hidden);
+    window.timeyView.write('local-notes-collapsed', body.hidden);
   });
   const escape = (value) =>
     String(value).replace(

@@ -50,6 +50,12 @@ export async function localNotesBrowserChecks({ page, service, project, poll, sc
   assert.equal(await page.locator('#local-note-list').isVisible(), false);
   const collapsedTransform = await disclosure.evaluate((button) => getComputedStyle(button, '::before').transform);
   assert.notEqual(collapsedTransform, expandedTransform);
+  await page.reload();
+  await disclosure.waitFor();
+  const collapsedAfterReload = await disclosure.getAttribute('aria-expanded');
+  assert.equal(collapsedAfterReload, 'false', 'Notes must stay collapsed after refresh.');
+  assert.equal(await field.isVisible(), false);
+  assert.equal(await disclosure.getAttribute('aria-label'), 'Expand Local notes');
   await screenshot('local-notes-collapsed');
   await disclosure.click();
   assert.equal(await disclosure.getAttribute('aria-expanded'), 'true');
@@ -60,7 +66,22 @@ export async function localNotesBrowserChecks({ page, service, project, poll, sc
     await disclosure.evaluate((button) => getComputedStyle(button, '::before').transform),
     expandedTransform
   );
+  await page.reload();
+  await disclosure.waitFor();
+  const expandedAfterReload = await disclosure.getAttribute('aria-expanded');
+  assert.equal(expandedAfterReload, 'true', 'Notes must stay expanded after refresh.');
+  assert.equal(await field.isVisible(), true);
+  assert.equal(await field.inputValue(), 'Unfinished local note');
+  assert.equal(await disclosure.getAttribute('aria-label'), 'Collapse Local notes');
   await screenshot('local-notes-expanded');
+  writeFileSync(
+    join(output, 'local-notes-disclosure.json'),
+    JSON.stringify(
+      { candidate, collapsedAfterReload, expandedAfterReload, draftAfterReload: await field.inputValue() },
+      null,
+      2
+    ) + '\n'
+  );
   await field.fill('');
   await page.reload();
   await page.getByRole('button', { name: 'Remember the quick thought', exact: true }).waitFor();

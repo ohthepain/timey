@@ -71,7 +71,17 @@ export async function projectIssuesBrowserChecks({ page, project, root, output }
     assert.equal(await frame.locator('[data-project-issue-resizer]').count(), 0);
     assert.equal(await frame.locator('[data-project-issue-bulk-field]').count(), 0);
     await page.screenshot({ path: join(output, 'closed-issues-selected.png'), fullPage: true });
-    await frame.getByRole('button', { name: 'Archive all', exact: true }).click();
+    const archiveLabel = await frame.locator('[data-archive-project-issues]').textContent();
+    writeFileSync(
+      join(output, 'closed-issues-action.json'),
+      JSON.stringify(
+        { archiveLabel, selectedCount: 2, screenshot: join(output, 'closed-issues-selected.png') },
+        null,
+        2
+      ) + '\n'
+    );
+    assert.equal(archiveLabel, 'Archive selected');
+    await frame.getByRole('button', { name: 'Archive selected', exact: true }).click();
     await frame.getByText('Archived 2 issues.', { exact: true }).waitFor();
     for (const id of closed.slice(0, 2)) {
       assert.equal(existsSync(join(project, '.issues/archive', id + '.md')), true);
