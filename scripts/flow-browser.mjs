@@ -48,6 +48,8 @@ import { interfaceStateBrowserChecks } from './flow-browser-interface-state.mjs'
 import { localNotesBrowserChecks } from './flow-browser-local-notes.mjs';
 import { actionsMenuBrowserChecks } from './flow-browser-actions-menu.mjs';
 import { mergedIssueBrowserChecks } from './flow-browser-merged-issue.mjs';
+import { noChangesBrowserChecks } from './flow-browser-no-changes.mjs';
+import { writeBrowserIssue } from './flow-browser-fixture.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const output = resolve(
@@ -67,6 +69,7 @@ writeFileSync(join(project, '.gitignore'), '/.issues/\n');
 git(project, 'add', 'source.txt', '.gitignore');
 git(project, 'commit', '-qm', 'Browser fixture base');
 const branchTree = git(project, 'rev-parse', 'HEAD^{tree}');
+const publicationTarget = git(project, 'rev-parse', 'HEAD');
 const datedBranch = (date) =>
   execFileSync('git', ['-C', project, 'commit-tree', branchTree, '-m', 'Branch selector fixture'], {
     env: { ...process.env, GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date },
@@ -212,7 +215,7 @@ service.flows = createIssueFlows(service, {
         return null;
       },
       async gh() {
-        return 'dev\nolder\nrecent';
+        return `dev\t${publicationTarget}\nolder\t${publicationTarget}\nrecent\t${recentBranchCommit}`;
       },
     },
   },
@@ -259,10 +262,11 @@ function connectionRecoveryIssue() {
   const id = '20261120-connection-recovery-fixture';
   if (!existsSync(join(project, '.issues/triage-labels.md')))
     copyFileSync(join(root, '.issues/triage-labels.md'), join(project, '.issues/triage-labels.md'));
-  writeFileSync(
-    join(project, '.issues', id + '.md'),
-    `---\nid: ${id}\ntitle: Reconnect the selected issue\nstate: backlog\n---\n\nKeep the selected issue after reconnecting.\n`
-  );
+  writeBrowserIssue(project, {
+    id,
+    title: 'Reconnect the selected issue',
+    body: 'Keep the selected issue after reconnecting.',
+  });
   return id;
 }
 function checkExcluded(name) {
@@ -273,6 +277,7 @@ function checkExcluded(name) {
     ['--actions-menu', 'Actions menu lists two running Flow blocks'],
     ['--merged-issue', 'Merged issues preserve history and expose only closure controls'],
     ['--error-recovery', 'Successful refresh clears rejected branch update errors'],
+    ['--no-changes', 'Publication with no changes offers Cannot Reproduce closure'],
     [
       '--connection-recovery',
       'Flow and Classic reload the selected issue after a lost connection without replaying the click',
@@ -476,6 +481,9 @@ try {
   });
   await check('Successful refresh clears rejected branch update errors', () =>
     errorRecoveryBrowserChecks({ page, service, project, output })
+  );
+  await check('Publication with no changes offers Cannot Reproduce closure', () =>
+    noChangesBrowserChecks({ page, service, project, output, root })
   );
   await check('The whole sidebar scrolls over every section', async () => {
     const issuePaths = Array.from({ length: 24 }, (_, index) =>

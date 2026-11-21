@@ -17,8 +17,8 @@ import { decisionBasis } from './factory-ui/recorded-result.mjs';
 import { digest } from './factory-ui/common.mjs';
 import { StrategyProvider } from './factory-ui/strategy-provider.mjs';
 
-function fixture(t) {
-  const f = deliveryFixture(t);
+function fixture(t, { sourceChange = true } = {}) {
+  const f = deliveryFixture(t, { sourceChange });
   const root = f.queue.root;
   const service = new FactoryUI(root);
   t.after(() => service.close());
@@ -95,7 +95,7 @@ function fixture(t) {
       return null;
     },
     async gh() {
-      return 'dev\nrelease';
+      return `dev\t${f.input.base}\nrelease\t${f.input.base}`;
     },
     async inspectExternalDelivery(number) {
       return {
@@ -190,6 +190,30 @@ test('Publish previews and publishes the exact commit without running full Verif
     ['push', 'publish']
   );
   assert.equal(result.result.verification, undefined);
+});
+
+test('Publish offers Cannot Reproduce without pushing when the destination already contains the candidate', async (t) => {
+  const f = fixture(t);
+  f.provider.gh = async () => `dev\t${f.input.revision}`;
+  const preview = await f.preview();
+  assert.equal(preview.status, 'blocked');
+  assert.equal(preview.suggestedResolution, 'cannot-reproduce');
+  assert.match(preview.message, /No changes/);
+  await assert.rejects(f.publish(), /No changes/);
+  assert.ok(!f.calls.includes('push'));
+  assert.ok(!f.calls.includes('publish'));
+  assert.ok(!readQueue(f.root).issues[0].closed);
+});
+
+test('Publish detects an empty commit and ignores destination-only changes', async (t) => {
+  const f = fixture(t);
+  f.source.git('checkout', '-b', 'no-change', f.input.base);
+  f.source.git('commit', '--allow-empty', '-qm', 'No source changes');
+  f.workspace.branch = 'no-change';
+  f.provider.gh = async () => `dev\t${f.input.revision}`;
+  const preview = await f.preview();
+  assert.equal(preview.status, 'blocked');
+  assert.equal(preview.suggestedResolution, 'cannot-reproduce');
 });
 
 test('a new flow closes through the actual decision writer with immutable verification and merged target evidence', async (t) => {
@@ -583,7 +607,7 @@ test('an uncommitted verification survives its unchanged commit and expires when
 });
 
 function investigationFixture(t, kind = 'understand') {
-  const f = fixture(t);
+  const f = fixture(t, { sourceChange: false });
   unlinkSync(join(f.root, '.issues/issue-delivery-config.json'));
   const output = 'The subsystem reads saved blocks and starts only the requested block.\n';
   const path = join(f.folder, 'output.txt');

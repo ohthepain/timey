@@ -108,6 +108,15 @@ export function flowVerificationHead(block) {
   return verification?.uncommitted ? undefined : verification?.head;
 }
 
+export function retainedBlockVerification(block, attemptId) {
+  const previous = block.attempts?.findLast(
+    (attempt) => attempt.id !== attemptId && (attempt.invalidatedAt || blockVerification(block, attempt))
+  );
+  if (!previous) return undefined;
+  if (previous.invalidatedAt) return undefined;
+  return blockVerification(block, previous);
+}
+
 export function verifiedFlowCandidate(ctx, workspace, options = {}) {
   const candidate = committedCandidate(workspace);
   const base = options.verificationBase;
@@ -115,10 +124,9 @@ export function verifiedFlowCandidate(ctx, workspace, options = {}) {
   const getInput = options.verificationInput || flowVerificationInput;
   const inputs = base ? [getInput(ctx, workspace.checkout, base)] : [];
   if (mergeChecks?.scope === 'default') inputs.push(getInput(ctx, workspace.checkout, base, 'full'));
-  const previous = ctx.block.attempts?.filter((attempt) => attempt.id !== ctx.attempt?.id).at(-1);
   const checks = [
     options.verification,
-    previous?.invalidatedAt ? undefined : blockVerification(ctx.block, previous ?? {}),
+    retainedBlockVerification(ctx.block, ctx.attempt?.id),
     ...upstreamBlocks(ctx.block, ctx.flow.blocks)
       .toReversed()
       .map((block) => blockVerification(block)),
@@ -226,6 +234,26 @@ function publicationBlocker(pr, identity, target) {
   return null;
 }
 
+function noChangesPublication(workspace, target, head, pr) {
+  if (pr) return null;
+  let base;
+  try {
+    base = git(workspace.checkout, 'merge-base', target, head);
+  } catch {
+    return {
+      status: 'blocked',
+      message: 'Refresh the destination branch locally before comparing the issue changes for publication.',
+    };
+  }
+  if (git(workspace.checkout, 'diff', '--name-only', base, head)) return null;
+  return {
+    status: 'blocked',
+    message:
+      'No changes to publish against the destination. You can close this issue as Cannot Reproduce or keep it open for more work.',
+    suggestedResolution: 'cannot-reproduce',
+  };
+}
+
 export async function prepareFlowPublication(service, ctx, workspace, options = {}) {
   const provider = flowDeliveryProvider(service, ctx, workspace, options);
   const { branch: target, remote } = deliveryTarget(ctx.flow);
@@ -247,6 +275,8 @@ export async function prepareFlowPublication(service, ctx, workspace, options = 
     throw Error('Couldn’t check branches. Retry Publish when GitHub is available.');
   });
   if (!branches.has(target)) return blocked('Branch unavailable. Choose another destination before publishing.');
+  const noChanges = noChangesPublication(workspace, branches.get(target), candidate.head, pr);
+  if (noChanges) return { preview: noChanges };
   if (service.sharedIssues) {
     const tracking = `refs/remotes/${remote}/${target}`;
     const base = git(workspace.checkout, 'merge-base', tracking, candidate.head);

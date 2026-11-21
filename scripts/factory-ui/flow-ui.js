@@ -2704,6 +2704,7 @@
     let contents;
     if (preview.status === 'blocked') {
       contents = `<p>${escape(preview.message)}</p>`;
+      contents += noChangesCloseOffer(preview);
     } else if (preview.status === 'current') {
       contents = '<p>PR is up to date.</p>';
     } else {
@@ -2726,6 +2727,18 @@
       preview.status === 'current' ? 'Confirm current PR' : preview.pr ? 'Update PR' : 'Publish PR';
     $('close-publish').textContent = canConfirm ? 'Cancel' : 'Close';
   }
+
+  function noChangesCloseOffer(preview) {
+    return preview.suggestedResolution === 'cannot-reproduce'
+      ? '<button class="small-button" type="button" data-close-no-changes>Close as Cannot Reproduce…</button>'
+      : '';
+  }
+
+  $('publish-preview').addEventListener('click', (event) => {
+    if (!event.target.closest('[data-close-no-changes]')) return;
+    $('publish-dialog').close();
+    openClosure('cannot-reproduce');
+  });
 
   function closeRename() {
     $('rename-issue-form').hidden = true;
@@ -3474,16 +3487,17 @@
     }
   });
 
-  function openClosure() {
+  function openClosure(suggestedResolution) {
     const { issue, flow } = state.view;
     void closureDialog.open(async () => ({
       ...(await json('/api/issue-closure?issue=' + encodeURIComponent(issue.id))),
       kind: 'close',
       flowRevision: flow.revision,
       offerClosureRetro: flow.blocks.some((block) => block.kind === 'retro'),
+      suggestedResolution,
     }));
   }
-  $('close-with-reason').addEventListener('click', openClosure);
+  $('close-with-reason').addEventListener('click', () => openClosure());
   $('issue-pr-menu').addEventListener('click', (event) => {
     if (event.target.closest('a')) $('issue-pr-menu').open = false;
   });

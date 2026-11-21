@@ -2271,3 +2271,36 @@ test('an unavailable linked PR status refuses edits without changing the saved i
   assert.equal(readFileSync(f.flows.store.path(f.id), 'utf8'), before);
   assert.equal(f.flows.selected(f.id).title, 'Preserve request wording');
 });
+
+test('a shared claim timeout retains the block failure and completed verification', async (t) => {
+  const { id, service } = fixture(t);
+  const verification = { head: 'retained-candidate', proof: [{ path: 'retained-proof' }] };
+  service.sharedIssues = {
+    acquireFlowBlock: () => ({ issueId: id, oid: 'original-claim' }),
+    releaseFlowBlock() {
+      throw Object.assign(Error('spawnSync git ETIMEDOUT'), { code: 'ETIMEDOUT' });
+    },
+    view() {},
+  };
+  const flows = createIssueFlows(service, {
+    executor: executor(async () => {
+      throw Object.assign(Error('Original GitHub request failed'), { deliveryVerification: verification });
+    }),
+  });
+  t.after(() => flows.close());
+  await flows.action({ issueId: id, revision: 0, blockId: 'work', action: 'start' });
+  await flows.active.get(id)?.task;
+  const attempt = flows
+    .read(flows.selected(id))
+    .blocks.find((block) => block.id === 'work')
+    .attempts.at(-1);
+  assert.equal(attempt.status, 'uncertain');
+  assert.match(attempt.summary, /Original GitHub request failed/);
+  assert.match(attempt.summary, /claim release.*spawnSync git ETIMEDOUT/i);
+  assert.deepEqual(attempt.result.verification, verification);
+  assert.deepEqual(attempt.claimReleaseFailure, {
+    status: 'blocked',
+    summary: 'Original GitHub request failed',
+    message: 'spawnSync git ETIMEDOUT',
+  });
+});

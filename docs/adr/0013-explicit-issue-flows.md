@@ -87,6 +87,14 @@ Time waiting for human input is excluded. If a runner disappears, its last saved
 the attempt for timing.
 
 The controller owns flow writes. The executor owns one bounded block.
+Before creating a PR, Publish compares the committed candidate with the current
+GitHub destination. When there are no source changes to publish, it stops before
+pushing and offers the existing close dialog with Cannot Reproduce selected.
+The person can confirm closure or keep the issue open for more work. This does
+not imply acceptance or automatically close an issue. Existing PR updates retain
+their normal publication behavior. If the current destination commit is not
+available locally, Update Branch is required before comparison.
+
 Work formats issue changes and checks Fallow before running focused tests. It
 selects relevant tests from the changed behavior and Requested Proof, and adds a
 focused test when existing tests cannot demonstrate the behavior. A failure that
@@ -150,7 +158,15 @@ authentication and validation failures stop immediately. An uncertain merge
 request is reconciled against GitHub before another guarded request. Retry
 preserves the checkout and retained verification, including across another
 network failure; matching candidate, target, inputs and proof are still required
-for reuse. Changed candidates or inputs require verification again.
+for reuse. A shared issue claim release failure retains the block outcome,
+original summary and verification, and records its cleanup error separately.
+Ownership remains uncertain until the claim is reconciled. Explicit block recovery
+checks the retained claim against the remote queue. If its release already
+landed, it reconciles the stale local receipt and reacquires through the normal
+claim and report checks. A competing claim or failed remote read still blocks
+execution. Recovery can reuse matching verification from before an intervening
+claim-acquisition failure; explicit invalidation still prevents reuse. Changed
+candidates or inputs require verification again.
 
 Merge fetches Destination and merges its current revision into the issue branch.
 It verifies the issue commit against that destination revision using the local
