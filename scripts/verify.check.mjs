@@ -43,10 +43,16 @@ test('Merge uses the Request setting and records only completed upstream focused
   assert.deepEqual(flowMergeChecks(ctx), { scope: 'full', focusedRecorded: false, focused: [] });
   assert.equal(flowMergeChecks({ ...ctx, block: { kind: 'verify' } }), undefined);
   assert.deepEqual(normalizeFocusedTests([command, command]), [command]);
+  const browser = ['node', 'scripts/capture-grilling-browser.mjs'];
+  assert.deepEqual(normalizeFocusedTests([browser]), [browser]);
   for (const invalid of [
     ['sh', '-c', 'test'],
     ['pnpm', 'run', 'test:factory'],
     ['node', '--test', 'scripts/a.check.mjs', '--import', 'other.mjs'],
+    ['node', 'scripts/other-browser.mjs', '--all'],
+    ['node', 'scripts/factory-browser.mjs'],
+    ['node', 'scripts/flow-browser.mjs'],
+    ['node', 'scripts/../other-browser.mjs'],
   ])
     assert.throws(() => normalizeFocusedTests([invalid]), /Record focused test commands/);
 });
