@@ -356,6 +356,40 @@ test('reviewed moves and archive removals preserve the canonical report and rese
   assert.equal(git(root, 'diff', '--name-only', archive.commit, restore.commit), closedPath);
 });
 
+test('sync restores missing queue files after switching away from a branch that tracked them', (t) => {
+  const { root, remote } = fixture(t);
+  const publication = createSharedIssuePublication({ root, ...config, openPullRequest: () => ({ number: 1 }) });
+  const report = '# Shared report\n';
+  const state = join(root, '.issues/sync.json');
+  const reportFile = join(root, reportPath);
+  const numbersFile = join(root, '.issues/issue-numbers.json');
+  const published = publication.publish({ issueId, base: null, report, reason: 'created' });
+  git(remote, 'update-ref', 'refs/heads/dev', published.commit);
+  git(root, 'switch', '--detach', published.commit);
+  const numbers = readFileSync(numbersFile, 'utf8');
+  assert.deepEqual(
+    syncSharedIssueFiles(root, config, state, () => false),
+    []
+  );
+
+  git(root, 'switch', 'dev');
+  assert.equal(existsSync(reportFile), false);
+  assert.equal(existsSync(numbersFile), false);
+  assert.deepEqual(
+    syncSharedIssueFiles(root, config, state, () => false),
+    []
+  );
+  assert.equal(readFileSync(reportFile, 'utf8'), report);
+  assert.equal(readFileSync(numbersFile, 'utf8'), numbers);
+
+  writeFileSync(reportFile, '# Local draft\n');
+  assert.deepEqual(
+    syncSharedIssueFiles(root, config, state, () => false),
+    []
+  );
+  assert.equal(readFileSync(reportFile, 'utf8'), '# Local draft\n');
+});
+
 test('sync mirrors a reviewed move only when both local paths are safe', (t) => {
   const { root, remote } = fixture(t);
   const publication = createSharedIssuePublication({ root, ...config, openPullRequest: () => ({ number: 1 }) });

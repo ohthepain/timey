@@ -133,4 +133,8 @@ report draft can also be published from the queue status controls.
 
 The queue periodically reads reports and claims from the queue branch in the background. **Refresh shared queue** checks immediately without changing the checked-out branch or advancing its code. Use **Publish report update** to share a deliberate local report edit. Local edits that conflict with newer reports are preserved and reported. For a pending queue PR started before the switch, use **Refresh queue PR** in Flow or **Refresh report PR against target** in Classic to rebuild its proposed commit on the latest queue tip.
 
+Refresh restores missing shared reports and the display-number registry when the
+current code branch does not track those files, even if the queue tip is unchanged.
+This covers switching away from an older branch that tracked those files.
+
 If publication fails, use the issue's retry control after reviewing the failure. Use **Confirm report merge** to reconcile an existing queue PR after it lands. For an interrupted runner without a checkpoint, verify that its previous process and Git operation have stopped before using **Reconcile interrupted claim** on the owning checkout. A dead process can leave a per-issue lock in `.issues/shared-issue-claims/` or `.issues/shared-publication/`. Inspect the saved operation and remove only the confirmed dead lock before retrying. Local workspaces are preserved when proposing closure and can be cleaned up separately after review.
