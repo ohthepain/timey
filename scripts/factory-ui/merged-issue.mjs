@@ -38,6 +38,7 @@ export function mergedIssueState(flow) {
 const mergedReadActions = [
   'open-block',
   'open-worktree',
+  'delete-worktree',
   'restate-artifact',
   'reveal-definition',
   'reveal-flow',

@@ -545,8 +545,6 @@
     const branchBusy = busy || frozen || Boolean(state.view?.flow?.blocks.some(isRunning));
     $('target-update-menu').disabled = branchBusy;
     $('worktree-menu').querySelector('option[value="update"]').disabled = branchBusy;
-    $('worktree-menu').querySelector('option[value="delete"]').disabled =
-      frozen && state.view.issue.status !== 'closed';
     $('worktree-menu').disabled = busy || state.view?.environment?.worktreeExists !== true;
     $('merge-state-menu').disabled = busy || frozen || Boolean(state.view?.flow?.blocks.some(isRunning));
     updateIssueDecisionControls(busy);
@@ -2686,7 +2684,13 @@
   async function deleteWorktree() {
     const issueId = state.issueId;
     const expected = await action('delete-worktree');
-    if (!expected || state.issueId !== issueId || !confirm(worktreeDeletionPrompt(expected.path))) return;
+    if (!expected || state.issueId !== issueId) return;
+    if (
+      !confirm(
+        `Delete this worktree and discard its uncommitted changes?\n\n${expected.path}\n\nThe issue branch will be kept.`
+      )
+    )
+      return;
     if (await action('delete-worktree', { expected })) toast('Worktree deleted.');
   }
 
@@ -3370,6 +3374,7 @@
       ...(await json('/api/issue-closure?issue=' + encodeURIComponent(issue.id))),
       kind: 'close',
       flowRevision: flow.revision,
+      offerClosureRetro: flow.blocks.some((block) => block.kind === 'retro'),
     }));
   }
   $('close-with-reason').addEventListener('click', openClosure);

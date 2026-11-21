@@ -2013,6 +2013,7 @@ try {
     const flow = service.flows.read(service.flows.selected(issueId));
     assert.ok(flow.workspace?.checkout);
     const { checkout, branch } = flow.workspace;
+    const previewBranchRevision = git(project, 'rev-parse', branch);
     if (!service.lifecycleRuns[issueId]?.work) {
       saveLifecycle(
         service,
@@ -2027,7 +2028,7 @@ try {
     const previewPromise = page.waitForEvent('dialog');
     await menu.selectOption('delete');
     const preview = await previewPromise;
-    assert.match(preview.message(), /Delete this issue worktree/);
+    assert.match(preview.message(), /Delete this worktree and discard its uncommitted changes/);
     assert.ok(preview.message().includes(realpathSync(checkout)));
     await preview.dismiss();
     assert.ok(readFileSync(join(checkout, 'source.txt'), 'utf8'));
@@ -2036,17 +2037,12 @@ try {
     writeFileSync(uncommitted, 'Uncommitted work.');
     page.once('dialog', (dialog) => void dialog.accept());
     await menu.selectOption('delete');
-    await page.locator('#error-message').filter({ hasText: 'Unsaved workspace changes' }).waitFor();
-    assert.equal(readFileSync(uncommitted, 'utf8'), 'Uncommitted work.');
-    rmSync(uncommitted);
-
-    page.once('dialog', (dialog) => void dialog.accept());
-    await menu.selectOption('delete');
     await page.getByText('Worktree deleted.', { exact: true }).waitFor();
     assert.equal(await menu.isDisabled(), true);
     assert.equal(await menu.getAttribute('title'), 'This issue’s worktree has been deleted.');
     assert.throws(() => readFileSync(join(checkout, 'source.txt')), /ENOENT/);
-    assert.equal(git(project, 'branch', '--list', branch), '');
+    assert.equal(existsSync(uncommitted), false);
+    assert.equal(git(project, 'rev-parse', branch), previewBranchRevision);
     assert.equal(service.flows.selected(closedIssueId).closure.reason, 'fixed');
     issueId = closedId;
     await page.goto(new URL('/flow?issue=' + issueId, page.url()).href);

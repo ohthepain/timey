@@ -29,6 +29,7 @@ import {
   deleteIssueWorktree,
   issueCleanupRecord,
   issueHasActiveWork,
+  restoreDetachedWorktree,
   retryIssueCleanup,
   runFlowCleanup,
   worktreeCleanupService,
@@ -247,6 +248,7 @@ async function workspaceFor(service, ctx, prepare = true) {
     saveLifecycle(service, record, { chatCheckout: { ...workspace } });
     git(service.root, 'worktree', 'add', '-b', workspace.branch, path, workspace.base);
   }
+  if (prepare && !existsSync(path)) restoreDetachedWorktree(service.root, ctx.issue.id, workspace);
   requireThat(
     existsSync(path),
     'The saved issue checkout is missing. Restore it or explicitly reconcile the saved workspace.'

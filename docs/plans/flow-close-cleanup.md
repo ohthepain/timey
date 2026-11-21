@@ -23,6 +23,12 @@ Agreed design for the Factory issue flow.
 - Close saves the disposition before Cleanup starts. A failed deletion leaves
   the issue Closed. Cleanup retains each resource's result and can retry an
   incomplete deletion without repeating Close.
+- When you close for a reason other than Fixed, the Close dialog lets you choose
+  whether to run a configured Retro before Cleanup.
+- You can use **Worktree → Delete** while the issue is idle, even if a saved
+  closure step is incomplete. Active work, Retro, or Cleanup still blocks
+  deletion. The confirmation asks you to discard uncommitted changes. Timey
+  preserves the branch and recreates the checkout from it when needed.
 
 ## Prior decisions affected
 

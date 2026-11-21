@@ -1697,6 +1697,9 @@ test('opted-in closure holds the worktree until Retro succeeds and files idle ap
   assert.equal(flows.selected(id).closed, true);
   assert.equal(existsSync(checkout), true);
   assert.equal(read().blocks.find((item) => item.kind === 'cleanup').attempts.length, 0);
+  await waitUntil(() => !flows.closureBusy(id));
+  const deletion = await submit(await flows.view(id), 'delete-worktree');
+  assert.equal(deletion.path, realpathSync(checkout));
   assert.equal(
     flows.issues().some((item) => item.state === 'needs-approval'),
     false
@@ -1704,6 +1707,7 @@ test('opted-in closure holds the worktree until Retro succeeds and files idle ap
   await submit(await flows.view(id), 'retry-closure');
   await waitUntil(() => retroRuns === 2);
   assert.equal(flows.closureBusy(id), true);
+  await assert.rejects(submit(await flows.view(id), 'delete-worktree', { expected: deletion }), /still in progress/);
   const archive = await moveIssueStorage(service, { action: 'archive', issueIds: [id] });
   assert.equal(archive.results[0].status, 'archived');
   assert.equal((await flows.view(id)).issue.location, 'archive');
@@ -1761,13 +1765,12 @@ test('opted-in closure holds the worktree until Retro succeeds and files idle ap
     basis: decisionBasis(reopenedQueue, reopened),
     resolution: 'obsolete',
     reason: 'Fixture reopened.',
+    runClosureRetro: false,
   });
-  await waitUntil(() => !flows.closureBusy(id));
-  assert.notEqual(read().closing.id, previousClosure);
-  assert.equal(retroRuns, 3);
-  await submit(await flows.view(id), 'skip-retro');
   await waitUntil(() => read().closing.complete);
-  assert.equal(read().closing.skipRetro, true);
+  assert.notEqual(read().closing.id, previousClosure);
+  assert.equal(retroRuns, 2);
+  assert.equal(read().closing.retro, false);
 });
 
 test('automatic closure requires an unrevoked opt-in and a Factory-confirmed Merge', async (t) => {

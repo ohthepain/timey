@@ -111,6 +111,10 @@ import { FlowOvernight } from './flow-overnight.mjs';
 
 const hiddenRepoFolders = new Set(['.git', '.issues', 'node_modules', '.next', '.turbo', 'coverage', 'dist', 'build']);
 const confirmationBlocks = new Set(['close', 'delete-worktree']);
+
+function declinesClosureRetro({ resolution, runClosureRetro }) {
+  return Boolean(resolution && resolution !== 'fixed' && runClosureRetro === false);
+}
 const branchActions = new Set([
   'abort-merge',
   'open-worktree',
@@ -758,7 +762,7 @@ class IssueFlows {
       id: randomUUID(),
       startedAt: new Date().toISOString(),
       resolution: input.resolution,
-      retro: requestBlock(flow).data.runRetro === true,
+      retro: requestBlock(flow).data.runRetro === true && !declinesClosureRetro(input),
       branches,
     };
     delete flow.autoClose;
@@ -1062,6 +1066,7 @@ class IssueFlows {
           'skip-retro',
           'cleanup-again',
           'open-worktree',
+          'delete-worktree',
         ].includes(action),
         'Finish the saved closure sequence before changing this flow.'
       );
@@ -1541,13 +1546,13 @@ class IssueFlows {
     return { ...(await this.view(issue.id)), branchUpdateSummary: outcome.summary };
   }
   async deleteWorktree(issue, flow, expected) {
-    requireThat(!flow.closing || flow.closing.complete, 'Finish the saved closure sequence before deleting resources.');
+    requireThat(!issueHasActiveWork(this.service, issue.id), 'An issue operation is still in progress.');
     const workspace = flowWorkspace(this.service, flow);
     requireThat(workspace?.checkout && existsSync(workspace.checkout), 'This issue has no available worktree.');
     const cleanupService = worktreeCleanupService(this.service, issue.id, workspace);
     if (!expected) return deleteIssueWorktree(cleanupService, { issueId: issue.id });
     this.pauseAutoplay(issue.id, 'Worktree deletion requested.');
-    await deleteIssueWorktree(cleanupService, { issueId: issue.id, expected });
+    await deleteIssueWorktree(cleanupService, { issueId: issue.id, expected, checkoutOnly: true });
     return this.view(issue.id);
   }
   editGraph(issue, flow, input, catalog) {
