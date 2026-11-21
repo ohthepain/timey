@@ -36,6 +36,10 @@ export function queueIssueNumbers(root, ids) {
   return mapNumbers(readRegistry(join(root, '.issues', filename)), ids);
 }
 
+export function savedIssueNumbers(root, ids) {
+  return mapNumbers(readRegistry(join(root, '.issues', filename)), ids);
+}
+
 function acquireNumberLock(lock, file, ids) {
   for (let attempt = 0; attempt < 100; attempt += 1) {
     if (tryCreateLock(lock)) return true;

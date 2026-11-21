@@ -1,4 +1,5 @@
 import { investigationReportsBrowserChecks } from './flow-browser-investigation-reports.mjs';
+import { issueStatusFoldersBrowserChecks } from './flow-browser-issue-status-folders.mjs';
 import { projectIssuesBrowserChecks } from './flow-browser-project-issues.mjs';
 import { errorRecoveryBrowserChecks } from './flow-browser-error-recovery.mjs';
 import { mergeStateBrowserChecks } from './flow-browser-merge-state.mjs';
@@ -267,6 +268,7 @@ function connectionRecoveryIssue() {
 function checkExcluded(name) {
   if (!browserScenarioSelected(name)) return true;
   const selections = [
+    ['--issue-status-folders', 'Status pseudo-folders track project issues without moving them'],
     ['--project-issues', 'Closed issue selections archive together and issue links open the normal view'],
     ['--actions-menu', 'Actions menu lists two running Flow blocks'],
     ['--merged-issue', 'Merged issues preserve history and expose only closure controls'],
@@ -501,7 +503,7 @@ try {
         files.append(file);
       }
     });
-    await page.locator('#issue-list [data-issue="20261120-sidebar-overflow-0"]').waitFor();
+    await page.locator('#open-issues [data-issue="20261120-sidebar-overflow-0"]').waitFor();
     const observations = [];
     for (const viewport of [
       { width: 1440, height: 720 },
@@ -554,6 +556,9 @@ try {
     await page.setViewportSize({ width: 1440, height: 960 });
     await page.reload();
   });
+  await check('Status pseudo-folders track project issues without moving them', () =>
+    issueStatusFoldersBrowserChecks({ page, project, service, poll, screenshot, output, root })
+  );
   await check('Closed issue selections archive together and issue links open the normal view', () =>
     projectIssuesBrowserChecks({ page, project, root, output })
   );
@@ -608,7 +613,7 @@ try {
     })
   );
   await check('Local notes capture and handoff preserve flow', async () => {
-    await localNotesBrowserChecks({ page, project, service, poll, screenshot });
+    await localNotesBrowserChecks({ page, project, service, poll, screenshot, output, candidate });
     assert.deepEqual(unexpectedConsoleErrors(logs.console), []);
   });
   await check(folderSettingsCheck, () =>
@@ -819,7 +824,7 @@ try {
       await page.getByLabel('Search', { exact: true }).selectOption('Scan source');
       return clickAction(page.getByRole('button', { name: 'Find issues', exact: true }));
     };
-    const sidebarIssue = (id) => page.locator(`#issue-list [data-issue="${id}"]`);
+    const sidebarIssue = (id) => page.locator(`#open-issues [data-issue="${id}"]`);
     const disclosure = page.locator('#issue-list [data-toggle-folder="Browser folder"]');
     await disclosure.click();
     assert.equal(await sidebarIssue(issueId).isVisible(), false);
@@ -1078,7 +1083,7 @@ try {
   });
   await check('Numbered full issue names wrap and sidebar resizing survives reload', async () => {
     const data = await view();
-    const name = page.locator('[data-issue="' + issueId + '"] .issue-name');
+    const name = page.locator('#open-issues [data-issue="' + issueId + '"] .issue-name');
     assert.equal(await name.textContent(), '#' + data.issue.issueNumber + ' - ' + data.issue.title);
     const separator = page.locator('#sidebar-resizer');
     const before = await page.locator('.sidebar').boundingBox();
@@ -1843,10 +1848,10 @@ try {
       (data) => data.flow.blocks.find(({ id }) => id === 'work').attempts.at(-1)?.status === 'running',
       'Work did not start.'
     );
-    await page.locator(`[data-issue="${previousIssueId}"]`).click();
+    await page.locator(`#open-issues [data-issue="${previousIssueId}"]`).click();
     await page.locator('#issue-title').filter({ hasText: 'A renamed issue' }).waitFor();
     assert.equal((await view()).autoplay.mode, 'playing');
-    await page.locator(`[data-issue="${issueId}"]`).click();
+    await page.locator(`#open-issues [data-issue="${issueId}"]`).click();
     await page.getByRole('button', { name: 'Pause issue' }).click();
     await poll(view, (data) => data.autoplay.mode === 'paused', 'Pause was not applied.');
     await page.getByRole('button', { name: 'Resume issue' }).click();
@@ -2025,7 +2030,7 @@ try {
     assert.equal(service.flows.read(service.flows.selected(proposal.id)).folder, 'Retro items');
     const reportPath = join(project, '.issues', proposal.id + '.md');
     assert.equal(existsSync(reportPath), true);
-    const row = page.locator(`#issue-list [data-issue="${proposal.id}"]`);
+    const row = page.locator(`#open-issues [data-issue="${proposal.id}"]`);
     await page.goto(new URL('/?issue=' + proposal.id, page.url()).href);
     await row.waitFor();
     await clickAction(remove);
@@ -2212,7 +2217,7 @@ try {
       await page.locator('#issue-results-title').filter({ hasText: 'Needs your input' }).waitFor();
       assert.match(await page.locator('#issue-results-message').textContent(), /eligible reviewer.*Continue/);
       assert.equal(await page.locator('#issue-input-link').getAttribute('href'), flow.destination.url);
-      await page.locator(`[data-issue="${id}"] .issue-input-label`).waitFor();
+      await page.locator(`#open-issues [data-issue="${id}"] .issue-input-label`).waitFor();
       await page
         .locator(`#graph [data-block="${merge.id}"] .block-status`)
         .filter({ hasText: 'Needs your input' })
@@ -2258,7 +2263,7 @@ try {
       await page.reload();
       await page.locator('#issue-title').filter({ hasText: 'Review before merging' }).waitFor();
       assert.equal(await page.locator('#issue-input-actions').isVisible(), false);
-      assert.equal(await page.locator(`[data-issue="${id}"] .issue-input-label`).count(), 0);
+      assert.equal(await page.locator(`#open-issues [data-issue="${id}"] .issue-input-label`).count(), 0);
       assert.equal(calls, 2);
       flow = service.flows.read(issue);
       flow.blocks

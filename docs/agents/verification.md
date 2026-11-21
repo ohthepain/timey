@@ -827,3 +827,11 @@ buttons in both directions, verifies that switching clears selection and the
 editor, and archives a closed selection with Archive all. It also verifies that
 the disabled direction caret is hidden for fixed status ordering and reappears
 for an order whose direction can change.
+
+`node scripts/flow-browser.mjs --issue-status-folders` checks the rendered In progress
+and Blocked sidebar collections with disposable reports in multiple folders. Saved
+attempts and an injected active registry entry cover running, blocked, human input,
+approval, interrupted and stopped states. It checks live polling after status
+changes and explicit Pause, collection order, foreign-project exclusion, unchanged
+report bytes and folder assignments. It saves `issue-status-folders-proof.json` and
+`issue-status-folders.png` in the reported evidence directory. It starts no model.

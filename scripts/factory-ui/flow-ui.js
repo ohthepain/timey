@@ -737,9 +737,27 @@
     const collection = (id, name, content) =>
       `<details id="${id}" class="issue-folder" data-collection data-view-controlled-open${state.search || !state.collapsedCollections.has(id) ? ' open' : ''}><summary class="folder-toggle">${name}</summary><div class="folder-items">${content}</div></details>`;
     const empty = '<p class="sidebar-empty">No matching issues.</p>';
+    const statusCollections = [
+      { id: 'in-progress-issues', name: 'In progress', matches: (issue) => issue.status === 'running' },
+      {
+        id: 'blocked-status-issues',
+        name: 'Blocked',
+        matches: (issue) =>
+          issue.status !== 'running' &&
+          (['blocked', 'need-input', 'needs-approval'].includes(issue.status) || issue.waitingForApproval),
+      },
+    ].map(({ id, name, matches }) => {
+      const members = issues.filter((issue) => !issue.paused && issue.status !== 'closed' && matches(issue));
+      return collection(
+        id,
+        `${name}<span class="folder-count">${members.length}</span>`,
+        members.map(row).join('') || empty
+      );
+    });
     view.render(
       $('issue-list'),
-      `<div id="open-issues">${groups || empty}</div>` +
+      statusCollections.join('') +
+        `<div id="open-issues">${groups || empty}</div>` +
         collection('closed-issues', 'Closed', closed.map(row).join('') || empty) +
         collection(
           'archived-issues',
