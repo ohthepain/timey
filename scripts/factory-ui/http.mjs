@@ -43,7 +43,9 @@ import { SidebarFiles } from './sidebar-files.mjs';
 import { folderSettingsView, changeFolderSettings } from './folder-settings-routes.mjs';
 import { folderStrategies, changeFolderStrategy } from './folder-strategies.mjs';
 import { defaultIssueFolder } from './issue-folder-settings.mjs';
-import { initializeProjectLifecycle, readProjectSettings } from './project-settings.mjs';
+import { initializeProjectLifecycle } from './project-settings.mjs';
+import { readProjectSettingsOverview, changeProjectSettings } from './project-settings-overview.mjs';
+import { readProjectPreferences, saveProjectPreferences } from './project-preferences.mjs';
 import { ProjectHome } from './project-home.mjs';
 import { ProjectWorktreeCleanup } from './project-worktree-cleanup.mjs';
 import { ProjectRemoteBranchCleanup } from './project-remote-branch-cleanup.mjs';
@@ -243,6 +245,8 @@ async function mutation(service, path, value, owner) {
     },
     '/api/folder-delete': () => flows(service).deleteFolder(value),
     '/api/sidebar-files-action': () => new SidebarFiles(service.root).change(value),
+    '/api/project-settings': () => changeProjectSettings(service, value),
+    '/api/project-preferences': () => saveProjectPreferences(service, value),
     '/api/project-settings-initialize': () => initializeProjectLifecycle(service, value),
     '/api/ui-sources': () => {
       service.ownServer();
@@ -447,7 +451,8 @@ async function read(service, request, response, owner) {
     '/api/sidebar-directory': () => new SidebarFiles(service.root).directory(Object.fromEntries(url.searchParams)),
     '/api/sidebar-file': () => new SidebarFiles(service.root).file(Object.fromEntries(url.searchParams)),
     '/api/capture-grilling-skills': () => readClarificationSkills(service.root).filter((item) => item.kind === 'skill'),
-    '/api/project-settings': () => readProjectSettings(service.root),
+    '/api/project-settings': () => readProjectSettingsOverview(service),
+    '/api/project-preferences': () => readProjectPreferences(service.root),
     '/api/project-home': () => projectHome(service).view(),
     '/api/investigation-reports': () => {
       const reports = new InvestigationReports(service.root);
@@ -474,7 +479,9 @@ async function read(service, request, response, owner) {
         skills,
         setup: skillSetup(
           skills,
-          choices.filter((entry) => entry.kind === 'skill').map((entry) => entry.skill),
+          url.searchParams.get('all') === 'true'
+            ? undefined
+            : choices.filter((entry) => entry.kind === 'skill').map((entry) => entry.skill),
           service.root,
           Object.fromEntries(choices.filter((entry) => entry.source).map((entry) => [entry.name, entry.source]))
         ),
@@ -647,6 +654,9 @@ function readResource(service, request, response, owner) {
     '/flow-ui.js': 'flow-ui.js',
     '/branch-repair-ui.js': 'branch-repair-ui.js',
     '/project-home-ui.js': 'project-home-ui.js',
+    '/project-settings-ui.js': 'project-settings-ui.js',
+    '/project-settings.css': 'project-settings.css',
+    '/hotkeys-ui.js': 'hotkeys-ui.js',
     '/project-admin-ui.js': 'project-admin-ui.js',
     '/investigation-issue-ui.js': 'investigation-issue-ui.js',
     '/investigation-flow-controls-ui.js': 'investigation-flow-controls-ui.js',

@@ -5,6 +5,8 @@
   const carets = new WeakMap();
   let hovered = null;
   let recording = null;
+  let heldDictation = null;
+  const modifierKeys = { Control: 'ctrlKey', Alt: 'altKey', Shift: 'shiftKey', Meta: 'metaKey' };
   const fieldSelector = 'textarea:not([readonly]):not([disabled]), input[type="text"]:not([readonly]):not([disabled])';
   function button(action, label) {
     const element = document.createElement('button');
@@ -13,7 +15,7 @@
     element.type = 'button';
     element.dataset.aiAction = action;
     element.setAttribute('aria-label', label);
-    element.title = action === 'dictate' ? 'Dictate (Alt+D)' : label;
+    element.title = label;
     if (action === 'bro') element.setAttribute('aria-pressed', 'false');
     return element;
   }
@@ -231,7 +233,7 @@
     view.block.hidden = false;
     hovered = view.block;
   }
-  function dictate(view) {
+  function dictate(view, continuous = false) {
     if (recording) {
       recording.stop();
       return;
@@ -248,20 +250,25 @@
     const after = original.slice(caret.end);
     let expected = original;
     const recognizer = new Recognition();
-    recognizer.continuous = false;
+    recognizer.continuous = continuous;
     recognizer.interimResults = true;
     recognizer.onresult = (event) => {
+      if (recording !== recognizer) return;
       if (!acceptsTranscript(field, expected)) return;
       const insertion = [...event.results].map((result) => result[0].transcript).join(' ');
       expected = before + insertion + after;
       field.value = expected;
-      field.setSelectionRange(before.length + insertion.length, before.length + insertion.length);
+      const position = before.length + insertion.length;
+      field.setSelectionRange(position, position);
+      carets.set(field, { start: position, end: position });
       field.dispatchEvent(new Event('input', { bubbles: true }));
     };
     recognizer.onerror = (event) => {
       view.status.textContent = 'Dictation failed. ' + event.error;
     };
-    recognizer.onend = () => endDictation(view);
+    recognizer.onend = () => {
+      if (recording === recognizer) endDictation(view);
+    };
     try {
       field.focus({ preventScroll: true });
       field.setSelectionRange(caret.start, caret.end);
@@ -269,6 +276,7 @@
       recognizer.start();
       view.status.textContent = 'Listening…';
       view.toolbar.querySelector('[data-ai-action="dictate"]').textContent = 'Stop';
+      return recognizer;
     } catch (error) {
       recording = null;
       view.status.textContent = 'Dictation could not start. ' + error.message;
@@ -334,25 +342,57 @@
     const view = mounted.get(action.closest('.ai-text-block, .ai-text-field'));
     if (view) void actions[action.dataset.aiAction](view);
   }
-  function isDictationKey(event) {
-    return event.altKey && event.code === 'KeyD' && !event.repeat;
+  function dictationKey(event) {
+    return heldDictation?.code === event.code
+      ? 'held'
+      : ['dictateHot', 'dictateCold'].find((name) => window.FactoryHotkeys.matches(event, name, true));
   }
   function keydown(event) {
-    if (!isDictationKey(event)) return;
-    if (event.ctrlKey || event.metaKey) return;
+    const action = dictationKey(event);
+    if (!action) return;
     event.preventDefault();
     event.stopImmediatePropagation();
-    routeDictation();
+    if (event.repeat) return;
+    const handlers = { dictateHot: holdDictation, dictateCold: toggleDictation, held: () => {} };
+    handlers[action](event);
   }
-  function routeDictation() {
-    if (hovered) return dictate(mounted.get(hovered));
-    routeFocusedDictation(document.activeElement);
+  function toggleDictation() {
+    if (recording) recording.stop();
+    else routeDictation(true);
   }
-  function routeFocusedDictation(focused) {
+  function holdDictation(event) {
+    if (heldDictation || recording) return;
+    const recognizer = routeDictation(true);
+    if (recognizer)
+      heldDictation = {
+        code: event.code,
+        recognizer,
+        modifiers: Object.keys(modifierKeys).filter((key) => event[modifierKeys[key]]),
+      };
+  }
+  function releasesHeldKey(event) {
+    if (!event) return true;
+    return [event.code === heldDictation.code, heldDictation.modifiers.includes(event.key)].some(Boolean);
+  }
+  function releaseDictation(event) {
+    if (!heldDictation) return;
+    if (!releasesHeldKey(event)) return;
+    const { recognizer } = heldDictation;
+    heldDictation = null;
+    if (recording === recognizer) recognizer.stop();
+  }
+  function routeDictation(continuous) {
+    if (hovered) return dictate(mounted.get(hovered), continuous);
+    const focused = document.activeElement;
     const view = mounted.get(focused.closest('.ai-text-block, .ai-text-field'));
-    if (view) return dictate(view);
-    if (focused.matches(fieldSelector)) return dictate(fieldView(focused));
-    document.getElementById('discuss-mic')?.click();
+    if (view) return dictate(view, continuous);
+    const field = dictationField(focused);
+    if (field) return dictate(fieldView(field), continuous);
+  }
+  function dictationField(focused) {
+    const field = focused.matches(fieldSelector) ? focused : document.getElementById('discuss-draft');
+    if (!field?.matches(fieldSelector)) return null;
+    return field.checkVisibility() ? field : null;
   }
   function preserve(current, next) {
     const view = mounted.get(current);
@@ -369,6 +409,11 @@
   document.addEventListener('pointerdown', preventControlFocus);
   document.addEventListener('click', click);
   document.addEventListener('keydown', keydown, true);
+  document.addEventListener('keyup', releaseDictation, true);
+  window.addEventListener('blur', () => releaseDictation());
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) releaseDictation();
+  });
   window.FactoryTextControls = { refresh, selection, preserve };
   const observer = new MutationObserver(() => refresh());
   observer.observe(document.body, {

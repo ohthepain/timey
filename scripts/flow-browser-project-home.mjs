@@ -342,6 +342,8 @@ async function cleanRemoteBranches(page, screenshot) {
 async function cleanLocalBranches(page, service, screenshot) {
   const { root } = service;
   const { repository } = JSON.parse(readFileSync(join(root, '.issues/issue-delivery-config.json'), 'utf8'));
+  service.projectLocalBranchCleanup = null;
+  service.projectArchiveDeletion = null;
   service.localBranchCleanupOptions = {
     provider: () => ({
       gh: async (args) =>

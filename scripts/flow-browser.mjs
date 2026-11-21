@@ -43,6 +43,7 @@ import { withQueueConfiguration } from './flow-browser-queue-configuration.mjs';
 import { projectNavigationBrowserChecks } from './flow-browser-project-navigation.mjs';
 import { projectHomeBrowserChecks, investigationFlowsBrowserChecks } from './flow-browser-project-home.mjs';
 import { projectDiscussBrowserChecks } from './flow-browser-project-discuss.mjs';
+import { projectSettingsBrowserChecks } from './flow-browser-project-settings.mjs';
 import { aiTextBrowserChecks } from './flow-browser-ai-text.mjs';
 import { interfaceStateBrowserChecks } from './flow-browser-interface-state.mjs';
 import { localNotesBrowserChecks } from './flow-browser-local-notes.mjs';
@@ -93,6 +94,9 @@ const assets = [
   'issue-folder-drag-ui.js',
   'sidebar-files-ui.js',
   'folder-settings-ui.js',
+  'project-settings-ui.js',
+  'project-settings.css',
+  'hotkeys-ui.js',
   'investigation-followups-ui.js',
   'project-home-ui.js',
   'project-discuss-ui.js',
@@ -131,6 +135,7 @@ const homeCheck = 'Project home investigates selected branches and reviews Autom
 const reportsCheck = 'Investigation reports retain content, reading state and shared discussion';
 const investigationFlowsCheck = 'Investigations use ordinary flows and independent retained outputs';
 const discussCheck = 'Project Discuss retains independent conversations, settings and explicit controls';
+const settingsCheck = 'Project Settings addressable pages preserve drafts, sources and explicit saves';
 const aiTextCheck = 'AI text offers copy bro and caret-aware hovered dictation';
 const interfaceStateCheck = 'Refresh preserves expanded activity, editor size, drafts and copied selection';
 const issueResultsCheck = 'Issue results appear below the banner without replacing playback status';
@@ -290,6 +295,7 @@ function checkExcluded(name) {
     ['--project-home', homeCheck],
     ['--project-navigation', navigationCheck],
     ['--project-discuss', discussCheck],
+    ['--project-settings', settingsCheck],
     ['--ai-text', aiTextCheck],
     ['--investigation-reports', reportsCheck],
     ['--investigation-flows', investigationFlowsCheck],
@@ -582,6 +588,11 @@ try {
     )
   );
   await check(discussCheck, () => projectDiscussBrowserChecks({ page, project, service, poll, screenshot }));
+  await check(settingsCheck, () =>
+    withQueueConfiguration({ page, project, root }, () =>
+      projectSettingsBrowserChecks({ page, project, service, logs, poll, screenshot, output, candidate })
+    )
+  );
   await check(aiTextCheck, () => aiTextBrowserChecks({ page, project, service, poll, screenshot }));
   await check(interfaceStateCheck, () => interfaceStateBrowserChecks({ page, project, service, poll, screenshot }));
   await check('Issues and Local notes use matching text styles', () =>
@@ -738,15 +749,22 @@ try {
     const labels = join(project, '.issues/triage-labels.md');
     rmSync(labels, { force: true });
     await page.getByRole('button', { name: 'Project settings', exact: true }).click();
-    await page.getByText('Lifecycle configuration is missing.', { exact: true }).waitFor();
+    const settings = page.locator('#project-settings-dialog');
+    await settings.locator('[data-settings-page="lifecycle"]').click();
+    const initialize = settings.getByRole('button', { name: 'Initialize lifecycle configuration', exact: true });
+    const openFile = settings.getByRole('button', { name: 'Open file', exact: true });
+    await initialize.waitFor();
+    assert.equal(await openFile.isDisabled(), true);
     await screenshot('project-settings-missing');
     assert.equal(logs.execution.length, 0);
     assert.equal(logs.modelCalls.length, 0);
     await page.keyboard.press('Escape');
     assert.throws(() => readFileSync(labels), /ENOENT/);
     await page.getByRole('button', { name: 'Project settings', exact: true }).click();
-    await page.getByRole('button', { name: 'Initialize lifecycle configuration', exact: true }).click();
-    await page.getByText('Lifecycle configuration is present.', { exact: true }).waitFor();
+    await settings.locator('[data-settings-page="lifecycle"]').click();
+    await initialize.click();
+    await poll(() => openFile.isEnabled(), Boolean, 'Initialized lifecycle file did not become available.');
+    assert.equal(await initialize.count(), 0);
     const saved = readFileSync(labels, 'utf8');
     assert.match(saved, /ready-to-close/);
     assert.equal(logs.execution.length, 0);
@@ -754,7 +772,9 @@ try {
     await page.keyboard.press('Escape');
     await page.reload();
     await page.getByRole('button', { name: 'Project settings', exact: true }).click();
-    await page.getByText('Lifecycle configuration is present.', { exact: true }).waitFor();
+    await settings.locator('[data-settings-page="lifecycle"]').click();
+    await poll(() => openFile.isEnabled(), Boolean, 'Saved lifecycle file did not remain available.');
+    assert.equal(await initialize.count(), 0);
     assert.equal(readFileSync(labels, 'utf8'), saved);
     await screenshot('project-settings-configured');
     await page.keyboard.press('Escape');

@@ -107,8 +107,13 @@ including exact live/replay CSV parity and lifecycle cleanup.
 
 `scripts/factory-ui/project-settings.mjs` presents the trusted human-input policy
 from `guard.mjs` and provides explicit setup of a missing lifecycle file from the
-pinned local-issues template. The Flow header's gear opens these settings. The
-settings endpoint does not accept changes to the trusted human-input policy.
+pinned local-issues template. The Flow header's gear opens the categorized Settings window.
+`project-settings-overview.mjs` projects lifecycle sources, connection references
+and supported storage options without exposing secrets. `project-settings-ui.js`
+owns direct page URLs and draft navigation. `project-preferences.mjs` owns project
+chat prompt overrides and hotkey validation in `user/factory-preferences.json`.
+The settings endpoint does not accept changes to the trusted human-input policy.
+See [project Settings](../plans/project-settings.md).
 
 The experimental native handoff starts at `scripts/factory-native-chat.mjs` and
 the `/native-chat?issue=FULL_ID` factory page. It uses the existing shared progress

@@ -7,8 +7,11 @@
     <title>Factory · Flow workspace</title>
     <link rel="stylesheet" href="/flow.css" />
     <link rel="stylesheet" href="/ai-text.css" />
+    <script src="/hotkeys-ui.js" defer></script>
     <script src="/ai-text-ui.js" defer></script>
     <link rel="stylesheet" href="/project-home.css" />
+    <link rel="stylesheet" href="/project-settings.css" />
+    <script src="/project-settings-ui.js" defer></script>
     <link rel="stylesheet" href="/project-discuss.css" />
     <link rel="stylesheet" href="/project-reports.css" />
     <link rel="stylesheet" href="/local-notes.css" />
@@ -996,16 +999,24 @@
     <dialog id="project-settings-dialog" class="modal" aria-labelledby="project-settings-title">
       <div class="modal-heading">
         <h2 id="project-settings-title">Project settings</h2>
-        <button class="icon-button" data-close-dialog="project-settings-dialog" aria-label="Close project settings">
-          ×
-        </button>
+        <button class="icon-button" type="button" data-settings-close aria-label="Close project settings">×</button>
       </div>
-      <section id="project-folder-settings" class="folder-settings-panel" aria-label="Project defaults"></section>
-      <div id="project-settings-content" class="settings-content" aria-live="polite"></div>
-      <p id="project-settings-error" class="inline-error" role="alert" hidden></p>
+      <div class="settings-layout">
+        <nav id="settings-navigation" aria-label="Settings categories"></nav>
+        <section class="settings-body">
+          <h2 id="settings-page-title"></h2>
+          <p id="project-settings-error" class="inline-error" role="alert" hidden></p>
+          <div id="project-settings-content" aria-live="polite"></div>
+        </section>
+      </div>
+    </dialog>
+    <dialog id="settings-unsaved-dialog" class="modal" aria-labelledby="settings-unsaved-title">
+      <h2 id="settings-unsaved-title">Unsaved changes</h2>
+      <p>Save your changes before leaving this page?</p>
       <div class="modal-footer">
-        <button class="small-button" data-close-dialog="project-settings-dialog">Done</button>
-        <button class="primary-button" id="initialize-lifecycle" hidden>Initialize lifecycle configuration</button>
+        <button type="button" class="primary-button" data-unsaved-choice="save">Save</button>
+        <button type="button" class="small-button" data-unsaved-choice="discard">Discard</button>
+        <button type="button" class="small-button" data-unsaved-choice="cancel">Cancel</button>
       </div>
     </dialog>
     <div id="toast" class="toast" role="status" hidden></div>
