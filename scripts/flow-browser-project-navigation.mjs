@@ -16,8 +16,12 @@ export async function projectNavigationBrowserChecks({ page, screenshot }) {
   await page.reload();
   await panel.waitFor({ state: 'visible' });
   assert.equal(await page.getByRole('tab', { name: 'Automate me' }).getAttribute('aria-selected'), 'true');
+  const queueResponse = page.waitForResponse((response) => new URL(response.url()).pathname === '/api/queue');
   await menu.getByRole('button', { name: 'Issues', exact: true }).click();
   await page.getByRole('tabpanel', { name: 'Issues', exact: true }).waitFor({ state: 'visible' });
+  const queue = await queueResponse;
+  assert.equal(queue.status(), 200, await queue.text());
+  await page.frameLocator('#project-issues iframe').getByRole('button', { name: 'Open', exact: true }).waitFor();
   await menu.getByRole('button', { name: 'Home', exact: true }).click();
   await page.getByRole('tabpanel', { name: 'Home', exact: true }).waitFor({ state: 'visible' });
   await screenshot('project-navigation');
