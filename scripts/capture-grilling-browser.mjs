@@ -50,6 +50,7 @@ try {
   await page.getByLabel('Description', { exact: true }).fill('Review the issue before implementation.');
   await page.getByLabel('Grill me', { exact: true }).check();
   await page.getByLabel('Grilling skill', { exact: true }).selectOption('grill-me');
+  await page.locator('#capture-grill-skill').scrollIntoViewIfNeeded();
   await page.screenshot({ path: join(output, 'selection.png') });
   await page.getByRole('button', { name: 'Create issues', exact: true }).click();
   await page.getByRole('alert').filter({ hasText: 'Disposable save failure' }).waitFor();
