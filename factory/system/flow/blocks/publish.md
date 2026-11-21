@@ -16,18 +16,19 @@ Save the proof that supports the result and report any evidence you could not ob
 
 # Details
 
-| Key                  | Source                    | Label                 | Type      | Options                           | Default |
-| -------------------- | ------------------------- | --------------------- | --------- | --------------------------------- | ------- |
-| title                | Request.title             | Issue title           | text      |                                   |         |
-| type                 | Request.type              | Issue type            | choice    | ["bug","feature","investigation"] |         |
-| goal                 | Request.goal              | Goal                  | long text |                                   |         |
-| requestedProof       | Request.requestedProof    | Requested proof       | long text |                                   |         |
-| wording              | Request.wording           | Original wording      | long text |                                   |         |
-| delivery             | Destination.branch        | Destination branch    | text      |                                   |         |
-| candidateBase        | Work.candidateBase        | Candidate base        | text      |                                   |         |
-| candidateTree        | Work.candidateTree        | Candidate tree        | text      |                                   |         |
-| candidateCommit      | Work.candidateCommit      | Candidate commit      | text      |                                   |         |
-| candidateUncommitted | Work.candidateUncommitted | Candidate uncommitted | boolean   |                                   |         |
+| Key                    | Source                      | Label                     | Type      | Options                           | Default |
+| ---------------------- | --------------------------- | ------------------------- | --------- | --------------------------------- | ------- |
+| title                  | Request.title               | Issue title               | text      |                                   |         |
+| type                   | Request.type                | Issue type                | choice    | ["bug","feature","investigation"] |         |
+| goal                   | Request.goal                | Goal                      | long text |                                   |         |
+| requestedProof         | Request.requestedProof      | Requested proof           | long text |                                   |         |
+| wording                | Request.wording             | Original wording          | long text |                                   |         |
+| delivery               | Destination.branch          | Destination branch        | text      |                                   |         |
+| candidateBase          | Work.candidateBase          | Candidate comparison base | text      |                                   |         |
+| candidateWorkspaceBase | Work.candidateWorkspaceBase | Original workspace base   | text      |                                   |         |
+| candidateTree          | Work.candidateTree          | Candidate tree            | text      |                                   |         |
+| candidateCommit        | Work.candidateCommit        | Candidate commit          | text      |                                   |         |
+| candidateUncommitted   | Work.candidateUncommitted   | Candidate uncommitted     | boolean   |                                   |         |
 
 # Artifacts
 
