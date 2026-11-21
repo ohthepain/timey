@@ -111,8 +111,9 @@ provider submissions in `project-discuss-dictation.json`. Real dictation require
 browser speech-recognition support and microphone permission; audio is not saved
 by Timey. Native provider availability is a separate smoke check.
 The Discuss scenario also opens enough conversations to overflow at desktop and
-narrow widths. It checks container bounds and scrolls to every tab, saving the
-observed widths and visibility in `project-discuss-tabs.json`.
+narrow widths. It checks container bounds, hidden scrollbar styles, and scrolling
+to every tab, saving the observed styles, widths and visibility in
+`project-discuss-tabs.json`.
 The Discuss scenario saves `project-discuss-styles.json` beside its screenshot.
 It records the source commit and each rendered message's top and bottom border
 styles and widths, so divider checks can use observed computed styles.
@@ -861,3 +862,11 @@ approval, interrupted and stopped states. It checks live polling after status
 changes and explicit Pause, collection order, foreign-project exclusion, unchanged
 report bytes and folder assignments. It saves `issue-status-folders-proof.json` and
 `issue-status-folders.png` in the reported evidence directory. It starts no model.
+
+`node scripts/flow-browser.mjs --local-notes` checks that collapsed and expanded
+Notes each retain their state after refresh and saves `local-notes-disclosure.json`.
+`node scripts/flow-browser.mjs --project-issues` checks the closed selection action
+reads Archive selected and saves `closed-issues-action.json` beside its screenshot.
+`node scripts/flow-browser.mjs --issue-status-folders` compares the rendered Blocked
+and In progress carets with a regular sidebar folder in both states. It saves
+`issue-status-carets.json` and screenshots of each expanded and collapsed section.
