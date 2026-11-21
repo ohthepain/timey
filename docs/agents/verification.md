@@ -41,6 +41,8 @@ configuration only when the scenario created it. This preserves later scenarios'
 assertions that no work has started and lifecycle setup is still required. It also
 restores the disposable project's Git configuration after adding its publication remote. Run
 `node scripts/flow-browser.mjs --no-changes --folder-settings` to check that boundary.
+The missing-lifecycle browser scenario removes the disposable project's lifecycle
+file before opening settings, even when earlier scenarios initialized it.
 
 `node --test scripts/flow.check.mjs scripts/flow-delivery.check.mjs` checks the
 merged-issue lock, preserved definitions and attempts, external merge observation,
@@ -108,6 +110,9 @@ and no automatic submission for "go" in the middle. They retain the observed
 provider submissions in `project-discuss-dictation.json`. Real dictation requires
 browser speech-recognition support and microphone permission; audio is not saved
 by Timey. Native provider availability is a separate smoke check.
+The Discuss scenario also opens enough conversations to overflow at desktop and
+narrow widths. It checks container bounds and scrolls to every tab, saving the
+observed widths and visibility in `project-discuss-tabs.json`.
 The Discuss scenario saves `project-discuss-styles.json` beside its screenshot.
 It records the source commit and each rendered message's top and bottom border
 styles and widths, so divider checks can use observed computed styles.
