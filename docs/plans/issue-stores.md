@@ -166,7 +166,8 @@ live resource or permission checks were performed during this design discussion.
 | `FACTORY_DB_USER`                                 | Postgres user                                          |
 | `FACTORY_DB_PASSWORD`                             | Postgres authentication                                |
 | `FACTORY_ARTIFACTS_BUCKET`                        | Existing S3 bucket for shared artifacts                |
-| `AWS_REGION` or the configured AWS profile region | AWS resource region                                    |
+| `FACTORY_ARTIFACTS_BUCKET_REGION`                 | S3 bucket region, confirmed as `eu-central-1`          |
+| `AWS_REGION` or the configured AWS profile region | DynamoDB region when a DynamoDB store is configured    |
 | Existing AWS role or profile                      | Credentials for the selected S3 and DynamoDB resources |
 
 Store choices and connection references belong in project configuration. Keep
@@ -178,6 +179,8 @@ Factory can use `timey_issues_db` on the same Postgres server. A separate schema
 inside `timey_db` is not allowed. `FACTORY_ISSUES_DB_URL` must target the dedicated
 Factory database. Configuration validation must reject the installed application's
 database target, including connections that differ only in credentials or schema.
+The user confirmed that the supplied connection targets a dedicated Factory
+database. This is a configuration statement, not a live connection check.
 
 `factory` is the proposed schema name inside the dedicated Factory database.
 A migration identity needs ownership or appropriate creation privileges there.
@@ -203,7 +206,11 @@ the application's retention policy is undecided.
 
 Use the existing AWS credential mechanism. The JavaScript SDK supports a
 [default credential provider chain](https://docs.aws.amazon.com/sdk-for-javascript/v3/developer-guide/setting-credentials-node.html)
-and accepts the region through [`AWS_REGION` or shared configuration](https://docs.aws.amazon.com/sdk-for-javascript/v3/developer-guide/setting-region.html).
+and accepts an explicit client region or a region through
+[`AWS_REGION` or shared configuration](https://docs.aws.amazon.com/sdk-for-javascript/v3/developer-guide/setting-region.html).
+The proposed S3 implementation passes `FACTORY_ARTIFACTS_BUCKET_REGION` as its
+explicit region. It must not let a different DynamoDB or profile region silently
+override the bucket's region.
 No new application-specific AWS access-key secret is required by this proposal.
 
 Choose the AWS account and region for DynamoDB. Leave table creation until the
