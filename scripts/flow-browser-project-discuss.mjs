@@ -503,4 +503,65 @@ export async function projectDiscussBrowserChecks({ page, service, project, poll
   assert.equal(afterLateImage.latestVisible, false, 'Late image loading pulled the reader down.');
   assert.ok(afterLateImage.bottomDistance > 500);
   await screenshot('project-discuss-scroll');
+
+  await conversationTabOverflowChecks({ page, service, project, screenshot, attachedConversation });
+}
+
+async function conversationTabOverflowChecks({ page, service, project, screenshot, attachedConversation }) {
+  for (let index = 0; index < 12; index++) {
+    const conversation = (await service.projectDiscuss.action({ action: 'create' })).selected;
+    conversation.title = `Overflow conversation ${index + 1} with a long title`;
+    service.projectDiscuss.save(conversation);
+  }
+  await page.goto('/?projectTab=discuss&conversation=' + attachedConversation);
+  await page.locator('#discuss-conversation-tabs .discuss-conversation-tab').last().waitFor();
+  const tabEvidence = { observations: [] };
+  for (const width of [1440, 640]) {
+    await page.setViewportSize({ width, height: 960 });
+    const observation = await page.evaluate(() => {
+      const discuss = document.querySelector('#project-discuss').getBoundingClientRect();
+      const container = document.querySelector('#project-home').getBoundingClientRect();
+      const strip = document.querySelector('#discuss-conversation-tabs');
+      strip.scrollLeft = 0;
+      const tabs = [...strip.querySelectorAll('.discuss-conversation-tab')].map((tab) => {
+        tab.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'instant' });
+        const bounds = tab.getBoundingClientRect();
+        const viewport = strip.getBoundingClientRect();
+        return {
+          title: tab.title,
+          scrollLeft: strip.scrollLeft,
+          visible: bounds.left >= viewport.left - 1 && bounds.right <= viewport.right + 1,
+        };
+      });
+      return {
+        viewportWidth: window.innerWidth,
+        documentWidth: document.documentElement.scrollWidth,
+        containerLeft: container.left,
+        containerRight: container.right,
+        discussLeft: discuss.left,
+        discussRight: discuss.right,
+        tabViewportWidth: strip.clientWidth,
+        tabScrollWidth: strip.scrollWidth,
+        scrollbarWidth: getComputedStyle(strip).scrollbarWidth,
+        scrollbarDisplay: getComputedStyle(strip, '::-webkit-scrollbar').display,
+        tabs,
+      };
+    });
+    tabEvidence.observations.push(observation);
+    writeFileSync(join(dirname(project), 'project-discuss-tabs.json'), JSON.stringify(tabEvidence, null, 2) + '\n');
+    assert.ok(observation.documentWidth <= width, 'Many conversation tabs overflow the page.');
+    assert.ok(
+      observation.discussLeft >= observation.containerLeft && observation.discussRight <= observation.containerRight,
+      'Many conversation tabs widen Discuss beyond its container.'
+    );
+    assert.ok(observation.tabScrollWidth > observation.tabViewportWidth, 'The conversation tabs must overflow.');
+    assert.equal(observation.scrollbarWidth, 'none', 'The conversation tabs must hide their scrollbar.');
+    assert.ok(
+      observation.tabs.every((tab) => tab.visible),
+      'Horizontal scrolling must reveal every conversation tab.'
+    );
+    assert.ok(observation.tabs.at(-1).scrollLeft > 0, 'Reaching the final tab must scroll horizontally.');
+    await screenshot('project-discuss-tabs-' + width);
+  }
+  await page.setViewportSize({ width: 1440, height: 960 });
 }

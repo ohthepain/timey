@@ -24,6 +24,7 @@ import { listAvailableSkills, selectedSkills, skillInputs } from './skills.mjs';
 import { readModelSettings } from './model-settings.mjs';
 import { executionBlockSkill, executionStarted, resolveIssueExecutionSettings } from './issue-execution-settings.mjs';
 import { retainSourceIssueEvidence } from './flow-source-evidence.mjs';
+import { rejectedOversizedAttempt } from './flow-reconciliation.mjs';
 import { saveLifecycle } from './lifecycle-store.mjs';
 import {
   deleteIssueWorktree,
@@ -430,7 +431,7 @@ function commandArtifacts(definition, result) {
   const files = {};
   for (const { key, kind, label } of definition?.artifacts ?? []) {
     if (kind === 'file') {
-      const evidence = result.evidence?.find((item) => item.key === key);
+      const evidence = result.evidence?.findLast((item) => item.key === key);
       if (evidence) files[key] = { ...evidence, label };
     }
     if (kind === 'value' && key === 'candidate' && result.result?.head) values[key] = result.result.head;
@@ -535,6 +536,10 @@ function modelPrompt(ctx, options) {
   if (options.branchConflictTask) return options.branchConflictTask;
   if (options.workBase)
     return blockInput(ctx, {
+      workExecution: {
+        issueId: ctx.issue.id,
+        task: 'Implement the saved issue in this checkout. This Work invocation starts implementation of an already-created issue. Capture-only instructions to create an idle issue belong to its earlier creation and are satisfied; use the underlying requested change and its implementation acceptance criteria as the goal and proof. Preserve all product constraints, required human decisions, permission boundaries and later block guards. Issue creation controls and live idle-status checks are not prerequisites for this implementation. If the saved request contains only capture instructions and no underlying change, report the missing scope as human input.',
+      },
       workComparisonBase: options.workBase,
       destinationRevision: options.destinationRevision,
       formatAndAuditCommand: [
@@ -636,10 +641,11 @@ function workingTree(workspace) {
   }
 }
 
-function retainCandidateIdentity(definition, retained, workspace, head) {
-  const candidate = workingTree(workspace);
+function retainCandidateIdentity(definition, retained, workspace, head, comparisonBase) {
+  const candidate = { ...workingTree(workspace), base: comparisonBase ?? workspace.base };
   const values = {
-    candidateBase: workspace.base,
+    candidateBase: candidate.base,
+    candidateWorkspaceBase: workspace.base,
     candidateTree: candidate.tree,
     candidateCommit: head,
     candidateUncommitted: candidate.uncommitted,
@@ -693,6 +699,26 @@ function modelInstructions(ctx, workspace, outputExecution) {
     .join('\n\n');
 }
 
+function modelConversationBinding(service, ctx, state, savedBlock, basis) {
+  const previous = ctx.block.attempts?.findLast(
+    (attempt) =>
+      attempt.id !== ctx.attempt.id &&
+      !attempt.reconciledAt &&
+      ['running', 'stopping', 'uncertain'].includes(attempt.status)
+  );
+  const recover =
+    previous &&
+    !rejectedOversizedAttempt(service, ctx.flow, ctx.block, previous, savedBlock) &&
+    (savedBlock?.threadId
+      ? savedBlock
+      : { threadId: state.threadId || service.lifecycleRuns[ctx.issue.id]?.workThreadId });
+  const last = ctx.block.attempts?.findLast((attempt) => attempt.id !== ctx.attempt.id);
+  const rejected = last && rejectedOversizedAttempt(service, ctx.flow, ctx.block, last, savedBlock);
+  const binding =
+    ctx.continuing && !last?.invalidatedAt && !rejected && savedBlock?.basis === basis ? { ...savedBlock } : { basis };
+  return { previous, recover, binding };
+}
+
 async function runModel(service, ctx, owned, options) {
   ctx = withGroupProof(ctx);
   ctx = {
@@ -731,23 +757,11 @@ async function runModel(service, ctx, owned, options) {
       ctx.block.comments,
     ])
   );
-  const previous = ctx.block.attempts?.findLast(
-    (attempt) =>
-      attempt.id !== ctx.attempt.id &&
-      !attempt.reconciledAt &&
-      ['running', 'stopping', 'uncertain'].includes(attempt.status)
-  );
-  const recover =
-    previous &&
-    (savedBlock?.threadId
-      ? savedBlock
-      : { threadId: state.threadId || service.lifecycleRuns[ctx.issue.id]?.workThreadId });
-  const last = ctx.block.attempts?.findLast((attempt) => attempt.id !== ctx.attempt.id);
-  const binding = ctx.continuing && !last?.invalidatedAt && savedBlock?.basis === basis ? { ...savedBlock } : { basis };
+  const { previous, recover, binding } = modelConversationBinding(service, ctx, state, savedBlock, basis);
   service.issueChats?.release(ctx.issue.id);
   const folder = evidenceDirectory(service, ctx);
   const source = retainSourceIssueEvidence(service.root, ctx.issue.source_issue, folder, ctx.issue.source_attempt);
-  if (source) ctx = { ...ctx, sourceEvidence: source.value };
+  if (source) ctx = { ...ctx, sourceEvidence: source.promptValue };
   const outputPath = join(folder, options.repair ? 'repair-' + options.repair.round + '.txt' : 'output.txt');
   let liveText = '';
   const progress = modelCommandProgress(ctx);
@@ -845,7 +859,7 @@ async function runModel(service, ctx, owned, options) {
   try {
     ctx.signal.throwIfAborted();
     requireThat(
-      !previous || recover?.threadId,
+      !previous || rejectedOversizedAttempt(service, ctx.flow, ctx.block, previous, savedBlock) || recover?.threadId,
       'Recover the original Codex conversation before continuing this block.'
     );
     if (recover?.threadId && recover.threadId !== binding.threadId) {
@@ -942,7 +956,7 @@ async function runModel(service, ctx, owned, options) {
     const retained = modelArtifacts(ctx.definition, outputs.at(-1), workspace, response);
     outputExecution?.complete(modelManifest(outputs.at(-1)), retained);
     const head = git(workspace.checkout, 'rev-parse', 'HEAD');
-    const candidate = retainCandidateIdentity(ctx.definition, retained, workspace, head);
+    const candidate = retainCandidateIdentity(ctx.definition, retained, workspace, head, scope.workBase);
     retainWorkCandidate(ctx.definition, retained, workCheck, head);
     return {
       summary: outputs.at(-1).slice(0, 1200),
@@ -960,7 +974,8 @@ async function runModel(service, ctx, owned, options) {
         iterations: rounds,
         head,
         tree: candidate.tree,
-        base: workspace.base,
+        base: candidate.base,
+        workspaceBase: workspace.base,
         commit: head,
         uncommitted: candidate.uncommitted,
         ...workFocusedResult(ctx.block.kind, outputs.at(-1)),

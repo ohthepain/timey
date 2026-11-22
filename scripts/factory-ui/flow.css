@@ -1528,16 +1528,16 @@ kbd {
 #server-actions-dialog button:disabled {
   opacity: 0.45;
 }
-.settings-content {
+:where(#project-settings-content) {
   line-height: 1.7;
   overflow-wrap: anywhere;
 }
-.settings-content h3,
-.settings-content p,
-.settings-content details {
+:where(#project-settings-content) h3,
+:where(#project-settings-content) p,
+:where(#project-settings-content) details {
   margin-bottom: 12px;
 }
-.settings-content pre {
+:where(#project-settings-content) pre {
   white-space: pre-wrap;
   max-height: 260px;
   overflow: auto;
@@ -2209,12 +2209,12 @@ kbd {
 }
 
 [data-collection] > summary::before {
-  content: '▸';
-  color: var(--muted);
+  width: 7px;
+  height: 8px;
 }
 
 [data-collection][open] > summary::before {
-  content: '▾';
+  transform: rotate(90deg);
 }
 
 .sidebar-file-directory > summary,
@@ -2475,4 +2475,12 @@ kbd {
 .sidebar-issues-link {
   font-size: 12px;
   line-height: 20px;
+}
+
+.graph-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+.graph-scroll[data-scrolling] {
+  scrollbar-color: var(--muted) transparent;
 }

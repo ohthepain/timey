@@ -84,7 +84,7 @@ export class GitHubAppCredentials {
       typeof token.token === 'string' && token.token && expires > this.now() + 60000,
       'Invalid GitHub App token expiry.'
     );
-    this.cached = { token: token.token, expires, appId: app.id, slug: app.slug, installationId: installation.id };
+    this.cached = installationSession(token, installation, app, expires);
     return this.cached;
   }
   async session() {
@@ -95,6 +95,17 @@ export class GitHubAppCredentials {
       });
     return this.pending;
   }
+}
+
+function installationSession(token, installation, app, expires) {
+  return {
+    token: token.token,
+    expires,
+    appId: app.id,
+    slug: app.slug,
+    installationId: installation.id,
+    permissions: token.permissions ?? installation.permissions ?? {},
+  };
 }
 
 function authenticationTransportFailure(error, path) {

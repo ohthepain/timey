@@ -22,6 +22,10 @@ authorizes this documentation update; it does not authorize implementation.
 - Discuss controls issues through their existing operations. It does not change
   issue handling, participate in issue execution, or receive ongoing issue input.
   The earlier proposal to report issue progress back into Discuss was rejected.
+- Issues created from Discuss describe the agreed future work and its acceptance
+  criteria. Instructions to create only and leave the issue idle apply to the
+  creation operation and stay in the conversation and receipt. Saved descriptions
+  retain product constraints, prerequisites and required human approvals.
 - Support multiple saved project conversations with New chat and a conversation
   selector. Retain each conversation's history, drafts, model, effort, and selected
   skills.

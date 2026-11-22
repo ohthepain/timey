@@ -83,12 +83,13 @@ that failure. A missing-proof message alone does not explain the blocker.
 
 # Artifacts
 
-| Key                  | Kind  | Label                    | Type    | Options |
-| -------------------- | ----- | ------------------------ | ------- | ------- |
-| response             | file  | Block response           | file    |         |
-| proof                | file  | Requested proof evidence | file    |         |
-| candidate            | value | Candidate commit         | text    |         |
-| candidateBase        | value | Candidate base           | text    |         |
-| candidateTree        | value | Candidate tree           | text    |         |
-| candidateCommit      | value | Candidate commit         | text    |         |
-| candidateUncommitted | value | Candidate uncommitted    | boolean |         |
+| Key                    | Kind  | Label                     | Type    | Options |
+| ---------------------- | ----- | ------------------------- | ------- | ------- |
+| response               | file  | Block response            | file    |         |
+| proof                  | file  | Requested proof evidence  | file    |         |
+| candidate              | value | Candidate commit          | text    |         |
+| candidateBase          | value | Candidate comparison base | text    |         |
+| candidateWorkspaceBase | value | Original workspace base   | text    |         |
+| candidateTree          | value | Candidate tree            | text    |         |
+| candidateCommit        | value | Candidate commit          | text    |         |
+| candidateUncommitted   | value | Candidate uncommitted     | boolean |         |

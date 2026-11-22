@@ -6,6 +6,8 @@ import { join, resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { createFlowExecutor } from './factory-ui/flow-executor.mjs';
 import { digest } from './factory-ui/common.mjs';
+import { BlockCatalog } from './factory-ui/block-catalog.mjs';
+import { blockDetails, definitionMap } from './factory-ui/flow-block-data.mjs';
 import { conversationMessages, conversationState, conversationFiles } from './factory-ui/conversation-store.mjs';
 import { resumeWorkDependencies, runWorkVerification } from './factory-ui/flow-verification.mjs';
 
@@ -275,6 +277,49 @@ test('an explicit work block makes one model turn and records its managed checko
   );
   assert.equal(conversationState(f.root, f.issue.id).flowBlocks['block-work'].status, 'idle');
   assert.ok(f.progress.includes('Observed progress.'));
+});
+
+test('Work retains passing combined Flow browser scenarios as focused Merge checks', async (t) => {
+  const f = fixture(t);
+  const focusedTests = [
+    [
+      'node',
+      'scripts/flow-browser.mjs',
+      '--project-discuss',
+      '--project-issues',
+      '--local-notes',
+      '--issue-status-folders',
+    ],
+  ];
+  f.connection.turn = async () => '```flow-result\n' + JSON.stringify({ focusedTests }) + '\n```';
+  const result = await f.run('work');
+  assert.deepEqual(result.result.focusedTests, focusedTests);
+});
+
+test('Work and Retry distinguish implementation from an earlier idle issue capture', async (t) => {
+  const f = fixture(t);
+  const details = [
+    { key: 'goal', value: 'Create an idle issue capturing the agreed project Settings design.' },
+    {
+      key: 'constraints',
+      value:
+        'Create the issue only and leave it idle; do not start implementation. Preserve inheritance and keep secrets read-only.',
+    },
+  ];
+  await f.run('work', { details });
+  await f.run('work', { details, continuing: true });
+  const turns = f.calls.filter(({ method }) => method === 'turn');
+  assert.equal(turns.length, 2);
+  for (const turn of turns) {
+    const input = JSON.parse(turn.prompt);
+    assert.equal(input.workExecution.issueId, f.issue.id);
+    assert.match(input.workExecution.task, /Implement the saved issue/);
+    assert.match(input.workExecution.task, /capture-only.*earlier creation/i);
+    assert.match(input.workExecution.task, /Preserve.*product constraints.*human.*permission/i);
+    assert.match(input.workExecution.task, /implementation.*proof/i);
+    assert.deepEqual(input.details, details);
+  }
+  assert.equal(f.calls.filter(({ method }) => method === 'resume').length, 1);
 });
 
 test('a new checkout uses the selected starting commit and retains it when the source branch moves', async (t) => {
@@ -827,7 +872,8 @@ function mergeFixture(
     async mergeDelay() {
       await onWait?.(advanceTarget);
     },
-    async execute({ cwd, args }) {
+    async execute({ cwd, args, log }) {
+      if (log) writeFileSync(log, '$ git ' + args.join(' ') + '\n', { flag: 'a' });
       onGit?.(args);
       const git = (...values) =>
         execFileSync('git', ['-C', cwd, ...values], { encoding: 'utf8', stdio: 'pipe' }).trim();
@@ -1023,14 +1069,17 @@ test('Merge repairs a target conflict in its owning checkout before it verifies 
 });
 
 test('Merge asks its worker to repair an inherited browser failure and verifies the repaired commit', async (t) => {
+  let failedEvidence;
   const f = mergeFixture(t, {
     beforeVerify({ checkout }) {
       if (readFileSync(join(checkout, 'source.txt'), 'utf8') === 'Initial source.\n') {
         const folder = join(f.root, '.issues/failed-merge');
         mkdirSync(folder, { recursive: true });
         const log = join(folder, 'browser.log');
+        const commandLog = join(folder, 'command.log');
         const summary = join(folder, 'summary.json');
         writeFileSync(log, 'AssertionError: Only explicit Send starts a reply\n');
+        writeFileSync(commandLog, 'Initial verification failed.\n');
         writeFileSync(
           summary,
           JSON.stringify({
@@ -1040,9 +1089,14 @@ test('Merge asks its worker to repair an inherited browser failure and verifies 
             ],
           })
         );
+        failedEvidence = [
+          { key: 'log', path: commandLog, label: 'Verification command output' },
+          { path: summary, label: 'Verification summary' },
+          { path: log, label: 'Failed verification checkpoint' },
+        ].map((item) => ({ ...item, sha256: digest(readFileSync(item.path)) }));
         throw Object.assign(Error('Closure waited for background resource checks.'), {
           verificationFailure: { summaries: [summary], logs: [log] },
-          evidence: [{ path: summary, label: 'Verification summary' }],
+          evidence: structuredClone(failedEvidence),
         });
       }
     },
@@ -1067,9 +1121,23 @@ test('Merge asks its worker to repair an inherited browser failure and verifies 
     execFileSync('git', ['-C', checkout, 'commit', '-am', 'Repair inherited browser failure']);
     return turn(...args);
   };
-  const result = await f.run('merge');
+  const result = await f.run('merge', {
+    definition: {
+      mergeWorkflow: { policy: 'automatic', pollSeconds: 5, checkTimeoutSeconds: 900, repairAttempts: 3 },
+      artifacts: [{ key: 'log', kind: 'file', label: 'Target fetch and merge output' }],
+    },
+  });
   assert.equal(repairs, 1);
   assert.equal(result.result.revision, 'actual-merge');
+  const selectedLog = result.artifacts.files.log;
+  assert.ok(selectedLog.path.endsWith('/merge.log'));
+  assert.equal(selectedLog.label, 'Target fetch and merge output');
+  assert.match(readFileSync(selectedLog.path, 'utf8'), /\$ git push origin /);
+  assert.deepEqual(result.evidence.slice(0, failedEvidence.length), failedEvidence);
+  for (const checkpoint of failedEvidence) {
+    assert.equal(digest(readFileSync(checkpoint.path)), checkpoint.sha256);
+  }
+  assert.equal(readFileSync(failedEvidence[0].path, 'utf8'), 'Initial verification failed.\n');
   assert.deepEqual(
     f.observations.map(({ operation }) => operation),
     ['ready', 'ready', 'verify', 'push', 'ready', 'ready', 'merge']
@@ -1106,6 +1174,54 @@ async function branchUpdateFixture(t, targetFile = 'incoming.txt') {
     },
   };
 }
+
+test('Work preserves distinct bases after Update Branch and a no-change result through Publish inputs', async (t) => {
+  const checkedBases = [];
+  const f = fixture(t, {
+    async verifyWork(_ctx, workspace) {
+      checkedBases.push(workspace.base);
+      return { evidence: [] };
+    },
+  });
+  f.git('remote', 'add', 'origin', f.root);
+  const first = await f.run('work');
+  const originalBase = first.workspace.base;
+  writeFileSync(join(f.root, 'incoming.txt'), 'Incoming change.\n');
+  f.git('add', 'incoming.txt');
+  f.git('commit', '-m', 'Advance destination');
+  const comparisonBase = f.git('rev-parse', 'HEAD');
+  await f.run('update-branch');
+  const beforeWork = f.git('-C', f.flow.workspace.checkout, 'rev-parse', 'HEAD');
+  const worked = await f.run('work');
+  assert.notEqual(comparisonBase, originalBase);
+  assert.equal(worked.result.head, beforeWork, 'Work returns the existing commit without changes.');
+  assert.equal(worked.workspace.base, originalBase);
+  assert.equal(checkedBases.at(-1), comparisonBase);
+  const prompt = JSON.parse(f.calls.filter(({ method }) => method === 'turn').at(-1).prompt);
+  assert.equal(prompt.workComparisonBase, comparisonBase);
+  assert.equal(prompt.destinationRevision, comparisonBase);
+  assert.equal(worked.result.base, comparisonBase);
+  assert.equal(worked.result.workspaceBase, originalBase);
+  assert.equal(worked.artifacts.values.candidateBase, comparisonBase);
+  assert.equal(worked.artifacts.values.candidateWorkspaceBase, originalBase);
+  assert.equal(worked.artifacts.values.candidate, beforeWork);
+  assert.equal(worked.artifacts.values.candidateUncommitted, false);
+  const work = {
+    id: 'work',
+    kind: 'work',
+    label: 'Work',
+    after: [],
+    attempts: [{ ...worked, status: 'completed' }],
+  };
+  const publish = { id: 'publish', kind: 'publish', label: 'Publish PR', after: ['work'], attempts: [] };
+  f.flow.blocks = [work, publish];
+  const definitions = definitionMap(new BlockCatalog(f.root).read().entries);
+  const details = blockDetails(f.flow, f.issue, publish, definitions);
+  assert.equal(details.find(({ key }) => key === 'candidateBase').value, comparisonBase);
+  const workspaceDetail = details.find(({ key }) => key === 'candidateWorkspaceBase');
+  assert.equal(workspaceDetail.value, originalBase);
+  assert.equal(workspaceDetail.label, 'Original workspace base');
+});
 
 test('Update Branch fetches first and silently saves full local changes only when behind', async (t) => {
   const f = await branchUpdateFixture(t);
@@ -1953,4 +2069,51 @@ test('oversized input is rejected before dispatch and does not retain uncertain 
   );
   assert.equal(connection.turns.size, 0);
   assert.equal(conversationState(f.root, f.issue.id).flowBlocks['block-understand'].status, 'idle');
+});
+
+test('large source issue history reaches Work by retained file reference without exceeding the input limit', async (t) => {
+  const { maximumTextInputLength } = await import('./factory-ui/codex-input.mjs');
+  const f = fixture(t);
+  f.issue.source_issue = 'large-source';
+  mkdirSync(join(f.root, '.issues/closed'), { recursive: true });
+  const report = 'Full source evidence.\n'.repeat(60000);
+  writeFileSync(
+    join(f.root, '.issues/closed/large-source.md'),
+    '---\nid: large-source\ntitle: Large source\nstate: closed\n---\n' + report
+  );
+  const result = await f.run('work');
+  const prompt = f.calls.find(({ method }) => method === 'turn').prompt;
+  assert.ok(prompt.length < maximumTextInputLength, `Work input contains ${prompt.length} characters`);
+  const input = JSON.parse(prompt);
+  assert.equal(input.sourceIssue.issueId, 'large-source');
+  const reference = input.sourceIssue.evidence;
+  const bytes = readFileSync(reference.path, 'utf8');
+  assert.equal(digest(bytes), reference.sha256);
+  assert.ok(JSON.parse(bytes).report.includes(report.trim()));
+  assert.equal(result.evidence.find(({ key }) => key === 'sourceIssue').path, reference.path);
+});
+
+test('Retry replaces a conversation whose oversized first input was never accepted', async (t) => {
+  const { maximumTextInputLength, oversizedTextInputMessage } = await import('./factory-ui/codex-input.mjs');
+  const { appendMessage } = await import('./factory-ui/conversation-store.mjs');
+  const f = fixture(t);
+  await f.run('understand');
+  const state = conversationState(f.root, f.issue.id);
+  delete state.flowBlocks['block-understand'].flowReceipt;
+  const { saveConversationState } = await import('./factory-ui/conversation-store.mjs');
+  saveConversationState(f.root, f.issue.id, state);
+  appendMessage(f.root, f.issue.id, {
+    id: 'flow-request-rejected',
+    kind: 'flow-block-request',
+    blockId: 'block-understand',
+    body: 'x'.repeat(maximumTextInputLength + 1),
+  });
+  f.connection.resume = () => assert.fail('The rejected first turn has no persisted conversation to resume.');
+  await f.run('understand', {
+    continuing: true,
+    attempts: [
+      { id: 'rejected', status: 'blocked', summary: oversizedTextInputMessage, output: 'Running understand block.' },
+    ],
+  });
+  assert.equal(f.calls.filter(({ method }) => method === 'start').length, 2);
 });

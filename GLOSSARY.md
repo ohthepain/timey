@@ -364,9 +364,12 @@ It defaults to the delivery target branch. An idle, unpublished issue can change
 its starting point by moving its saved work onto the new base.
 
 **Flow candidate identity**:
-The base commit, source tree, current commit and uncommitted state captured for a
-flow result. Publication requires a clean committed candidate. Verification of an
-uncommitted tree remains valid after that exact tree is committed, and expires when
+The comparison base, original workspace base, source tree, current commit and
+uncommitted state captured for a flow result. Work records the supplied comparison
+base as `candidateBase` and the checkout creation base as `candidateWorkspaceBase`.
+Update Branch can advance the comparison base while preserving the workspace base.
+Publish PR receives both values with distinct labels. Publication requires a clean
+committed candidate. Verification of an uncommitted tree remains valid after that exact tree is committed, and expires when
 its content changes.
 
 **Flow destination**:

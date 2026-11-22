@@ -3,26 +3,36 @@ import { attachIssueChat, createIssueChatConnection } from './issue-chat-runtime
 import { requireThat } from './common.mjs';
 import { maximumTextInputLength, oversizedTextInputMessage } from './codex-input.mjs';
 
-function rejectedOversizedInput(service, flow, block, binding) {
-  const attempts = block.attempts.filter(
-    (attempt) => !attempt.reconciledAt && ['running', 'stopping', 'uncertain'].includes(attempt.status)
+function hasAttemptOutput(attempt, block) {
+  const output = attempt.output?.trim();
+  return Boolean(output && output !== `Running ${block.kind} block.`);
+}
+
+function isAttemptRequest(message, attempt, block) {
+  return (
+    message.id === 'flow-request-' + attempt.id && message.kind === 'flow-block-request' && message.blockId === block.id
   );
-  return attempts.every((attempt) => {
-    if (
-      attempt.status !== 'uncertain' ||
-      attempt.summary !== oversizedTextInputMessage ||
-      (attempt.output?.trim() && attempt.output.trim() !== `Running ${block.kind} block.`) ||
-      binding?.flowReceipt?.attemptId === attempt.id
-    )
-      return false;
-    const request = conversationMessages(service.root, flow.issueId).find(
-      (message) =>
-        message.id === 'flow-request-' + attempt.id &&
-        message.kind === 'flow-block-request' &&
-        message.blockId === block.id
-    );
-    return request?.body?.length > maximumTextInputLength;
-  });
+}
+
+function mayBeRejectedOversizedAttempt(block, attempt, binding) {
+  return [
+    ['uncertain', 'blocked'].includes(attempt.status),
+    attempt.summary === oversizedTextInputMessage,
+    !hasAttemptOutput(attempt, block),
+    !binding?.flowReceipt,
+  ].every(Boolean);
+}
+
+function exceedsInputLimit(request) {
+  return request?.body?.length > maximumTextInputLength;
+}
+
+export function rejectedOversizedAttempt(service, flow, block, attempt, binding) {
+  if (!mayBeRejectedOversizedAttempt(block, attempt, binding)) return false;
+  const request = conversationMessages(service.root, flow.issueId).find((message) =>
+    isAttemptRequest(message, attempt, block)
+  );
+  return exceedsInputLimit(request);
 }
 
 export async function observeDisconnectedFlow(service, flow, create = createIssueChatConnection) {
@@ -35,7 +45,10 @@ export async function observeDisconnectedFlow(service, flow, create = createIssu
   const state = conversationState(service.root, flow.issueId);
   const threads = blocks.flatMap((block) => {
     const binding = state.flowBlocks?.[block.id];
-    if (rejectedOversizedInput(service, flow, block, binding)) return [];
+    const attempts = block.attempts.filter(
+      (attempt) => !attempt.reconciledAt && ['running', 'stopping', 'uncertain'].includes(attempt.status)
+    );
+    if (attempts.every((attempt) => rejectedOversizedAttempt(service, flow, block, attempt, binding))) return [];
     const threadId = binding?.threadId;
     requireThat(threadId, 'Recover the disconnected block’s original conversation before updating the branch.');
     return [threadId];

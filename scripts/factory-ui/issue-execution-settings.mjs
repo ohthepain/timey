@@ -26,11 +26,11 @@ export function executionStarted(service, flow) {
   );
 }
 
-function inheritedSettings(root, folder) {
+function inheritedSettings(root, folder, resolveFolder = resolveFolderSettings) {
   try {
-    return resolveFolderSettings(root, folder);
+    return resolveFolder(root, folder);
   } catch (error) {
-    const inherited = resolveFolderSettings(root, null);
+    const inherited = resolveFolder(root, null);
     return { ...inherited, errors: [...inherited.errors, { key: 'folder', message: error.message }] };
   }
 }
@@ -51,8 +51,8 @@ function applyOverrides(root, resolved, overrides) {
   resolved.errors = errors;
 }
 
-function retainExistingWork(root, flow, resolved, overrides) {
-  const project = resolveFolderSettings(root, null);
+function retainExistingWork(root, flow, resolved, overrides, resolveFolder = resolveFolderSettings) {
+  const project = resolveFolder(root, null);
   resolved.values.branch = deliveryTarget(flow).branch;
   resolved.sources.branch = 'Existing work';
   resolved.values.skill = 'none';
@@ -71,8 +71,8 @@ function applyDestination(flow, resolved) {
   resolved.sources.branch = flow.destination.pr ? 'Linked pull request' : 'Issue destination';
 }
 
-export function resolveIssueExecutionSettings(root, issue, flow, { started = false } = {}) {
-  const inherited = inheritedSettings(root, flow.folder);
+export function resolveIssueExecutionSettings(root, issue, flow, { started = false, resolveFolder } = {}) {
+  const inherited = inheritedSettings(root, flow.folder, resolveFolder);
   const overrides = { ...localIssueModelOverrides(root, issue.id), ...flow.settings };
   if (flow.destination?.branch) overrides.branch = flow.destination.branch;
   const resolved = {
@@ -85,7 +85,7 @@ export function resolveIssueExecutionSettings(root, issue, flow, { started = fal
     resolved.values = { ...flow.executionSettings.values };
     resolved.sources = { ...flow.executionSettings.sources };
     resolved.errors = [];
-  } else if (started) retainExistingWork(root, flow, resolved, overrides);
+  } else if (started) retainExistingWork(root, flow, resolved, overrides, resolveFolder);
   applyDestination(flow, resolved);
   const basis = digest(JSON.stringify([inherited.basis, overrides, resolved.values, resolved.sources]));
   return { ...resolved, overrides, basis, frozen: Boolean(flow.executionSettings || started) };

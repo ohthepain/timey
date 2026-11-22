@@ -25,6 +25,33 @@ const finishing = new Set([
   '/api/discussion-commit',
   '/api/discussion-end',
 ]);
+const chatRoutes = new Set([
+  '/api/native-chat-prepare',
+  '/api/discussion-open',
+  '/api/discussion-turn',
+  '/api/discussion-skills',
+  '/api/discussion-retro',
+  '/api/coordinator-send',
+  '/api/coordinator-stop',
+  '/api/coordinator-fresh',
+]);
+const chatActions = new Set(['create', 'send', 'retry', 'resume', 'steer', 'close']);
+const routeActions = new Map([
+  ['/api/project-discuss-action', chatActions],
+  ['/api/report-discuss-action', chatActions],
+  [
+    '/api/project-home-action',
+    new Set(['investigation-discuss', 'automate-start', 'automate-message', 'automate-retry']),
+  ],
+]);
+function isChatRequest(path, input) {
+  if (chatRoutes.has(path)) return true;
+  return routeActions.get(path)?.has(input.action);
+}
+function allowedWhilePaused(phase, path, input) {
+  if (finishing.has(path)) return true;
+  return phase === 'paused' && isChatRequest(path, input);
+}
 export function serverControl(service, restart) {
   let phase = 'idle',
     error = null,
@@ -95,14 +122,12 @@ export function serverControl(service, restart) {
     return status();
   }
   function allow(path, input = {}) {
+    if (phase === 'idle') return;
     requireThat(
-      phase === 'idle' || finishing.has(path),
+      allowedWhilePaused(phase, path, input),
       'New work is paused. Turn off No new actions to start more work.'
     );
-    requireThat(
-      phase === 'idle' || !input.continue,
-      'Save these results without continuing while new actions are paused.'
-    );
+    requireThat(!input.continue, 'Save these results without continuing while new actions are paused.');
   }
   function cancel() {
     requireThat(phase !== 'restarting', 'Restart has already started.');

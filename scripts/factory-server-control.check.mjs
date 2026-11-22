@@ -11,6 +11,7 @@ import { controlServerAction } from './factory-ui/server-action.mjs';
 import { runtimeInfo } from './factory-ui/runtime.mjs';
 import { factoryEntry, uiDirectory } from './factory-ui/ui-source.mjs';
 import { JSDOM } from 'jsdom';
+import { createFactoryServer } from './factory-ui/http.mjs';
 
 const delay = (ms) => new Promise((done) => setTimeout(done, ms));
 function loadServerControlDom(html = '<header></header>') {
@@ -110,6 +111,8 @@ test('restart counts actual work once, blocks new work and waits for chats, perm
     control.request();
     assert.throws(() => control.allow('/api/start'), /New work is paused/);
     assert.throws(() => control.allow('/api/lifecycle-answer'), /New work is paused/);
+    assert.throws(() => control.allow('/api/project-discuss-action', { action: 'send' }), /New work is paused/);
+    assert.throws(() => control.allow('/api/discussion-turn'), /New work is paused/);
     assert.throws(() => control.allow('/api/discussion-commit', { continue: true }), /without continuing/);
     control.allow('/api/answer');
     control.allow('/api/discussion-commit');
@@ -285,6 +288,98 @@ test('No new actions pauses dispatch without restarting and can be turned off', 
     control.close();
     service.close();
   }
+});
+
+test('No new actions permits every chat while keeping work dispatch paused', (t) => {
+  const service = new FactoryUI(project(t));
+  const control = serverControl(service);
+  t.after(() => {
+    control.close();
+    service.close();
+  });
+  service.store.connected.add('existing-work');
+  control.pause();
+  for (const path of [
+    '/api/issue-chat-send',
+    '/api/issue-chat-control',
+    '/api/native-chat-prepare',
+    '/api/discussion-open',
+    '/api/discussion-turn',
+    '/api/discussion-skills',
+    '/api/discussion-retro',
+    '/api/coordinator-send',
+    '/api/coordinator-stop',
+    '/api/coordinator-fresh',
+  ])
+    assert.doesNotThrow(() => control.allow(path), path);
+  for (const path of ['/api/project-discuss-action', '/api/report-discuss-action']) {
+    for (const action of ['create', 'send', 'retry', 'resume', 'steer', 'close'])
+      assert.doesNotThrow(() => control.allow(path, { action }), `${path}: ${action}`);
+    assert.throws(() => control.allow(path, { action: 'unknown' }), /New work is paused/);
+  }
+  for (const action of ['investigation-discuss', 'automate-start', 'automate-message', 'automate-retry'])
+    assert.doesNotThrow(() => control.allow('/api/project-home-action', { action }), action);
+  for (const action of ['investigation-run', 'investigation-retry', 'automate-apply'])
+    assert.throws(() => control.allow('/api/project-home-action', { action }), /New work is paused/);
+  for (const path of ['/api/start', '/api/flow-action', '/api/project-home-action', '/api/coordinator-continue'])
+    assert.throws(() => control.allow(path, { action: 'start' }), /New work is paused/);
+  assert.equal(control.status().phase, 'paused');
+  service.store.connected.clear();
+});
+
+test('Discuss sends and drains queued prompts over HTTP with No new actions enabled', async (t) => {
+  const service = new FactoryUI(project(t));
+  const calls = [];
+  const held = Promise.withResolvers();
+  service.projectDiscussOptions = {
+    modelSettings: () => ({ defaults: { model: 'test', effort: 'high' }, models: [{ id: 'test' }], efforts: ['high'] }),
+    createProvider: () => ({
+      async turn(_session, message) {
+        calls.push(message.text);
+        if (calls.length === 1) await held.promise;
+        return { text: 'Reply' };
+      },
+      close() {},
+    }),
+  };
+  const server = createFactoryServer(service);
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(async () => {
+    held.resolve();
+    await new Promise((resolve) => server.close(resolve));
+    service.close();
+  });
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const page = await fetch(base);
+  const cookie = page.headers.get('set-cookie').split(';')[0];
+  async function post(path, value = {}) {
+    const response = await fetch(base + '/api/' + path, {
+      method: 'POST',
+      headers: { cookie, origin: base, 'content-type': 'application/json', 'x-factory-action': 'manual' },
+      body: JSON.stringify(value),
+    });
+    const result = await response.json();
+    assert.equal(response.status, 200, JSON.stringify(result));
+    return result;
+  }
+  service.store.connected.add('existing-work');
+  await post('server-pause');
+  const { selected } = await post('project-discuss-action', { action: 'create' });
+  for (const text of ['First prompt', 'Queued prompt'])
+    await post('project-discuss-action', { action: 'send', conversationId: selected.id, text });
+  assert.deepEqual(calls, ['First prompt']);
+  held.resolve();
+  const deadline = Date.now() + 5000;
+  while (service.projectDiscuss.active.size && Date.now() < deadline) await delay(10);
+  assert.deepEqual(calls, ['First prompt', 'Queued prompt']);
+  const session = service.projectDiscuss.view(selected.id).selected;
+  assert.equal(
+    session.messages.filter((message) => message.role === 'assistant' && message.status === 'completed').length,
+    2
+  );
+  assert.equal(service.serverControl.status().phase, 'paused');
+  assert.throws(() => service.serverControl.allow('/api/flow-action', { action: 'play' }), /New work is paused/);
+  service.store.connected.clear();
 });
 
 test('header toggle shows immediate feedback while the request is pending', async () => {
