@@ -637,3 +637,100 @@ test('pending execution admission cannot be transferred to a different runner by
   const resumed = await f.project.beginAttempt(input);
   assert.equal(resumed.owner.runnerId, 'runner-a');
 });
+
+test('Coordination migration separates shared Git Issue and Artifact payloads from domain records', async (t) => {
+  const base = gitFixture(t, 'coordination-role-separation-');
+  writeFileSync(join(base.root, '.gitignore'), '.issues/\n');
+  writeFileSync(join(base.root, 'source.txt'), 'Source stays on its own branch.\n');
+  base.git('add', '.');
+  base.git('commit', '-qm', 'Source');
+  const remote = join(base.root, '.issues/remote.git');
+  mkdirSync(join(base.root, '.issues'));
+  base.git('init', '--bare', '-q', remote);
+  base.git('remote', 'add', 'origin', remote);
+  const options = { root: base.root, projectId: 'shared-role-fixture' };
+  const config = { id: 'shared', kind: 'git', remote: 'origin', branch: 'issue-queue' };
+  const physical = await openArtifactStore(config, options);
+  let project;
+  const artifacts = createArtifactRouter({ active: physical, stores: new Map(), records: () => project?.records });
+  const records = await openRecordStore(config, { ...options, artifacts });
+  const issues = await openIssueStore(config, { ...options, artifacts });
+  const target = await openRecordStore({ id: 'coordination-only', kind: 'files' }, { ...options, artifacts });
+  project = createProjectStores({
+    ...options,
+    runnerId: 'runner-a',
+    records,
+    issueStores: { shared: issues },
+    artifacts,
+    recordStores: { 'coordination-only': target },
+  });
+  const id = '20261122-role-separation';
+  const artifactBytes = Buffer.from('Raw artifact body belongs only to its Artifact store.');
+  const ref = await artifacts.put({ body: artifactBytes, mediaType: 'text/plain' });
+  await project.importIssue({
+    id,
+    number: 193,
+    report: report(id),
+    flow: flow(id),
+    storeId: 'shared',
+    operationId: 'import-role-issue',
+  });
+  const original = await project.readIssue(id);
+  const updated = await project.saveIssue({
+    issueId: id,
+    report: report(id, 'Updated role fixture'),
+    expectedRevision: original.revision,
+    operationId: 'edit-role-issue',
+  });
+  const domain = [
+    { key: 'artifact-locations/' + ref.sha256, value: { ref } },
+    { key: 'classic/state/' + id, value: { issueId: id, status: 'paused' } },
+    { key: 'progress/' + id + '/earlier', value: { chunks: [{ artifact: ref }], bytes: artifactBytes.length } },
+  ];
+  await project.coordination.commit(
+    'seed-role-domain',
+    domain.map(({ key }) => ({ key, revision: null })),
+    domain
+  );
+  assert.ok(await records.get('issues/' + id + '/head'));
+  assert.equal((await records.list('issues/' + id + '/history/')).length, 2);
+  assert.equal(
+    Buffer.from((await records.get('artifact/' + ref.sha256)).value.body, 'base64').toString(),
+    artifactBytes.toString()
+  );
+  await project.moveProjectStore({
+    role: 'coordination',
+    storeId: 'coordination-only',
+    operationId: 'separate-coordination-role',
+  });
+  assert.deepEqual(
+    {
+      issueKeys: (await target.list('issues/')).map(({ key }) => key),
+      artifactKeys: (await target.list('artifact/')).map(({ key }) => key),
+    },
+    { issueKeys: [], artifactKeys: [] },
+    'Issue heads/history and raw artifact bodies must stay in their configured role stores.'
+  );
+  for (const entry of domain) assert.deepEqual((await target.get(entry.key)).value, entry.value);
+  assert.equal((await target.get('operations/import-role-issue')).value.status, 'confirmed');
+  assert.equal((await target.get('operations/separate-coordination-role')).value.status, 'confirmed');
+  assert.equal((await project.readIssue(id)).report, updated.report);
+  assert.equal((await issues.history(id)).length, 2);
+  assert.deepEqual(await artifacts.get(ref), artifactBytes);
+  const admitted = await project.beginAttempt({
+    issueId: id,
+    blockId: 'work',
+    attempt: { id: 'after-role-move' },
+    expectedRevision: 1,
+    operationId: 'admit-after-role-move',
+  });
+  assert.equal((await target.get('claims/' + id)).value.token, admitted.owner.token);
+  await project.finishAttempt(admitted.owner, {
+    result: { status: 'completed' },
+    operationId: 'finish-after-role-move',
+  });
+  assert.equal(await target.get('claims/' + id), null);
+  assert.equal((await project.readIssue(id)).flow.blocks[1].attempts[0].status, 'completed');
+  assert.deepEqual(await artifacts.get(ref), artifactBytes);
+  assert.equal((await issues.read(id)).report.toString(), updated.report);
+});

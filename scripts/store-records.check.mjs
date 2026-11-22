@@ -4,7 +4,7 @@ import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { randomUUID, createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
 import {
   DynamoDBClient,
   CreateTableCommand,
@@ -19,6 +19,73 @@ import { cleanEnvironment } from './factory-ui/common.mjs';
 const providers = (process.env.TIMEY_STORE_TEST_PROVIDERS || 'files,git').split(',');
 const sha = (value) => createHash('sha256').update(value).digest('hex');
 const fails = (code) => (error) => error.code === code;
+
+test(
+  'git: fresh advertised commits reuse local objects and fetch missing peer commits',
+  { skip: !providers.includes('git') },
+  async (t) => {
+    const f = await fixture(t, 'git');
+    const trace = join(dirname(f.roots[0]), 'git-transport.trace');
+    const previous = process.env.GIT_TRACE2_EVENT;
+    process.env.GIT_TRACE2_EVENT = trace;
+    try {
+      const one = await f.open();
+      const two = await f.open(1);
+      const starts = async () =>
+        (await readFile(trace, 'utf8'))
+          .trim()
+          .split('\n')
+          .map(JSON.parse)
+          .filter((event) => event.event === 'start' && event.argv[0] === 'git');
+      const newCommands = async (before) => (await starts()).slice(before.length);
+      const created = await one.commit({
+        operationId: 'local-commit',
+        expected: [{ key: 'catalog/a', revision: null }],
+        writes: [{ key: 'catalog/a', value: 'first' }],
+      });
+      let before = await starts();
+      assert.equal((await one.get('catalog/a')).value, 'first');
+      assert.equal(
+        (await newCommands(before)).filter((event) => event.argv.includes('fetch')).length,
+        0,
+        'A confirmed locally created commit needs no fetch after checking its authoritative remote OID.'
+      );
+      assert.equal((await newCommands(before)).filter((event) => event.argv.includes('ls-remote')).length, 1);
+      before = await starts();
+      assert.equal((await two.get('catalog/a')).value, 'first');
+      assert.equal((await newCommands(before)).filter((event) => event.argv.includes('fetch')).length, 1);
+      await two.commit({
+        operationId: 'peer-update',
+        expected: [{ key: 'catalog/a', revision: created.records[0].revision }],
+        writes: [{ key: 'catalog/a', value: 'peer changed' }],
+      });
+      before = await starts();
+      assert.equal((await one.get('catalog/a')).value, 'peer changed');
+      assert.equal((await newCommands(before)).filter((event) => event.argv.includes('fetch')).length, 1);
+      before = await starts();
+      const callbackFailure = Object.assign(Error('Pinned read callback failed.'), { code: 'STORE_CONFLICT' });
+      await assert.rejects(
+        one.readSnapshot(() => {
+          throw callbackFailure;
+        }),
+        { code: 'STORE_CONFLICT' }
+      );
+      assert.equal(
+        (await newCommands(before)).filter((event) => event.argv.includes('fetch')).length,
+        0,
+        'A read callback failure must not be interpreted as a missing local commit.'
+      );
+      assert.deepEqual(
+        (await one.list('catalog/')).map((record) => record.value),
+        ['peer changed']
+      );
+      await f.checkSource();
+    } finally {
+      if (previous === undefined) delete process.env.GIT_TRACE2_EVENT;
+      else process.env.GIT_TRACE2_EVENT = previous;
+    }
+  }
+);
 
 function git(root, ...args) {
   return execFileSync('git', ['-C', root, ...args], {

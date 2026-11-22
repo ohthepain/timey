@@ -81,7 +81,16 @@ export async function openGitRecords(config, { root, projectId }) {
     try {
       const found = (await git(['ls-remote', '--heads', '--', remote, target])).trim();
       if (!found) return await use(null);
-      await git(['fetch', '--no-tags', '--no-write-fetch-head', '--refmap=', '--', remote, `+${target}:${ref}`]);
+      const advertised = found.split(/\s/)[0];
+      let local = false;
+      try {
+        await git(['cat-file', '-e', `${advertised}^{commit}`]);
+        local = true;
+      } catch {
+        /* Fetch a peer commit that is not present in this object database. */
+      }
+      if (local) await git(['update-ref', ref, advertised]);
+      else await git(['fetch', '--no-tags', '--no-write-fetch-head', '--refmap=', '--', remote, `+${target}:${ref}`]);
       return await use((await git(['rev-parse', '--verify', ref])).trim());
     } finally {
       await git(['update-ref', '-d', ref]).catch(() => {});
@@ -199,8 +208,17 @@ export async function openGitRecords(config, { root, projectId }) {
     const paths = (await git(['ls-tree', '-rz', '--name-only', head, '--', `${prefix}records/`]))
       .split('\0')
       .filter(Boolean);
-    const records = await Promise.all(paths.map((path) => readPath(head, path)));
-    return records.filter((record) => record.key.startsWith(start)).sort((a, b) => a.key.localeCompare(b.key));
+    const records = [];
+    let cursor = 0;
+    async function readNext() {
+      while (cursor < paths.length) {
+        const path = paths[cursor++];
+        const record = await readPath(head, path);
+        if (record.key.startsWith(start)) records.push(record);
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(4, paths.length) }, readNext));
+    return records.sort((a, b) => a.key.localeCompare(b.key));
   }
   return {
     async readSnapshot(read) {

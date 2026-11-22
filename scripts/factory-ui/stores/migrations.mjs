@@ -206,7 +206,9 @@ async function copyCoordination(project, operation, seal, target) {
     await redirectCoordination(project, source, operation, seal, target);
     return;
   }
-  const records = await source.list('');
+  const records = (await source.list('')).filter(
+    ({ key }) => !key.startsWith('issues/') && !key.startsWith('artifact/')
+  );
   for (const record of records) {
     const existing = await target.get(record.key);
     if (existing) {
