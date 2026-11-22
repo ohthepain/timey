@@ -1,1 +1,1 @@
-{"key":"project/store-roles","revision":"e4652cc443b29447ca302fe4a93fa96ac4f7de6611c850d189c7e10aabf9c311","value":{"encoding":"json","value":{"artifacts":"files","coordination":"files","migrations":{},"version":1}}}
+{"key":"project/store-roles","revision":"9fbce3b025664da2af1736f1223ca418fb48ef5417d7326bbf38afb3df830b9d","value":{"encoding":"json","value":{"artifacts":"s3","coordination":"files","migrations":{"artifacts":{"operationId":"install-s3-artifacts-project-fc0c83427e06a7cf55c8609e","token":"d7bbbaac-e130-4901-9f4e-7e473e906a83"}},"version":1}}}
