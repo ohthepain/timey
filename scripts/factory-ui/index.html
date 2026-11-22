@@ -2137,6 +2137,7 @@
       <div class="actions"><button id="approve">Confirm</button><button id="cancel">Cancel</button></div>
     </dialog>
     <link rel="stylesheet" href="/ai-text.css" />
+    <script src="/hotkeys-ui.js"></script>
     <script src="/ai-text-ui.js"></script>
     <script src="/view-state.js"></script>
     <script src="/issue-capture-ui.js"></script>
@@ -2912,7 +2913,7 @@
       }
       function projectIssueArchiveButton() {
         if (!closedProjectIssueSelection()) return '';
-        return `<div class="toolbar"><span>${selectedProjectIssueIds.size} selected</span><button type="button" class="primary" data-archive-project-issues ${projectIssueArchive.saving ? 'disabled' : ''}>${projectIssueArchive.saving ? 'Archiving…' : 'Archive all'}</button></div>`;
+        return `<div class="toolbar"><span>${selectedProjectIssueIds.size} selected</span><button type="button" class="primary" data-archive-project-issues ${projectIssueArchive.saving ? 'disabled' : ''}>${projectIssueArchive.saving ? 'Archiving…' : 'Archive selected'}</button></div>`;
       }
       function projectIssueArchiveControls(embedded) {
         if (!embedded) return '';

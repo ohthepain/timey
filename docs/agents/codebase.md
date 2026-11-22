@@ -107,8 +107,13 @@ including exact live/replay CSV parity and lifecycle cleanup.
 
 `scripts/factory-ui/project-settings.mjs` presents the trusted human-input policy
 from `guard.mjs` and provides explicit setup of a missing lifecycle file from the
-pinned local-issues template. The Flow header's gear opens these settings. The
-settings endpoint does not accept changes to the trusted human-input policy.
+pinned local-issues template. The Flow header's gear opens the categorized Settings window.
+`project-settings-overview.mjs` projects lifecycle sources, connection references
+and supported storage options without exposing secrets. `project-settings-ui.js`
+owns direct page URLs and draft navigation. `project-preferences.mjs` owns project
+chat prompt overrides and hotkey validation in `user/factory-preferences.json`.
+The settings endpoint does not accept changes to the trusted human-input policy.
+See [project Settings](../plans/project-settings.md).
 
 The experimental native handoff starts at `scripts/factory-native-chat.mjs` and
 the `/native-chat?issue=FULL_ID` factory page. It uses the existing shared progress
@@ -438,7 +443,13 @@ status only. Each artifact keeps its originating event and attempt reference.
 `flow-source-evidence.mjs` supplies follow-ups with their explicit source
 issue's saved report and ordered attempts from coordinator storage. It retains a
 sanitized input snapshot and verifies GitHub response artifact digests before
-including them. Investigation follow-ups select their recorded `source_attempt`;
+including them. Snapshots larger than 64,000 characters are supplied to the model
+as a path and digest with instructions to read the retained JSON. This keeps
+source history out of the provider's text input limit without discarding it.
+Retry replaces a conversation only when retained evidence confirms its oversized
+first input was rejected with no accepted receipt or model output; other failed
+conversations retain their existing recovery guards.
+Investigation follow-ups select their recorded `source_attempt`;
 Retro follow-ups retain the complete available attempt history. Workers do not
 need the source queue copied into their checkout.
 `issue-prompt-queue.mjs` owns durable prompt identities, revisions and attempt
@@ -710,6 +721,12 @@ The explicit [flow workspace](../adr/0013-explicit-issue-flows.md) starts at
 `scripts/factory-ui/flow.html`, `flow-ui.js`, and `flow.css`. `flow-store.mjs`
 owns the graph and revision-checked edits. `flow-service.mjs` owns flow mutations,
 explicit attempts, invalidation, route rebuilding, capture, and artifact listing.
+Active attempt updates read the persisted graph directly through `FlowStore`.
+They retain revision checks without rediscovering folder settings or rebuilding
+the display. Group eligibility rejects issues with existing work before resolving
+their settings.
+Each Flow view shares a folder settings snapshot across its issue rows. The
+snapshot lasts for that view only; mutation checks resolve current settings.
 `merged-issue.mjs` identifies retained merged delivery and defines the read-only
 policy. Flow operations and HTTP mutation guards enforce it; metadata helpers
 also reject changes to saved merged issues. The observer refreshes linked PRs
@@ -876,7 +893,11 @@ and retains the run report. After Request completes, its owning run can adopt
 the clarified route while manual route changes remain blocked. `flow-block-data.mjs` resolves block addresses, declared inputs and
 retained outputs. `flow-request.mjs` derives the Request fields through a
 temporary Codex discussion. `flow-executor.mjs` runs model blocks in their own
-Codex conversations and uses the protected operation adapters for delivery. `flow-observer.mjs` reads local Git state and separately cached PR facts.
+Codex conversations and uses the protected operation adapters for delivery.
+Command file artifacts select the latest evidence entry with the declared key.
+Merge selects the final delivery log while preserving earlier failed verification
+checkpoints in their original evidence order.
+`flow-observer.mjs` reads local Git state and separately cached PR facts.
 `flow-branches.mjs` lists local refs and snapshots the chosen commit for a new checkout.
 `project-worktree-cleanup.mjs` owns the Admin and `$prune-worktrees` preview and
 batch removal, including open issue checks and the reviewed branch revisions.

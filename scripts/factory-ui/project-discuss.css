@@ -24,7 +24,7 @@
   padding: 24px clamp(16px, 3vw, 40px);
   gap: 18px;
   overflow: hidden;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template: auto minmax(0, 1fr) / minmax(0, 1fr);
 }
 .project-discuss {
   position: relative;
@@ -55,7 +55,7 @@
   min-width: 0;
   gap: 4px;
   overflow-x: auto;
-  scrollbar-width: thin;
+  scrollbar-width: none;
 }
 .discuss-conversation-tab {
   display: flex;

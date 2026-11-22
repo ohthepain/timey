@@ -24,6 +24,7 @@ import { listAvailableSkills, selectedSkills, skillInputs } from './skills.mjs';
 import { readModelSettings } from './model-settings.mjs';
 import { executionBlockSkill, executionStarted, resolveIssueExecutionSettings } from './issue-execution-settings.mjs';
 import { retainSourceIssueEvidence } from './flow-source-evidence.mjs';
+import { rejectedOversizedAttempt } from './flow-reconciliation.mjs';
 import { saveLifecycle } from './lifecycle-store.mjs';
 import {
   deleteIssueWorktree,
@@ -430,7 +431,7 @@ function commandArtifacts(definition, result) {
   const files = {};
   for (const { key, kind, label } of definition?.artifacts ?? []) {
     if (kind === 'file') {
-      const evidence = result.evidence?.find((item) => item.key === key);
+      const evidence = result.evidence?.findLast((item) => item.key === key);
       if (evidence) files[key] = { ...evidence, label };
     }
     if (kind === 'value' && key === 'candidate' && result.result?.head) values[key] = result.result.head;
@@ -535,6 +536,10 @@ function modelPrompt(ctx, options) {
   if (options.branchConflictTask) return options.branchConflictTask;
   if (options.workBase)
     return blockInput(ctx, {
+      workExecution: {
+        issueId: ctx.issue.id,
+        task: 'Implement the saved issue in this checkout. This Work invocation starts implementation of an already-created issue. Capture-only instructions to create an idle issue belong to its earlier creation and are satisfied; use the underlying requested change and its implementation acceptance criteria as the goal and proof. Preserve all product constraints, required human decisions, permission boundaries and later block guards. Issue creation controls and live idle-status checks are not prerequisites for this implementation. If the saved request contains only capture instructions and no underlying change, report the missing scope as human input.',
+      },
       workComparisonBase: options.workBase,
       destinationRevision: options.destinationRevision,
       formatAndAuditCommand: [
@@ -740,15 +745,18 @@ async function runModel(service, ctx, owned, options) {
   );
   const recover =
     previous &&
+    !rejectedOversizedAttempt(service, ctx.flow, ctx.block, previous, savedBlock) &&
     (savedBlock?.threadId
       ? savedBlock
       : { threadId: state.threadId || service.lifecycleRuns[ctx.issue.id]?.workThreadId });
   const last = ctx.block.attempts?.findLast((attempt) => attempt.id !== ctx.attempt.id);
-  const binding = ctx.continuing && !last?.invalidatedAt && savedBlock?.basis === basis ? { ...savedBlock } : { basis };
+  const rejected = last && rejectedOversizedAttempt(service, ctx.flow, ctx.block, last, savedBlock);
+  const binding =
+    ctx.continuing && !last?.invalidatedAt && !rejected && savedBlock?.basis === basis ? { ...savedBlock } : { basis };
   service.issueChats?.release(ctx.issue.id);
   const folder = evidenceDirectory(service, ctx);
   const source = retainSourceIssueEvidence(service.root, ctx.issue.source_issue, folder, ctx.issue.source_attempt);
-  if (source) ctx = { ...ctx, sourceEvidence: source.value };
+  if (source) ctx = { ...ctx, sourceEvidence: source.promptValue };
   const outputPath = join(folder, options.repair ? 'repair-' + options.repair.round + '.txt' : 'output.txt');
   let liveText = '';
   const progress = modelCommandProgress(ctx);
@@ -846,7 +854,7 @@ async function runModel(service, ctx, owned, options) {
   try {
     ctx.signal.throwIfAborted();
     requireThat(
-      !previous || recover?.threadId,
+      !previous || rejectedOversizedAttempt(service, ctx.flow, ctx.block, previous, savedBlock) || recover?.threadId,
       'Recover the original Codex conversation before continuing this block.'
     );
     if (recover?.threadId && recover.threadId !== binding.threadId) {

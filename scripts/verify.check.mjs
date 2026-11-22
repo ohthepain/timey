@@ -45,6 +45,15 @@ test('Merge uses the Request setting and records only completed upstream focused
   assert.deepEqual(normalizeFocusedTests([command, command]), [command]);
   const browser = ['node', 'scripts/capture-grilling-browser.mjs'];
   assert.deepEqual(normalizeFocusedTests([browser]), [browser]);
+  const scenarios = [
+    'node',
+    'scripts/flow-browser.mjs',
+    '--project-discuss',
+    '--project-issues',
+    '--local-notes',
+    '--issue-status-folders',
+  ];
+  assert.deepEqual(normalizeFocusedTests([scenarios]), [scenarios]);
   for (const invalid of [
     ['sh', '-c', 'test'],
     ['pnpm', 'run', 'test:factory'],
@@ -52,6 +61,8 @@ test('Merge uses the Request setting and records only completed upstream focused
     ['node', 'scripts/other-browser.mjs', '--all'],
     ['node', 'scripts/factory-browser.mjs'],
     ['node', 'scripts/flow-browser.mjs'],
+    ['node', 'scripts/flow-browser.mjs', '--project-discuss', 'scripts/other.mjs'],
+    ['node', 'scripts/flow-browser.mjs', '--project-discuss', '--import=other.mjs'],
     ['node', 'scripts/../other-browser.mjs'],
   ])
     assert.throws(() => normalizeFocusedTests([invalid]), /Record focused test commands/);

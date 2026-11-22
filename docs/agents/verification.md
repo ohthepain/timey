@@ -8,7 +8,32 @@ checks recovery of retained oversized rejections, refusal when a receipt exists
 or the request cannot be confirmed, and rejection of new oversized input before
 provider dispatch.
 
+`node --test --test-name-pattern='large source issue history|retained source publication|Retry replaces' scripts/flow-executor.check.mjs`
+checks small inline source context and large source history supplied by file
+reference. The large-history fixture exceeds the provider limit before the fix;
+the bounded request retains the full report in a file with a matching digest.
+The Retry scenario verifies a new conversation is created for a confirmed
+rejected first input instead of resuming a thread with no persisted history.
+
 ## Commands and evidence
+
+`node --test scripts/flow-progress.check.mjs` checks interleaved issue output,
+workspace updates, timing, terminal results and concurrent-edit protection.
+`node scripts/flow-progress-benchmark.mjs PATH` compares the previous and current
+progress-save and group-eligibility paths over five alternating runs. Its
+disposable project contains 27 issues and two output streams. The JSON at `PATH`
+retains HTTP index latency, callback time, exact persisted output bytes and errors.
+This isolates local server work and does not measure model or GitHub latency.
+`node --test scripts/flow-view-settings.check.mjs` checks that each view uses its
+own folder settings snapshot, issue overrides stay separate, edits appear in the
+next view, and started work retains its frozen settings. The folder-settings
+checks also reject grouping after its preview's settings change.
+
+`node --test scripts/factory-server-control.check.mjs` checks that No new actions
+allows chat requests across issue, project, report, temporary, and coordinator
+conversations while work dispatch stays paused. Its HTTP Discuss regression
+sends and drains queued prompts through an injected provider with the switch on
+and another action running. It starts no live model work.
 
 `node scripts/flow-browser.mjs --investigation-reports` checks retained report
 reading and discussion. Its draft-restoration regression holds the discussion
@@ -46,6 +71,8 @@ Run `node scripts/flow-browser.mjs --no-changes --folder-settings` together.
 Add `--reverse-fixture-scenarios` to run folder settings before no-change publication.
 The main browser workflow intentionally shares state between checks and does not
 use this boundary. Independent scenarios opt in at their exported entry point.
+The missing-lifecycle browser scenario removes the disposable project's lifecycle
+file before opening settings, even when earlier scenarios initialized it.
 
 `node --test scripts/flow.check.mjs scripts/flow-delivery.check.mjs` checks the
 merged-issue lock, preserved definitions and attempts, external merge observation,
@@ -113,6 +140,10 @@ and no automatic submission for "go" in the middle. They retain the observed
 provider submissions in `project-discuss-dictation.json`. Real dictation requires
 browser speech-recognition support and microphone permission; audio is not saved
 by Timey. Native provider availability is a separate smoke check.
+The Discuss scenario also opens enough conversations to overflow at desktop and
+narrow widths. It checks container bounds, hidden scrollbar styles, and scrolling
+to every tab, saving the observed styles, widths and visibility in
+`project-discuss-tabs.json`.
 The Discuss scenario saves `project-discuss-styles.json` beside its screenshot.
 It records the source commit and each rendered message's top and bottom border
 styles and widths, so divider checks can use observed computed styles.
@@ -850,7 +881,7 @@ are isolated; the user's production closed reports are never moved by this test.
 
 The project Issues browser check switches through the visible Open and Closed
 buttons in both directions, verifies that switching clears selection and the
-editor, and archives a closed selection with Archive all. It also verifies that
+editor, and archives a closed selection with Archive selected. It also verifies that
 the disabled direction caret is hidden for fixed status ordering and reappears
 for an order whose direction can change.
 
@@ -861,3 +892,17 @@ approval, interrupted and stopped states. It checks live polling after status
 changes and explicit Pause, collection order, foreign-project exclusion, unchanged
 report bytes and folder assignments. It saves `issue-status-folders-proof.json` and
 `issue-status-folders.png` in the reported evidence directory. It starts no model.
+
+`node scripts/flow-browser.mjs --local-notes` checks that collapsed and expanded
+Notes each retain their state after refresh and saves `local-notes-disclosure.json`.
+`node scripts/flow-browser.mjs --project-issues` checks the closed selection action
+reads Archive selected and saves `closed-issues-action.json` beside its screenshot.
+`node scripts/flow-browser.mjs --issue-status-folders` compares the rendered Blocked
+and In progress carets with a regular sidebar folder in both states. It saves
+`issue-status-carets.json` and screenshots of each expanded and collapsed section.
+
+`node scripts/flow-browser.mjs --issue-scrollbar` checks the center issue flow's
+scrollbar. It verifies that wheel scrolling moves the flow and shows its thumb,
+then the thumb hides after scrolling stops. The flow width and scroll position
+remain stable. It saves `issue-scrollbar.json` and screenshots of the idle,
+scrolling and stopped states in the reported evidence directory.

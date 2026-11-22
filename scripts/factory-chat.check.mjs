@@ -16,6 +16,7 @@ import { createIssueChatConnection, attachIssueChat } from './factory-ui/issue-c
 import { CodexConnection } from './factory-ui/codex.mjs';
 import { nameIssueChat } from './factory-ui/chat-name.mjs';
 import { digest } from './factory-ui/common.mjs';
+import { readProjectPreferences, saveProjectPreferences } from './factory-ui/project-preferences.mjs';
 
 function fixture(t) {
   const f = deliveryFixture(t),
@@ -89,6 +90,25 @@ test('one issue conversation persists messages, role contributions and native ch
   assert.equal(f.calls.filter((call) => call.attach === 'new').length, 1);
   assert.equal(f.calls.filter((call) => call.attach === 'persistent-issue-chat').length, 1);
   assert.match(f.calls.findLast((call) => call.name)?.name, /^Issue: .* · waiting$/);
+});
+
+test('issue and investigation chat turns use their distinct project prompt overrides', async (t) => {
+  const f = fixture(t);
+  saveProjectPreferences(f.service, {
+    revision: readProjectPreferences(f.queue.root).revision,
+    prompts: { issue: 'Issue conversation instructions.', investigation: 'Investigation conversation instructions.' },
+  });
+  await f.send('Discuss this issue.', 'issue-prompt-settings');
+  await f.finish();
+  assert.ok(f.calls.findLast((call) => call.prompt).prompt.startsWith('Issue conversation instructions.'));
+  const report = join(f.queue.root, '.issues', f.input.issueId + '.md');
+  writeFileSync(
+    report,
+    readFileSync(report, 'utf8').replace('state: verify', 'state: verify\nrequest_type: investigation')
+  );
+  await f.send('Discuss this investigation.', 'investigation-prompt-settings');
+  await f.finish();
+  assert.ok(f.calls.findLast((call) => call.prompt).prompt.startsWith('Investigation conversation instructions.'));
 });
 
 test('retro on a closed report retains its request and result in the saved issue conversation', async (t) => {

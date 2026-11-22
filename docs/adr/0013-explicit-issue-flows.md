@@ -95,6 +95,11 @@ not imply acceptance or automatically close an issue. Existing PR updates retain
 their normal publication behavior. If the current destination commit is not
 available locally, Update Branch is required before comparison.
 
+Work receives the current implementation task on every invocation, including Retry.
+An earlier instruction to capture an idle issue is satisfied by creation;
+Work implements the underlying change and checks its implementation acceptance
+criteria while preserving product constraints and human decision boundaries.
+Historical wording and clarified fields remain available unchanged.
 Work formats issue changes and checks Fallow before running focused tests. It
 selects relevant tests from the changed behavior and Requested Proof, and adds a
 focused test when existing tests cannot demonstrate the behavior. A failure that

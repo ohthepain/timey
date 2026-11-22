@@ -4,10 +4,15 @@
   if (!root) return;
   const disclosure = document.getElementById('local-notes-toggle');
   const body = document.getElementById('local-notes-body');
+  function setCollapsed(collapsed) {
+    body.hidden = collapsed;
+    disclosure.setAttribute('aria-expanded', String(!collapsed));
+    disclosure.setAttribute('aria-label', (collapsed ? 'Expand ' : 'Collapse ') + 'Local notes');
+  }
+  setCollapsed(window.timeyView.read('local-notes-collapsed', false));
   disclosure.addEventListener('click', () => {
-    body.hidden = !body.hidden;
-    disclosure.setAttribute('aria-expanded', String(!body.hidden));
-    disclosure.setAttribute('aria-label', (body.hidden ? 'Expand ' : 'Collapse ') + 'Local notes');
+    setCollapsed(!body.hidden);
+    window.timeyView.write('local-notes-collapsed', body.hidden);
   });
   const escape = (value) =>
     String(value).replace(
@@ -155,13 +160,7 @@
   document.getElementById('local-note-edit-cancel').onclick = () => editor.close();
   document.getElementById('local-note-quick').onclick = () => openEditor();
   document.addEventListener('keydown', (event) => {
-    if (
-      event.altKey &&
-      !event.ctrlKey &&
-      !event.metaKey &&
-      event.key.toLowerCase() === 'n' &&
-      !document.querySelector('dialog[open]')
-    ) {
+    if (window.FactoryHotkeys.matches(event, 'newNote') && !document.querySelector('dialog[open]')) {
       event.preventDefault();
       openEditor();
     }
