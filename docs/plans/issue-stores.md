@@ -23,8 +23,11 @@ without having to implement claims or store execution logs.
 | Artifact store     | One configured store per project | Full logs, large outputs, screenshots, attachments, evidence, and committed source checkpoints                                     | Files/Git, S3, Postgres       |
 
 All roles default to files/Git. A configured Postgres connection can serve several
-roles using separate records in one database. A project can instead combine
-DynamoDB coordination with S3 artifacts. No separate database is required per role.
+Factory roles using separate records in one dedicated Factory database. Factory
+must never use a database belonging to the installed application, even through a
+different schema. The Factory database can share the application's Postgres
+server or instance. A project can instead combine DynamoDB coordination with S3
+artifacts. No separate database is required per Factory storage role.
 Plain local files remain supported without a database or remote service. Shared
 Git retains the dedicated queue design and does not update source workspaces.
 
@@ -170,10 +173,16 @@ Store choices and connection references belong in project configuration. Keep
 credential values in the existing secret mechanisms. Connections can be reused
 across roles. Merely adding connection settings does not change files/Git defaults.
 
-Prepare one Postgres database or an isolated schema in an existing database.
-`factory` is the proposed schema name. A migration identity needs ownership or
-appropriate creation privileges there. Runtime privileges should cover the
-application's own objects, without requiring a superuser. PostgreSQL documents
+Prepare a dedicated Factory database. For example, if Timey uses `timey_db`,
+Factory can use `timey_issues_db` on the same Postgres server. A separate schema
+inside `timey_db` is not allowed. `FACTORY_ISSUES_DB_URL` must target the dedicated
+Factory database. Configuration validation must reject the installed application's
+database target, including connections that differ only in credentials or schema.
+
+`factory` is the proposed schema name inside the dedicated Factory database.
+A migration identity needs ownership or appropriate creation privileges there.
+Runtime privileges should cover Factory's own objects, without requiring a
+superuser. PostgreSQL documents
 [schema access and creation privileges](https://www.postgresql.org/docs/current/ddl-schemas.html).
 Do not hand-create application tables before reviewing the migrations.
 
@@ -236,6 +245,8 @@ Required observable cases include the following:
   flow, status, artifact, or archive refresh.
 - Connection diagnostics and test output that reveal references and availability
   without exposing credentials or modifying production issues.
+- Dedicated Factory database validation that rejects the installed application's
+  database, including a separate schema or different credentials on that database.
 
 Draft the concrete interfaces, physical schemas, DynamoDB access patterns,
 checkpoint format, progress batching, and provisioning templates before coding.

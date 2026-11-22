@@ -11,6 +11,11 @@ Each project selects one Coordination store for claims and full flow and attempt
 history, and one Artifact store for file contents and source checkpoints. The
 roles can share a configured connection or use different implementations.
 
+Postgres storage uses a dedicated Factory database. It can share a Postgres server
+or instance with the installed application, but must never use the application's
+database, including through a separate schema. Factory storage roles can share
+the dedicated Factory database.
+
 Support files/Git, DynamoDB, and Postgres for Issue and Coordination stores, and
 files/Git, S3, and Postgres for Artifact stores. Default all roles to files/Git.
 Expose Issue store alongside Code destination, require it at creation, and support
