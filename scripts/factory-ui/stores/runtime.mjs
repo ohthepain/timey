@@ -18,6 +18,7 @@ import { readProgress } from '../../factory-progress.mjs';
 
 const runtimes = new WeakMap();
 const bootstrapKey = 'project/bootstrap';
+const displayRefreshInterval = 30_000;
 const methods = {
   issue: ['read', 'list', 'commit', 'history', 'retainedPayloads', 'retireReceipts', 'removeRecords'],
   records: ['get', 'list', 'commit', 'retainedPayloads', 'retireReceipts', 'removeRecords'],
@@ -413,7 +414,31 @@ async function synchronize(runtime, fresh, allowPending) {
   return runtime.project;
 }
 
-export async function ensureProjectStores(service, { fresh = false, allowCached = false, allowPending = false } = {}) {
+function synchronizeOnce(runtime, fresh, allowPending) {
+  if (!runtime.pending) {
+    runtime.pendingFresh = fresh || (!runtime.ready && !allowPending);
+    runtime.lastRefresh = Date.now();
+    runtime.pending = synchronize(runtime, fresh, allowPending)
+      .catch((error) => {
+        runtime.service.storeStatus = {
+          available: false,
+          unavailable: true,
+          warning: 'Shared storage is unavailable. Cached data is read-only; local drafts are retained.',
+        };
+        throw error;
+      })
+      .finally(() => {
+        runtime.pending = null;
+        runtime.lastRefresh = Date.now();
+      });
+  }
+  return runtime.pending;
+}
+
+export async function ensureProjectStores(
+  service,
+  { fresh = false, allowCached = false, allowPending = false, display = false } = {}
+) {
   if (service.reviewMode === 'preview') return service.projectStores || null;
   let runtime = runtimes.get(service);
   if (!runtime) {
@@ -424,17 +449,27 @@ export async function ensureProjectStores(service, { fresh = false, allowCached 
   }
   const config = readStoreConfig(service.root, { persistIdentity: true });
   if (runtime.config?.revision !== config.revision) buildProject(runtime, config);
+  const snapshot = display && readSnapshot(service.root);
+  if (snapshot?.projectId === config.projectId) {
+    if (runtime.registeredProject !== runtime.project) activate(runtime);
+    if (!runtime.ready && !service.storeStatus)
+      service.storeStatus = {
+        available: false,
+        unavailable: true,
+        warning: 'Refreshing shared storage. The last saved snapshot is read-only until storage is confirmed.',
+      };
+    if (!runtime.pending && (!runtime.lastRefresh || Date.now() - runtime.lastRefresh >= displayRefreshInterval))
+      void synchronizeOnce(runtime, true, false).catch(() => {});
+    return runtime.project;
+  }
+  if (display) fresh = true;
   try {
-    runtime.pending ||= synchronize(runtime, fresh, allowPending).finally(() => {
-      runtime.pending = null;
-    });
-    return await runtime.pending;
+    const pending = synchronizeOnce(runtime, fresh, allowPending);
+    const pendingFresh = runtime.pendingFresh;
+    await pending;
+    if (fresh && !pendingFresh) await synchronizeOnce(runtime, true, allowPending);
+    return runtime.project;
   } catch (error) {
-    service.storeStatus = {
-      available: false,
-      unavailable: true,
-      warning: 'Shared storage is unavailable. Cached data is read-only; local drafts are retained.',
-    };
     if (allowCached && readSnapshot(service.root)) return runtime.project;
     throw error;
   }

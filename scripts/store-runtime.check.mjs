@@ -9,6 +9,8 @@ import { readStoreConfig, writeStoreConfig } from './factory-ui/stores/config.mj
 import { registeredProjectStores } from './factory-ui/stores/report-access.mjs';
 import { readSnapshot } from './factory-ui/stores/snapshots.mjs';
 import { evidencePath } from './factory-ui/stores/evidence.mjs';
+import { setImmediate } from 'node:timers/promises';
+import { createIssueFlows } from './factory-ui/flow-service.mjs';
 
 function fixture(t, flow = null) {
   const f = gitFixture(t, 'store-runtime-');
@@ -29,6 +31,169 @@ function fixture(t, flow = null) {
   t.after(() => closeProjectStores(service));
   return { ...f, report, service };
 }
+
+void test(
+  'cached display returns while one shared refresh is held, but authoritative reads wait',
+  { timeout: 5_000 },
+  async (t) => {
+    const f = fixture(t);
+    const stores = await ensureProjectStores(f.service, { fresh: true });
+    const originalNow = Date.now;
+    t.mock.method(Date, 'now', () => originalNow() + 31_000);
+    const entered = Promise.withResolvers();
+    const release = Promise.withResolvers();
+    const get = stores.records.get.bind(stores.records);
+    let reads = 0;
+    stores.records.get = async (...args) => {
+      reads++;
+      entered.resolve();
+      await release.promise;
+      return get(...args);
+    };
+    t.after(() => release.resolve());
+    assert.equal(await ensureProjectStores(f.service, { display: true }), stores);
+    await entered.promise;
+    await Promise.all(Array.from({ length: 10 }, () => ensureProjectStores(f.service, { display: true })));
+    assert.equal(reads, 1, 'Concurrent display polls share the held refresh.');
+    let admitted = false;
+    const admission = ensureProjectStores(f.service, { fresh: true }).then(() => {
+      admitted = true;
+    });
+    await setImmediate();
+    assert.equal(admitted, false, 'Authoritative admission cannot use the display cache.');
+    assert.equal(readSnapshot(f.root).issues[0].report, f.report);
+    release.resolve();
+    await admission;
+    assert.equal(admitted, true);
+    const before = reads;
+    await ensureProjectStores(f.service, { display: true });
+    assert.equal(reads, before, 'Polling within the refresh interval does no remote work.');
+  }
+);
+
+void test('cached display preserves background failure and authoritative admission rejects it', async (t) => {
+  const f = fixture(t);
+  const stores = await ensureProjectStores(f.service, { fresh: true });
+  const originalNow = Date.now;
+  t.mock.method(Date, 'now', () => originalNow() + 31_000);
+  const entered = Promise.withResolvers();
+  const release = Promise.withResolvers();
+  stores.records.get = async () => {
+    entered.resolve();
+    await release.promise;
+    throw Object.assign(Error('Store unreachable'), { code: 'STORE_UNAVAILABLE' });
+  };
+  t.after(() => release.resolve());
+  await ensureProjectStores(f.service, { display: true });
+  await entered.promise;
+  const rejection = assert.rejects(ensureProjectStores(f.service, { fresh: true }), /Store unreachable/);
+  release.resolve();
+  await rejection;
+  assert.equal(await ensureProjectStores(f.service, { display: true }), stores);
+  assert.equal(f.service.storeStatus.unavailable, true);
+  assert.match(f.service.storeStatus.warning, /read-only/);
+});
+
+void test('authoritative admission upgrades an in-flight non-fresh initialization', async (t) => {
+  const f = fixture(t);
+  const stores = await ensureProjectStores(f.service, { fresh: true });
+  const entered = Promise.withResolvers();
+  const release = Promise.withResolvers();
+  const get = stores.records.get.bind(stores.records);
+  const refresh = stores.refresh.bind(stores);
+  let refreshes = 0;
+  stores.records.get = async (...args) => {
+    entered.resolve();
+    await release.promise;
+    return get(...args);
+  };
+  stores.refresh = async (...args) => {
+    refreshes++;
+    return refresh(...args);
+  };
+  t.after(() => release.resolve());
+  const initialization = ensureProjectStores(f.service);
+  await entered.promise;
+  const admission = ensureProjectStores(f.service, { fresh: true });
+  release.resolve();
+  await Promise.all([initialization, admission]);
+  assert.equal(refreshes, 1, 'A non-fresh pending request cannot satisfy authoritative admission.');
+});
+
+void test('display without a confirmed snapshot waits for shared storage', async (t) => {
+  const f = fixture(t);
+  const stores = await ensureProjectStores(f.service, { fresh: true });
+  rmSync(join(f.root, '.issues/store-runtime/snapshot.json'));
+  const entered = Promise.withResolvers();
+  const release = Promise.withResolvers();
+  const get = stores.records.get.bind(stores.records);
+  stores.records.get = async (...args) => {
+    entered.resolve();
+    await release.promise;
+    return get(...args);
+  };
+  t.after(() => release.resolve());
+  let loaded = false;
+  const display = ensureProjectStores(f.service, { display: true }).then(() => {
+    loaded = true;
+  });
+  await entered.promise;
+  await setImmediate();
+  assert.equal(loaded, false);
+  release.resolve();
+  await display;
+  assert.equal(readSnapshot(f.root).issues[0].report, f.report);
+});
+
+void test('a restarted display registers the confirmed cache before shared storage is confirmed', async (t) => {
+  const f = fixture(t);
+  await ensureProjectStores(f.service, { fresh: true });
+  await closeProjectStores(f.service);
+  delete f.service.storeStatus;
+  const stores = await ensureProjectStores(f.service, { display: true });
+  assert.equal(registeredProjectStores(f.root), stores);
+  assert.equal(f.service.storeStatus.unavailable, true);
+  assert.match(f.service.storeStatus.warning, /read-only until storage is confirmed/);
+  await ensureProjectStores(f.service, { fresh: true });
+  assert.equal(f.service.storeStatus.available, true);
+});
+
+void test('selected issue display does not wait for evidence hydration or refresh the entire store again', async (t) => {
+  const f = fixture(t);
+  const stores = await ensureProjectStores(f.service, { fresh: true });
+  const flows = createIssueFlows(f.service, { executor: { close() {} }, observer: { observe: async () => ({}) } });
+  t.after(() => flows.close());
+  const entered = Promise.withResolvers();
+  const release = Promise.withResolvers();
+  const get = stores.records.get.bind(stores.records);
+  let reads = 0;
+  stores.records.get = async (key) => {
+    if (key === 'evidence/20261122-runtime') {
+      reads++;
+      entered.resolve();
+      await release.promise;
+    }
+    return get(key);
+  };
+  stores.refresh = async () => {
+    assert.fail('A display must not start a second full store refresh.');
+  };
+  t.after(() => release.resolve());
+  const view = await flows.storageView('20261122-runtime');
+  await entered.promise;
+  assert.equal(view.storeStatus.available, true);
+  await flows.storageView('20261122-runtime');
+  assert.equal(reads, 1, 'Selected issue polls share the evidence hydration.');
+  let filesReady = false;
+  const files = flows.files('20261122-runtime').then(() => {
+    filesReady = true;
+  });
+  await setImmediate();
+  assert.equal(filesReady, false, 'Explicit file reads wait for the shared evidence hydration.');
+  release.resolve();
+  await files;
+  assert.equal(reads, 1);
+});
 
 void test('runtime imports merged reports and large history exactly, preserving issue numbers and source checkout', async (t) => {
   const flow = {

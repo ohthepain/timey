@@ -207,19 +207,34 @@ export async function openGitRecords(config, { root, projectId }) {
   }
   async function listAt(head, start) {
     if (!head) return [];
-    const paths = (await git(['ls-tree', '-rz', '--name-only', head, '--', `${prefix}records/`]))
-      .split('\0')
-      .filter(Boolean);
+    const entries = (await git(['ls-tree', '-rz', head, '--', `${prefix}records/`])).split('\0').filter(Boolean);
+    if (!entries.length) return [];
+    const objects = entries.map((entry) => {
+      const match = /^100644 blob ([a-f0-9]+)\t/.exec(entry);
+      assertStore(match, 'Git store records must be regular files.');
+      return match[1];
+    });
     const records = [];
-    let cursor = 0;
-    async function readNext() {
-      while (cursor < paths.length) {
-        const path = paths[cursor++];
-        const record = await readPath(head, path);
+    for (let offset = 0; offset < objects.length; offset += 128) {
+      const batch = objects.slice(offset, offset + 128);
+      const contents = Buffer.from(await plumbing(['cat-file', '--batch'], batch.join('\n') + '\n'));
+      let cursor = 0;
+      for (const object of batch) {
+        const boundary = contents.indexOf(10, cursor);
+        const header = contents.subarray(cursor, boundary).toString().split(' ');
+        const size = Number(header[2]);
+        assertStore(
+          boundary >= cursor && header[0] === object && header[1] === 'blob' && Number.isSafeInteger(size) && size >= 0,
+          'Git returned an invalid store record batch.'
+        );
+        const end = boundary + 1 + size;
+        assertStore(contents[end] === 10, 'Git returned a truncated store record batch.');
+        const record = JSON.parse(contents.subarray(boundary + 1, end).toString());
         if (record.key.startsWith(start)) records.push(record);
+        cursor = end + 1;
       }
+      assertStore(cursor === contents.length, 'Git returned unexpected store record contents.');
     }
-    await Promise.all(Array.from({ length: Math.min(4, paths.length) }, readNext));
     return records.sort((a, b) => a.key.localeCompare(b.key));
   }
   async function receiptsAt(head) {
@@ -290,12 +305,16 @@ export async function openGitRecords(config, { root, projectId }) {
     },
     async readSnapshot(read) {
       try {
-        return await withSnapshot((head) =>
-          read({
+        return await withSnapshot((head) => {
+          let records;
+          return read({
             get: (key) => readPath(head, recordPath(key)),
-            list: (prefix) => listAt(head, prefix),
-          })
-        );
+            list: async (start) => {
+              records ||= listAt(head, '');
+              return structuredClone((await records).filter((record) => record.key.startsWith(start)));
+            },
+          });
+        });
       } catch (error) {
         throw failure(error);
       }

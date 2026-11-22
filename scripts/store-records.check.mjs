@@ -87,6 +87,113 @@ test(
   }
 );
 
+test(
+  'git: pinned prefix lists batch metadata reads and preserve Unicode and caller isolation',
+  { skip: !providers.includes('git') },
+  async (t) => {
+    const f = await fixture(t, 'git');
+    const one = await f.open();
+    const writes = [
+      { key: 'catalog/z', value: { text: 'Ångström 🎹 漢字' } },
+      { key: 'catalog/a', value: { text: 'First\nSecond' } },
+      { key: 'claims/a', value: { owner: 'runner' } },
+      { key: 'commands/a', value: { action: 'stop' } },
+      ...Array.from({ length: 125 }, (_, index) => ({ key: `extra/${index}`, value: { index } })),
+    ];
+    for (let offset = 0; offset < writes.length; offset += 99) {
+      const batch = writes.slice(offset, offset + 99);
+      await one.commit({
+        operationId: 'batch-list-' + offset,
+        expected: batch.map(({ key }) => ({ key, revision: null })),
+        writes: batch,
+      });
+    }
+    const trace = join(dirname(f.roots[0]), 'git-batch.trace');
+    const previous = process.env.GIT_TRACE2_EVENT;
+    process.env.GIT_TRACE2_EVENT = trace;
+    try {
+      const observed = await f.open();
+      await observed.readSnapshot(async (pinned) => {
+        const catalog = await pinned.list('catalog/');
+        assert.deepEqual(
+          catalog.map(({ key }) => key),
+          ['catalog/a', 'catalog/z']
+        );
+        assert.equal(catalog[1].value.text, writes[0].value.text);
+        catalog[1].value.text = 'Changed by caller';
+        assert.equal((await pinned.list('catalog/'))[1].value.text, writes[0].value.text);
+        const selected = await pinned.get('catalog/z');
+        assert.equal(selected.value.text, writes[0].value.text);
+        selected.value.text = 'Changed selected record';
+        assert.equal((await pinned.get('catalog/z')).value.text, writes[0].value.text);
+        assert.equal((await pinned.list('claims/')).length, 1);
+        assert.equal((await pinned.list('commands/')).length, 1);
+        assert.deepEqual(await pinned.list('missing/'), []);
+        assert.equal((await pinned.list('extra/')).length, 125);
+      });
+      const commands = (await readFile(trace, 'utf8'))
+        .trim()
+        .split('\n')
+        .map(JSON.parse)
+        .filter((event) => event.event === 'start' && event.argv[0] === 'git');
+      assert.equal(
+        commands.filter(({ argv }) => argv.includes('ls-tree') && argv.includes('-rz')).length,
+        1,
+        'A pinned record set is enumerated once across prefixes.'
+      );
+      assert.equal(
+        commands.filter(({ argv }) => argv.includes('show')).length,
+        2,
+        'Only the two explicit single-record reads use git show.'
+      );
+      assert.equal(
+        commands.filter(({ argv }) => argv.includes('--batch')).length,
+        2,
+        'Raw record contents use bounded batches shared across all prefix lists.'
+      );
+    } finally {
+      if (previous === undefined) delete process.env.GIT_TRACE2_EVENT;
+      else process.env.GIT_TRACE2_EVENT = previous;
+    }
+    await f.checkSource();
+  }
+);
+
+test('git: batched lists reject nonregular metadata records', { skip: !providers.includes('git') }, async (t) => {
+  const f = await fixture(t, 'git');
+  const one = await f.open();
+  await one.commit({
+    operationId: 'regular-list',
+    expected: [{ key: 'catalog/a', revision: null }],
+    writes: [{ key: 'catalog/a', value: 'record' }],
+  });
+  const directory = dirname(f.roots[0]);
+  const checkout = join(directory, 'metadata-edit');
+  const remote = join(directory, 'remote.git');
+  execFileSync('git', ['clone', '--branch', 'issue-queue', remote, checkout], { stdio: 'pipe' });
+  const path = git(checkout, 'ls-files')
+    .split('\n')
+    .find((entry) => entry.includes('/records/'));
+  assert.ok(path);
+  git(checkout, 'update-index', '--chmod=+x', '--', path);
+  git(
+    checkout,
+    '-c',
+    'user.name=Store fixture',
+    '-c',
+    'user.email=fixture@timey.invalid',
+    'commit',
+    '-m',
+    'Invalid metadata mode'
+  );
+  git(checkout, 'push', 'origin', 'issue-queue');
+  await assert.rejects(one.list('catalog/'), {
+    code: 'STORE_INVALID',
+    message: 'Git store records must be regular files.',
+  });
+  await f.checkSource();
+});
+
 function git(root, ...args) {
   return execFileSync('git', ['-C', root, ...args], {
     env: cleanEnvironment(),

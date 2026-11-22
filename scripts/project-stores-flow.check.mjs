@@ -53,6 +53,35 @@ async function fixture(t, run = async () => ({ summary: 'Completed' })) {
   return { root, git, records, issues, project, flows, service, id, blockId: block.id };
 }
 
+test('displaying an observed merged PR does not wait for its shared save and remains read-only', async (t) => {
+  const f = await fixture(t);
+  const flow = f.flows.read(f.flows.selected(f.id));
+  flow.destination = { branch: 'dev', pr: 42 };
+  await f.flows.store.save(flow, flow.revision);
+  const entered = Promise.withResolvers();
+  const release = Promise.withResolvers();
+  let saves = 0;
+  f.flows.store.save = async () => {
+    saves++;
+    entered.resolve();
+    await release.promise;
+    throw Error('Shared save unavailable');
+  };
+  t.after(() => release.resolve());
+  const pr = { number: 42, url: 'https://example.test/pr/42', mergedAt: '2026-11-22T00:00:00Z', head: 'merged' };
+  f.flows.observer.observe = async () => ({ pr });
+  const view = await f.flows.view(f.id);
+  await entered.promise;
+  assert.equal(view.issue.readOnly, true);
+  assert.equal(view.flow.merged.pr, 42);
+  await f.flows.view(f.id);
+  assert.equal(saves, 1, 'Display polls coalesce observational persistence.');
+  release.resolve();
+  await f.flows.deliveryObservations.get(f.id).pending;
+  assert.match((await f.flows.storageView(f.id)).sharedQueueWarning, /PR state could not be saved/);
+  await assert.rejects(f.flows.requireEditableIssue(f.id), /Shared save unavailable/);
+});
+
 test('FlowStore uses authoritative revisions and keeps staged progress local during outages', async (t) => {
   const f = await fixture(t);
   const state = await f.project.readIssue(f.id);

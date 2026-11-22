@@ -404,7 +404,7 @@
 
   async function load(force = false, announce = false) {
     if (serverControlUI.isWaitingForServer()) return;
-    if (state.pending || (state.loading && !force)) {
+    if (!force && (state.pending || state.loading)) {
       if (announce) toast('Wait for the current action before refreshing.');
       return;
     }

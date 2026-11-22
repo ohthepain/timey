@@ -524,6 +524,7 @@ async function read(service, request, response, owner) {
       fresh: url.pathname !== '/api/issue-stores',
       allowPending: url.pathname === '/api/issue-stores',
       allowCached: true,
+      display: url.pathname === '/api/flow' || (url.pathname === '/api/queue' && !url.searchParams.has('issue')),
     });
   const selectedIssue = url.searchParams.get('issue');
   const issue = (value) => resolveIssueNumber(service, value);

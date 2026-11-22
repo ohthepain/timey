@@ -337,6 +337,8 @@ class IssueFlows {
     this.observer = options.observer || createFlowObserver(service, { provider: this.deliveryOptions.provider });
     this.executor = options.executor || createFlowExecutor(service, this.deliveryOptions);
     this.active = new Map();
+    this.evidenceLoads = new Map();
+    this.deliveryObservations = new Map();
     this.branchRepairs = new BranchRepairs(this, options.branchRepairs);
     this.autoplay = new Map();
     this.clarify = options.clarify || clarifyRequest;
@@ -540,12 +542,28 @@ class IssueFlows {
   async storageView(id) {
     if (!this.service.projectStores)
       return { sharedQueueWarning: await this.refreshSharedQueue(id), storeStatus: this.service.storeStatus };
-    const { warning } = await this.service.projectStores.refresh({ allowCached: true });
-    const [evidence] = id ? await hydrateProjectEvidence(this.service, id) : [];
+    let evidence = this.evidenceLoads.get(id);
+    if (id && !evidence?.pending && (!evidence || Date.now() - evidence.checkedAt >= 30_000)) {
+      evidence ||= {};
+      this.evidenceLoads.set(id, evidence);
+      evidence.pending = hydrateProjectEvidence(this.service, id)
+        .then(([resolver]) => {
+          evidence.status = resolver ? { gaps: resolver.gaps, retainedFiles: resolver.files.length } : undefined;
+          evidence.warning = undefined;
+        })
+        .catch(() => {
+          evidence.warning = 'Retained evidence could not be refreshed. The last saved evidence remains visible.';
+        })
+        .finally(() => {
+          evidence.pending = null;
+          evidence.checkedAt = Date.now();
+        });
+    }
     return {
-      sharedQueueWarning: warning,
+      sharedQueueWarning:
+        this.service.storeStatus?.warning || this.deliveryObservations.get(id)?.warning || evidence?.warning,
       storeStatus: this.service.storeStatus,
-      ...(evidence ? { evidenceStatus: { gaps: evidence.gaps, retainedFiles: evidence.files.length } } : {}),
+      ...(evidence?.status ? { evidenceStatus: evidence.status } : {}),
       ownership: readSnapshot(this.service.root)?.claims?.find((claim) => claim.issueId === id),
     };
   }
@@ -604,7 +622,9 @@ class IssueFlows {
     const issue = this.selected(id);
     const observedFlow = this.read(issue, catalog, undefined, resolveFolder);
     const environment = await this.observer.observe(observedFlow);
-    const savedFlow = await this.observedDelivery(issue, observedFlow, environment, catalog);
+    const savedFlow = await this.observedDelivery(issue, observedFlow, environment, catalog, {
+      background: Boolean(this.service.projectStores),
+    });
     const flow = this.visibleFlow(savedFlow);
     const issueSettings = this.issueSettings(issue, savedFlow, resolveFolder);
     assignBlockSkills(flow, catalog, issueSettings);
@@ -718,13 +738,42 @@ class IssueFlows {
   suggestTargetUpdate(flow, environment, catalog) {
     if (!mergedDelivery(flow)) suggestTargetUpdate(flow, environment, catalog);
   }
-  async observedDelivery(issue, flow, environment, catalog) {
+  async observedDelivery(issue, flow, environment, catalog, { background = false } = {}) {
     if (
       this.service.storeStatus?.unavailable ||
       (this.service.projectStores &&
         readSnapshot(this.service.root)?.claims?.some((claim) => claim.issueId === issue.id))
     )
       return flow;
+    if (background) {
+      if (!environment.pr) return flow;
+      const basis = JSON.stringify([flow.revision, environment.pr]);
+      let observation = this.deliveryObservations.get(issue.id);
+      if (!observation?.pending && observation?.basis !== basis) {
+        observation = { basis };
+        this.deliveryObservations.set(issue.id, observation);
+        observation.pending = this.observedDelivery(issue, flow, environment, catalog)
+          .catch(() => {
+            observation.warning = 'The observed PR state could not be saved. Refresh storage before editing.';
+          })
+          .finally(() => {
+            observation.pending = null;
+          });
+      }
+      return environment.pr.mergedAt
+        ? {
+            ...flow,
+            merged: {
+              pr: environment.pr.number,
+              url: environment.pr.url,
+              head: environment.pr.head,
+              branch: environment.pr.branch,
+              mergedAt: environment.pr.mergedAt,
+              revision: environment.pr.revision,
+            },
+          }
+        : flow;
+    }
     if (await this.retainMerge(issue, flow, environment.pr)) return this.read(issue, catalog);
     if (mergedDelivery(flow)) return flow;
     if (environment.pr && !flow.destination?.pr && !this.active.has(issue.id)) {
@@ -822,10 +871,12 @@ class IssueFlows {
     const checkout = flowWorkspace(this.service, flow)?.checkout;
     return realpathSync(checkout && existsSync(checkout) ? checkout : this.service.root);
   }
-  files(id) {
+  async files(id) {
+    await (this.evidenceLoads.get(id)?.pending || hydrateProjectEvidence(this.service, id));
     return { files: listRepoFiles(this.fileRoot(id)) };
   }
-  file(id, path) {
+  async file(id, path) {
+    await (this.evidenceLoads.get(id)?.pending || hydrateProjectEvidence(this.service, id));
     return readShownFile(this.fileRoot(id), path);
   }
   async manualClosureArtifact(id, revision) {

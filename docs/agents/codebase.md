@@ -409,6 +409,21 @@ snapshot. Issue-specific readiness facts keep separate reads, and each new snaps
 reads fresh state. Execution guards remain independent. This avoids per-issue
 synchronous helper launches starving the server's GitHub authentication requests.
 
+Flow and the Classic queue index use the last confirmed store snapshot while
+`stores/runtime.mjs` coalesces shared refreshes in the background, at most once
+per 30 seconds after completion. A runner with cached data stays read-only until
+its first synchronization succeeds. Mutation admission still awaits a fresh
+authoritative synchronization. `FlowService.storageView` consumes that status
+without repeating the project refresh and refreshes selected-issue evidence in
+the background. Explicit file reads await evidence hydration. Selected Classic
+queue requests still await their authoritative Classic snapshot. Flow persists
+observed PR changes in the background and shows merged issues read-only immediately.
+The Git record provider reads listing contents with `cat-file --batch` in groups
+of at most 128 records and reuses those raw records across prefixes within a pinned snapshot.
+Later snapshots rediscover the remote revision and read its records independently.
+Selecting another issue forces a display load even while an earlier block check
+is pending. That check retains the action lock and cannot replace another issue's view.
+
 `factory-ui/strategy-publication.mjs` creates new strategy PRs through the App-authenticated
 `StrategyProvider` after independent verification. Workers return the prepared
 description and a null PR number. Publication reconciles open PRs on retry and

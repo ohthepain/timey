@@ -203,13 +203,21 @@ The authoritative home of an issue's report, lifecycle status, metadata, and
 issue history. Each issue belongs to one configured Issue store.
 _Avoid_: Adaptor, adapter as a user-facing storage destination
 
+**Issue storage profile**:
+A named pairing of an Issue store and an Artifact store used to select an issue's
+storage destinations. Coordination storage belongs to the project.
+
+**Local issue storage**:
+Issue records and artifacts retained on the person's local machine.
+It excludes files on a remote Factory server.
+
 **Coordination store**:
 The project's shared authority for execution ownership, flows, attempt history,
 and pending operations. Each project selects one Coordination store across its
 Issue stores.
 
 **Artifact store**:
-The project's home for retained file contents, including logs, evidence,
+The home for retained file contents, including logs, evidence,
 attachments, and committed source checkpoints. Shared records identify artifacts
 independently of a runner's local file paths.
 

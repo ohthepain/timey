@@ -33,6 +33,20 @@ rejected first input instead of resuming a thread with no persisted history.
 
 ## Commands and evidence
 
+`node --test scripts/store-runtime.check.mjs scripts/project-stores-flow.check.mjs`
+checks cached display reads during a held shared refresh, coalesced polling,
+read-only cached startup, missing-cache waits, background failure warnings, and
+fresh mutation admission after an earlier nonfresh request. The Flow checks hold
+evidence and observed-PR saves while the selected issue remains readable. Explicit
+file reads await hydration, and failed authoritative saves still block editing.
+These fixtures use disposable stores and start no live issue work.
+`node --test scripts/store-records.check.mjs` also traces Git process launches
+while reading several prefixes from one pinned snapshot. It checks one tree
+listing and bounded content batches, Unicode values, sorted results and caller isolation.
+`node --test scripts/factory-refresh.check.mjs` holds an open-block request while
+clicking another issue. The new issue must render before the earlier action
+finishes, and its view must survive the earlier action's response.
+
 `node --test scripts/flow-progress.check.mjs` checks interleaved issue output,
 workspace updates, timing, terminal results and concurrent-edit protection.
 `node scripts/flow-progress-benchmark.mjs PATH` compares the previous and current
