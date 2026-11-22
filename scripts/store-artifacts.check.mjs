@@ -1,11 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, writeFile, symlink } from 'node:fs/promises';
+import { mkdtemp, mkdir, rm, writeFile, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { openArtifactStore } from './factory-ui/stores/artifacts.mjs';
+import { readStoreConfig, writeStoreConfig } from './factory-ui/stores/config.mjs';
+import { closeProjectStores, testStoreConnection } from './factory-ui/stores/runtime.mjs';
 
 const live = process.env.FACTORY_STORES_LIVE === '1';
 const sourceRoot = process.env.FACTORY_STORES_ENV_ROOT || process.cwd();
@@ -74,6 +76,21 @@ for (const kind of ['files', 'git', 'postgres', 's3']) {
     }
   );
 
+  test(`Artifact contract ${kind}: connection probes preserve empty and populated stores`, { skip }, async (t) => {
+    const { store, refs } = await fixture(t, kind);
+    assert.deepEqual(await store.probe(), { ok: true });
+    assert.deepEqual(await store.list(), []);
+    const body = Buffer.from('Evidence remains unchanged after a connection probe.');
+    const populated = await store.put({ body });
+    const empty = await store.put({ body: Buffer.alloc(0) });
+    refs.push(populated, empty);
+    const before = (await store.list()).map((ref) => ref.sha256).sort();
+    assert.deepEqual(await store.probe(), { ok: true });
+    assert.deepEqual((await store.list()).map((ref) => ref.sha256).sort(), before);
+    assert.deepEqual(await store.get(populated), body);
+    assert.deepEqual(await store.get(empty), Buffer.alloc(0));
+  });
+
   test(`Artifact contract ${kind}: concurrent identical writes retain one verified object`, { skip }, async (t) => {
     const { store, refs } = await fixture(t, kind);
     const body = Buffer.from('Concurrent immutable evidence\n');
@@ -96,4 +113,90 @@ test('file artifact reads detect modified evidence and reject symbolic links', a
   await writeFile(outside, 'Original evidence');
   await symlink(outside, file);
   await assert.rejects(store.get(ref), /regular file/);
+});
+
+async function s3ProbeFixture(send) {
+  return openArtifactStore(
+    { id: 'bounded-s3', kind: 's3', bucket: 'fixture-bucket', region: 'eu-central-1', prefix: 'fixture-artifacts' },
+    { root: tmpdir(), projectId: 'bounded-project', s3Client: { send } }
+  );
+}
+
+const probePrefix = 'fixture-artifacts/bounded-project/sha256/';
+const probeKey = probePrefix + 'a'.repeat(64);
+
+test('S3 connection probes inspect at most one object without downloading, writing or paging history', async () => {
+  const calls = [];
+  const store = await s3ProbeFixture(async (command) => {
+    calls.push({ name: command.constructor.name, input: command.input });
+    if (command.constructor.name === 'ListObjectsV2Command')
+      return {
+        Contents: [{ Key: probeKey, Size: 5 * 1024 ** 3 }],
+        IsTruncated: true,
+        NextContinuationToken: 'more-than-five-thousand-objects',
+      };
+    assert.equal(
+      command.constructor.name,
+      'HeadObjectCommand',
+      'A connection probe must not read or mutate artifact bodies.'
+    );
+    return { ContentLength: 5 * 1024 ** 3 };
+  });
+  assert.deepEqual(await store.probe(), { ok: true });
+  assert.deepEqual(calls, [
+    { name: 'ListObjectsV2Command', input: { Bucket: 'fixture-bucket', Prefix: probePrefix, MaxKeys: 1 } },
+    { name: 'HeadObjectCommand', input: { Bucket: 'fixture-bucket', Key: probeKey } },
+  ]);
+});
+
+test('S3 connection probes on empty stores make one bounded listing request', async () => {
+  const calls = [];
+  const store = await s3ProbeFixture(async (command) => {
+    calls.push(command);
+    assert.equal(command.constructor.name, 'ListObjectsV2Command');
+    return { Contents: [] };
+  });
+  assert.deepEqual(await store.probe(), { ok: true });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].input.MaxKeys, 1);
+});
+
+for (const failedRequest of ['ListObjectsV2Command', 'HeadObjectCommand']) {
+  test(`S3 connection probe sanitizes ${failedRequest} failures`, async () => {
+    const store = await s3ProbeFixture(async (command) => {
+      if (command.constructor.name === failedRequest)
+        throw Object.assign(Error('private-provider-credential-value'), { name: 'AccessDenied' });
+      return { Contents: [{ Key: probeKey }] };
+    });
+    await assert.rejects(store.probe(), (error) => {
+      assert.equal(error.code, 'STORE_UNAVAILABLE');
+      assert.equal(error.providerCode, 'AccessDenied');
+      assert.equal(error.message.includes('private-provider-credential-value'), false);
+      return true;
+    });
+  });
+}
+
+test('Artifact-only runtime connection tests probe without inspecting unrelated stored history', async (t) => {
+  const { root, config } = await fixture(t, 'files');
+  const { revision, ...registry } = readStoreConfig(root);
+  writeStoreConfig(
+    root,
+    {
+      ...registry,
+      stores: [
+        ...registry.stores,
+        { id: 'probe-only', label: 'Artifact probe', kind: 'files', directory: config.directory, roles: ['artifact'] },
+      ],
+    },
+    { expectedRevision: revision }
+  );
+  await mkdir(join(config.directory, registry.projectId, 'f'.repeat(64)), { recursive: true });
+  const service = { root };
+  t.after(() => closeProjectStores(service));
+  assert.deepEqual(await testStoreConnection(service, 'probe-only'), {
+    ok: true,
+    message: 'Store connection verified.',
+  });
+  assert.deepEqual(await testStoreConnection(service, 'files'), { ok: true, message: 'Store connection verified.' });
 });

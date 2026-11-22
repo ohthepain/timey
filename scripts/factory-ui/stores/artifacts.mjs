@@ -98,6 +98,10 @@ class ArtifactStore {
       throw error;
     }
   }
+  async probe() {
+    await this.inspect(reference(this, digest(Buffer.alloc(0)), 0, 'application/octet-stream'));
+    return { ok: true };
+  }
   async remove(ref) {
     validateRef(this, ref);
     try {
@@ -217,6 +221,22 @@ class S3Artifacts extends ArtifactStore {
   }
   async delete(ref) {
     await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: this.objectKey(ref) }));
+  }
+  async probe() {
+    try {
+      const page = await this.client.send(
+        new ListObjectsV2Command({
+          Bucket: this.bucket,
+          Prefix: `${this.prefix}/${this.projectId}/sha256/`,
+          MaxKeys: 1,
+        })
+      );
+      const key = page.Contents?.[0]?.Key;
+      if (key) await this.client.send(new HeadObjectCommand({ Bucket: this.bucket, Key: key }));
+      return { ok: true };
+    } catch (error) {
+      throw storageFailure(error, 'connection test');
+    }
   }
   async list() {
     const refs = [];

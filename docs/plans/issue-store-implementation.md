@@ -25,6 +25,7 @@ await artifacts.put({ body, mediaType }); // ArtifactRef: {storeId,key,sha256,by
 await artifacts.get(ref); // verified Buffer; stream/open can be added within this contract.
 await artifacts.inspect(ref); // verified metadata or null
 await artifacts.remove(ref); // explicit deletion only
+await artifacts.probe(); // bounded access check without creating artifacts
 ```
 
 Provider constructors take {id,root,projectId,...ordinaryConfig}, resolved connection options, and the shared Artifact store where bounded records need external payloads. No provider exposes secrets in errors. Opaque revisions cross domain interfaces. An operation ID reused with different content rejects. File/Git, Postgres, DynamoDB record/issue providers use the same tests. Artifact providers support files/Git, Postgres, S3. Large JSON records and logs are immutable artifact payloads with small authoritative heads, never one oversized Dynamo item.
@@ -94,3 +95,5 @@ bootstrap and availability. Shared issue actions retain authoritative admission.
 Verified evidence now reuses an unchanged manifest's local cache even when its
 history includes permanent gaps. New transport gaps still retry, and a changed
 manifest revision refreshes the materialized evidence.
+Artifact connection tests use a bounded probe rather than enumerating retained
+history. S3 checks one listing page with at most one metadata read.

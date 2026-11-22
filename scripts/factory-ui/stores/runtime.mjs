@@ -21,7 +21,7 @@ const bootstrapKey = 'project/bootstrap';
 const methods = {
   issue: ['read', 'list', 'commit', 'history'],
   records: ['get', 'list', 'commit'],
-  artifact: ['put', 'get', 'inspect', 'list', 'remove', 'open'],
+  artifact: ['put', 'get', 'inspect', 'list', 'remove', 'open', 'probe'],
 };
 
 function lazyProvider(runtime, kind, config) {
@@ -453,7 +453,7 @@ export async function testStoreConnection(service, storeId) {
   if (selected.roles.includes('coordination') || selected.roles.includes('issue')) {
     const records = lazyProvider(runtime, 'records', selected);
     await records.list('connection-test/');
-  } else await lazyProvider(runtime, 'artifact', selected).list();
+  } else await lazyProvider(runtime, 'artifact', selected).probe();
   return { ok: true, message: 'Store connection verified.' };
 }
 
