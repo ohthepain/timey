@@ -1,5 +1,10 @@
 # Alternatives to Git for issue storage
 
+Historical research. The [22 November store specification](issue-stores.md) and
+[ADR 0022](../adr/0022-separate-issue-coordination-and-artifact-stores.md) record
+the subsequent design for separate Issue, Coordination, and Artifact stores.
+Implementation of that design remains paused.
+
 Research and proposal, 20 November 2026. The approved implementation keeps local
 files and follows [ADR 0019](../adr/0019-share-issue-claims-on-the-queue-branch.md).
 The comparison below records the investigation that led to that decision. This document proposes a direction. It

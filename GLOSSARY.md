@@ -196,8 +196,22 @@ and report and cannot start work independently while attached.
 
 **Issue claim**:
 Exclusive permission for one factory run to start or continue work on an issue.
-A claim can remain held while the run's outcome is being published. Shared
-claims are records on the dedicated issue queue branch, separate from source revisions.
+A claim can remain held while its outcome is being published or reconciled.
+
+**Issue store**:
+The authoritative home of an issue's report, lifecycle status, metadata, and
+issue history. Each issue belongs to one configured Issue store.
+_Avoid_: Adaptor, adapter as a user-facing storage destination
+
+**Coordination store**:
+The project's shared authority for execution ownership, flows, attempt history,
+and pending operations. Each project selects one Coordination store across its
+Issue stores.
+
+**Artifact store**:
+The project's home for retained file contents, including logs, evidence,
+attachments, and committed source checkpoints. Shared records identify artifacts
+independently of a runner's local file paths.
 
 **Issue delivery**:
 One issue's contributions retained on a stable branch and published through one

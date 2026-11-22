@@ -850,6 +850,10 @@ socket directory.
 `issue-report-format.mjs` passes that file explicitly to the formatter, so report
 writes do not load the application's Vite plugins.
 `shared-issue-config.mjs` owns the metadata path allowlist.
+The [Issue, Coordination, and Artifact store specification](../plans/issue-stores.md)
+and [ADR 0022](../adr/0022-separate-issue-coordination-and-artifact-stores.md)
+describe the accepted future storage roles and shared-provider contracts. Their
+implementation is paused. The following modules describe the existing Git path.
 `shared-issue-paths.mjs` validates claim documents and their canonical paths.
 `shared-issue-git.mjs` owns private-index commits, App pushes, and claim snapshots. `shared-issue-claims.mjs` stores version 2 claim files
 on the queue branch. Its expected-tip updates preserve unrelated metadata and

@@ -1,5 +1,9 @@
 # Evidence for issue storage providers
 
+Historical provider research. The [store specification](issue-stores.md) records
+the later decision to separate issue storage from coordination and artifacts.
+Its recovery protocol replaces this note's proposed single-provider coupling.
+
 Research checked against official sources on 2026-11-20. This note separates
 documented guarantees from design inferences. It does not select a provider or
 change Timey's accepted architecture.
