@@ -17,6 +17,14 @@ rejected first input instead of resuming a thread with no persisted history.
 
 ## Commands and evidence
 
+`node --test scripts/flow-progress.check.mjs` checks interleaved issue output,
+workspace updates, timing, terminal results and concurrent-edit protection.
+`node scripts/flow-progress-benchmark.mjs PATH` compares the previous and current
+progress-save and group-eligibility paths over five alternating runs. Its
+disposable project contains 27 issues and two output streams. The JSON at `PATH`
+retains HTTP index latency, callback time, exact persisted output bytes and errors.
+This isolates local server work and does not measure model or GitHub latency.
+
 `node --test scripts/factory-server-control.check.mjs` checks that No new actions
 allows chat requests across issue, project, report, temporary, and coordinator
 conversations while work dispatch stays paused. Its HTTP Discuss regression

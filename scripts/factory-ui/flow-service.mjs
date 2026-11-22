@@ -437,13 +437,12 @@ class IssueFlows {
     });
   }
   groupEligible(issue, flow) {
-    if (mergedDelivery(flow)) return false;
+    if (!this.folderSelection.eligible(issue, flow)) return false;
     try {
       const folder = resolveFolderSettings(this.service.root, flow.folder);
       return (
         !folder.errors.length &&
         !this.issueSettings(issue, flow).errors.length &&
-        this.folderSelection.eligible(issue, flow) &&
         deliveryTarget(flow).branch === folder.values.branch
       );
     } catch {
@@ -2117,7 +2116,7 @@ class IssueFlows {
     return { accepted: true, issueId: issue.id, blockId: block.id, attemptId: attempt.id };
   }
   changeAttempt(issue, blockId, attemptId, change = () => {}) {
-    const flow = this.read(issue);
+    const flow = this.store.read(issue, flowTarget(this.service.root));
     const block = flow.blocks.find((item) => item.id === blockId);
     const attempt = block?.attempts.find((item) => item.id === attemptId);
     requireThat(attempt, 'The running block record is missing. Retain its original execution before reconciling.');

@@ -721,6 +721,10 @@ The explicit [flow workspace](../adr/0013-explicit-issue-flows.md) starts at
 `scripts/factory-ui/flow.html`, `flow-ui.js`, and `flow.css`. `flow-store.mjs`
 owns the graph and revision-checked edits. `flow-service.mjs` owns flow mutations,
 explicit attempts, invalidation, route rebuilding, capture, and artifact listing.
+Active attempt updates read the persisted graph directly through `FlowStore`.
+They retain revision checks without rediscovering folder settings or rebuilding
+the display. Group eligibility rejects issues with existing work before resolving
+their settings.
 `merged-issue.mjs` identifies retained merged delivery and defines the read-only
 policy. Flow operations and HTTP mutation guards enforce it; metadata helpers
 also reject changes to saved merged issues. The observer refreshes linked PRs
