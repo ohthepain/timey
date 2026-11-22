@@ -482,9 +482,11 @@ try {
   await check('Successful refresh clears rejected branch update errors', () =>
     errorRecoveryBrowserChecks({ page, service, project, output })
   );
-  await check('Publication with no changes offers Cannot Reproduce closure', () =>
-    noChangesBrowserChecks({ page, service, project, output, root, poll })
-  );
+  const noChangesCheck = () =>
+    check('Publication with no changes offers Cannot Reproduce closure', () =>
+      noChangesBrowserChecks({ page, service, project, output, root, poll })
+    );
+  if (!process.argv.includes('--reverse-fixture-scenarios')) await noChangesCheck();
   await check('The whole sidebar scrolls over every section', async () => {
     const issuePaths = Array.from({ length: 24 }, (_, index) =>
       join(project, '.issues', '20261120-sidebar-overflow-' + index + '.md')
@@ -627,6 +629,7 @@ try {
   await check(folderSettingsCheck, () =>
     flowFolderSettingsBrowserChecks({ page, project, service, logs, screenshot, poll })
   );
+  if (process.argv.includes('--reverse-fixture-scenarios')) await noChangesCheck();
   await check(followupsCheck, () => flowFollowupsBrowserChecks({ page, service, logs, screenshot }));
   await check(mergeSettingsCheck, async () => {
     const id = '20261119-merge-settings-fixture';
