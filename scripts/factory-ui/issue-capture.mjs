@@ -53,7 +53,7 @@ const receiptSchema = z
 const endpoint = '/api/issue-capture';
 export function createCaptures(service, options = {}) {
   const tasks = new Map();
-  const assess = options.assess || assessCapture;
+  const assess = options.assess || ((description, lifecycle) => assessCapture(description, lifecycle, service.root));
   const random = options.random || (() => randomBytes(8).toString('hex'));
   const publish = options.publish || publishExclusive;
   function guard() {

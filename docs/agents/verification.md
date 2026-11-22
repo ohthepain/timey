@@ -1,5 +1,21 @@
 # Verification
 
+`node --test scripts/discussion-evidence.check.mjs` checks temporary discussion
+protocol configuration, complete context/input references above the provider
+limit, small follow-up messages, and cleanup that preserves the project. It uses
+a disposable provider process; it establishes read-only/never-approve settings,
+not actual OS sandbox enforcement or live model availability.
+`node --test --test-name-pattern="Retro reads|Retro links" scripts/flow.check.mjs`
+checks linked-thread ordering, unavailable history and complete oversized retro
+evidence. The initial message stays below 16,000 characters; the referenced files
+retain beginning, middle and end, matching digests and survive session closure.
+These fixtures start no live model or production retro.
+`node scripts/discussion-evidence-provider.mjs` separately checks the configured
+live provider against a disposable Git repository and a linked input above the
+provider text limit. It verifies actual native file/history reads and retrieval
+of a middle marker, retaining command observations under its printed temporary
+path. It does not test OS write denial or run a production retro.
+
 `node --test --test-name-pattern='manual branch update|oversized input' scripts/flow.check.mjs scripts/flow-executor.check.mjs`
 reproduces Update Branch being blocked by an uncertain Work attempt. It checks
 that an active provider blocks the update and a confirmed idle provider permits

@@ -2592,11 +2592,8 @@ class IssueFlows {
     const artifact = this.artifacts(flow).find((item) => item.id === input.artifactId);
     requireThat(artifact, 'Choose an artifact from this issue’s block.');
     const { content } = this.service.readShownFile(artifact.path);
-    requireThat(
-      content.trim() && content.length <= 100_000,
-      'Restate needs a nonempty text artifact of up to 100,000 characters.'
-    );
-    const discussion = createDiscussionRuntime();
+    requireThat(content.trim(), 'Restate needs a nonempty text artifact.');
+    const discussion = createDiscussionRuntime(undefined, { root: this.service.root });
     let timer;
     try {
       const restate = async () => {

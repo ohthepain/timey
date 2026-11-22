@@ -436,6 +436,14 @@ Factory outcomes; `conversation-view.mjs` combines these with actual conversatio
 records. `conversation-context.mjs` supplies the same full timeline to model and
 skill turns. `issue-chat-runtime.mjs` resumes the owning thread, using read-only
 access for discussion and the issue checkout for editable requests.
+`discussion-codex.mjs` owns isolated temporary model sessions. Project callers
+supply the project root for native file/search/Git inspection under a read-only
+sandbox with no approval escalation. `discussion-evidence.mjs` writes complete
+context and large-input files with lengths and digests; temporary files are
+removed with the session. `flow-retro.mjs` instead retains its full redacted
+report, timeline, attempts and linked thread sections outside the issue worktree,
+sends a small index and links that index from its saved result. Model reads are
+selective; available evidence and inspected evidence remain distinct.
 `flow-retro-proof.mjs` supplies Retro only timeline-linked artifacts with recorded
 SHA-256 digests. It verifies checkout containment and digest before adding a
 bounded redacted excerpt; missing, changed and out-of-checkout artifacts carry

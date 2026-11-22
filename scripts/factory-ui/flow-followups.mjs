@@ -89,7 +89,7 @@ function declinedProposals(flows) {
 export class FlowFollowups {
   constructor(flows, propose = proposeInvestigationFollowups) {
     this.flows = flows;
-    this.propose = propose;
+    this.propose = (context) => propose(context, flows.service.root);
     this.busy = new Set();
     this.directory = join(flows.store.directory, 'investigation-followups');
   }

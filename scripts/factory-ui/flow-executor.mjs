@@ -1028,7 +1028,7 @@ async function runCommand(service, ctx, options) {
   const work = record?.work;
   if (kind === 'retro') {
     const result = await (options.runRetro || runRetro)(service, ctx);
-    return commandResult(service, ctx, result, result.summary);
+    return commandResult(service, ctx, result, result.summary, result.evidence || []);
   }
   if (kind === 'cleanup') {
     const saved = work || ctx.flow.workspace || record?.chatCheckout;

@@ -27,8 +27,8 @@ function hasBlockHistory(flow) {
   );
 }
 
-async function suggest(prompt, candidates, members) {
-  const runtime = createDiscussionRuntime();
+async function suggest(root, prompt, candidates, members) {
+  const runtime = createDiscussionRuntime(undefined, { root });
   let timer;
   try {
     const response = await Promise.race([
@@ -72,7 +72,7 @@ export class FlowFolderSelection {
     this.recommend =
       recommend ||
       ((strategy, candidates, members) =>
-        suggest(folderStrategy(flows.service.root, strategy).prompt, candidates, members));
+        suggest(flows.service.root, folderStrategy(flows.service.root, strategy).prompt, candidates, members));
     this.previews = new Map();
   }
 

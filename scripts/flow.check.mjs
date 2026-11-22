@@ -37,7 +37,7 @@ import { readQueue } from './factory-ui/data.mjs';
 import { decisionBasis } from './factory-ui/recorded-result.mjs';
 import { issueCleanupIdentities, previewIssueCleanupResource } from './factory-ui/issue-cleanup.mjs';
 import { appendMessage, saveConversationState } from './factory-ui/conversation-store.mjs';
-import { maximumTextInputLength, oversizedTextInputMessage } from './factory-ui/codex-input.mjs';
+import { maximumTextInputLength, oversizedTextInputMessage, validateTextInput } from './factory-ui/codex-input.mjs';
 import { runRetro } from './factory-ui/flow-retro.mjs';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -1848,7 +1848,8 @@ test('Retro reads linked threads in the available provider and reports missing h
     () => ({
       async begin() {},
       async ask(input) {
-        const history = JSON.parse(input);
+        const index = JSON.parse(input);
+        const history = { threads: JSON.parse(readFileSync(index.sections.threads.path, 'utf8')) };
         assert.deepEqual(
           history.threads.map(({ id }) => id),
           ['early', 'late', 'missing']
@@ -1861,6 +1862,88 @@ test('Retro reads linked threads in the available provider and reports missing h
   );
   assert.equal(result.summary, 'Reviewed the available history.');
   assert.equal(flow.workspace, null);
+});
+
+test('Retro links complete oversized evidence before dispatch without dropping middle history', async (t) => {
+  const { root, id } = fixture(t);
+  cpSync(new URL('../.issues/triage-labels.md', import.meta.url), join(root, '.issues/triage-labels.md'));
+  const service = new FactoryUI(root);
+  t.after(() => service.close());
+  const flows = createIssueFlows(service);
+  const issue = flows.selected(id);
+  const flow = flows.read(issue);
+  const large =
+    'first evidence' +
+    '\u0000"\\😀'.repeat(125_000) +
+    'middle evidence' +
+    '\u0000"\\😀'.repeat(125_000) +
+    'last evidence';
+  issue.content = large;
+  flow.blocks
+    .find((block) => block.kind === 'work')
+    .attempts.push({
+      id: 'large-attempt',
+      startedAt: '2026-11-22',
+      status: 'completed',
+      output: large,
+    });
+  appendMessage(root, id, { kind: 'message', actor: 'agent', body: large });
+  saveConversationState(root, id, { threadId: 'large-thread' });
+  service.codex.ready = async () => {};
+  service.codex.call = async () => ({
+    thread: {
+      createdAt: 1,
+      turns: [
+        {
+          items: [
+            { type: 'agentMessage', text: large },
+            { type: 'commandExecution', aggregatedOutput: 'raw check evidence' },
+          ],
+        },
+      ],
+    },
+  });
+  let closed = false;
+  const result = await runRetro(
+    service,
+    {
+      issue,
+      flow,
+      definition: { prompt: 'Review the issue.' },
+      signal: new AbortController().signal,
+    },
+    (onEnd, options) => {
+      assert.equal(realpathSync(options.root), realpathSync(root));
+      return {
+        async begin() {},
+        async ask(input) {
+          validateTextInput(input);
+          assert.ok(input.length < 16_000, `Retro sent ${input.length} characters`);
+          const index = JSON.parse(input);
+          for (const key of ['report', 'timeline', 'attempts', 'threads']) {
+            const reference = index.sections[key];
+            const content = readFileSync(reference.path, 'utf8');
+            assert.equal(reference.sha256, (await import('./factory-ui/common.mjs')).digest(content));
+            assert.equal(reference.characters, content.length);
+            const section = JSON.parse(content);
+            if (key === 'report') assert.equal(section, large);
+            else assert.ok(JSON.stringify(section).includes(JSON.stringify(large).slice(1, -1)), key);
+            if (key === 'threads') assert.equal(section[0].turns[0].items[1].aggregatedOutput, 'raw check evidence');
+          }
+          return JSON.stringify({ summary: 'Reviewed complete linked evidence.', recommendations: [] });
+        },
+        close() {
+          closed = true;
+        },
+      };
+    }
+  );
+  assert.equal(closed, true);
+  assert.ok(existsSync(result.evidence[0].path), 'Input evidence outlives the runtime');
+  const index = JSON.parse(readFileSync(result.evidence[0].path, 'utf8'));
+  assert.equal(JSON.parse(readFileSync(index.sections.report.path, 'utf8')), large);
+  assert.equal(issue.content, large, 'Original report is preserved');
+  assert.equal(flow.blocks.find((block) => block.kind === 'work').attempts[0].output, large);
 });
 
 test('new investigations expose independent outputs without code delivery or closure blocks', (t) => {

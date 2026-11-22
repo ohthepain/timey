@@ -34,8 +34,8 @@ export function validateInvestigationProposal(item) {
   return Object.fromEntries(fields.map((key) => [key, item[key].trim()]));
 }
 
-export async function proposeInvestigationFollowups(context) {
-  const runtime = createDiscussionRuntime();
+export async function proposeInvestigationFollowups(context, root) {
+  const runtime = createDiscussionRuntime(undefined, { root });
   let timer;
   try {
     const generate = async () => {
