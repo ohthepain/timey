@@ -444,6 +444,11 @@ removed with the session. `flow-retro.mjs` instead retains its full redacted
 report, timeline, attempts and linked thread sections outside the issue worktree,
 sends a small index and links that index from its saved result. Model reads are
 selective; available evidence and inspected evidence remain distinct.
+`flow-retro-thread.mjs` exports ordered public native items, including tool calls,
+outcomes and permission decisions, for `flow-retro.mjs`. Each export retains turn
+IDs, available timestamps and linked attempt IDs. Exact turn ownership requires
+a saved turn ID. Missing timing, results, decisions and unsupported payloads are
+explicitly unavailable. Private reasoning is excluded and public values are redacted.
 `flow-retro-proof.mjs` supplies Retro only timeline-linked artifacts with recorded
 SHA-256 digests. It verifies checkout containment and digest before adding a
 bounded redacted excerpt; missing, changed and out-of-checkout artifacts carry

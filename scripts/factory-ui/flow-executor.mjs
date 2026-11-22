@@ -699,6 +699,26 @@ function modelInstructions(ctx, workspace, outputExecution) {
     .join('\n\n');
 }
 
+function modelConversationBinding(service, ctx, state, savedBlock, basis) {
+  const previous = ctx.block.attempts?.findLast(
+    (attempt) =>
+      attempt.id !== ctx.attempt.id &&
+      !attempt.reconciledAt &&
+      ['running', 'stopping', 'uncertain'].includes(attempt.status)
+  );
+  const recover =
+    previous &&
+    !rejectedOversizedAttempt(service, ctx.flow, ctx.block, previous, savedBlock) &&
+    (savedBlock?.threadId
+      ? savedBlock
+      : { threadId: state.threadId || service.lifecycleRuns[ctx.issue.id]?.workThreadId });
+  const last = ctx.block.attempts?.findLast((attempt) => attempt.id !== ctx.attempt.id);
+  const rejected = last && rejectedOversizedAttempt(service, ctx.flow, ctx.block, last, savedBlock);
+  const binding =
+    ctx.continuing && !last?.invalidatedAt && !rejected && savedBlock?.basis === basis ? { ...savedBlock } : { basis };
+  return { previous, recover, binding };
+}
+
 async function runModel(service, ctx, owned, options) {
   ctx = withGroupProof(ctx);
   ctx = {
@@ -737,22 +757,7 @@ async function runModel(service, ctx, owned, options) {
       ctx.block.comments,
     ])
   );
-  const previous = ctx.block.attempts?.findLast(
-    (attempt) =>
-      attempt.id !== ctx.attempt.id &&
-      !attempt.reconciledAt &&
-      ['running', 'stopping', 'uncertain'].includes(attempt.status)
-  );
-  const recover =
-    previous &&
-    !rejectedOversizedAttempt(service, ctx.flow, ctx.block, previous, savedBlock) &&
-    (savedBlock?.threadId
-      ? savedBlock
-      : { threadId: state.threadId || service.lifecycleRuns[ctx.issue.id]?.workThreadId });
-  const last = ctx.block.attempts?.findLast((attempt) => attempt.id !== ctx.attempt.id);
-  const rejected = last && rejectedOversizedAttempt(service, ctx.flow, ctx.block, last, savedBlock);
-  const binding =
-    ctx.continuing && !last?.invalidatedAt && !rejected && savedBlock?.basis === basis ? { ...savedBlock } : { basis };
+  const { previous, recover, binding } = modelConversationBinding(service, ctx, state, savedBlock, basis);
   service.issueChats?.release(ctx.issue.id);
   const folder = evidenceDirectory(service, ctx);
   const source = retainSourceIssueEvidence(service.root, ctx.issue.source_issue, folder, ctx.issue.source_attempt);
