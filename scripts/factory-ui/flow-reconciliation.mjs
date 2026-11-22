@@ -3,21 +3,36 @@ import { attachIssueChat, createIssueChatConnection } from './issue-chat-runtime
 import { requireThat } from './common.mjs';
 import { maximumTextInputLength, oversizedTextInputMessage } from './codex-input.mjs';
 
-export function rejectedOversizedAttempt(service, flow, block, attempt, binding) {
-  if (
-    !['uncertain', 'blocked'].includes(attempt.status) ||
-    attempt.summary !== oversizedTextInputMessage ||
-    (attempt.output?.trim() && attempt.output.trim() !== `Running ${block.kind} block.`) ||
-    binding?.flowReceipt
-  )
-    return false;
-  const request = conversationMessages(service.root, flow.issueId).find(
-    (message) =>
-      message.id === 'flow-request-' + attempt.id &&
-      message.kind === 'flow-block-request' &&
-      message.blockId === block.id
+function hasAttemptOutput(attempt, block) {
+  const output = attempt.output?.trim();
+  return Boolean(output && output !== `Running ${block.kind} block.`);
+}
+
+function isAttemptRequest(message, attempt, block) {
+  return (
+    message.id === 'flow-request-' + attempt.id && message.kind === 'flow-block-request' && message.blockId === block.id
   );
+}
+
+function mayBeRejectedOversizedAttempt(block, attempt, binding) {
+  return [
+    ['uncertain', 'blocked'].includes(attempt.status),
+    attempt.summary === oversizedTextInputMessage,
+    !hasAttemptOutput(attempt, block),
+    !binding?.flowReceipt,
+  ].every(Boolean);
+}
+
+function exceedsInputLimit(request) {
   return request?.body?.length > maximumTextInputLength;
+}
+
+export function rejectedOversizedAttempt(service, flow, block, attempt, binding) {
+  if (!mayBeRejectedOversizedAttempt(block, attempt, binding)) return false;
+  const request = conversationMessages(service.root, flow.issueId).find((message) =>
+    isAttemptRequest(message, attempt, block)
+  );
+  return exceedsInputLimit(request);
 }
 
 export async function observeDisconnectedFlow(service, flow, create = createIssueChatConnection) {

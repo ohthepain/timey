@@ -1835,7 +1835,31 @@ test('Retro reads linked threads in the available provider and reports missing h
     assert.equal(method, 'thread/read');
     assert.equal(includeTurns, true);
     if (threadId === 'missing') throw Error('History stored on another runner');
-    return { thread: { createdAt: threadId === 'early' ? 1 : 2, turns: [{ items: [] }] } };
+    return {
+      thread: {
+        createdAt: threadId === 'early' ? 1 : 2,
+        turns: [
+          {
+            id: 'linked-turn',
+            items: [
+              { id: 'message', type: 'agentMessage', text: 'Checking.', createdAt: 3 },
+              {
+                id: 'command',
+                type: 'commandExecution',
+                command: 'node check.mjs',
+                aggregatedOutput: 'listen EPERM',
+                exitCode: 1,
+              },
+              {
+                id: 'permission',
+                type: 'autoApprovalReview',
+                review: { status: 'approved', rationale: 'Temporary local server.', internalReasoning: 'private' },
+              },
+            ],
+          },
+        ],
+      },
+    };
   };
   const result = await runRetro(
     service,
@@ -1854,6 +1878,17 @@ test('Retro reads linked threads in the available provider and reports missing h
           ['early', 'late', 'missing']
         );
         assert.equal(history.threads[2].unavailable, true);
+        const turn = history.threads[0].turns[0];
+        assert.equal(turn.id, 'linked-turn');
+        assert.deepEqual(
+          turn.items.map((item) => item.id),
+          ['message', 'command', 'permission']
+        );
+        assert.equal(turn.items[0].timestamp, 3);
+        assert.equal(turn.items[1].aggregatedOutput, 'listen EPERM');
+        assert.equal(turn.items[1].timestamp, null);
+        assert.deepEqual(turn.items[2].review, { status: 'approved', rationale: 'Temporary local server.' });
+        assert.equal(turn.permissionDecisions, 'recorded');
         return JSON.stringify({ summary: 'Reviewed the available history.', recommendations: [] });
       },
       close() {},
