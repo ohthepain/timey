@@ -7,8 +7,9 @@ import { conversationTimeline } from './conversation-view.mjs';
 import { readQueue } from './data.mjs';
 import { redactValue } from './activity.mjs';
 import { requireThat } from './common.mjs';
+import { exportRetroThread } from './flow-retro-thread.mjs';
 
-async function readThread(connection, id, signal) {
+async function readThread(connection, id, signal, attempts) {
   try {
     const result = await Promise.race([
       connection.ready().then(() => connection.call('thread/read', { threadId: id, includeTurns: true })),
@@ -16,18 +17,9 @@ async function readThread(connection, id, signal) {
     ]);
     const thread = result?.thread;
     signal.throwIfAborted();
-    if (!Array.isArray(thread?.turns)) return { id, unavailable: true };
-    return {
-      id,
-      createdAt: thread.createdAt,
-      turns: thread.turns.map((turn) => ({
-        startedAt: turn.startedAt,
-        status: turn.status,
-        items: (turn.items || []).filter((item) => ['userMessage', 'agentMessage', 'plan'].includes(item.type)),
-      })),
-    };
-  } catch {
-    return { id, unavailable: true };
+    return exportRetroThread(id, thread, attempts);
+  } catch (error) {
+    return exportRetroThread(id, null, attempts, redactValue(error.message));
   }
 }
 
@@ -47,7 +39,7 @@ async function retroHistory(service, { issue, flow, signal }) {
       ...attempts.map((entry) => entry.result?.threadId),
     ].filter(Boolean)
   );
-  const threads = await Promise.all([...threadIds].map((id) => readThread(service.codex, id, signal)));
+  const threads = await Promise.all([...threadIds].map((id) => readThread(service.codex, id, signal, attempts)));
   signal.throwIfAborted();
   return {
     report: issue.content,
