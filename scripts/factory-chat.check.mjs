@@ -16,6 +16,7 @@ import { createIssueChatConnection, attachIssueChat } from './factory-ui/issue-c
 import { CodexConnection } from './factory-ui/codex.mjs';
 import { nameIssueChat } from './factory-ui/chat-name.mjs';
 import { digest } from './factory-ui/common.mjs';
+import { readProjectPreferences, saveProjectPreferences } from './factory-ui/project-preferences.mjs';
 
 function fixture(t) {
   const f = deliveryFixture(t),
@@ -89,6 +90,25 @@ test('one issue conversation persists messages, role contributions and native ch
   assert.equal(f.calls.filter((call) => call.attach === 'new').length, 1);
   assert.equal(f.calls.filter((call) => call.attach === 'persistent-issue-chat').length, 1);
   assert.match(f.calls.findLast((call) => call.name)?.name, /^Issue: .* · waiting$/);
+});
+
+test('issue and investigation chat turns use their distinct project prompt overrides', async (t) => {
+  const f = fixture(t);
+  saveProjectPreferences(f.service, {
+    revision: readProjectPreferences(f.queue.root).revision,
+    prompts: { issue: 'Issue conversation instructions.', investigation: 'Investigation conversation instructions.' },
+  });
+  await f.send('Discuss this issue.', 'issue-prompt-settings');
+  await f.finish();
+  assert.ok(f.calls.findLast((call) => call.prompt).prompt.startsWith('Issue conversation instructions.'));
+  const report = join(f.queue.root, '.issues', f.input.issueId + '.md');
+  writeFileSync(
+    report,
+    readFileSync(report, 'utf8').replace('state: verify', 'state: verify\nrequest_type: investigation')
+  );
+  await f.send('Discuss this investigation.', 'investigation-prompt-settings');
+  await f.finish();
+  assert.ok(f.calls.findLast((call) => call.prompt).prompt.startsWith('Investigation conversation instructions.'));
 });
 
 test('retro on a closed report retains its request and result in the saved issue conversation', async (t) => {
@@ -637,7 +657,7 @@ test('Stop control retains the draft, binds the displayed response and shows can
   ]);
   assert.equal(draft.value, 'Unsent draft');
   assert.equal(stop.disabled, false);
-  assert.match(dom.window.document.querySelector('[role="status"]').textContent, /Cancellation unavailable/);
+  assert.match(dom.window.document.querySelector('.discussion-status').textContent, /Cancellation unavailable/);
   const mount = () => {
     dom.window.chatTest.beforeRender();
     dom.window.document.body.innerHTML = '<div id="issue-chat-slot"></div>';
@@ -650,20 +670,20 @@ test('Stop control retains the draft, binds the displayed response and shows can
   };
   mount();
   assert.match(
-    dom.window.document.querySelector('[role="status"]').textContent,
+    dom.window.document.querySelector('.discussion-status').textContent,
     /Cancellation unavailable/,
     'The failure remains visible while its original response is still running'
   );
   data.conversation = { issueId: 'one', responseId: null, connected: false, status: 'idle' };
   mount();
   assert.equal(stop.hidden, true);
-  assert.equal(dom.window.document.querySelector('[role="status"]').textContent, '');
+  assert.equal(dom.window.document.querySelector('.discussion-status').textContent, '');
   data.conversation = { issueId: 'one', responseId: 'next-response', connected: true };
   mount();
   assert.equal(stop.hidden, false);
   assert.equal(stop.dataset.responseId, 'next-response');
-  assert.doesNotMatch(dom.window.document.querySelector('[role="status"]').textContent, /Cancellation unavailable/);
-  assert.match(dom.window.document.querySelector('[role="status"]').textContent, /assistant is responding/);
+  assert.doesNotMatch(dom.window.document.querySelector('.discussion-status').textContent, /Cancellation unavailable/);
+  assert.match(dom.window.document.querySelector('.discussion-status').textContent, /assistant is responding/);
 });
 
 test('Stop HTTP route keeps session, manual-action and preview guards and leaves workflow execution untouched', async (t) => {
@@ -1295,7 +1315,11 @@ test('discussion thread resumes for work in its real managed checkout despite im
   const checkout = f.service.lifecycleRuns[issueId].chatCheckout.checkout;
   assert.notEqual(realpathSync(checkout), realpathSync(f.queue.root));
   assert.equal(conversationState(f.queue.root, issueId).threadId, originalThread);
-  assert.deepEqual(resumed, [[originalThread, checkout, 'workspace-write']]);
+  assert.deepEqual(
+    resumed.map((args) => args.slice(0, 3)),
+    [[originalThread, checkout, 'workspace-write']]
+  );
+  assert.match(resumed[0][3], /registered project and issue tools/);
   const work = f.calls.find((call) => call.prompt?.includes('Latest request: Edit in the managed checkout'));
   assert.equal(work.id, originalThread);
   assert.equal(work.root, checkout);

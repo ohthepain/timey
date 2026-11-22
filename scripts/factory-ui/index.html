@@ -1,6 +1,7 @@
 <!doctype html>
 <html lang="en">
   <head>
+    <link rel="stylesheet" href="/project-discuss.css" />
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>Factory · Issue queue</title>
@@ -2135,6 +2136,9 @@
       <p id="confirmation-error" role="alert"></p>
       <div class="actions"><button id="approve">Confirm</button><button id="cancel">Cancel</button></div>
     </dialog>
+    <link rel="stylesheet" href="/ai-text.css" />
+    <script src="/hotkeys-ui.js"></script>
+    <script src="/ai-text-ui.js"></script>
     <script src="/view-state.js"></script>
     <script src="/issue-capture-ui.js"></script>
     <script src="/server-control-ui.js"></script>
@@ -2711,7 +2715,7 @@
         const messages = run.events
           .filter((e) => e.method === 'item/completed' && e.params.item?.type === 'agentMessage')
           .map((e) => e.params.item.text);
-        return `<section class="card" data-view-id="run-${esc(run.id)}"><span class="badge">${run.kind === 'coordinator' ? 'Result review' : run.kind === 'reconciliation' ? 'Issue update' : esc(run.kind)} · ${esc(statusLabel(run.status))}</span><p>${esc(run.displaySummary || run.summary)}</p><small>Started ${recordedDate(run.created)}${run.updated ? ` · Updated ${recordedDate(run.updated)}` : ''}</small><br>${chatLink(run.threadId)}${run.kind === 'evaluation' && run.result?.next_issue_id ? `<p>Next issue: ${link(run.result.next_issue_id)}</p>` : ''}${reviewResult(run, interactive)}${routePreview(run)}${interactive && !issueRoute().id ? approvals(run) : ''}<details data-run-details="${esc(run.id)}"><summary>Chat transcript and technical details</summary><pre>${esc(messages.join('\n\n') || 'No completed messages yet.')}</pre>${run.result ? `<pre>${esc(JSON.stringify(run.result, null, 2))}</pre>` : ''}<p>Recorded base: ${esc(run.base)}</p></details>${interactive && !run.connected && run.threadId && ['worker', 'integration'].includes(run.kind) && ['blocked', 'running', 'checking'].includes(run.status) ? `<label>Continue this assignment<textarea id="resume-${esc(run.id)}" placeholder="Explain what changed or how to proceed"></textarea></label><button data-resume="${esc(run.id)}">${run.kind === 'integration' ? 'Continue integration' : 'Continue worker'}</button>` : ''}${interactive && run.kind === 'evaluation' && run.status === 'completed' && !run.savedActions && (run.result.recommendations.length || run.result.routes?.length) ? `<button data-save="${esc(run.id)}">Save recommendations and route</button><p class="muted">Saving records the plan. It does not start workers.</p>` : ''}</section>`;
+        return `<section class="card" data-view-id="run-${esc(run.id)}"><span class="badge">${run.kind === 'coordinator' ? 'Result review' : run.kind === 'reconciliation' ? 'Issue update' : esc(run.kind)} · ${esc(statusLabel(run.status))}</span><p data-ai-text data-ai-key="classic-summary-${esc(run.id)}">${esc(run.displaySummary || run.summary)}</p><small>Started ${recordedDate(run.created)}${run.updated ? ` · Updated ${recordedDate(run.updated)}` : ''}</small><br>${chatLink(run.threadId)}${run.kind === 'evaluation' && run.result?.next_issue_id ? `<p>Next issue: ${link(run.result.next_issue_id)}</p>` : ''}${reviewResult(run, interactive)}${routePreview(run)}${interactive && !issueRoute().id ? approvals(run) : ''}<details data-run-details="${esc(run.id)}"><summary>Chat transcript and technical details</summary><pre data-ai-text data-ai-key="classic-transcript-${esc(run.id)}">${esc(messages.join('\n\n') || 'No completed messages yet.')}</pre>${run.result ? `<pre data-ai-text data-ai-key="classic-result-${esc(run.id)}">${esc(JSON.stringify(run.result, null, 2))}</pre>` : ''}<p>Recorded base: ${esc(run.base)}</p></details>${interactive && !run.connected && run.threadId && ['worker', 'integration'].includes(run.kind) && ['blocked', 'running', 'checking'].includes(run.status) ? `<label>Continue this assignment<textarea id="resume-${esc(run.id)}" placeholder="Explain what changed or how to proceed"></textarea></label><button data-resume="${esc(run.id)}">${run.kind === 'integration' ? 'Continue integration' : 'Continue worker'}</button>` : ''}${interactive && run.kind === 'evaluation' && run.status === 'completed' && !run.savedActions && (run.result.recommendations.length || run.result.routes?.length) ? `<button data-save="${esc(run.id)}">Save recommendations and route</button><p class="muted">Saving records the plan. It does not start workers.</p>` : ''}</section>`;
       }
       let focusedStageRoute = null;
       let focusedRunRoute = null;
@@ -2909,7 +2913,7 @@
       }
       function projectIssueArchiveButton() {
         if (!closedProjectIssueSelection()) return '';
-        return `<div class="toolbar"><span>${selectedProjectIssueIds.size} selected</span><button type="button" class="primary" data-archive-project-issues ${projectIssueArchive.saving ? 'disabled' : ''}>${projectIssueArchive.saving ? 'Archiving…' : 'Archive all'}</button></div>`;
+        return `<div class="toolbar"><span>${selectedProjectIssueIds.size} selected</span><button type="button" class="primary" data-archive-project-issues ${projectIssueArchive.saving ? 'disabled' : ''}>${projectIssueArchive.saving ? 'Archiving…' : 'Archive selected'}</button></div>`;
       }
       function projectIssueArchiveControls(embedded) {
         if (!embedded) return '';
@@ -3604,7 +3608,7 @@
           .filter((record) => record.state === (step.state || '@' + step.role))
           .map(
             (record) =>
-              `<details><summary>Saved grilling · ${esc(record.name)} · ${recordedDate(record.at)}</summary><pre>${esc(record.summary)}</pre><p>These are confirmed discussion results. Stage completion, test evidence and approvals remain separate.</p></details>`
+              `<details><summary>Saved grilling · ${esc(record.name)} · ${recordedDate(record.at)}</summary><pre data-ai-text>${esc(record.summary)}</pre><p>These are confirmed discussion results. Stage completion, test evidence and approvals remain separate.</p></details>`
           )
           .join('');
       }
@@ -4444,7 +4448,7 @@
           )
           .filter(Boolean)
           .join('\n\n');
-        return `<section class="card" id="focused-action-output"><h2>Action output · ${esc(run.kind)}</h2><p>${esc(run.summary || 'Current action output')}</p><pre class="live-output" tabindex="0" aria-label="Action output">${esc(output || 'No output has arrived yet.')}</pre><p><a href="#/issue/${encodeURIComponent(issue.id)}">Back to issue</a></p></section>`;
+        return `<section class="card" id="focused-action-output"><h2>Action output · ${esc(run.kind)}</h2><p>${esc(run.summary || 'Current action output')}</p><pre class="live-output" data-ai-text data-ai-key="classic-live-${esc(run.id)}" tabindex="0" aria-label="Action output">${esc(output || 'No output has arrived yet.')}</pre><p><a href="#/issue/${encodeURIComponent(issue.id)}">Back to issue</a></p></section>`;
       }
       function evidencePanel(issue) {
         const runs = data.runs.filter(

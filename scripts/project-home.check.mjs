@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { gitFixture } from './git-fixture.mjs';
 import { createIssueFlows } from './factory-ui/flow-service.mjs';
+import { makeBlock } from './factory-ui/flow-store.mjs';
 import { ProjectInvestigations } from './factory-ui/project-investigations.mjs';
 import { ProjectHome } from './factory-ui/project-home.mjs';
 import { projectHomeStats } from './factory-ui/project-home-stats.mjs';
@@ -13,7 +14,7 @@ import { conversationMessages } from './factory-ui/conversation-store.mjs';
 import { moveIssueStorage } from './factory-ui/issue-storage-actions.mjs';
 import { createIssueFolderSettings } from './factory-ui/issue-folder-settings.mjs';
 
-function fixture(t, options = {}) {
+function legacyFixture(t, options = {}) {
   const { root, git } = gitFixture(t, 'project-home-');
   const previousCodexHome = process.env.CODEX_HOME;
   process.env.CODEX_HOME = join(root, '.fixture-codex');
@@ -72,6 +73,22 @@ function fixture(t, options = {}) {
     reason: 'Observed source.txt:1 accepts invalid inputs.',
     verification: 'An invalid input produces a useful rejection.',
   };
+  const capture = flows.capture.bind(flows);
+  flows.capture = async (input) => {
+    const result = await capture(input);
+    if (input.type === 'investigation' && result.issue) {
+      const flow = flows.read(flows.selected(result.issue.id));
+      if (!flow.blocks.slice(1).some(({ attempts }) => attempts.length)) {
+        const inquiry = makeBlock('understand', [flow.blocks[0].id], false, flows.catalog.read().entries);
+        inquiry.id = inquiry.flowKey = 'work';
+        flow.blocks = [flow.blocks[0], inquiry];
+        flow.definition = { ...flow.definition, id: 'legacy-investigation-fixture' };
+        delete flow.investigationLayout;
+        flows.store.save(flow, flow.revision);
+      }
+    }
+    return result;
+  };
   service.flows = flows;
   let investigations = new ProjectInvestigations(service, flows, {
     propose: options.propose || (async () => [proposal]),
@@ -112,8 +129,8 @@ const start = (action = 'investigation-run') => ({
   focus: 'Code quality',
 });
 
-test('project investigations create one issue, honor selected branch, retain findings, and automatically file approval-needed follow-ups', async (t) => {
-  const f = fixture(t);
+test('legacy compatibility, project investigations create one issue, honor selected branch, retain findings, and automatically file approval-needed follow-ups', async (t) => {
+  const f = legacyFixture(t);
   assert.equal(f.investigations.view().length, 0);
   const input = start();
   const first = await f.start(input);
@@ -140,8 +157,8 @@ test('project investigations create one issue, honor selected branch, retain fin
   assert.equal(f.calls.length, 1);
 });
 
-test('discussion saves the investigation but creates no follow-up until explicit Run', async (t) => {
-  const f = fixture(t);
+test('legacy compatibility, discussion saves the investigation but creates no follow-up until explicit Run', async (t) => {
+  const f = legacyFixture(t);
   const discussed = await f.start({
     ...start('investigation-discuss'),
     message: 'What should we investigate first?',
@@ -165,8 +182,8 @@ test('discussion saves the investigation but creates no follow-up until explicit
   assert.equal(f.flows.issues().length, 2);
 });
 
-test('partial follow-up creation retries only uncreated proposals, without rerunning the investigation', async (t) => {
-  const f = fixture(t);
+test('legacy compatibility, partial follow-up creation retries only uncreated proposals, without rerunning the investigation', async (t) => {
+  const f = legacyFixture(t);
   const capture = f.flows.capture.bind(f.flows);
   let fail = true;
   f.flows.capture = async (input) => {
@@ -186,8 +203,8 @@ test('partial follow-up creation retries only uncreated proposals, without rerun
   assert.equal(f.flows.issues().length, 2);
 });
 
-test('Stop preserves the issue and partial attempt and creates no follow-ups', async (t) => {
-  const f = fixture(t, {
+test('legacy compatibility, Stop preserves the issue and partial attempt and creates no follow-ups', async (t) => {
+  const f = legacyFixture(t, {
     execute: (ctx) =>
       new Promise((resolve, reject) => {
         ctx.signal.addEventListener('abort', () => reject(Error('Stopped fixture')), { once: true });
@@ -204,9 +221,9 @@ test('Stop preserves the issue and partial attempt and creates no follow-ups', a
   assert.equal(flow.blocks.find(({ kind }) => kind === 'understand').attempts.at(-1).status, 'stopped');
 });
 
-test('whole-project defaults use project settings and archived existing issues are supplied to proposals', async (t) => {
+test('legacy compatibility, whole-project defaults use project settings and archived existing issues are supplied to proposals', async (t) => {
   let existing;
-  const f = fixture(t, {
+  const f = legacyFixture(t, {
     propose: async (context) => {
       existing = context.existingIssues;
       return [];
@@ -233,7 +250,7 @@ test('whole-project defaults use project settings and archived existing issues a
   assert.equal(result.followups.length, 0);
 });
 
-test('statistics include archived creations and unique historical closures even after reopen', (t) => {
+test('legacy compatibility, statistics include archived creations and unique historical closures even after reopen', (t) => {
   const { root } = gitFixture(t, 'project-home-stats-');
   mkdirSync(join(root, '.issues/archive'), { recursive: true });
   writeFileSync(
@@ -256,8 +273,8 @@ test('statistics include archived creations and unique historical closures even 
   assert.equal(projectHomeStats(root, '2026-11-18T12:00:00Z').incompleteHistory, true);
 });
 
-test('concurrent replay of one explicit run cannot launch duplicate blocks', async (t) => {
-  const f = fixture(t);
+test('legacy compatibility, concurrent replay of one explicit run cannot launch duplicate blocks', async (t) => {
+  const f = legacyFixture(t);
   const input = start();
   const results = await Promise.all([f.start(input), f.start(input)]);
   assert.equal(results[0].session.id, results[1].session.id);
@@ -267,8 +284,8 @@ test('concurrent replay of one explicit run cannot launch duplicate blocks', asy
   assert.equal(f.flows.issues().length, 2);
 });
 
-test('changing investigation branches preserves a legacy workspace and its human edits', async (t) => {
-  const f = fixture(t);
+test('legacy compatibility, changing investigation branches preserves a legacy workspace and its human edits', async (t) => {
+  const f = legacyFixture(t);
   const created = await f.investigations.action({ ...start(), action: 'investigation-create' });
   const flow = f.flows.read(f.flows.selected(created.issueId));
   const checkout = join(f.root, '.issues/legacy-investigation');
@@ -283,8 +300,8 @@ test('changing investigation branches preserves a legacy workspace and its human
   assert.equal(f.flows.read(f.flows.selected(created.issueId)).workspace, null);
 });
 
-test('invalid branches and empty discussions create no issue and no model work', async (t) => {
-  const f = fixture(t);
+test('legacy compatibility, invalid branches and empty discussions create no issue and no model work', async (t) => {
+  const f = legacyFixture(t);
   await assert.rejects(
     f.start({ ...start(), branch: 'refs/heads/missing' }),
     /selected starting branch is unavailable/
@@ -297,7 +314,7 @@ test('invalid branches and empty discussions create no issue and no model work',
   assert.equal(f.calls.length, 0);
 });
 
-test('Stop during follow-up capture finishes that capture but starts no later issue', async (t) => {
+test('legacy compatibility, Stop during follow-up capture finishes that capture but starts no later issue', async (t) => {
   const proposal = (title) => ({
     title,
     type: 'bug',
@@ -305,7 +322,7 @@ test('Stop during follow-up capture finishes that capture but starts no later is
     reason: 'Observed source.txt:1.',
     verification: 'A focused behavioral check.',
   });
-  const f = fixture(t, { propose: async () => [proposal('First finding'), proposal('Second finding')] });
+  const f = legacyFixture(t, { propose: async () => [proposal('First finding'), proposal('Second finding')] });
   const capture = f.flows.capture.bind(f.flows);
   let release;
   let captured = false;
@@ -330,9 +347,9 @@ test('Stop during follow-up capture finishes that capture but starts no later is
   assert.equal(f.flows.issues().filter(({ state }) => state === 'needs-approval').length, 1);
 });
 
-test('Retry reconciles an uncertain original Understand attempt instead of starting an unrelated operation', async (t) => {
+test('legacy compatibility, Retry reconciles an uncertain original Understand attempt instead of starting an unrelated operation', async (t) => {
   let round = 0;
-  const f = fixture(t, {
+  const f = legacyFixture(t, {
     execute: async (ctx) => {
       if (round++ === 0) throw Object.assign(Error('Synthetic provider disconnect'), { uncertain: true });
       assert.equal(ctx.continuing, true);
@@ -361,8 +378,8 @@ test('Retry reconciles an uncertain original Understand attempt instead of start
   assert.ok(attempts[0].reconciledAt);
 });
 
-test('failed automatic capture cannot silently switch to a newer Understand result on Retry', async (t) => {
-  const f = fixture(t);
+test('legacy compatibility, failed automatic capture cannot silently switch to a newer Understand result on Retry', async (t) => {
+  const f = legacyFixture(t);
   const capture = f.flows.capture.bind(f.flows);
   let fail = true;
   f.flows.capture = async (input) => {
@@ -389,7 +406,7 @@ test('failed automatic capture cannot silently switch to a newer Understand resu
   assert.equal(f.calls.length, 1);
 });
 
-test('preview reads saved running investigations without creating files, reconciling, or claiming the live server', async (t) => {
+test('legacy compatibility, preview reads saved running investigations without creating files, reconciling, or claiming the live server', async (t) => {
   const { root, git } = gitFixture(t, 'project-home-preview-');
   writeFileSync(join(root, 'source.txt'), 'fixture');
   git('add', '.');
@@ -420,8 +437,8 @@ test('preview reads saved running investigations without creating files, reconci
   assert.equal(existsSync(join(root, '.issues/factory-ui/project-home/history.json')), false);
 });
 
-test('project branch selection is independent of the issue filing folder branch override', async (t) => {
-  const f = fixture(t, { propose: async () => [] });
+test('legacy compatibility, project branch selection is independent of the issue filing folder branch override', async (t) => {
+  const f = legacyFixture(t, { propose: async () => [] });
   const inbox = join(f.root, 'user/Inbox/folder.md');
   const content = readFileSync(inbox, 'utf8');
   writeFileSync(inbox, content.replace(/branch: .*/, 'branch: unavailable-folder-branch'));
@@ -439,8 +456,8 @@ test('project branch selection is independent of the issue filing folder branch 
   );
 });
 
-test('creation is idle, non-reusable completion cannot rerun, and Reusable enables another saved run', async (t) => {
-  const f = fixture(t);
+test('legacy compatibility, creation is idle, non-reusable completion cannot rerun, and Reusable enables another saved run', async (t) => {
+  const f = legacyFixture(t);
   const created = await f.investigations.action({ ...start(), action: 'investigation-create' });
   assert.equal(f.calls.length, 0);
   assert.equal(f.investigations.issueView(created.issueId).runs.length, 0);
@@ -470,8 +487,8 @@ test('creation is idle, non-reusable completion cannot rerun, and Reusable enabl
   assert.ok(history.runs.every(({ settings, revision }) => settings && revision));
 });
 
-test('archive preserves open investigation state and history; restore preserves Reusable and child issues', async (t) => {
-  const f = fixture(t);
+test('legacy compatibility, archive preserves open investigation state and history; restore preserves Reusable and child issues', async (t) => {
+  const f = legacyFixture(t);
   const started = await f.start(start());
   const done = await settled(f, started.session.id);
   const before = f.flows.selected(done.issueId);
@@ -494,9 +511,9 @@ test('archive preserves open investigation state and history; restore preserves 
   assert.equal(f.flows.issues().find(({ source_issue }) => source_issue === done.issueId).state, 'needs-approval');
 });
 
-test('follow-up destination is per run and independent of the investigation filing folder', async (t) => {
+test('legacy compatibility, follow-up destination is per run and independent of the investigation filing folder', async (t) => {
   let n = 0;
-  const f = fixture(t, {
+  const f = legacyFixture(t, {
     propose: async () => [
       {
         title: 'Finding ' + ++n,
@@ -526,8 +543,8 @@ test('follow-up destination is per run and independent of the investigation fili
   assert.equal(f.flows.read(children.find(({ title }) => title === 'Finding 2')).folder, 'Inbox');
 });
 
-test('each new run resolves current defaults and branch tip while preserving earlier run settings and explicit overrides', async (t) => {
-  const f = fixture(t, { propose: async () => [] });
+test('legacy compatibility, each new run resolves current defaults and branch tip while preserving earlier run settings and explicit overrides', async (t) => {
+  const f = legacyFixture(t, { propose: async () => [] });
   const created = await f.investigations.action({ ...start(), action: 'investigation-create', reusable: true });
   const first = await f.investigations.action({ ...start(), issueId: created.issueId });
   const original = await settled(f, first.session.id);

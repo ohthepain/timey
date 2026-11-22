@@ -1,14 +1,15 @@
 import assert from 'node:assert/strict';
-import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { git } from './factory-ui/common.mjs';
+import { writeBrowserIssue } from './flow-browser-fixture.mjs';
 
 export async function errorRecoveryBrowserChecks({ page, service, project, output }) {
   const id = '20261120-error-recovery-fixture';
-  writeFileSync(
-    join(project, '.issues', id + '.md'),
-    `---\nid: ${id}\ntitle: Recover from a rejected branch update\nstate: backlog\n---\n\nRefresh the shared queue before retrying.\n`
-  );
+  writeBrowserIssue(project, {
+    id,
+    title: 'Recover from a rejected branch update',
+    body: 'Refresh the shared queue before retrying.',
+  });
   const issue = service.flows.selected(id);
   const flow = service.flows.read(issue);
   const checkout = join(project, '.issues/issue-work', id);

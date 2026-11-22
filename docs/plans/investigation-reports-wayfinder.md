@@ -10,7 +10,9 @@ its guarded issue operations.
 
 The implementation handoff has since been captured through the existing UI as
 [Implement investigation flows and reports](http://127.0.0.1:4317/?issue=20261121T104937769-06e3427f667db7d9).
-It was created idle in Inbox. The planning map and its child decisions remain
+It was created idle in Inbox and subsequently explicitly started by the user.
+That Start authorizes implementation within the agreed design through the
+issue's existing controls. The planning map and its child decisions remain
 documents rather than published queue tickets.
 
 ## Destination
@@ -18,7 +20,8 @@ documents rather than published queue tickets.
 An agreed design for investigation flows with optional report and issue outputs,
 a project Reports tab, and report discussion in the existing investigation chat.
 The design is ready for a separate implementation effort. All named product
-and ownership decisions have answers; implementation remains separately authorized.
+and ownership decisions have answers. The user supplied the separate implementation
+authorization by explicitly starting the linked issue.
 
 ## Notes
 

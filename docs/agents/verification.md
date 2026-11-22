@@ -1,6 +1,61 @@
 # Verification
 
+`node --test --test-name-pattern='manual branch update|oversized input' scripts/flow.check.mjs scripts/flow-executor.check.mjs`
+reproduces Update Branch being blocked by an uncertain Work attempt. It checks
+that an active provider blocks the update and a confirmed idle provider permits
+it while retaining the failed attempt and recording reconciliation. It also
+checks recovery of retained oversized rejections, refusal when a receipt exists
+or the request cannot be confirmed, and rejection of new oversized input before
+provider dispatch.
+
+`node --test --test-name-pattern='large source issue history|retained source publication|Retry replaces' scripts/flow-executor.check.mjs`
+checks small inline source context and large source history supplied by file
+reference. The large-history fixture exceeds the provider limit before the fix;
+the bounded request retains the full report in a file with a matching digest.
+The Retry scenario verifies a new conversation is created for a confirmed
+rejected first input instead of resuming a thread with no persisted history.
+
 ## Commands and evidence
+
+`node --test scripts/factory-server-control.check.mjs` checks that No new actions
+allows chat requests across issue, project, report, temporary, and coordinator
+conversations while work dispatch stays paused. Its HTTP Discuss regression
+sends and drains queued prompts through an injected provider with the switch on
+and another action running. It starts no live model work.
+
+`node scripts/flow-browser.mjs --investigation-reports` checks retained report
+reading and discussion. Its draft-restoration regression holds the discussion
+response and dispatches a reader scroll before releasing it. The reopened draft
+must retain its text; `report-draft-restore.json` records the observed value.
+
+`node --test scripts/ai-text-bro.check.mjs` checks bro skill loading, a separate
+read-only rewrite, invalid input and provider failure.
+`node scripts/flow-browser.mjs --ai-text` checks top-right hover controls, real
+clipboard contents, the persistent
+blue bro toggle, restoring original text, caret/end insertion and hovered-field
+hotkey routing. It saves `ai-text-controls.png` and `ai-text-controls.json` in its
+evidence directory. The fixture injects model output and speech recognition.
+Live model quality and physical microphone recognition are not measured by it.
+The Factory refresh browser scenario checks that incoming AI text still follows
+the reader at the bottom. View rendering mounts text controls before restoring
+scroll, focus and selection so their layout is included in that restoration.
+The AI-controls scenario recreates its Discuss service before installing its
+provider so earlier browser scenarios cannot supply its response text.
+
+`node --test scripts/flow-delivery.check.mjs` checks that no-change publication
+stops before pushing or creating a PR, including already delivered candidates and
+empty commits. `node scripts/flow-browser.mjs --no-changes` drives the no-change
+Publish preview, Cannot Reproduce suggestion, cancellation and explicit closure
+in a disposable project. It saves `no-changes-close-offer.png`; no live issue is
+closed and no GitHub publication occurs.
+The no-change scenario uses its own injected cleanup executor and waits for
+completed cleanup before restoring the shared executor. It removes lifecycle
+configuration only when the scenario created it. This preserves later scenarios'
+assertions that no work has started and lifecycle setup is still required. It also
+restores the disposable project's Git configuration after adding its publication remote. Run
+`node scripts/flow-browser.mjs --no-changes --folder-settings` to check that boundary.
+The missing-lifecycle browser scenario removes the disposable project's lifecycle
+file before opening settings, even when earlier scenarios initialized it.
 
 `node --test scripts/flow.check.mjs scripts/flow-delivery.check.mjs` checks the
 merged-issue lock, preserved definitions and attempts, external merge observation,
@@ -68,6 +123,10 @@ and no automatic submission for "go" in the middle. They retain the observed
 provider submissions in `project-discuss-dictation.json`. Real dictation requires
 browser speech-recognition support and microphone permission; audio is not saved
 by Timey. Native provider availability is a separate smoke check.
+The Discuss scenario also opens enough conversations to overflow at desktop and
+narrow widths. It checks container bounds, hidden scrollbar styles, and scrolling
+to every tab, saving the observed styles, widths and visibility in
+`project-discuss-tabs.json`.
 The Discuss scenario saves `project-discuss-styles.json` beside its screenshot.
 It records the source commit and each rendered message's top and bottom border
 styles and widths, so divider checks can use observed computed styles.
@@ -83,7 +142,7 @@ work. `node --test scripts/interface-state.check.mjs` reproduces the original
 Discuss collapse and checks selection through growing and replaced activity.
 
 `node scripts/flow-browser.mjs --project-navigation` checks the ordered Home,
-Issues, and Investigate sidebar links, Home tab reset, Issues navigation, and
+Issues, Discuss, Reports, and Investigate sidebar links, Home tab reset, Issues navigation, and
 the Automate me tab, dialog, reload persistence, and narrow layout. It saves
 `project-navigation.png` and `project-navigation-automate.png` in its evidence directory.
 The navigation fixture temporarily initializes queue configuration, waits for a
@@ -748,6 +807,10 @@ browser errors continue to fail verification.
 Work All Night fixtures create the folders they assign, so execution reaches the
 injected worker through the same settings validation as a real issue. Start/stop
 checks have a 30-second test deadline and retain per-issue failure explanations.
+The dependency-failure scenario also checks that an independent issue adopts its
+clarified route and reaches the Merge confirmation within the owning run.
+Shared-chat DOM fixtures load the production template. Browser discussion
+scenarios close the preceding provider before installing their own fixture.
 Pending publication joins all preceding unfinished lanes even when the standard
 flow has no suggested Verify block. New blocks default to insertion before
 publication; existing attempted publication dependencies remain unchanged.
@@ -804,3 +867,19 @@ buttons in both directions, verifies that switching clears selection and the
 editor, and archives a closed selection with Archive all. It also verifies that
 the disabled direction caret is hidden for fixed status ordering and reappears
 for an order whose direction can change.
+
+`node scripts/flow-browser.mjs --issue-status-folders` checks the rendered In progress
+and Blocked sidebar collections with disposable reports in multiple folders. Saved
+attempts and an injected active registry entry cover running, blocked, human input,
+approval, interrupted and stopped states. It checks live polling after status
+changes and explicit Pause, collection order, foreign-project exclusion, unchanged
+report bytes and folder assignments. It saves `issue-status-folders-proof.json` and
+`issue-status-folders.png` in the reported evidence directory. It starts no model.
+
+`node scripts/flow-browser.mjs --local-notes` checks that collapsed and expanded
+Notes each retain their state after refresh and saves `local-notes-disclosure.json`.
+`node scripts/flow-browser.mjs --project-issues` checks the closed selection action
+reads Archive selected and saves `closed-issues-action.json` beside its screenshot.
+`node scripts/flow-browser.mjs --issue-status-folders` compares the rendered Blocked
+and In progress carets with a regular sidebar folder in both states. It saves
+`issue-status-carets.json` and screenshots of each expanded and collapsed section.

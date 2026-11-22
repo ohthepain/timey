@@ -85,7 +85,6 @@
     };
   }
   let folderSelection = emptyFolderSelection();
-  let projectSettings = null;
   let inspectedFile = null;
   let inspectorRender;
   let folderConfig = null;
@@ -104,65 +103,10 @@
       void load(true);
     },
   });
-  const projectFolderSettingsUI = window.createFolderSettingsUI({
-    container: $('project-folder-settings'),
-    request: json,
-    notify: toast,
-    prefix: 'project-setting',
-    changed: () => {
-      void load(true);
-    },
-  });
+  const projectSettingsUI = window.createProjectSettingsUI({ request: json, changed: () => void load(true) });
 
   function folderLocation() {
     return state.fileFolder ? { root: state.fileFolder.root, path: state.fileFolder.path } : { folder: state.folder };
-  }
-
-  function renderProjectSettings(settings) {
-    projectSettings = settings;
-    const lifecycle = settings.lifecycle;
-    const policy = settings.humanInputPolicy;
-    $('project-settings-content').innerHTML =
-      `<p class="muted">${escape(settings.project)}</p><h3>Human input</h3><p>The factory checks required human input before dependent work.${policy.require_explicit_acceptance ? ' Closing a fixed issue requires your explicit acceptance.' : ''}${!policy.manual_checks_before_commit ? ' Local progress commits can keep outstanding human checks recorded.' : ''}</p><p class="muted">These rules come from the project adapter. There is no policy preset to select here. Each issue keeps its own requests and approvals.</p><h3>Lifecycle configuration</h3><p>${lifecycle.present ? 'Lifecycle configuration is present.' : 'Lifecycle configuration is missing.'}</p><p>${lifecycle.present ? 'The saved configuration is shown below. Each operation still checks its required human input.' : 'Editable work and verification need this configuration. Initialize the standard lifecycle below. If this project previously used custom states, restore its original configuration instead.'}</p><details><summary>${lifecycle.present ? 'View configuration' : 'Preview standard configuration'}</summary><pre>${escape(lifecycle.content)}</pre></details><p class="muted">${escape(lifecycle.path)}</p>`;
-    $('initialize-lifecycle').hidden = lifecycle.present;
-  }
-
-  async function openProjectSettings() {
-    projectSettings = null;
-    projectFolderSettingsUI.setLocation({ project: true });
-    if (projectFolderSettingsUI.value())
-      void projectFolderSettingsUI.refresh().catch((failure) => showError(failure.message));
-    $('project-settings-error').hidden = true;
-    $('project-settings-content').textContent = 'Loading project settings…';
-    $('initialize-lifecycle').hidden = true;
-    $('project-settings-dialog').showModal();
-    try {
-      renderProjectSettings(await json('/api/project-settings'));
-    } catch (error) {
-      $('project-settings-error').textContent = error.message;
-      $('project-settings-error').hidden = false;
-    }
-  }
-
-  async function initializeLifecycle() {
-    if (!projectSettings || $('initialize-lifecycle').disabled) return;
-    $('initialize-lifecycle').disabled = true;
-    $('project-settings-error').hidden = true;
-    try {
-      renderProjectSettings(
-        await json('/api/project-settings-initialize', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Factory-Action': 'manual' },
-          body: JSON.stringify({ digest: projectSettings.lifecycle.digest }),
-        })
-      );
-      toast('Lifecycle configuration saved. Retry the blocked step when ready.');
-    } catch (error) {
-      $('project-settings-error').textContent = error.message;
-      $('project-settings-error').hidden = false;
-    } finally {
-      $('initialize-lifecycle').disabled = false;
-    }
   }
 
   function escape(value) {
@@ -200,7 +144,12 @@
     const attempt = latest(block);
     if (attempt?.invalidatedAt && !runningStatuses.has(attempt.status) && attempt.status !== 'uncertain')
       return 'invalidated';
-    return attempt?.status || (block?.suggested ? 'suggested' : 'ready');
+    return attempt?.status || blockDefaultStatus(block);
+  }
+
+  function blockDefaultStatus(block) {
+    if (block?.historicallyCompleted) return 'completed';
+    return block?.suggested ? 'suggested' : 'ready';
   }
 
   function routeComplete(blocks) {
@@ -220,7 +169,7 @@
     const playing = ['playing', 'waiting'].includes(state.view?.autoplay?.mode);
     if (playing) return 'pause';
     if (!issue || location === 'archive' || state.view?.grouping?.master) return 'hidden';
-    if (routeComplete(blocks)) return closed ? 'archive' : 'close';
+    if (routeComplete(blocks)) return closed || state.view.flow.routeType === 'investigation' ? 'archive' : 'close';
     if (closed || issue.readOnly) return 'hidden';
     return blocks.some((block) => block.attempts?.length) ? 'resume' : 'start';
   }
@@ -361,6 +310,12 @@
     changed: () => load(true),
   });
   const investigationUI = window.createInvestigationIssueUI({ request: json, post, changed: () => load(true) });
+  const investigationControls = window.createInvestigationFlowControls({
+    request: json,
+    post,
+    changed: () => load(true),
+    archive: archiveIssueWithUiState,
+  });
 
   function investigationActions(block) {
     if (block?.kind !== 'understand' || status(block) !== 'completed') return '';
@@ -595,7 +550,12 @@
     }
     const routeAction = playbackAction(state.view?.flow?.blocks || []);
     $('close-with-reason').hidden =
-      !issue || closed || pending || Boolean(state.view?.grouping?.master) || routeAction === 'close';
+      !issue ||
+      state.view?.flow?.routeType === 'investigation' ||
+      closed ||
+      pending ||
+      Boolean(state.view?.grouping?.master) ||
+      routeAction === 'close';
     $('close-with-reason').disabled = busy;
     $('issue-archive-menu').hidden = !closed;
     $('issue-archive-menu').disabled = busy;
@@ -719,11 +679,30 @@
       `${issue.title} ${issue.issueNumber || ''}`.toLowerCase().includes(state.search.toLowerCase())
     );
     const collection = (id, name, content) =>
-      `<details id="${id}" class="issue-folder" data-collection data-view-controlled-open${state.search || !state.collapsedCollections.has(id) ? ' open' : ''}><summary class="folder-toggle">${name}</summary><div class="folder-items">${content}</div></details>`;
+      `<details id="${id}" class="issue-folder" data-collection data-view-controlled-open${state.search || !state.collapsedCollections.has(id) ? ' open' : ''}><summary class="folder-toggle folder-disclosure">${name}</summary><div class="folder-items">${content}</div></details>`;
     const empty = '<p class="sidebar-empty">No matching issues.</p>';
+    const statusCollections = [
+      { id: 'in-progress-issues', name: 'In progress', matches: (issue) => issue.status === 'running' },
+      {
+        id: 'blocked-status-issues',
+        name: 'Blocked',
+        matches: (issue) =>
+          issue.state !== 'needs-approval' &&
+          issue.status !== 'running' &&
+          (['blocked', 'need-input'].includes(issue.status) || issue.waitingForApproval),
+      },
+    ].map(({ id, name, matches }) => {
+      const members = issues.filter((issue) => !issue.paused && issue.status !== 'closed' && matches(issue));
+      return collection(
+        id,
+        `${name}<span class="folder-count">${members.length}</span>`,
+        members.map(row).join('') || empty
+      );
+    });
     view.render(
       $('issue-list'),
-      `<div id="open-issues">${groups || empty}</div>` +
+      statusCollections.join('') +
+        `<div id="open-issues">${groups || empty}</div>` +
         collection('closed-issues', 'Closed', closed.map(row).join('') || empty) +
         collection(
           'archived-issues',
@@ -1862,11 +1841,33 @@
         ? outputs
             .map(
               (output) =>
-                `<label class="field"><span>${escape(output.label)}</span>${readonlyInput(output.key, output, output.value)}</label>`
+                `<label class="field"><span>${escape(output.label)}</span><div data-ai-text data-ai-key="output-${escape(state.issueId)}-${escape(block.id)}-${escape(output.key)}" data-ai-source="${escape(displayValue(output.value))}">${readonlyInput(output.key, output, output.value)}</div></label>`
             )
             .join('')
         : '<p class="inline-empty">This block declares no outputs.</p>'
     }</section>`;
+  }
+
+  const investigationRunSelection = new Map();
+  const investigationRunKey = (block) => state.issueId + '/' + block.id;
+  function inquiryRunOptions(block) {
+    if (!['understand', 'investigate'].includes(block.kind)) return [];
+    return block.attempts.filter(
+      (attempt) => attempt.status === 'completed' && attempt.investigation?.mode !== 'discussion'
+    );
+  }
+  function investigationSourcePicker(block) {
+    if (!['generate-report', 'create-issues'].includes(block.kind)) return '';
+    const selected = investigationRunSelection.get(investigationRunKey(block));
+    const runs = state.view.flow.blocks.concat(state.view.flow.retiredBlocks || []).flatMap(inquiryRunOptions);
+    return `<label class="field">Source investigation run<select data-investigation-source="${escape(block.id)}"><option value="">Latest current completed run</option>${runs.map((attempt, index) => `<option value="${escape(attempt.id)}"${selected === attempt.id ? ' selected' : ''}>Run ${index + 1} · ${escape(date(attempt.startedAt))}</option>`).join('')}</select><small>Choose retained findings for the next output run.</small></label>`;
+  }
+  document.addEventListener('change', (event) => {
+    if (!event.target.hasAttribute('data-investigation-source')) return;
+    investigationRunSelection.set(state.issueId + '/' + event.target.dataset.investigationSource, event.target.value);
+  });
+  function investigationRunInput(block) {
+    return { investigationRunId: investigationRunSelection.get(investigationRunKey(block)) || undefined };
   }
 
   function declaredDetails(block, editable = false) {
@@ -2000,7 +2001,7 @@
     let result = '';
     if (attempt.result)
       result = typeof attempt.result === 'string' ? attempt.result : JSON.stringify(attempt.result, null, 2);
-    return `<div class="block-progress" data-attempt-id="${escape(attempt.id)}"><div class="progress-heading"><span>${statusIcon(attempt.status)} ${escape(statusText(attempt.status, attempt))}${attempt.invalidatedAt ? ' · Invalidated' : ''}</span><span class="progress-meta">Attempt ${index + 1}</span></div><p class="detail-copy">${escape(summary)}</p>${attempt.result?.pr ? prLink({ number: attempt.result.pr, url: attempt.result.url }) : ''}<p class="progress-meta" style="margin-top:9px">${escape(date(attempt.startedAt))}${attempt.endedAt ? ` · ended ${escape(date(attempt.endedAt))}` : ''}</p>${attempt.output ? `<pre class="attempt-output">${escape(attempt.output)}</pre>` : ''}${result && result !== summary ? `<pre class="attempt-output">${escape(result)}</pre>` : ''}${attempt.details?.length ? `<details data-preserve="details-${escape(attempt.id)}"><summary>Details used</summary><pre class="attempt-output">${escape(JSON.stringify(attempt.details, null, 2))}</pre></details>` : ''}${attempt.systemPrompt ? `<details data-preserve="prompt-${escape(attempt.id)}"><summary>System prompt used</summary><pre class="attempt-output">${escape(attempt.systemPrompt)}</pre></details>` : ''}${evidenceLinks(attempt)}</div>`;
+    return `<div class="block-progress" data-attempt-id="${escape(attempt.id)}"><div class="progress-heading"><span>${statusIcon(attempt.status)} ${escape(statusText(attempt.status, attempt))}${attempt.invalidatedAt ? ' · Invalidated' : ''}</span><span class="progress-meta">Attempt ${index + 1}</span></div><p class="detail-copy" data-ai-text data-ai-key="summary-${escape(attempt.id)}" data-ai-source="${escape(summary)}">${escape(summary)}</p>${attempt.result?.pr ? prLink({ number: attempt.result.pr, url: attempt.result.url }) : ''}<p class="progress-meta" style="margin-top:9px">${escape(date(attempt.startedAt))}${attempt.endedAt ? ` · ended ${escape(date(attempt.endedAt))}` : ''}</p>${attempt.output ? `<pre class="attempt-output" data-ai-text data-ai-key="live-${escape(attempt.id)}" data-ai-source="${escape(attempt.output)}">${escape(attempt.output)}</pre>` : ''}${result && result !== summary ? `<pre class="attempt-output" data-ai-text data-ai-key="result-${escape(attempt.id)}" data-ai-source="${escape(result)}">${escape(result)}</pre>` : ''}${attempt.details?.length ? `<details data-preserve="details-${escape(attempt.id)}"><summary>Details used</summary><pre class="attempt-output">${escape(JSON.stringify(attempt.details, null, 2))}</pre></details>` : ''}${attempt.systemPrompt ? `<details data-preserve="prompt-${escape(attempt.id)}"><summary>System prompt used</summary><pre class="attempt-output">${escape(attempt.systemPrompt)}</pre></details>` : ''}${evidenceLinks(attempt)}</div>`;
   }
 
   function comments(block) {
@@ -2072,6 +2073,20 @@
       .join('');
   }
 
+  function historicalIssueLink(id) {
+    const issue = state.index.issues.find((entry) => entry.id === id);
+    return `<li><a href="/?issue=${encodeURIComponent(id)}">${escape(issue?.title || 'Open saved issue')}</a></li>`;
+  }
+  function historicalOutputProgress(block) {
+    const ids = block.historicalCompletion.issueIds || [];
+    return `<p class="detail-copy">Completed by an earlier investigation run.</p><ul>${ids.map(historicalIssueLink).join('')}</ul>`;
+  }
+  function blockProgress(block, last, attempts, published) {
+    if (last) return attemptCard(last, attempts.length - 1);
+    if (block.historicallyCompleted) return historicalOutputProgress(block);
+    return `<p class="inline-empty">${published ? `PR #${escape(published)} has been published. Run Merge to check it.` : 'This block has not run yet. Review its inputs before starting.'}</p>`;
+  }
+
   function blockDetails(block) {
     if (state.view.flow.request)
       return '<section class="detail-section"><p class="detail-copy">Restart the Factory server to edit this flow. Your saved issue is available.</p></section>';
@@ -2084,15 +2099,13 @@
     const last = latest(block);
     const previousAttempts = last ? attempts.slice(0, -1) : attempts;
     const published = attempts.at(-1)?.supersededByPR;
-    const progress = last
-      ? attemptCard(last, attempts.length - 1)
-      : `<p class="inline-empty">${published ? `PR #${escape(published)} has been published. Run Merge to check it.` : 'This block has not run yet. Review its inputs before starting.'}</p>`;
+    const progress = blockProgress(block, last, attempts, published);
     const running = isRunning(block);
     if (['retro', 'cleanup'].includes(block.kind))
       return `<section class="detail-section">${last ? attemptCard(last, attempts.length - 1) : '<p>This block runs during Close.</p>'}${block.kind === 'cleanup' ? cleanupResults(last) : ''}${attempts.length > 1 ? `<details><summary>Earlier attempts</summary>${attempts.slice(0, -1).map(attemptCard).join('')}</details>` : ''}</section>`;
     const locked = state.pending ? ' disabled' : '';
     const sections = {
-      settings: `<form id="block-form">${declaredDetails(block, true)}${outputsSection(block)}${systemPromptEditor(block, values, locked)}${editChecklist(block, changes)}<section class="detail-section"><div class="section-label">Block settings</div><label class="field">Name<input name="label" data-field="label" value="${escape(values.label || '')}" /></label><div class="field-row"><label class="field">Parallel lane<select name="lane" data-field="lane">${[0, 1, 2, 3].map((lane) => `<option value="${lane}"${Number(values.lane || 0) === lane ? ' selected' : ''}>${lane === 0 ? 'Main lane' : `Parallel lane ${lane + 1}`}</option>`).join('')}</select></label>${block.kind === 'sol' ? `<label class="field">Iterations<input type="number" name="iterations" data-field="iterations" min="1" max="20" value="${escape(values.iterations || 1)}" /></label>` : ''}</div></section>${saveRow()}</form>`,
+      settings: `<form id="block-form">${investigationSourcePicker(block)}${declaredDetails(block, true)}${outputsSection(block)}${systemPromptEditor(block, values, locked)}${editChecklist(block, changes)}<section class="detail-section"><div class="section-label">Block settings</div><label class="field">Name<input name="label" data-field="label" value="${escape(values.label || '')}" /></label><div class="field-row"><label class="field">Parallel lane<select name="lane" data-field="lane">${[0, 1, 2, 3].map((lane) => `<option value="${lane}"${Number(values.lane || 0) === lane ? ' selected' : ''}>${lane === 0 ? 'Main lane' : `Parallel lane ${lane + 1}`}</option>`).join('')}</select></label>${block.kind === 'sol' ? `<label class="field">Iterations<input type="number" name="iterations" data-field="iterations" min="1" max="20" value="${escape(values.iterations || 1)}" /></label>` : ''}</div></section>${saveRow()}</form>`,
       progress: `<section class="detail-section"><div class="section-label">${running ? 'Current progress' : 'Progress'}<span data-ui-value="Status comes from the saved block.">${escape(statusText(status(block), last))}</span></div>${progress}${previousAttempts.length ? `<details class="attempt-history" data-preserve="attempt-history"><summary>${previousAttempts.length} earlier ${previousAttempts.length === 1 ? 'attempt' : 'attempts'}</summary>${previousAttempts.map(attemptCard).join('')}</details>` : ''}</section>`,
       sequence: `<section class="detail-section"><div class="section-label">Sequence</div><p class="detail-copy">Move this step toward the destination or toward the starting point.</p><div class="block-actions"><button class="small-button" data-action="move" data-direction="down"${locked}>↑ Earlier</button><button class="small-button" data-action="move" data-direction="up"${locked}>↓ Later</button></div></section>`,
       notes: comments(block),
@@ -2102,9 +2115,22 @@
     );
   }
 
+  function conversationMessage(message) {
+    const producer = state.view.flow.blocks.find((entry) => entry.id === message.blockId);
+    return window.chatMessageMarkup({
+      id: message.id,
+      user: message.actor === 'human',
+      label: message.role || message.actor,
+      meta: [producer?.label, date(message.at)].filter(Boolean).join(' · '),
+      content: `<p class="message-body">${escape(message.body)}</p>`,
+      aiSource: message.body,
+      aiKey: 'flow-conversation-' + message.id,
+    });
+  }
+
   function renderConversation(block) {
     const messages = state.view?.conversation || [];
-    return `<p class="conversation-context">This issue’s conversation shows notes and responses from its blocks.</p>${messages.length ? `<div class="timeline">${messages.map((message) => `<article class="message"><div class="message-meta"><span class="message-author">${escape(message.actor || message.role || 'Factory')}${message.blockId ? ` · ${escape(state.view.flow.blocks.find((entry) => entry.id === message.blockId)?.label || 'Block')}` : ''}</span><time>${escape(date(message.at))}</time></div><p class="message-body">${escape(message.body)}</p></article>`).join('')}</div>` : '<p class="inline-empty">No conversation entries yet. Starting a block will retain its activity here.</p>'}${block ? commentForm(block) : ''}`;
+    return `<p class="conversation-context">This issue's conversation shows notes and responses from its blocks.</p>${messages.length ? `<div class="timeline">${messages.map(conversationMessage).join('')}</div>` : '<p class="inline-empty">No conversation entries yet. Starting a block will retain its activity here.</p>'}${block ? commentForm(block) : ''}`;
   }
 
   function renderArtifacts(block, artifacts) {
@@ -2317,23 +2343,13 @@
 
   function renderInvestigationPage() {
     if (document.documentElement.dataset.projectIssueRequestEmbed === 'true') return;
+    investigationControls.render(state.view);
     const investigation = state.view?.flow?.routeType === 'investigation';
-    investigationUI.show(investigation ? state.issueId : null);
-    $('app').dataset.investigation = investigation ? 'open' : 'closed';
+    investigationUI.show(null);
+    $('app').dataset.investigation = 'closed';
     if (investigation) {
       $('issue-type-label').textContent = 'Investigation ·';
       $('issue-subtitle').textContent = state.view.issue.reusable ? 'Reusable' : 'One-time';
-      for (const id of [
-        'graph-scroll',
-        'environment',
-        'issue-playback',
-        'issue-flow-picker',
-        'rebuild-flow',
-        'issue-grouping',
-      ]) {
-        if ($(id)) $(id).hidden = true;
-      }
-      document.querySelector('.inspector').hidden = true;
       $('flow-view-title').textContent = 'Investigation';
     }
   }
@@ -2633,6 +2649,7 @@
     let contents;
     if (preview.status === 'blocked') {
       contents = `<p>${escape(preview.message)}</p>`;
+      contents += noChangesCloseOffer(preview);
     } else if (preview.status === 'current') {
       contents = '<p>PR is up to date.</p>';
     } else {
@@ -2655,6 +2672,18 @@
       preview.status === 'current' ? 'Confirm current PR' : preview.pr ? 'Update PR' : 'Publish PR';
     $('close-publish').textContent = canConfirm ? 'Cancel' : 'Close';
   }
+
+  function noChangesCloseOffer(preview) {
+    return preview.suggestedResolution === 'cannot-reproduce'
+      ? '<button class="small-button" type="button" data-close-no-changes>Close as Cannot Reproduce…</button>'
+      : '';
+  }
+
+  $('publish-preview').addEventListener('click', (event) => {
+    if (!event.target.closest('[data-close-no-changes]')) return;
+    $('publish-dialog').close();
+    openClosure('cannot-reproduce');
+  });
 
   function closeRename() {
     $('rename-issue-form').hidden = true;
@@ -2689,6 +2718,7 @@
     }
     const result = await action(block.kind === 'request' ? 'run-request' : name, {
       blockId: block.id,
+      ...investigationRunInput(block),
       ...(confirmed ? { confirmed: true } : {}),
       ...(approval ? { mergeToken: approval.token } : {}),
     });
@@ -3313,8 +3343,7 @@
     )
       void action('cancel-confirmation', { blockId: review.blockId });
   });
-  $('project-settings').addEventListener('click', openProjectSettings);
-  $('initialize-lifecycle').addEventListener('click', initializeLifecycle);
+  $('project-settings').addEventListener('click', () => projectSettingsUI.open());
   $('empty-new-issue').addEventListener('click', openCapture);
   const closureModal = $('issue-closure-dialog');
   const closureFields = $('issue-closure-fields');
@@ -3402,16 +3431,17 @@
     }
   });
 
-  function openClosure() {
+  function openClosure(suggestedResolution) {
     const { issue, flow } = state.view;
     void closureDialog.open(async () => ({
       ...(await json('/api/issue-closure?issue=' + encodeURIComponent(issue.id))),
       kind: 'close',
       flowRevision: flow.revision,
       offerClosureRetro: flow.blocks.some((block) => block.kind === 'retro'),
+      suggestedResolution,
     }));
   }
-  $('close-with-reason').addEventListener('click', openClosure);
+  $('close-with-reason').addEventListener('click', () => openClosure());
   $('issue-pr-menu').addEventListener('click', (event) => {
     if (event.target.closest('a')) $('issue-pr-menu').open = false;
   });
@@ -3625,10 +3655,7 @@
       return;
     }
     if (
-      event.key.toLowerCase() !== 'n' ||
-      event.metaKey ||
-      event.ctrlKey ||
-      event.altKey ||
+      !window.FactoryHotkeys.matches(event, 'newIssue') ||
       event.target.closest('input, textarea, select, [contenteditable="true"]') ||
       document.querySelector('dialog[open]')
     )

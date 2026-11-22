@@ -6,6 +6,32 @@ import { closedIssueState } from './factory-ui/data.mjs';
 
 const metadata = (path) => parse(readFileSync(path, 'utf8').match(/^---\r?\n([\s\S]*?)\r?\n---/)[1]);
 
+async function checkProjectSettings({ page, project, poll }) {
+  let lifecycleCreated = false;
+  await page.getByRole('button', { name: 'Project settings', exact: true }).click();
+  const settings = page.locator('#project-settings-dialog');
+  await settings.locator('[data-settings-page="issues"]').click();
+  const createDefaults = settings.getByRole('button', { name: 'Create project defaults', exact: true });
+  if (!existsSync(join(project, 'folder.md'))) await createDefaults.click();
+  await settings.locator('[name="branch"]').waitFor();
+  assert.equal(await settings.locator('[data-default-folder]').count(), 0);
+  assert.equal(await settings.locator('[name="branch"]').inputValue(), 'dev');
+  if (!existsSync(join(project, '.issues/triage-labels.md'))) {
+    await settings.locator('[data-settings-page="lifecycle"]').click();
+    await settings.getByRole('button', { name: 'Initialize lifecycle configuration', exact: true }).click();
+    await poll(
+      () => settings.getByRole('button', { name: 'Open file', exact: true }).isEnabled(),
+      Boolean,
+      'Lifecycle file did not become available.'
+    );
+    await poll(() => existsSync(join(project, '.issues/triage-labels.md')), Boolean, 'Lifecycle was not initialized.');
+    lifecycleCreated = true;
+  }
+  await page.keyboard.press('Escape');
+
+  return lifecycleCreated;
+}
+
 export async function flowFolderSettingsBrowserChecks({ page, project, service, logs, screenshot, poll }) {
   const folder = 'Settings fixture';
   const settingsPath = join(project, 'user', folder, 'folder.md');
@@ -98,16 +124,7 @@ export async function flowFolderSettingsBrowserChecks({ page, project, service, 
   assert.equal(metadata(settingsPath).is_default_folder, true);
   await screenshot('folder-settings');
 
-  await page.getByRole('button', { name: 'Project settings', exact: true }).click();
-  await page.locator('#project-setting-branch').waitFor();
-  assert.equal(await page.locator('#project-folder-settings [data-default-folder]').count(), 0);
-  assert.equal(await page.locator('#project-setting-branch').inputValue(), 'dev');
-  if (!existsSync(join(project, '.issues/triage-labels.md'))) {
-    await page.getByRole('button', { name: 'Initialize lifecycle configuration', exact: true }).click();
-    await page.getByText('Lifecycle configuration is present.', { exact: true }).waitFor();
-    lifecycleCreated = true;
-  }
-  await page.keyboard.press('Escape');
+  lifecycleCreated = await checkProjectSettings({ page, project, poll });
 
   const folderId = metadata(settingsPath).id;
   const closedState = closedIssueState(project);

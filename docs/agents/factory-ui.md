@@ -21,9 +21,14 @@ Issues tab. Home also has Discuss, Automate me, and Admin tabs. The **Automate m
 tab contains the session history and the control to start a conversation.
 Investigations always cover the project and use a selected branch, defaulting to
 the branch in Project settings. Optional discussion retains goals and codebase
-questions in the Investigation issue; **Run** retains findings and automatically
-creates actionable follow-ups needing approval. The issue-folder selector files
-those follow-ups and does not limit investigation scope.
+questions in the investigation conversation. Its ordinary route is Request,
+Investigate, Generate report, and Create Issues. Either output can be removed or
+run independently after a completed inquiry. Create Issues saves uncovered work
+as Needs approval and links matching existing issues without changing them.
+Approval does not start work. Reports retains dated publications and evidence,
+with optional discussion below the reader. Archived investigations retain report
+access and discussion without starting another inquiry. See the
+[investigation reports design](../plans/investigation-reports.md).
 
 **Automate me** runs the installed PStack skill through a guided Codex conversation.
 History defaults to four weeks with an editable duration and uses only available
@@ -1363,8 +1368,11 @@ human acceptance.
 
 The header counts running actions and open temporary chats. **No new actions** is
 an on/off switch. Turning it on blocks new work and requests that coordinators
-pause after their current action. Existing work can finish, permission replies
-and saving/ending a temporary chat remain available. Turning it off restores
+pause after their current action. All chats remain available, including opening
+conversations, sending and queuing prompts, retrying responses, and steering.
+Existing work can finish, permission replies and saving/ending a temporary chat
+remain available. A requested server restart still drains work before restarting
+and blocks new chat responses during that handoff. Turning the switch off restores
 normal dispatch and resumes paused coordinators through their existing guards.
 The switch does not restart the server or start a build. Unknown locks still
 need their existing reconciliation workflow.

@@ -7,7 +7,7 @@ import { factory } from './factory-ledger.mjs';
 import { readQueue } from './factory-ui/data.mjs';
 import { digest } from './factory-ui/common.mjs';
 
-export function deliveryFixture(t) {
+export function deliveryFixture(t, { sourceChange = false } = {}) {
   const queue = factoryGitFixture(t, 'delivery-queue-'),
     source = factoryGitFixture(t, 'delivery-source-');
   for (const repo of [queue, source]) {
@@ -34,6 +34,11 @@ export function deliveryFixture(t) {
   );
   writeFileSync(join(queue.root, '.issues/preferences.json'), JSON.stringify({ commit: true }));
   factory(queue.root).init();
+  const base = source.git('rev-parse', 'HEAD');
+  if (sourceChange) {
+    writeFileSync(join(source.root, 'code.js'), 'export const value = 2;\n');
+    source.git('commit', '-qam', 'Issue change');
+  }
   const revision = source.git('rev-parse', 'HEAD'),
     tree = source.git('rev-parse', 'HEAD^{tree}');
   const log = join(source.root, '.issues/audit.log');
@@ -60,7 +65,7 @@ export function deliveryFixture(t) {
       path,
       JSON.stringify({
         checkpoint,
-        base: revision,
+        base,
         snapshot_tree: tree,
         passed: true,
         changed_files: [],
@@ -85,7 +90,7 @@ export function deliveryFixture(t) {
     reportDigest: digest(issue.content),
     checkout: source.root,
     revision,
-    base: revision,
+    base,
     verification,
     requirements: [
       { description: 'Reviewed delivered behavior', evidence: [{ path: log, sha256: digest(readFileSync(log)) }] },

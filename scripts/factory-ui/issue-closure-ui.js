@@ -58,6 +58,7 @@
         <label>Details or related issue (optional)<textarea id="reopen-reason" maxlength="4000"></textarea></label>`
       );
       const reason = panel.querySelector('#closure-reason');
+      selectSuggestedReason(reason, reasons, session.decision.suggestedResolution);
       addRetroChoice(session, reason);
       if (session.decision.cleanupOnly) {
         reason.closest('label').hidden = true;
@@ -71,6 +72,10 @@
       panel.insertAdjacentHTML('beforeend', '<fieldset id="cleanup-options"></fieldset>');
       reason.onchange = () => void loadCleanup(session, reason.value, selectedItems());
       void loadCleanup(session, reason.value);
+    }
+
+    function selectSuggestedReason(select, reasons, suggestion) {
+      if (reasons.some((item) => item.id === suggestion)) select.value = suggestion;
     }
 
     function addRetroChoice(session, reason) {
@@ -160,7 +165,7 @@
     function decision() {
       const resolution = panel.querySelector('#closure-reason').value;
       const selected = [...selectedItems()];
-      const { offerClosureRetro, ...decision } = current.decision;
+      const { offerClosureRetro, suggestedResolution, ...decision } = current.decision;
       return {
         ...decision,
         reason: panel.querySelector('#reopen-reason').value,

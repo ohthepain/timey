@@ -2209,12 +2209,12 @@ kbd {
 }
 
 [data-collection] > summary::before {
-  content: '▸';
-  color: var(--muted);
+  width: 7px;
+  height: 8px;
 }
 
 [data-collection][open] > summary::before {
-  content: '▾';
+  transform: rotate(90deg);
 }
 
 .sidebar-file-directory > summary,

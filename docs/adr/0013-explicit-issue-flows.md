@@ -87,6 +87,19 @@ Time waiting for human input is excluded. If a runner disappears, its last saved
 the attempt for timing.
 
 The controller owns flow writes. The executor owns one bounded block.
+Before creating a PR, Publish compares the committed candidate with the current
+GitHub destination. When there are no source changes to publish, it stops before
+pushing and offers the existing close dialog with Cannot Reproduce selected.
+The person can confirm closure or keep the issue open for more work. This does
+not imply acceptance or automatically close an issue. Existing PR updates retain
+their normal publication behavior. If the current destination commit is not
+available locally, Update Branch is required before comparison.
+
+Work receives the current implementation task on every invocation, including Retry.
+An earlier instruction to capture an idle issue is satisfied by creation;
+Work implements the underlying change and checks its implementation acceptance
+criteria while preserving product constraints and human decision boundaries.
+Historical wording and clarified fields remain available unchanged.
 Work formats issue changes and checks Fallow before running focused tests. It
 selects relevant tests from the changed behavior and Requested Proof, and adds a
 focused test when existing tests cannot demonstrate the behavior. A failure that
@@ -141,6 +154,24 @@ Work records candidate base, tree, commit and uncommitted state from the actual
 checkout snapshot. Publish requires a committed candidate. Verification for an
 uncommitted tree can be reused after that same tree is committed; a different tree
 requires verification again.
+
+Merge first checks the existing PR and GitHub readiness. Already merged PRs are
+reconciled without local tests; pending checks wait before tests or repair.
+Temporary GitHub request failures get at most three retries per operation with
+1, 2 and 4 second backoff, retaining the redacted error reason. Permission,
+authentication and validation failures stop immediately. An uncertain merge
+request is reconciled against GitHub before another guarded request. Retry
+preserves the checkout and retained verification, including across another
+network failure; matching candidate, target, inputs and proof are still required
+for reuse. A shared issue claim release failure retains the block outcome,
+original summary and verification, and records its cleanup error separately.
+Ownership remains uncertain until the claim is reconciled. Explicit block recovery
+checks the retained claim against the remote queue. If its release already
+landed, it reconciles the stale local receipt and reacquires through the normal
+claim and report checks. A competing claim or failed remote read still blocks
+execution. Recovery can reuse matching verification from before an intervening
+claim-acquisition failure; explicit invalidation still prevents reuse. Changed
+candidates or inputs require verification again.
 
 Merge fetches Destination and merges its current revision into the issue branch.
 It verifies the issue commit against that destination revision using the local
@@ -208,6 +239,17 @@ Branch** block, or reaching the block through **Start** or **Resume** authorizes
 when needed. Factory runs the branch update without a second prompt. The Branch
 button runs the action directly and shows a spinner. The action leaves the flow
 graph intact.
+
+If a disconnected block still owns the issue, the manual Branch button checks
+its original provider conversation before updating. A confirmed idle
+conversation releases that ownership. An older oversized-input rejection can
+also release ownership when the retained request exceeds the input limit, the
+failure matches that rejection, and there is no accepted turn receipt or model
+output. The failed attempt and its output remain
+in history with a reconciliation timestamp. Active, missing or uncheckable
+conversations still block the update. This check starts no model turn.
+New oversized inputs fail before dispatch and leave a blocked attempt rather
+than uncertain ownership.
 
 An explicit Update Branch run aborts an existing merge in the managed issue
 checkout before fetching. This discards that merge’s partial resolutions;

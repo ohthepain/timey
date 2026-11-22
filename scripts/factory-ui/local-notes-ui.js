@@ -4,10 +4,15 @@
   if (!root) return;
   const disclosure = document.getElementById('local-notes-toggle');
   const body = document.getElementById('local-notes-body');
+  function setCollapsed(collapsed) {
+    body.hidden = collapsed;
+    disclosure.setAttribute('aria-expanded', String(!collapsed));
+    disclosure.setAttribute('aria-label', (collapsed ? 'Expand ' : 'Collapse ') + 'Local notes');
+  }
+  setCollapsed(window.timeyView.read('local-notes-collapsed', false));
   disclosure.addEventListener('click', () => {
-    body.hidden = !body.hidden;
-    disclosure.setAttribute('aria-expanded', String(!body.hidden));
-    disclosure.setAttribute('aria-label', (body.hidden ? 'Expand ' : 'Collapse ') + 'Local notes');
+    setCollapsed(!body.hidden);
+    window.timeyView.write('local-notes-collapsed', body.hidden);
   });
   const escape = (value) =>
     String(value).replace(
@@ -20,7 +25,7 @@
   const editor = document.getElementById('local-note-editor');
   const editText = document.getElementById('local-note-edit-text');
   const sentences = new Intl.Segmenter(undefined, { granularity: 'sentence' });
-  let current = { notes: [], basis: '' };
+  let current = { notes: [], basis: '', issueNumbers: {} };
   let busy = false;
   let editing = null;
   let captureId = null;
@@ -44,8 +49,13 @@
     if (!response.ok) throw Error(result.error || 'Could not save local notes.');
     return result;
   }
+  function issueLinkLabel(issueId) {
+    const number = current.issueNumbers[issueId];
+    return number == null ? 'Open issue' : `Open issue #${number}`;
+  }
   function render(value) {
-    if (current.basis === value.basis) return;
+    if (current.basis === value.basis && JSON.stringify(current.issueNumbers) === JSON.stringify(value.issueNumbers))
+      return;
     current = value;
     const expanded = new Set([...list.querySelectorAll('details[open]')].map((node) => node.dataset.note));
     list.innerHTML = current.notes
@@ -58,7 +68,7 @@
       <button type="button" class="small-button" data-note-action="up" data-note="${note.id}" aria-label="Move note up"${index === 0 ? ' disabled' : ''}>↑</button>
       <button type="button" class="small-button" data-note-action="down" data-note="${note.id}" aria-label="Move note down"${index === current.notes.length - 1 ? ' disabled' : ''}>↓</button>
       <button type="button" class="small-button" data-note-action="delete" data-note="${note.id}">Delete</button></div></details>
-      ${note.issueId ? `<a class="local-note-issue" href="/?issue=${encodeURIComponent(note.issueId)}">Open issue</a>` : ''}</li>`
+      ${note.issueId ? `<a class="local-note-issue" href="/?issue=${encodeURIComponent(note.issueId)}">${escape(issueLinkLabel(note.issueId))}</a>` : ''}</li>`
       )
       .join('');
   }
@@ -150,13 +160,7 @@
   document.getElementById('local-note-edit-cancel').onclick = () => editor.close();
   document.getElementById('local-note-quick').onclick = () => openEditor();
   document.addEventListener('keydown', (event) => {
-    if (
-      event.altKey &&
-      !event.ctrlKey &&
-      !event.metaKey &&
-      event.key.toLowerCase() === 'n' &&
-      !document.querySelector('dialog[open]')
-    ) {
+    if (window.FactoryHotkeys.matches(event, 'newNote') && !document.querySelector('dialog[open]')) {
       event.preventDefault();
       openEditor();
     }

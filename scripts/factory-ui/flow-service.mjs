@@ -2,6 +2,7 @@ import { mergedDelivery, mergedIssueMessage, allowsMergedAction, mergedIssueStat
 import { pendingIssueMerge } from './flow-merge-state.mjs';
 import { abortPendingMerge } from './flow-update-branch.mjs';
 import { BranchRepairs } from './branch-repair.mjs';
+import { observeDisconnectedFlow } from './flow-reconciliation.mjs';
 import {
   existsSync,
   mkdirSync,
@@ -39,6 +40,18 @@ import { trashDirectory, whileTrashingDirectory } from './folder-trash.mjs';
 import { FlowGrouping } from './flow-grouping.mjs';
 import { FlowFollowups } from './flow-followups.mjs';
 import { isInvestigation } from './investigation-records.mjs';
+import {
+  adoptInvestigationFlow,
+  historicalInvestigationOutputComplete,
+  savedInvestigationSessions,
+  savedInvestigationFollowups,
+} from './investigation-adoption.mjs';
+import {
+  requireInvestigationBlock,
+  prepareInvestigationBlock,
+  attachInvestigationAttempt,
+  reconcileInvestigationFindings,
+} from './investigation-execution.mjs';
 import { flowHumanInput } from './flow-human-input.mjs';
 import { FolderOperations } from './folder-operations.mjs';
 import { executionBlockSkill, executionStarted, resolveIssueExecutionSettings } from './issue-execution-settings.mjs';
@@ -139,7 +152,31 @@ const folderActions = new Set([
 ]);
 const unresolvedAttempt = (attempt) =>
   !attempt.reconciledAt && ['running', 'stopping', 'uncertain'].includes(attempt.status);
-const completedBlock = (block) =>
+function assignBlockSkills(flow, catalog, settings) {
+  for (const block of flow.blocks) {
+    const definition = catalog.find((entry) => entry.id === blockDefinitionId(block));
+    if (definition) block.effectiveSkill = executionBlockSkill(block, definition, settings);
+  }
+}
+function investigationSessions(owner, issueId) {
+  const { investigations = {} } = owner;
+  const sessions = investigations.sessions
+    ? [...investigations.sessions.values()]
+    : savedInvestigationSessions(owner.service.root, issueId);
+  return sessions.filter((entry) => entry.issueId === issueId);
+}
+function adoptIdleInvestigation(owner, issue, flow, catalog) {
+  if (!isInvestigation(issue, flow) || owner.active.has(issue.id)) return;
+  adoptInvestigationFlow(
+    flow,
+    catalog,
+    investigationSessions(owner, issue.id),
+    makeBlock,
+    savedInvestigationFollowups(owner.service.root, issue.id)
+  );
+}
+const completedBlock = (block, flow) =>
+  (flow && historicalInvestigationOutputComplete(block, flow)) ||
   latestCurrentAttempt(block)?.status === 'completed' ||
   (block.kind === 'request' && Boolean(block.data.fields) && !latestCurrentAttempt(block));
 
@@ -213,7 +250,7 @@ function repoFilePath(root, path) {
 }
 
 export function createIssueFlows(service, options = {}) {
-  return new IssueFlows(service, options);
+  return (service.flows = new IssueFlows(service, options));
 }
 
 function captureIdentity(
@@ -384,6 +421,7 @@ class IssueFlows {
       flow.retiredBlocks = [...(flow.retiredBlocks || []), ...removed.filter((block) => block.attempts.length)];
       flow.blocks = flow.blocks.filter((block) => !removed.includes(block));
     }
+    adoptIdleInvestigation(this, issue, flow, catalog);
     return flow;
   }
   issueSettings(issue, flow) {
@@ -462,6 +500,8 @@ class IssueFlows {
       resolvedBranch: deliveryTarget(flow).branch,
       activeBlock: activeBlock ? { id: activeBlock.id, kind: activeBlock.kind } : null,
       humanInput: availableHumanInput(issue, flow),
+      paused: Boolean(this.autoplay.get(issue.id)?.userPaused),
+      waitingForApproval: this.autoplay.get(issue.id)?.mode === 'waiting',
       status: flowStatus(flow, issue, active),
     };
   }
@@ -520,10 +560,7 @@ class IssueFlows {
     const savedFlow = this.observedDelivery(issue, observedFlow, environment, catalog);
     const flow = this.visibleFlow(savedFlow);
     const issueSettings = this.issueSettings(issue, savedFlow);
-    for (const block of flow.blocks) {
-      const definition = catalog.find((entry) => entry.id === blockDefinitionId(block));
-      if (definition) block.effectiveSkill = executionBlockSkill(block, definition, issueSettings);
-    }
+    assignBlockSkills(flow, catalog, issueSettings);
     const flowDefinitions = requestOnly ? null : this.flowDefinitionOptions(flow, catalog);
     const legacyRun = this.service.store?.runs?.findLast(
       (run) => run.issueId === id && this.service.store.connected.has(run.id)
@@ -570,6 +607,7 @@ class IssueFlows {
       block.address = addresses.get(block.id);
       block.details = blockDetails(flow, issue, block, definitions);
       block.outputs = blockOutputs(flow, block, definitions);
+      block.historicallyCompleted = historicalInvestigationOutputComplete(block, flow);
       for (const detail of block.details)
         if (detail.type === 'filename' && typeof detail.value === 'string')
           detail.fileAvailable = repoFilePath(fileRoot, detail.value);
@@ -991,7 +1029,7 @@ class IssueFlows {
     }
   }
   async nextAutoplayBlock(flow, catalog) {
-    const next = flow.blocks.find((block) => !completedBlock(block));
+    const next = flow.blocks.find((block) => !completedBlock(block, flow));
     return (await this.checkSuggestedWorkUpdate(flow, next, catalog)) || next;
   }
   async checkSuggestedWorkUpdate(flow, block, catalog) {
@@ -1160,7 +1198,7 @@ class IssueFlows {
     if (input.action === 'pause' || input.action === 'cancel-confirmation') {
       const waiting = this.autoplay.get(issue.id);
       if (input.action === 'pause' || (waiting?.mode === 'waiting' && waiting.blockId === input.blockId))
-        this.pause(issue.id);
+        this.autoplay.set(issue.id, { mode: 'paused', userPaused: input.action === 'pause' });
       return this.view(issue.id);
     }
     if (branchActions.has(input.action)) return this.branchOperation(issue, flow, input);
@@ -1483,9 +1521,13 @@ class IssueFlows {
     const nodes = await this.buildStructure({ service: this.service, issue, type, definition, catalog, request });
     return validateFlowNodes(nodes, catalog);
   }
-  requireRouteIdle(issue, flow) {
+  requireRouteIdle(issue, flow, afterClarification = false) {
+    const service =
+      afterClarification && this.overnight.owns(issue.id)
+        ? Object.assign(Object.create(this.service), { flowOperationIssueId: issue.id })
+        : this.service;
     requireThat(
-      !this.active.has(issue.id) && !this.flowBuilds.has(issue.id) && !issueHasActiveWork(this.service, issue.id),
+      !this.active.has(issue.id) && !this.flowBuilds.has(issue.id) && !issueHasActiveWork(service, issue.id),
       'Wait for the current operation to finish.'
     );
     requireThat(
@@ -1506,7 +1548,7 @@ class IssueFlows {
       if (type === flow.routeType && id === flow.definition.id) return this.view(issue.id);
     }
     const definition = selectFlowDefinition(definitions, type, id);
-    this.requireRouteIdle(issue, flow);
+    this.requireRouteIdle(issue, flow, input.afterClarification);
     if (!input.afterClarification) this.pauseAutoplay(issue.id, 'The route changed.');
     this.flowBuilds.add(issue.id);
     try {
@@ -1521,25 +1563,42 @@ class IssueFlows {
   async updateWorktree(issue, flow, catalog) {
     const checkout = flowWorkspace(this.service, flow)?.checkout;
     requireThat(checkout && existsSync(checkout), 'This issue has no available worktree.');
+    const scoped = Object.assign(Object.create(this.service), { flowOperationIssueId: issue.id });
     requireThat(
-      !issue.closed && !issueHasActiveWork(this.service, issue.id),
+      !issue.closed &&
+        !this.active.has(issue.id) &&
+        !this.flowBuilds.has(issue.id) &&
+        !this.closureTasks.has(issue.id) &&
+        !issueHasActiveWork(scoped, issue.id),
       'Update the branch of an idle open issue.'
-    );
-    requireThat(
-      !flow.blocks.some((block) => block.attempts.some(unresolvedAttempt)),
-      'Recover the disconnected block before updating the branch.'
     );
     const block = makeBlock('update-branch', [], false, catalog);
     const attempt = this.makeAttempt(flow, issue, block, catalog);
     const controller = new AbortController();
     const queue = this.service.sharedIssues;
-    const claim = queue?.acquireFlowBlock(issue, block.id, false);
-    this.pauseAutoplay(issue.id, 'Updating the branch manually.');
-    this.active.set(issue.id, { controller, blockId: block.id, attemptId: attempt.id });
+    let claim;
     let outcome;
+    this.flowBuilds.add(issue.id);
     try {
+      const disconnected = await observeDisconnectedFlow(this.service, flow, this.deliveryOptions.createConnection);
+      controller.signal.throwIfAborted();
+      claim = queue?.acquireFlowBlock(issue, disconnected.at(-1)?.id ?? block.id, disconnected.length > 0);
+      if (disconnected.length) {
+        for (const saved of disconnected)
+          for (const previous of saved.attempts.filter(unresolvedAttempt)) {
+            previous.reconciledAt = new Date().toISOString();
+            previous.reconciliation =
+              'Before manual branch update, the original provider was observed idle or its oversized input was confirmed rejected before acceptance.';
+            if (['running', 'stopping'].includes(previous.status)) previous.status = 'uncertain';
+          }
+        this.store.save(flow, flow.revision);
+      }
+      this.pauseAutoplay(issue.id, 'Updating the branch manually.');
+      this.active.set(issue.id, { controller, blockId: block.id, attemptId: attempt.id });
+      this.flowBuilds.delete(issue.id);
       outcome = await this.executor.run({ issue, flow, block, attempt, signal: controller.signal });
     } finally {
+      this.flowBuilds.delete(issue.id);
       this.active.delete(issue.id);
       if (claim) queue.releaseFlowBlock(claim);
     }
@@ -1962,17 +2021,7 @@ class IssueFlows {
   }
   async start(issue, flow, input, catalog, publication = null, overnightRunId = null) {
     if (!input.closureId) await this.requireEditableIssue(issue.id);
-    if (isInvestigation(issue, flow) && !flow.closing) {
-      requireThat(
-        input.investigationOperation && this.investigations?.active.has(input.investigationOperation),
-        'Run this investigation from its issue page.'
-      );
-      const selected = flow.blocks.find(({ id }) => id === input.blockId);
-      requireThat(
-        selected?.kind === 'understand',
-        'Investigations run Understand without code delivery or closure steps.'
-      );
-    }
+    requireInvestigationBlock(this, issue, flow, input);
     this.groups.requireIndependent(issue.id);
     requireThat(
       !this.active.has(issue.id),
@@ -2029,7 +2078,9 @@ class IssueFlows {
       flow.executionSettings = { values: settings.values, sources: settings.sources, basis: settings.basis };
       flow.resolvedBranch = settings.values.branch;
     }
+    await prepareInvestigationBlock(this, issue, flow, block, input);
     const attempt = this.makeAttempt(flow, issue, block, catalog);
+    attachInvestigationAttempt(flow, issue, block, input, attempt);
     if (input.closureId) attempt.closureId = input.closureId;
     if (block.kind === 'cleanup' && flow.closing.cleanupGeneration)
       attempt.cleanupGeneration = flow.closing.cleanupGeneration;
@@ -2045,6 +2096,7 @@ class IssueFlows {
       throw error;
     }
     const waiting = this.autoplay.get(issue.id);
+    if (waiting?.userPaused) this.pause(issue.id, 'A block was started.');
     if (waiting?.mode === 'waiting') {
       if (waiting.blockId === block.id && input.confirmed === true) this.autoplay.set(issue.id, { mode: 'playing' });
       else this.pause(issue.id, 'A different block was started.');
@@ -2071,7 +2123,7 @@ class IssueFlows {
     requireThat(attempt, 'The running block record is missing. Retain its original execution before reconciling.');
     change(attempt, flow);
     if (['running', 'stopping'].includes(attempt.status)) attempt.lastActiveAt = new Date().toISOString();
-    this.store.save(flow, flow.revision);
+    this.store.save(reconcileInvestigationFindings(flow, block), flow.revision);
   }
   async execute(issue, flow, blockId, attemptId, controller, input, definition) {
     const block = flow.blocks.find((item) => item.id === blockId);
@@ -2199,8 +2251,10 @@ class IssueFlows {
           queue.releaseFlowBlock(claim);
         } catch (error) {
           this.changeAttempt(issue, blockId, attemptId, (current) => {
+            const message = redactValue(error.message);
+            current.claimReleaseFailure = { status: current.status, summary: current.summary, message };
+            current.summary += '\nShared issue claim release failed: ' + message;
             current.status = 'uncertain';
-            current.summary = error.message;
             outcome = current;
           });
         }

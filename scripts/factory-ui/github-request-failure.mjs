@@ -28,9 +28,25 @@ function responseDetails(error, token) {
   return message || errors.length ? { message, errors } : null;
 }
 
+function transportReason(error, token) {
+  return [
+    error.killed ? 'GitHub request timed out (' + error.signal + ').' : undefined,
+    safeText(error.code, token),
+    safeText(error.stderr || (error.killed ? undefined : error.message), token),
+  ]
+    .filter(Boolean)
+    .join(': ');
+}
+
+function transientFailure(error, status) {
+  if (['401', '403', '422'].includes(status)) return false;
+  return infrastructureFailure(error) || error.killed === true;
+}
+
 export function safeGitHubFailure(error, status, session) {
   const response = responseDetails(error, session.token);
-  const reason = [response?.message, ...(response?.errors || []).map((entry) => entry.message)]
+  const transport = transportReason(error, session.token);
+  const reason = [response?.message, ...(response?.errors || []).map((entry) => entry.message), transport]
     .filter(Boolean)
     .join(': ');
   const instruction = status === '422' ? ' Review the validation details before retrying this request.' : '';
@@ -42,6 +58,6 @@ export function safeGitHubFailure(error, status, session) {
   );
   safe.githubStatus = Number(status) || null;
   safe.githubResponse = response;
-  safe.transient = status === '422' ? false : infrastructureFailure(error);
+  safe.transient = transientFailure(error, status);
   return safe;
 }

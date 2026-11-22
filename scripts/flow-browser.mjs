@@ -1,3 +1,5 @@
+import { investigationReportsBrowserChecks } from './flow-browser-investigation-reports.mjs';
+import { issueStatusFoldersBrowserChecks } from './flow-browser-issue-status-folders.mjs';
 import { projectIssuesBrowserChecks } from './flow-browser-project-issues.mjs';
 import { errorRecoveryBrowserChecks } from './flow-browser-error-recovery.mjs';
 import { mergeStateBrowserChecks } from './flow-browser-merge-state.mjs';
@@ -39,12 +41,16 @@ import { flowFollowupsBrowserChecks } from './flow-browser-followups.mjs';
 import { investigationProposals } from './investigation-followups-fixture.mjs';
 import { withQueueConfiguration } from './flow-browser-queue-configuration.mjs';
 import { projectNavigationBrowserChecks } from './flow-browser-project-navigation.mjs';
-import { projectHomeBrowserChecks } from './flow-browser-project-home.mjs';
+import { projectHomeBrowserChecks, investigationFlowsBrowserChecks } from './flow-browser-project-home.mjs';
 import { projectDiscussBrowserChecks } from './flow-browser-project-discuss.mjs';
+import { projectSettingsBrowserChecks } from './flow-browser-project-settings.mjs';
+import { aiTextBrowserChecks } from './flow-browser-ai-text.mjs';
 import { interfaceStateBrowserChecks } from './flow-browser-interface-state.mjs';
 import { localNotesBrowserChecks } from './flow-browser-local-notes.mjs';
 import { actionsMenuBrowserChecks } from './flow-browser-actions-menu.mjs';
 import { mergedIssueBrowserChecks } from './flow-browser-merged-issue.mjs';
+import { noChangesBrowserChecks } from './flow-browser-no-changes.mjs';
+import { writeBrowserIssue } from './flow-browser-fixture.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const output = resolve(
@@ -64,6 +70,7 @@ writeFileSync(join(project, '.gitignore'), '/.issues/\n');
 git(project, 'add', 'source.txt', '.gitignore');
 git(project, 'commit', '-qm', 'Browser fixture base');
 const branchTree = git(project, 'rev-parse', 'HEAD^{tree}');
+const publicationTarget = git(project, 'rev-parse', 'HEAD');
 const datedBranch = (date) =>
   execFileSync('git', ['-C', project, 'commit-tree', branchTree, '-m', 'Branch selector fixture'], {
     env: { ...process.env, GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date },
@@ -77,6 +84,9 @@ git(project, 'update-ref', 'refs/remotes/origin/recent', recentBranchCommit);
 git(project, 'symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/recent');
 
 const assets = [
+  'ai-text-ui.js',
+  'ai-text.css',
+  'ai-text-bro.mjs',
   'view-state.js',
   'flow.html',
   'flow.css',
@@ -84,14 +94,20 @@ const assets = [
   'issue-folder-drag-ui.js',
   'sidebar-files-ui.js',
   'folder-settings-ui.js',
+  'project-settings-ui.js',
+  'project-settings.css',
+  'hotkeys-ui.js',
   'investigation-followups-ui.js',
   'project-home-ui.js',
   'project-discuss-ui.js',
+  'project-reports-ui.js',
+  'project-reports.css',
   'project-discuss.css',
   'local-notes-ui.js',
   'local-notes.css',
   'issue-chat-ui.js',
   'investigation-issue-ui.js',
+  'investigation-flow-controls-ui.js',
   'project-home.css',
   'issue-closure-ui.js',
   'server-control-ui.js',
@@ -116,7 +132,11 @@ const blockDeletionCheck = 'Click-selected blocks support safe, confirmed Delete
 const followupsCheck = 'Completed investigations create reviewed follow-ups without another Retro';
 const navigationCheck = 'Project navigation exposes Home Issues Investigate and an Automate me tab';
 const homeCheck = 'Project home investigates selected branches and reviews Automate me skills';
+const reportsCheck = 'Investigation reports retain content, reading state and shared discussion';
+const investigationFlowsCheck = 'Investigations use ordinary flows and independent retained outputs';
 const discussCheck = 'Project Discuss retains independent conversations, settings and explicit controls';
+const settingsCheck = 'Project Settings addressable pages preserve drafts, sources and explicit saves';
+const aiTextCheck = 'AI text offers copy bro and caret-aware hovered dictation';
 const interfaceStateCheck = 'Refresh preserves expanded activity, editor size, drafts and copied selection';
 const issueResultsCheck = 'Issue results appear below the banner without replacing playback status';
 const humanInputCheck = 'Required PR review is visible and continues only after an explicit action';
@@ -200,7 +220,7 @@ service.flows = createIssueFlows(service, {
         return null;
       },
       async gh() {
-        return 'dev\nolder\nrecent';
+        return `dev\t${publicationTarget}\nolder\t${publicationTarget}\nrecent\t${recentBranchCommit}`;
       },
     },
   },
@@ -247,19 +267,22 @@ function connectionRecoveryIssue() {
   const id = '20261120-connection-recovery-fixture';
   if (!existsSync(join(project, '.issues/triage-labels.md')))
     copyFileSync(join(root, '.issues/triage-labels.md'), join(project, '.issues/triage-labels.md'));
-  writeFileSync(
-    join(project, '.issues', id + '.md'),
-    `---\nid: ${id}\ntitle: Reconnect the selected issue\nstate: backlog\n---\n\nKeep the selected issue after reconnecting.\n`
-  );
+  writeBrowserIssue(project, {
+    id,
+    title: 'Reconnect the selected issue',
+    body: 'Keep the selected issue after reconnecting.',
+  });
   return id;
 }
 function checkExcluded(name) {
   if (!browserScenarioSelected(name)) return true;
   const selections = [
+    ['--issue-status-folders', 'Status pseudo-folders track project issues without moving them'],
     ['--project-issues', 'Closed issue selections archive together and issue links open the normal view'],
     ['--actions-menu', 'Actions menu lists two running Flow blocks'],
     ['--merged-issue', 'Merged issues preserve history and expose only closure controls'],
     ['--error-recovery', 'Successful refresh clears rejected branch update errors'],
+    ['--no-changes', 'Publication with no changes offers Cannot Reproduce closure'],
     [
       '--connection-recovery',
       'Flow and Classic reload the selected issue after a lost connection without replaying the click',
@@ -272,6 +295,10 @@ function checkExcluded(name) {
     ['--project-home', homeCheck],
     ['--project-navigation', navigationCheck],
     ['--project-discuss', discussCheck],
+    ['--project-settings', settingsCheck],
+    ['--ai-text', aiTextCheck],
+    ['--investigation-reports', reportsCheck],
+    ['--investigation-flows', investigationFlowsCheck],
     ['--interface-state', interfaceStateCheck],
     ['--investigation-followups', followupsCheck],
     ['--branch-repair', 'Branch repair progress survives reload and requires candidate approval'],
@@ -461,6 +488,9 @@ try {
   await check('Successful refresh clears rejected branch update errors', () =>
     errorRecoveryBrowserChecks({ page, service, project, output })
   );
+  await check('Publication with no changes offers Cannot Reproduce closure', () =>
+    noChangesBrowserChecks({ page, service, project, output, root, poll })
+  );
   await check('The whole sidebar scrolls over every section', async () => {
     const issuePaths = Array.from({ length: 24 }, (_, index) =>
       join(project, '.issues', '20261120-sidebar-overflow-' + index + '.md')
@@ -487,7 +517,7 @@ try {
         files.append(file);
       }
     });
-    await page.locator('#issue-list [data-issue="20261120-sidebar-overflow-0"]').waitFor();
+    await page.locator('#open-issues [data-issue="20261120-sidebar-overflow-0"]').waitFor();
     const observations = [];
     for (const viewport of [
       { width: 1440, height: 720 },
@@ -540,13 +570,30 @@ try {
     await page.setViewportSize({ width: 1440, height: 960 });
     await page.reload();
   });
+  await check('Status pseudo-folders track project issues without moving them', () =>
+    issueStatusFoldersBrowserChecks({ page, project, service, poll, screenshot, output, root })
+  );
   await check('Closed issue selections archive together and issue links open the normal view', () =>
     projectIssuesBrowserChecks({ page, project, root, output })
   );
   await check(navigationCheck, () =>
     withQueueConfiguration({ page, project, root }, () => projectNavigationBrowserChecks({ page, screenshot }))
   );
+  await check(reportsCheck, () =>
+    investigationReportsBrowserChecks({ page, project, service, poll, screenshot, output })
+  );
+  await check(investigationFlowsCheck, () =>
+    withQueueConfiguration({ page, project, root }, () =>
+      investigationFlowsBrowserChecks({ page, service, poll, screenshot })
+    )
+  );
   await check(discussCheck, () => projectDiscussBrowserChecks({ page, project, service, poll, screenshot }));
+  await check(settingsCheck, () =>
+    withQueueConfiguration({ page, project, root }, () =>
+      projectSettingsBrowserChecks({ page, project, service, logs, poll, screenshot, output, candidate })
+    )
+  );
+  await check(aiTextCheck, () => aiTextBrowserChecks({ page, project, service, poll, screenshot }));
   await check(interfaceStateCheck, () => interfaceStateBrowserChecks({ page, project, service, poll, screenshot }));
   await check('Issues and Local notes use matching text styles', () =>
     withQueueConfiguration({ page, project, root }, async () => {
@@ -585,7 +632,7 @@ try {
     })
   );
   await check('Local notes capture and handoff preserve flow', async () => {
-    await localNotesBrowserChecks({ page, project, service, poll, screenshot });
+    await localNotesBrowserChecks({ page, project, service, poll, screenshot, output, candidate });
     assert.deepEqual(unexpectedConsoleErrors(logs.console), []);
   });
   await check(folderSettingsCheck, () =>
@@ -700,16 +747,24 @@ try {
   });
   await check('Project settings explain missing configuration and initialize it only on request', async () => {
     const labels = join(project, '.issues/triage-labels.md');
+    rmSync(labels, { force: true });
     await page.getByRole('button', { name: 'Project settings', exact: true }).click();
-    await page.getByText('Lifecycle configuration is missing.', { exact: true }).waitFor();
+    const settings = page.locator('#project-settings-dialog');
+    await settings.locator('[data-settings-page="lifecycle"]').click();
+    const initialize = settings.getByRole('button', { name: 'Initialize lifecycle configuration', exact: true });
+    const openFile = settings.getByRole('button', { name: 'Open file', exact: true });
+    await initialize.waitFor();
+    assert.equal(await openFile.isDisabled(), true);
     await screenshot('project-settings-missing');
     assert.equal(logs.execution.length, 0);
     assert.equal(logs.modelCalls.length, 0);
     await page.keyboard.press('Escape');
     assert.throws(() => readFileSync(labels), /ENOENT/);
     await page.getByRole('button', { name: 'Project settings', exact: true }).click();
-    await page.getByRole('button', { name: 'Initialize lifecycle configuration', exact: true }).click();
-    await page.getByText('Lifecycle configuration is present.', { exact: true }).waitFor();
+    await settings.locator('[data-settings-page="lifecycle"]').click();
+    await initialize.click();
+    await poll(() => openFile.isEnabled(), Boolean, 'Initialized lifecycle file did not become available.');
+    assert.equal(await initialize.count(), 0);
     const saved = readFileSync(labels, 'utf8');
     assert.match(saved, /ready-to-close/);
     assert.equal(logs.execution.length, 0);
@@ -717,7 +772,9 @@ try {
     await page.keyboard.press('Escape');
     await page.reload();
     await page.getByRole('button', { name: 'Project settings', exact: true }).click();
-    await page.getByText('Lifecycle configuration is present.', { exact: true }).waitFor();
+    await settings.locator('[data-settings-page="lifecycle"]').click();
+    await poll(() => openFile.isEnabled(), Boolean, 'Saved lifecycle file did not remain available.');
+    assert.equal(await initialize.count(), 0);
     assert.equal(readFileSync(labels, 'utf8'), saved);
     await screenshot('project-settings-configured');
     await page.keyboard.press('Escape');
@@ -796,7 +853,7 @@ try {
       await page.getByLabel('Search', { exact: true }).selectOption('Scan source');
       return clickAction(page.getByRole('button', { name: 'Find issues', exact: true }));
     };
-    const sidebarIssue = (id) => page.locator(`#issue-list [data-issue="${id}"]`);
+    const sidebarIssue = (id) => page.locator(`#open-issues [data-issue="${id}"]`);
     const disclosure = page.locator('#issue-list [data-toggle-folder="Browser folder"]');
     await disclosure.click();
     assert.equal(await sidebarIssue(issueId).isVisible(), false);
@@ -1055,7 +1112,7 @@ try {
   });
   await check('Numbered full issue names wrap and sidebar resizing survives reload', async () => {
     const data = await view();
-    const name = page.locator('[data-issue="' + issueId + '"] .issue-name');
+    const name = page.locator('#open-issues [data-issue="' + issueId + '"] .issue-name');
     assert.equal(await name.textContent(), '#' + data.issue.issueNumber + ' - ' + data.issue.title);
     const separator = page.locator('#sidebar-resizer');
     const before = await page.locator('.sidebar').boundingBox();
@@ -1820,10 +1877,10 @@ try {
       (data) => data.flow.blocks.find(({ id }) => id === 'work').attempts.at(-1)?.status === 'running',
       'Work did not start.'
     );
-    await page.locator(`[data-issue="${previousIssueId}"]`).click();
+    await page.locator(`#open-issues [data-issue="${previousIssueId}"]`).click();
     await page.locator('#issue-title').filter({ hasText: 'A renamed issue' }).waitFor();
     assert.equal((await view()).autoplay.mode, 'playing');
-    await page.locator(`[data-issue="${issueId}"]`).click();
+    await page.locator(`#open-issues [data-issue="${issueId}"]`).click();
     await page.getByRole('button', { name: 'Pause issue' }).click();
     await poll(view, (data) => data.autoplay.mode === 'paused', 'Pause was not applied.');
     await page.getByRole('button', { name: 'Resume issue' }).click();
@@ -1907,12 +1964,12 @@ try {
     flow.workspace = { checkout: checkoutRoot, branch, base };
     flow.startingPoint = { ref: 'refs/heads/dev', name: 'dev', commit: base };
     flow.blocks[0].data.fields = { type: 'investigation' };
-    const understand = flow.blocks.find(({ kind }) => kind === 'understand');
+    const inquiry = flow.blocks.find(({ kind }) => kind === 'investigate');
     const path = join(project, '.issues', 'manual-fixed-evidence.txt');
     const output = 'The project serves the saved issue flow.';
     writeFileSync(path, output);
-    understand.attempts.push({
-      id: 'fixture-understand',
+    inquiry.attempts.push({
+      id: 'fixture-investigate',
       status: 'completed',
       startedAt: '2026-11-16T12:00:00Z',
       output,
@@ -1923,7 +1980,8 @@ try {
     const executionCount = logs.execution.length;
     await page.goto(new URL('/?issue=' + issueId, page.url()).href);
     await page.locator('#connection-status').filter({ hasText: 'Live' }).waitFor();
-    assert.equal(await page.locator('#investigation-run').count(), 1);
+    await page.locator('#graph [data-block="' + inquiry.id + '"]').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('#investigation-page').isVisible(), false);
     const flowView = await view();
     const closure = await page.request.get('/api/issue-closure?issue=' + encodeURIComponent(issueId));
     assert.equal(closure.status(), 200);
@@ -2001,7 +2059,7 @@ try {
     assert.equal(service.flows.read(service.flows.selected(proposal.id)).folder, 'Retro items');
     const reportPath = join(project, '.issues', proposal.id + '.md');
     assert.equal(existsSync(reportPath), true);
-    const row = page.locator(`#issue-list [data-issue="${proposal.id}"]`);
+    const row = page.locator(`#open-issues [data-issue="${proposal.id}"]`);
     await page.goto(new URL('/?issue=' + proposal.id, page.url()).href);
     await row.waitFor();
     await clickAction(remove);
@@ -2188,7 +2246,7 @@ try {
       await page.locator('#issue-results-title').filter({ hasText: 'Needs your input' }).waitFor();
       assert.match(await page.locator('#issue-results-message').textContent(), /eligible reviewer.*Continue/);
       assert.equal(await page.locator('#issue-input-link').getAttribute('href'), flow.destination.url);
-      await page.locator(`[data-issue="${id}"] .issue-input-label`).waitFor();
+      await page.locator(`#open-issues [data-issue="${id}"] .issue-input-label`).waitFor();
       await page
         .locator(`#graph [data-block="${merge.id}"] .block-status`)
         .filter({ hasText: 'Needs your input' })
@@ -2234,7 +2292,7 @@ try {
       await page.reload();
       await page.locator('#issue-title').filter({ hasText: 'Review before merging' }).waitFor();
       assert.equal(await page.locator('#issue-input-actions').isVisible(), false);
-      assert.equal(await page.locator(`[data-issue="${id}"] .issue-input-label`).count(), 0);
+      assert.equal(await page.locator(`#open-issues [data-issue="${id}"] .issue-input-label`).count(), 0);
       assert.equal(calls, 2);
       flow = service.flows.read(issue);
       flow.blocks
@@ -2406,7 +2464,7 @@ try {
     assert.equal(git(checkout, 'show', 'HEAD:saved-edit.txt'), 'Keep this local edit.');
     await screenshot('starting-branch-moved');
   });
-  await check(homeCheck, () => projectHomeBrowserChecks({ page, service, screenshot }));
+  await check(homeCheck, () => projectHomeBrowserChecks({ page, service, poll, screenshot }));
   await check('Pending local merges are visible and can be aborted', () =>
     mergeStateBrowserChecks({ page, project, service, screenshot })
   );

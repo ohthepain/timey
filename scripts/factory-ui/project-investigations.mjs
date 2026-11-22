@@ -16,6 +16,13 @@ import { updateStoredIssueMetadata } from './issue-report-storage.mjs';
 import { resolveIssueExecutionSettings } from './issue-execution-settings.mjs';
 import { investigationIssueView, investigationConfiguration } from './investigation-history.mjs';
 import { isInvestigation } from './investigation-records.mjs';
+import { inquiryKinds } from './investigation-flow.mjs';
+import {
+  configureInvestigationInquiry,
+  executeInvestigationOutputs,
+  usesInvestigationOutputs,
+  retryOutputKinds,
+} from './investigation-execution.mjs';
 
 export const investigationFocuses = [
   'Whole codebase',
@@ -402,15 +409,13 @@ export class ProjectInvestigations {
     session.settings = settings.values;
     flow.executionSettings = { values: settings.values, sources: settings.sources, basis: settings.basis };
     const catalog = this.flows.catalog.read().entries;
-    let block = flow.blocks.find(({ kind }) => kind === 'understand');
+    let block = flow.blocks.find(({ kind }) => inquiryKinds.has(kind));
     if (!block) {
-      block = makeBlock('understand', [requestBlock(flow).id], false, catalog);
+      block = makeBlock('investigate', [requestBlock(flow).id], false, catalog);
       flow.blocks.push(block);
     }
-    block.skill = null;
-    block.skillExplicit = false;
     block.suggested = false;
-    block.prompt = this.modelPrompt(session);
+    configureInvestigationInquiry(flow, block, session, this.modelPrompt(session));
     const request = requestBlock(flow);
     request.data.fields = {
       type: 'investigation',
@@ -421,7 +426,18 @@ export class ProjectInvestigations {
         'Whole-project investigation at ' + session.startingPoint.name + ' (' + session.startingPoint.commit + ').',
       constraints: 'Read-only project source. ' + session.instructions,
     };
-    flow.projectInvestigation = { sessionId: session.id, automaticFollowups: true, folder: session.folder };
+    flow.projectInvestigation = {
+      sessionId: session.id,
+      automaticFollowups: !session.flowOutputs,
+      folder: session.folder,
+    };
+    flow.investigation = {
+      ...flow.investigation,
+      focus: session.focus,
+      branch: session.branch,
+      prompt: session.prompt,
+      instructions: session.instructions,
+    };
     this.flows.store.save(flow, flow.revision);
     session.blockId = block.id;
     this.save(session);
@@ -432,7 +448,7 @@ export class ProjectInvestigations {
     return [
       session.mode === 'discussion'
         ? 'This turn is a preliminary investigation conversation. Answer the current codebase question using observed evidence and help refine the investigation goal. Ask focused grilling questions when useful. Do not perform the full investigation or claim it was started. The user must explicitly press Run.'
-        : 'Run the agreed whole-project investigation. Identify concrete codebase or working-process improvements with supporting evidence, bounded scope, and a verification method. Omit unsupported speculation and already-addressed work. Do not implement changes or create issues yourself; Factory creates approval-needed follow-ups from retained findings.',
+        : 'Run the agreed whole-project investigation. Identify concrete codebase or working-process improvements with supporting evidence, bounded scope, and a verification method. Omit unsupported speculation and already-addressed work. Do not implement changes or create issues yourself. The included output blocks independently use the retained findings.',
       this.brief(session),
       '## Retained investigation conversation\n' + discussion,
       '## Previous discussion (historical context)\n' +
@@ -461,10 +477,16 @@ export class ProjectInvestigations {
     await this.ensureIssue(session, signal);
     if (!(retry && session.followupSource && session.mode === 'investigation'))
       await this.executeTurn(session, signal, retry);
-    if (session.mode === 'investigation') await this.createFollowups(session, signal);
+    await this.finishInvestigation(session, signal, retry);
     signal.throwIfAborted();
     session.status = session.mode === 'discussion' ? 'draft' : 'completed';
     this.save(session);
+  }
+  async finishInvestigation(session, signal, retry) {
+    if (session.mode !== 'investigation') return;
+    if (usesInvestigationOutputs(this, session))
+      await executeInvestigationOutputs(this, session, signal, retry, retryOutputKinds(session));
+    else await this.createFollowups(session, signal);
   }
   recoveryBlock(session, retry) {
     if (!retry) return null;
@@ -472,7 +494,7 @@ export class ProjectInvestigations {
     const block = flow.blocks.find((block) => block.attempts.some(unresolved));
     if (!block) return null;
     requireThat(
-      block.kind === 'understand' && block.id === session.blockId,
+      inquiryKinds.has(block.kind) && block.id === session.blockId,
       'Reconcile the issue’s other operation before retrying this investigation.'
     );
     requireThat(

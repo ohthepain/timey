@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import { createIssueFlows } from './factory-ui/flow-service.mjs';
 import { git } from './factory-ui/common.mjs';
+import { createSharedIssueClaims } from './factory-ui/shared-issue-claims.mjs';
 import { createSharedIssueQueue } from './factory-ui/shared-issue-queue.mjs';
 
 const issueId = '20261111T165430736-ca3555165563420b';
@@ -579,3 +580,33 @@ test('direct status publication is visible in another clone without updating eit
   assert.equal(git(remote, 'rev-parse', 'dev'), basis[0].head);
   assert.equal(git(remote, 'for-each-ref', 'refs/heads/claims/'), '');
 });
+
+for (const replacement of [false, true]) {
+  test(
+    'flow recovery reconciles an acknowledged remote release without discarding another owner: ' + replacement,
+    (t) => {
+      const { first, second } = fixture(t, false, true);
+      const { queue: owner } = queue(first, () => assert.fail('Recovery must not publish a report'));
+      owner.refresh(true);
+      const issue = { id: issueId, content: readFileSync(join(first, reportPath), 'utf8') };
+      const previous = owner.acquireFlowBlock(issue, 'merge', false);
+      const path = join(first, '.issues/shared-issue-claims', issueId + '.json');
+      const retained = readFileSync(path, 'utf8');
+      const claims = createSharedIssueClaims({ root: first, target: 'issue-queue' });
+      claims.release(previous);
+      writeFileSync(path, retained);
+      if (replacement) {
+        const other = createSharedIssueClaims({ root: second, target: 'issue-queue' });
+        const foreign = other.acquire(issueId);
+        assert.throws(() => owner.acquireFlowBlock(issue, 'merge', true), /already claims/);
+        assert.equal(other.verifyOwn(issueId).oid, foreign.oid);
+        return;
+      }
+      const recovered = owner.acquireFlowBlock(issue, 'merge', true);
+      assert.notEqual(recovered.oid, previous.oid);
+      assert.equal(claims.verifyOwn(issueId).oid, recovered.oid);
+      owner.releaseFlowBlock(recovered);
+      assert.equal(claims.own(issueId), null);
+    }
+  );
+}
