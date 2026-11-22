@@ -431,6 +431,11 @@ Factory outcomes; `conversation-view.mjs` combines these with actual conversatio
 records. `conversation-context.mjs` supplies the same full timeline to model and
 skill turns. `issue-chat-runtime.mjs` resumes the owning thread, using read-only
 access for discussion and the issue checkout for editable requests.
+`flow-retro-thread.mjs` exports ordered public native items, including tool calls,
+outcomes and permission decisions, for `flow-retro.mjs`. Each export retains turn
+IDs, available timestamps and linked attempt IDs. Exact turn ownership requires
+a saved turn ID. Missing timing, results, decisions and unsupported payloads are
+explicitly unavailable. Private reasoning is excluded and public values are redacted.
 `flow-retro-proof.mjs` supplies Retro only timeline-linked artifacts with recorded
 SHA-256 digests. It verifies checkout containment and digest before adding a
 bounded redacted excerpt; missing, changed and out-of-checkout artifacts carry
