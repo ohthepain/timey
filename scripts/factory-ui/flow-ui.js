@@ -3664,6 +3664,16 @@
     openCapture();
   });
   window.addEventListener('resize', resizeColumns);
+  let graphScrollIdleTimer;
+  $('graph-scroll').addEventListener(
+    'scroll',
+    () => {
+      $('graph-scroll').dataset.scrolling = '';
+      clearTimeout(graphScrollIdleTimer);
+      graphScrollIdleTimer = setTimeout(() => delete $('graph-scroll').dataset.scrolling, 700);
+    },
+    { passive: true }
+  );
   new ResizeObserver(drawConnections).observe($('graph-scroll'));
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) void load();
