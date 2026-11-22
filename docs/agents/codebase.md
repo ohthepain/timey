@@ -830,7 +830,11 @@ preview-bound per-issue Start and Archive actions, retaining individual outcomes
 and retains the run report. `flow-block-data.mjs` resolves block addresses, declared inputs and
 retained outputs. `flow-request.mjs` derives the Request fields through a
 temporary Codex discussion. `flow-executor.mjs` runs model blocks in their own
-Codex conversations and uses the protected operation adapters for delivery. `flow-observer.mjs` reads local Git state and separately cached PR facts.
+Codex conversations and uses the protected operation adapters for delivery.
+Command file artifacts select the latest evidence entry with the declared key.
+Merge selects the final delivery log while preserving earlier failed verification
+checkpoints in their original evidence order.
+`flow-observer.mjs` reads local Git state and separately cached PR facts.
 `flow-branches.mjs` lists local refs and snapshots the chosen commit for a new checkout.
 `project-worktree-cleanup.mjs` owns the Admin and `$prune-worktrees` preview and
 batch removal, including open issue checks and the reviewed branch revisions.

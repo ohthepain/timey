@@ -421,7 +421,7 @@ function commandArtifacts(definition, result) {
   const files = {};
   for (const { key, kind, label } of definition?.artifacts ?? []) {
     if (kind === 'file') {
-      const evidence = result.evidence?.find((item) => item.key === key);
+      const evidence = result.evidence?.findLast((item) => item.key === key);
       if (evidence) files[key] = { ...evidence, label };
     }
     if (kind === 'value' && key === 'candidate' && result.result?.head) values[key] = result.result.head;
