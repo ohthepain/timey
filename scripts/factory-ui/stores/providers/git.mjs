@@ -164,21 +164,23 @@ export async function openGitRecords(config, { root, projectId }) {
         GIT_ALLOW_PROTOCOL: 'https',
       };
     }
-    await git(
-      [
-        ...args,
-        'push',
-        '--no-mirror',
-        '--no-verify',
-        '--no-follow-tags',
-        '--recurse-submodules=no',
-        `--force-with-lease=${target}:${head || ''}`,
-        '--',
-        credentials ? 'timey-store-app' : remote,
-        `${commit}:${target}`,
-      ],
-      { env: auth }
-    );
+    const command = [
+      'push',
+      '--no-mirror',
+      '--no-verify',
+      '--no-follow-tags',
+      '--recurse-submodules=no',
+      `--force-with-lease=${target}:${head || ''}`,
+      '--',
+      credentials ? 'timey-store-app' : remote,
+      `${commit}:${target}`,
+    ];
+    try {
+      await git([...args, ...command], { env: auth });
+    } catch (error) {
+      if (!/RPC failed; HTTP 400\b/.test(error.stderr || '')) throw error;
+      await git([...args, '-c', 'http.postBuffer=67108864', ...command], { env: auth });
+    }
   }
   function failure(error) {
     return typeof error.code === 'string' && error.code.startsWith('STORE_')

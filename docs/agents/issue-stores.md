@@ -111,6 +111,10 @@ node --test scripts/store-settings.check.mjs scripts/store-runtime.check.mjs scr
 node scripts/flow-browser.mjs --stores
 ```
 
+`node --test scripts/store-git-http.check.mjs` checks large artifact uploads
+through a real HTTP Git server. It covers rejected chunked uploads, retained
+authentication, exact branch leases, and recovery after a lost acknowledgement.
+
 Remote contracts require explicit opt-in and isolated test namespaces. Record
 contracts select providers with `TIMEY_STORE_TEST_PROVIDERS`; disposable DynamoDB
 tables must start with `timey-store-test-`. Artifact contracts enable Postgres and

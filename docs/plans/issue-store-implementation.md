@@ -81,3 +81,11 @@ The user confirmed this machine is the only Factory runner and
 authorized the permanent `timey-factory-issues` DynamoDB table in `eu-central-1`.
 That table is active with on-demand capacity and string `PK`/`SK` keys. Existing
 files/Git defaults stay selected when the named remote stores are configured.
+
+Live activation exposed an HTTPS failure when publishing a valid source bundle.
+The exact retained commit succeeds with a buffered request. The Git provider
+retries that HTTP400 failure with the same commit, authentication, and branch
+lease; it changes no repository or global Git settings. Real HTTP regressions
+cover rejected chunked uploads and a lost acknowledgement with a newer peer tip.
+Coordination migration also excludes Issue records and raw Artifact bodies when
+all three roles share one physical Git namespace.
