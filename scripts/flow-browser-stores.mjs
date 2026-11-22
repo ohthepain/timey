@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
-import { readFileSync, existsSync, mkdirSync, copyFileSync } from 'node:fs';
+import { readFileSync, existsSync, mkdirSync, copyFileSync, writeFileSync } from 'node:fs';
 import { createCaptures } from './factory-ui/issue-capture.mjs';
 import { proposal } from './factory-capture-fixture.mjs';
 import { factory } from './factory-ledger.mjs';
 import { join, resolve } from 'node:path';
 import { withQueueConfiguration } from './flow-browser-queue-configuration.mjs';
 import { randomUUID } from 'node:crypto';
+import { collectEvidence } from './factory-ui/stores/evidence.mjs';
 import { git } from './factory-ui/common.mjs';
 import {
   createIssueFolderSettings,
@@ -43,6 +44,71 @@ async function checkProjectStoreSettings(page, poll) {
     (value) => value.coordination === storeId && value.artifacts === storeId,
     'Project roles were not moved to their selected store.'
   );
+}
+
+async function checkDeletionRecovery({ page, service, poll, screenshot }) {
+  const stores = service.projectStores;
+  const issueId = 'browser-delete-' + randomUUID();
+  const operationId = 'browser-interrupted-delete';
+  await stores.importIssue({
+    id: issueId,
+    report: '---\nid: ' + issueId + '\ntitle: Disposable deletion recovery\nstate: backlog\n---\n',
+    location: 'archive',
+    storeId: 'files',
+    flow: null,
+    operationId: 'browser-delete-import',
+  });
+  const proof = join(service.root, '.issues/evidence/browser-delete-proof.txt');
+  mkdirSync(join(service.root, '.issues/evidence'), { recursive: true });
+  writeFileSync(proof, 'Evidence owned only by the disposable deletion fixture.\n');
+  const manifest = await collectEvidence({
+    root: service.root,
+    flow: { evidence: [{ path: proof }] },
+    artifacts: stores.artifacts,
+  });
+  const ref = manifest.files[0].ref;
+  await stores.records.commit({
+    operationId: 'browser-delete-evidence',
+    expected: [{ key: 'evidence/' + issueId, revision: null }],
+    writes: [{ key: 'evidence/' + issueId, value: manifest }],
+  });
+  const saved = await stores.readIssue(issueId);
+  const physical = stores.artifacts.physical;
+  const remove = physical.remove;
+  physical.remove = async function (candidate) {
+    if (candidate.sha256 === ref.sha256)
+      throw Object.assign(Error('Fixture evidence store is unavailable.'), { code: 'STORE_UNAVAILABLE' });
+    return remove.call(this, candidate);
+  };
+  try {
+    await assert.rejects(stores.deleteIssue({ issueId, expectedRevision: saved.revision, operationId }), {
+      code: 'STORE_UNAVAILABLE',
+    });
+  } finally {
+    physical.remove = remove;
+  }
+  assert.equal((await stores.records.get('catalog/' + issueId)).value.state, 'deleted');
+  await page.goto('/?settings=storage');
+  await page.evaluate(() => localStorage.clear());
+  await page.reload();
+  const resume = page.locator('[data-store-resume-delete="' + operationId + '"]');
+  await resume.waitFor();
+  await screenshot('issue-delete-pending-recovery');
+  const response = page.waitForResponse(
+    (r) => r.url().endsWith('/api/issue-store-action') && r.request().postDataJSON()?.action === 'resume-delete'
+  );
+  await resume.click();
+  const received = await response;
+  assert.equal(received.request().postDataJSON().operationId, operationId);
+  assert.equal(received.status(), 200, JSON.stringify(await received.json()));
+  await poll(
+    () => page.locator('[data-pending-deletion]').count(),
+    (count) => count === 0,
+    'Confirmed cleanup remained pending in Project settings.'
+  );
+  assert.equal(await physical.inspect(ref), null);
+  assert.equal(await stores.records.get('project/migration'), null);
+  await screenshot('issue-delete-recovery-confirmed');
 }
 
 async function checkOwnershipRecovery({ page, service, issueId, poll, screenshot }) {
@@ -313,6 +379,7 @@ export async function issueStoresBrowserChecks({ page, project, service, poll, s
   assert.equal(await settings.locator('input[type="password"]').count(), 0);
   await screenshot('project-issue-stores');
   await checkProjectStoreSettings(page, poll);
+  await checkDeletionRecovery({ page, service, poll, screenshot });
   await page.goto('/?issue=' + issue.id);
   await page.locator('[data-block="request"]').click();
   const records = service.projectStores.records;

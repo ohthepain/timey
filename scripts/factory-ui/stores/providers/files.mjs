@@ -3,7 +3,7 @@ import { mkdir, open, rename, rm, lstat } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
-import { assertStore, checkExpected, hash, storeError, verifyReceipt } from './records.mjs';
+import { assertStore, checkExpected, hash, storeError, verifyReceipt, retireReceipt } from './records.mjs';
 
 async function readState(path) {
   try {
@@ -69,7 +69,44 @@ export async function openFilesRecords(config, { root, projectId }) {
     'The record store must be a real directory.'
   );
   const path = join(directory, 'state.json');
+  async function mutate(request, change) {
+    const lockPath = join(directory, 'write.lock');
+    await lock(lockPath);
+    try {
+      const state = await readState(path);
+      const prior = state.operations.find((item) => item.id === request.operationId);
+      if (prior) return verifyReceipt(prior.receipt, request.inputDigest);
+      const next = await change(state);
+      await replaceState(directory, path, {
+        ...next,
+        operations: [...next.operations, { id: request.operationId, receipt: request.receipt }],
+      });
+      return request.receipt;
+    } finally {
+      await rm(lockPath, { recursive: true });
+    }
+  }
   return {
+    async receipt(operationId) {
+      return (await readState(path)).operations.find((item) => item.id === operationId)?.receipt ?? null;
+    },
+    async retainedPayloads() {
+      const state = await readState(path);
+      return { records: state.records, receipts: state.operations };
+    },
+    retireReceipts(request) {
+      return mutate(request, (state) => {
+        const selected = new Map(request.receipts.map((item) => [item.id, item]));
+        const found = new Map(state.operations.map((item) => [item.id, item.receipt]));
+        for (const item of request.receipts) retireReceipt(found.get(item.id), item, request);
+        const operations = state.operations.map((item) =>
+          selected.has(item.id)
+            ? { id: item.id, receipt: retireReceipt(item.receipt, selected.get(item.id), request) }
+            : item
+        );
+        return { ...state, operations };
+      });
+    },
     async readSnapshot(read) {
       const state = await readState(path);
       return read({
@@ -83,28 +120,20 @@ export async function openFilesRecords(config, { root, projectId }) {
     async list(prefix) {
       return (await readState(path)).records.filter((item) => item.key.startsWith(prefix));
     },
-    async commit(request) {
-      const lockPath = join(directory, 'write.lock');
-      await lock(lockPath);
-      try {
-        const state = await readState(path);
-        const prior = state.operations.find((item) => item.id === request.operationId);
-        if (prior) return verifyReceipt(prior.receipt, request.inputDigest);
+    commit(request) {
+      return mutate(request, (state) => {
         const records = new Map(state.records.map((item) => [item.key, item]));
         checkExpected(request.expected, records);
         for (const { key, record } of request.writes) {
           if (record) records.set(key, record);
           else records.delete(key);
         }
-        await replaceState(directory, path, {
+        return {
           version: 1,
           records: [...records.values()].sort((a, b) => a.key.localeCompare(b.key)),
-          operations: [...state.operations, { id: request.operationId, receipt: request.receipt }],
-        });
-        return request.receipt;
-      } finally {
-        await rm(lockPath, { recursive: true });
-      }
+          operations: state.operations,
+        };
+      });
     },
   };
 }

@@ -325,7 +325,13 @@ export async function moveProjectStore(project, input) {
   const storeId = input.storeId || input.destinationStoreId;
   const target = (role === 'coordination' ? project.recordStores : project.artifactStores).get(storeId);
   assertStoreState(Boolean(target), 'STORE_UNCONFIGURED', 'The destination project store is not configured.');
-  const operation = await project.coordination.operation(input.operationId, 'move-project-store', { role, storeId });
+  let operation = await project.coordination.operation(input.operationId, 'move-project-store', { role, storeId });
+  if (!operation.value.sourceStoreId && operation.value.status !== 'confirmed')
+    operation = await project.coordination.updateOperation(
+      operation,
+      { sourceStoreId: role === 'coordination' ? project.records.id : project.artifacts.id },
+      'source-home'
+    );
   if (operation.value.status === 'confirmed') {
     await (input.onCutover || project.onCutover)?.({ role, storeId, migrationId: operation.value.id });
     return { status: 'confirmed', role, storeId };

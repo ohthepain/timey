@@ -5,7 +5,7 @@ import { readSnapshot } from './snapshots.mjs';
 import { parse } from 'yaml';
 const pendingViews = new WeakMap();
 
-async function pendingMigrations(service, input, saved) {
+async function pendingStoreOperations(service, input, saved) {
   if (service.storeStatus?.unavailable) return pendingViews.get(service) || [];
   if (!service.projectStores?.records?.list) return [];
   const records = service.projectStores.records;
@@ -19,13 +19,20 @@ async function pendingMigrations(service, input, saved) {
     );
   }
   const pending = operations
-    .filter(({ value }) => value.status !== 'confirmed' && ['move-issue', 'move-project-store'].includes(value.kind))
+    .filter(
+      ({ value }) =>
+        value.status !== 'confirmed' && ['move-issue', 'move-project-store', 'delete-issue'].includes(value.kind)
+    )
     .map(({ value }) => ({
       operationId: value.id,
       kind: value.kind,
       status: value.status,
-      storeId: value.input.storeId,
-      ...(value.kind === 'move-issue' ? { issueIds: value.input.ids } : { role: value.input.role }),
+      ...(value.kind === 'delete-issue'
+        ? { issueId: value.input.issueId }
+        : {
+            storeId: value.input.storeId,
+            ...(value.kind === 'move-issue' ? { issueIds: value.input.ids } : { role: value.input.role }),
+          }),
       createdAt: value.createdAt,
     }));
   pending.sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
@@ -84,14 +91,16 @@ async function moveGroup(service, input, pending) {
 export async function issueStoresView(service, input = {}) {
   const view = safeStoreView(service.root);
   const saved = await savedIssueHome(service, input.issueId);
-  const pending = await pendingMigrations(service, input, saved);
+  const pending = await pendingStoreOperations(service, input, saved);
+  const migrations = pending.filter(({ kind }) => kind !== 'delete-issue');
   const inherited = saved?.catalog?.storeId
     ? { id: saved.catalog.storeId, source: 'Saved issue home' }
     : resolveIssueStore(service.root, { folder: input.folder });
   return {
     ...view,
-    pendingMigrations: pending,
-    moveGroup: await moveGroup(service, input, pending),
+    pendingMigrations: migrations,
+    pendingDeletions: pending.filter(({ kind }) => kind === 'delete-issue'),
+    moveGroup: await moveGroup(service, input, migrations),
     selected: saved?.catalog?.storeId || inherited.id,
     source: saved?.catalog?.storeId ? 'Saved issue home' : inherited.source,
     ...(service.storeStatus?.unavailable ? service.storeStatus : {}),
@@ -102,6 +111,7 @@ function configuredInput(value) {
   const {
     revision,
     pendingMigrations: _pending,
+    pendingDeletions: _deletions,
     moveGroup: _group,
     selected: _selected,
     source: _source,
@@ -164,8 +174,9 @@ export async function handleStoreAction(service, input) {
   requireThat(stores, 'Project storage is not initialized. Refresh before moving storage.');
   requireThat(
     typeof input.operationId === 'string' && input.operationId.length <= 120 && input.operationId.length > 0,
-    'Keep a stable operation ID when moving storage.'
+    'Keep a stable operation ID when changing storage.'
   );
+  if (input.action === 'resume-delete') return stores.resumeDelete({ operationId: input.operationId });
   if (input.action === 'move-issue') {
     requireStore(readStoreConfig(service.root), input.storeId, 'issue');
     return stores.moveIssue({

@@ -175,6 +175,11 @@ export function createCoordination(records, { runnerId = randomUUID(), now = () 
           'STORE_OPERATION_MISMATCH',
           'This operation identity already names different input.'
         );
+        assertStoreState(
+          !record.value.deletedIssueIds?.length,
+          'STORE_DELETED',
+          'This historical operation includes a permanently deleted issue.'
+        );
         if (record.value.status === 'rejected')
           throw storeFailure(record.value.errorCode, record.value.error, { rejected: true, pending: false });
         return record;

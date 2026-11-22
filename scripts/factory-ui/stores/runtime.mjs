@@ -19,8 +19,8 @@ import { readProgress } from '../../factory-progress.mjs';
 const runtimes = new WeakMap();
 const bootstrapKey = 'project/bootstrap';
 const methods = {
-  issue: ['read', 'list', 'commit', 'history'],
-  records: ['get', 'list', 'commit'],
+  issue: ['read', 'list', 'commit', 'history', 'retainedPayloads', 'retireReceipts', 'removeRecords'],
+  records: ['get', 'list', 'commit', 'retainedPayloads', 'retireReceipts', 'removeRecords'],
   artifact: ['put', 'get', 'inspect', 'list', 'remove', 'open', 'probe'],
 };
 

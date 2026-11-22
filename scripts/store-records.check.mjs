@@ -432,6 +432,24 @@ for (const kind of providers)
     assert.deepEqual((await issues.history('test-issue'))[1].report, report);
     assert.equal((await issues.list({ location: 'closed' })).length, 1);
     assert.equal((await issues.list({ location: 'archive' })).length, 0);
+    assert.equal(issues.id, f.config.id);
+    const retainedIssues = await issues.retainedPayloads();
+    const owned = (key) => key.startsWith('issues/test-issue/');
+    await issues.removeRecords({
+      operationId: 'delete-issue-records',
+      expected: retainedIssues.records.filter(({ key }) => owned(key)).map(({ key, revision }) => ({ key, revision })),
+    });
+    await issues.retireReceipts({
+      operationId: 'delete-issue-receipts',
+      issueId: 'test-issue',
+      deletionId: 'checked-delete',
+      receipts: retainedIssues.receipts
+        .filter((entry) => entry.records.some(({ key }) => owned(key)))
+        .map(({ id, inputDigest, identity }) => ({ id, inputDigest, identity })),
+    });
+    assert.equal(await issues.read('test-issue'), null);
+    assert.deepEqual(await issues.history('test-issue'), []);
+    await assert.rejects(issues.commit(issueRequest), fails('STORE_DELETED'));
     await f.checkSource();
   });
 
@@ -462,3 +480,124 @@ test('Postgres rejects the installed application database without a connection o
     else process.env.DATABASE_URL = previous;
   }
 });
+
+for (const kind of providers) {
+  test(`${kind}: deletion roots include private payloads and retired replay cannot upload them again`, async (t) => {
+    const f = await fixture(t, kind);
+    const store = await f.open();
+    const peer = await f.open(1);
+    const publicRef = await f.artifacts.put({
+      body: Buffer.from('Evidence shared by another issue.'),
+      mediaType: 'text/plain',
+    });
+    const writes = [
+      { key: 'flow/deleted', value: { output: 'x'.repeat(80_000), evidence: publicRef } },
+      ...Array.from({ length: 3 }, (_, index) => ({ key: 'history/deleted/' + index, value: 'y'.repeat(8_000) })),
+    ];
+    const create = {
+      operationId: 'retained-private-values',
+      expected: writes.map(({ key }) => ({ key, revision: null })),
+      writes,
+    };
+    const created = await store.commit(create);
+    await store.commit({
+      operationId: 'live-public-reference',
+      expected: [{ key: 'flow/survivor', revision: null }],
+      writes: [{ key: 'flow/survivor', value: { evidence: publicRef } }],
+    });
+    const retained = await store.retainedPayloads();
+    const source = retained.receipts.find((entry) => entry.records.some(({ key }) => key === 'flow/deleted'));
+    assert.ok(source);
+    assert.ok(source.refs.some((ref) => ref.sha256 === publicRef.sha256));
+    assert.ok(
+      source.refs.length >= 3,
+      'Both the packed record and packed receipt result must be retained, alongside public evidence.'
+    );
+    assert.ok(retained.records.find(({ key }) => key === 'flow/deleted').refs.length >= 2);
+    assert.equal(source.records.find(({ key }) => key === 'flow/deleted').value.output.length, 80_000);
+    assert.equal(store.id, f.config.id);
+    await store.removeRecords({
+      operationId: 'remove-deleted-records',
+      expected: created.records.map(({ key, revision }) => ({ key, revision })),
+    });
+    const selected = { id: source.id, inputDigest: source.inputDigest, identity: source.identity };
+    await assert.rejects(
+      store.retireReceipts({
+        operationId: 'stale-cleanup',
+        issueId: 'deleted',
+        deletionId: 'delete-confirmed',
+        receipts: [{ ...selected, identity: '0'.repeat(64) }],
+      }),
+      fails('STORE_CONFLICT')
+    );
+    const retirement = {
+      operationId: 'retire-deleted-receipt',
+      issueId: 'deleted',
+      deletionId: 'delete-confirmed',
+      receipts: [selected],
+    };
+    const result = await store.retireReceipts(retirement);
+    assert.deepEqual(result.retired, [source.id]);
+    assert.deepEqual(await peer.retireReceipts(retirement), result);
+    const after = await peer.retainedPayloads();
+    assert.deepEqual(after.receipts.find(({ id }) => id === source.id).refs, []);
+    assert.ok(
+      after.records.find(({ key }) => key === 'flow/survivor').refs.some((ref) => ref.sha256 === publicRef.sha256)
+    );
+    assert.deepEqual(
+      after.records.map(({ key }) => key),
+      ['flow/survivor']
+    );
+    const put = f.artifacts.put;
+    let uploads = 0;
+    f.artifacts.put = async (input) => {
+      uploads++;
+      return put(input);
+    };
+    await assert.rejects(peer.commit(create), fails('STORE_DELETED'));
+    await assert.rejects(
+      peer.commit({ ...create, writes: [{ key: writes[0].key, value: 'different payload' }] }),
+      fails('STORE_OPERATION_MISMATCH')
+    );
+    assert.equal(uploads, 0, 'A retired replay must fail before packing or uploading old bytes.');
+    assert.equal(await store.get('flow/deleted'), null);
+    await f.checkSource();
+  });
+
+  test(`${kind}: retention excludes only verified self-inventory when explicitly requested`, async (t) => {
+    const f = await fixture(t, kind);
+    const store = await f.open();
+    const body = Buffer.from('An artifact inventory body.');
+    const ref = {
+      storeId: f.config.id,
+      key: 'inventory/' + sha(body),
+      sha256: sha(body),
+      bytes: body.length,
+      mediaType: 'text/plain',
+    };
+    const key = 'artifact/' + ref.sha256;
+    await store.commit({
+      operationId: 'artifact-own-put',
+      expected: [{ key, revision: null }],
+      writes: [{ key, value: { ref, body: body.toString('base64') } }],
+    });
+    const unrelated = 'artifact/' + sha('not-an-inventory-key');
+    await store.commit({
+      operationId: 'ordinary-reference',
+      expected: [{ key: unrelated, revision: null }],
+      writes: [{ key: unrelated, value: { ref, body: body.toString('base64') } }],
+    });
+    const all = await store.retainedPayloads();
+    assert.equal(all.records.length, 2);
+    assert.equal(all.receipts.length, 2);
+    const roots = await store.retainedPayloads({ excludeArtifactInventory: true });
+    assert.deepEqual(
+      roots.records.map(({ key }) => key),
+      [unrelated]
+    );
+    assert.equal(roots.receipts.length, 1);
+    assert.equal(roots.receipts[0].records[0].key, unrelated);
+    assert.ok(roots.receipts[0].refs.some((item) => item.sha256 === ref.sha256));
+    await f.checkSource();
+  });
+}

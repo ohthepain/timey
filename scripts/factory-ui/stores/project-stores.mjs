@@ -13,6 +13,7 @@ import {
 } from './coordination.mjs';
 import { installSnapshot, readSnapshot } from './snapshots.mjs';
 import { moveIssue, moveProjectStore } from './migrations.mjs';
+import { deleteIssue, resumeDelete } from './deletion.mjs';
 
 const asMap = (value) => (value instanceof Map ? value : new Map(Object.entries(value || {})));
 const reportText = (value) => (typeof value === 'string' ? value : Buffer.from(value).toString('utf8'));
@@ -233,6 +234,7 @@ export function createProjectStores({
         const key = catalogKey(input.id);
         const existing = await this.coordination.get(key);
         if (existing) {
+          assertStoreState(existing.value.state !== 'deleted', 'STORE_DELETED', 'This issue was permanently deleted.');
           assertStoreState(
             existing.value.creationOperation === op.value.id,
             'STORE_ISSUE_EXISTS',
@@ -788,27 +790,11 @@ export function createProjectStores({
         }
         throw error;
       },
-      async deleteIssue({ issueId, expectedRevision, operationId, owner }) {
-        const op = await this.coordination.operation(operationId, 'delete-issue', {
-          issueId,
-          expectedRevision,
-          owner: owner || null,
-        });
-        if (op.value.status === 'confirmed') return { status: 'confirmed', deleted: true, issueId };
-        const current = await this.readIssue(issueId);
-        assertStoreState(!merged(current.flow), 'STORE_MERGED', 'This merged issue is read-only.');
-        assertStoreState(
-          current.revision === expectedRevision,
-          'STORE_CONFLICT',
-          'The shared issue changed. Refresh before deleting.'
-        );
-        const claimOwner = await this.claimForOperation(op, issueId, owner);
-        const catalog = await this.catalog(issueId);
-        const writes = [{ key: catalog.key, value: { ...catalog.value, state: 'deleted', deletedAt: now() } }];
-        const expected = [{ key: catalog.key, revision: catalog.revision }];
-        if (owner) await this.coordination.confirmOwned(op, owner, writes, expected);
-        else await this.coordination.finalize(op, claimOwner, writes, expected);
-        return { status: 'confirmed', deleted: true, issueId };
+      deleteIssue(input) {
+        return deleteIssue(this, input);
+      },
+      resumeDelete(input) {
+        return resumeDelete(this, input);
       },
       async claimForOperation(op, issueId, owner) {
         const claimOwner = owner || this.coordination.owner(op, issueId);

@@ -129,6 +129,24 @@ its retained result remains pending until synchronization succeeds. Local Stop
 still cancels the owning runner. Remote Stop remains a request until its owner
 acknowledges it, and neither a lost connection nor elapsed time releases a claim.
 
+## Finish an interrupted deletion
+
+Permanent Delete removes the issue and its exclusively owned evidence. Files
+shared with retained issues stay available. Archive retains the report and history.
+
+1. Finish running project work before deleting an issue. Deletion holds shared
+   changes while Factory checks retained references and removes unused evidence.
+2. If deletion stops while the issue is still present, retry its original Delete
+   action after the blocker clears.
+3. If the issue is already absent, open **Project settings → Issue Storage** and
+   click **Resume deletion**. The action resumes its original deletion command.
+4. Restore an unavailable store, then retry the same action. Factory releases
+   shared changes after authoritative cleanup confirmation.
+
+Deletion leaves source worktrees to their existing cleanup controls. It does not
+rewrite Git history, purge older S3 object versions, or change provider backups.
+With S3 versioning disabled, removing an unused object deletes its stored bytes.
+
 ## Recover ownership
 
 The ownership panel in Issue settings identifies a retained claim. Stop and

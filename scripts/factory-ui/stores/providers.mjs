@@ -27,7 +27,7 @@ export async function openRecordStore(config, options = {}) {
   return recordStore(
     await factories[config.kind](config, options),
     options.inlinePayloads ? undefined : options.artifacts,
-    { allowInlineLarge: options.inlinePayloads === true }
+    { allowInlineLarge: options.inlinePayloads === true, storeId: config.id }
   );
 }
 
@@ -50,6 +50,7 @@ function issueProvider(records) {
     };
   }
   return {
+    id: records.id,
     ...(records.readSnapshot && {
       readSnapshot: (read) =>
         records.readSnapshot((pinned) => {
@@ -108,6 +109,9 @@ function issueProvider(records) {
       assertStore(byPrevious.size === 0, 'Issue history has a missing or conflicting predecessor.');
       return result;
     },
+    removeRecords: (input) => records.removeRecords(input),
+    retainedPayloads: (options) => records.retainedPayloads(options),
+    retireReceipts: (input) => records.retireReceipts(input),
     close: () => records.close(),
   };
 }

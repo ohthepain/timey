@@ -290,6 +290,77 @@ test('store options expose safe pending receipts while a home is moving and use 
   assert.equal(reads, before);
 });
 
+test('Project storage exposes a deleted issue cleanup and retains its safe recovery command during outages', async (t) => {
+  const f = fixture(t);
+  const operation = {
+    value: {
+      id: 'delete-one',
+      kind: 'delete-issue',
+      status: 'pending',
+      input: { issueId: 'removed-issue', owner: { token: 'private-owner-token' } },
+      cleanup: { candidates: ['private-artifact-reference'] },
+      createdAt: '2026-11-22T00:00:00Z',
+    },
+  };
+  const service = {
+    root: f.root,
+    projectStores: {
+      records: {
+        async get(key) {
+          return key === 'project/migration' ? { value: { operationId: 'delete-one' } } : operation;
+        },
+        async list() {
+          throw Error('Reading project recovery must use its exact operation identity.');
+        },
+      },
+    },
+  };
+  const view = await issueStoresView(service);
+  assert.deepEqual(view.pendingMigrations, []);
+  assert.deepEqual(view.pendingDeletions, [
+    {
+      operationId: 'delete-one',
+      kind: 'delete-issue',
+      status: 'pending',
+      issueId: 'removed-issue',
+      createdAt: '2026-11-22T00:00:00Z',
+    },
+  ]);
+  assert.ok(!JSON.stringify(view).includes('private-'));
+  service.storeStatus = { unavailable: true };
+  assert.deepEqual((await issueStoresView(service)).pendingDeletions, view.pendingDeletions);
+});
+
+test('Resume deletion keeps the original command identity and requires local server ownership', async (t) => {
+  const f = fixture(t);
+  const seen = [];
+  const service = {
+    root: f.root,
+    ownServer() {
+      seen.push('owner');
+    },
+    projectStores: {
+      async resumeDelete(input) {
+        seen.push(input);
+        return { status: 'confirmed', deleted: true };
+      },
+    },
+  };
+  assert.deepEqual(await handleStoreAction(service, { action: 'resume-delete', operationId: 'original-delete' }), {
+    status: 'confirmed',
+    deleted: true,
+  });
+  assert.deepEqual(seen, ['owner', { operationId: 'original-delete' }]);
+  service.ownServer = () => {
+    throw Error('Another runner owns the local server.');
+  };
+  await assert.rejects(
+    handleStoreAction(service, { action: 'resume-delete', operationId: 'original-delete' }),
+    /Another runner/
+  );
+  assert.equal(seen.length, 2);
+});
+
 test('a child store move explicitly includes its authoritative master and all attached children', async (t) => {
   const f = fixture(t);
   configured(f.root);

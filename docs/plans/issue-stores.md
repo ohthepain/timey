@@ -151,10 +151,24 @@ their configured stores. Hide archived issues from active queues on every runner
 and allow any connected runner to browse the archive. Preserve display numbers.
 Archive does not delete evidence or move it to the initiating machine.
 
+Permanent Delete also removes the issue's exclusively owned evidence. Cleanup
+checks retained records and operation receipts before removing a content-addressed
+object, including references in another Issue store or an earlier migration
+source. Other issues keep their shared files. Completed operation receipts retain
+their identities and digests so replay cannot recreate deleted evidence.
+
+Deletion requires an idle project and seals shared changes until cleanup finishes.
+If a store fails after the issue disappears, Project settings retains a **Resume
+deletion** action for the original command. Retrying continues the checked cleanup.
+It never sweeps unrelated bucket objects or removes source worktrees. Removing
+current objects does not rewrite Git history, purge S3 versions, or change backup
+retention.
+
 This changes the local archive policy in [ADR 0012](../adr/0012-retain-closed-issues-and-archive-locally.md)
 and the local-history scope of [ADR 0019](../adr/0019-share-issue-claims-on-the-queue-branch.md)
 for shared-store paths. Older installations retain their documented legacy
-behavior until upgraded. No automatic retention or deletion policy is added.
+behavior until upgraded. Evidence removal requires an explicit permanent Delete;
+no scheduled expiration is added.
 
 ## Connections and resources to prepare
 

@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync, renameSync, rmSync, statSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
+import { cleanupDeletedCache } from './deletion-cache.mjs';
 import { validIdentity, assertStoreState, inputDigest } from './coordination.mjs';
 
 const locations = { open: '.issues', closed: '.issues/closed', archive: '.issues/archive' };
@@ -134,7 +135,7 @@ function prepareSnapshot(root, snapshot) {
   for (const issue of snapshot.issues) merged.set(issue.id, issue);
   const saved = { ...snapshot, authoritative: false, issues: [...merged.values()] };
   changes.push({ path: snapshotPath(root), body: JSON.stringify(saved, null, 2) + '\n' });
-  return { changes, saved };
+  return { changes, saved, previous };
 }
 
 function rollbackGeneration(applied) {
@@ -175,5 +176,6 @@ function applyGeneration(root, changes) {
 export function installSnapshot(root, snapshot) {
   const prepared = prepareSnapshot(root, snapshot);
   applyGeneration(root, prepared.changes);
+  cleanupDeletedCache(root, prepared.saved, prepared.previous);
   return prepared.saved;
 }

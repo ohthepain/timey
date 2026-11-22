@@ -41,5 +41,11 @@ scope of [ADR 0019](0019-share-issue-claims-on-the-queue-branch.md) and archive
 policy of [ADR 0012](0012-retain-closed-issues-and-archive-locally.md). Their
 shared-store paths now retain archives and history across connected runners.
 
+Permanent Delete removes exclusively owned evidence after checking retained
+records and receipts across store migrations. Keep shared objects and minimal
+operation tombstones that prevent deleted payloads from returning on replay.
+Interrupted cleanup remains resumable from Project settings after the issue
+disappears. Archive retains its history and evidence.
+
 The [store specification](../plans/issue-stores.md) records the user decisions,
 resource preparation, and shared contracts.

@@ -155,7 +155,15 @@
     function renderStoreSettings() {
       const registry = data.storeRegistry;
       if (!registry) return '<p>Store configuration is unavailable.</p>';
-      return `<h3>Project stores</h3><p>Issue defaults are configured on the Issues page. Changing Coordination or Artifact storage performs a checked project migration. To change a configured destination, add a store and move to it.</p><form data-settings-form data-store-settings>${roleChoice('coordination', 'Coordination store', registry.coordination)}${roleChoice('artifact', 'Artifact store', registry.artifacts)}${registry.stores.map(configuredStore).join('')}<label class="field">Add a configured store<select data-store-kind>${['files', 'git', 'postgres', 'dynamodb', 's3'].map((kind) => `<option value="add-${kind}">${kind}</option>`).join('')}</select></label><button type="button" class="small-button" data-store-add>Add store</button>${saveButton}</form>`;
+      return `<h3>Project stores</h3><p>Issue defaults are configured on the Issues page. Changing Coordination or Artifact storage performs a checked project migration. To change a configured destination, add a store and move to it.</p>${pendingDeletions(registry)}<form data-settings-form data-store-settings>${roleChoice('coordination', 'Coordination store', registry.coordination)}${roleChoice('artifact', 'Artifact store', registry.artifacts)}${registry.stores.map(configuredStore).join('')}<label class="field">Add a configured store<select data-store-kind>${['files', 'git', 'postgres', 'dynamodb', 's3'].map((kind) => `<option value="add-${kind}">${kind}</option>`).join('')}</select></label><button type="button" class="small-button" data-store-add>Add store</button>${saveButton}</form>`;
+    }
+    function pendingDeletions(registry) {
+      return (registry.pendingDeletions || [])
+        .map(
+          ({ operationId }) =>
+            `<section data-pending-deletion><p>Issue deletion needs to finish. Shared changes wait until cleanup completes.</p><button type="button" class="small-button" data-store-resume-delete="${esc(operationId)}"${registry.unavailable ? ' disabled' : ''}>Resume deletion</button></section>`
+        )
+        .join('');
     }
     function addedStore(kind) {
       const roles =
@@ -205,6 +213,7 @@
       delete next.selected;
       delete next.source;
       delete next.pendingMigrations;
+      delete next.pendingDeletions;
       delete next.moveGroup;
       delete next.available;
       delete next.unavailable;
@@ -218,6 +227,7 @@
       registry.revision = saved.revision;
       registry.stores = saved.stores;
       registry.pendingMigrations = saved.pendingMigrations;
+      registry.pendingDeletions = saved.pendingDeletions;
       const changes = Object.fromEntries(
         data.storage.editableFields
           .filter((key) => fields[key] !== String(data.storage.configuration[key]))
@@ -258,6 +268,24 @@
         });
         content.querySelector(`[data-store-result="${store.id}"]`).textContent =
           result.message || 'Connection verified.';
+      } catch (failure) {
+        showError(failure.message);
+      } finally {
+        button.disabled = false;
+      }
+    }
+    async function resumeDeletion(button) {
+      button.disabled = true;
+      showError();
+      try {
+        const result = await post('/api/issue-store-action', {
+          action: 'resume-delete',
+          operationId: button.dataset.storeResumeDelete,
+        });
+        if (result.status !== 'confirmed')
+          throw Error('Issue deletion is still pending. Retry after storage is available.');
+        Object.assign(data.storeRegistry, await request('/api/issue-stores'));
+        render();
       } catch (failure) {
         showError(failure.message);
       } finally {
@@ -452,6 +480,7 @@
       ['[data-settings-create]', createDefaults],
       ['[data-store-add]', addStore],
       ['[data-store-test]', testStore],
+      ['[data-store-resume-delete]', (button) => leave(() => void resumeDeletion(button))],
       [
         '[data-settings-admin]',
         (button) =>

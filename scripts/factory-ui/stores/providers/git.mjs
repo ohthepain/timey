@@ -7,7 +7,7 @@ import { randomUUID } from 'node:crypto';
 import { cleanEnvironment } from '../../common.mjs';
 import { githubAppCredentials } from '../../github-app.mjs';
 import { sharedIssueQueueConfig } from '../../shared-issue-config.mjs';
-import { assertStore, checkExpected, hash, storeError, verifyReceipt } from './records.mjs';
+import { assertStore, checkExpected, hash, storeError, verifyReceipt, retireReceipt } from './records.mjs';
 
 const execute = promisify(execFile);
 
@@ -222,7 +222,72 @@ export async function openGitRecords(config, { root, projectId }) {
     await Promise.all(Array.from({ length: Math.min(4, paths.length) }, readNext));
     return records.sort((a, b) => a.key.localeCompare(b.key));
   }
+  async function receiptsAt(head) {
+    if (!head) return [];
+    const paths = (await git(['ls-tree', '-rz', '--name-only', head, '--', `${prefix}operations/`]))
+      .split('\0')
+      .filter(Boolean);
+    const receipts = [];
+    for (let index = 0; index < paths.length; index += 4)
+      receipts.push(
+        ...(await Promise.all(
+          paths.slice(index, index + 4).map(async (path) => ({
+            id: path.slice((prefix + 'operations/').length, -5),
+            receipt: await readPath(head, path),
+          }))
+        ))
+      );
+    return receipts;
+  }
+  function retainedOperationPath(id) {
+    assertStore(/^[a-f0-9]{64}$/.test(id), 'Choose a retained Git operation identity.');
+    return `${prefix}operations/${id}.json`;
+  }
+  async function writeOperation(request, changesFor) {
+    for (let attempt = 0; attempt < 5; attempt++) {
+      try {
+        return await withSnapshot(async (head) => {
+          const prior = await readPath(head, operationPath(request.operationId));
+          if (prior) return verifyReceipt(prior, request.inputDigest);
+          const changes = await changesFor(head);
+          changes.push([operationPath(request.operationId), request.receipt]);
+          await push(await commitTree(head, changes), head);
+          return request.receipt;
+        });
+      } catch (error) {
+        const prior = await recoverPush(request, error, attempt);
+        if (prior) return prior;
+      }
+    }
+  }
   return {
+    async receipt(operationId) {
+      try {
+        return await withSnapshot((head) => readPath(head, operationPath(operationId)));
+      } catch (error) {
+        throw failure(error);
+      }
+    },
+    async retainedPayloads() {
+      try {
+        return await withSnapshot(async (head) => ({
+          records: await listAt(head, ''),
+          receipts: await receiptsAt(head),
+        }));
+      } catch (error) {
+        throw failure(error);
+      }
+    },
+    retireReceipts(request) {
+      return writeOperation(request, (head) =>
+        Promise.all(
+          request.receipts.map(async (item) => {
+            const path = retainedOperationPath(item.id);
+            return [path, retireReceipt(await readPath(head, path), item, request)];
+          })
+        )
+      );
+    },
     async readSnapshot(read) {
       try {
         return await withSnapshot((head) =>
@@ -249,28 +314,14 @@ export async function openGitRecords(config, { root, projectId }) {
         throw failure(error);
       }
     },
-    async commit(request) {
-      for (let attempt = 0; attempt < 5; attempt++) {
-        try {
-          return await withSnapshot(async (head) => {
-            const prior = await readPath(head, operationPath(request.operationId));
-            if (prior) return verifyReceipt(prior, request.inputDigest);
-            const checked = await Promise.all(
-              request.expected.map(async (item) => [item.key, await readPath(head, recordPath(item.key))])
-            );
-            checkExpected(request.expected, new Map(checked));
-            const commit = await commitTree(head, [
-              ...request.writes.map((write) => [recordPath(write.key), write.record]),
-              [operationPath(request.operationId), request.receipt],
-            ]);
-            await push(commit, head);
-            return request.receipt;
-          });
-        } catch (error) {
-          const prior = await recoverPush(request, error, attempt);
-          if (prior) return prior;
-        }
-      }
+    commit(request) {
+      return writeOperation(request, async (head) => {
+        const checked = await Promise.all(
+          request.expected.map(async (item) => [item.key, await readPath(head, recordPath(item.key))])
+        );
+        checkExpected(request.expected, new Map(checked));
+        return request.writes.map((write) => [recordPath(write.key), write.record]);
+      });
     },
   };
 }

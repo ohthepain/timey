@@ -87,7 +87,19 @@ function normalizeRequest(input) {
 export function verifyReceipt(receipt, inputDigest) {
   if (receipt.inputDigest !== inputDigest)
     throw storeError('STORE_OPERATION_MISMATCH', 'This operation identity already has a different payload.');
+  if (receipt.deleted) throw storeError('STORE_DELETED', 'This operation belongs to a permanently deleted issue.');
   return receipt;
+}
+
+const receiptIdentity = (receipt) => hash(canonical(receipt));
+
+export function retireReceipt(prior, expected, request) {
+  if (!prior || prior.inputDigest !== expected.inputDigest)
+    throw storeError('STORE_CONFLICT', 'The retained operation changed before deletion.');
+  if (prior.deleted?.issueId === request.issueId && prior.deleted.deletionId === request.deletionId) return prior;
+  if (receiptIdentity(prior) !== expected.identity)
+    throw storeError('STORE_CONFLICT', 'The retained operation changed before deletion.');
+  return { inputDigest: prior.inputDigest, deleted: { issueId: request.issueId, deletionId: request.deletionId } };
 }
 
 export function checkExpected(expected, records) {
@@ -111,9 +123,111 @@ async function unpack(payload, artifacts) {
   return JSON.parse((await artifacts.get(payload.ref)).toString('utf8'));
 }
 
-export function recordStore(backend, artifacts, { allowInlineLarge = false } = {}) {
+function artifactReference(value) {
+  return (
+    value &&
+    typeof value === 'object' &&
+    typeof value.storeId === 'string' &&
+    typeof value.key === 'string' &&
+    /^[a-f0-9]{64}$/.test(value.sha256) &&
+    Number.isSafeInteger(value.bytes) &&
+    value.bytes >= 0
+  );
+}
+
+function references(value, retained = new Map()) {
+  if (!value || typeof value !== 'object') return [...retained.values()];
+  if (artifactReference(value)) retained.set(canonical(value), value);
+  for (const nested of Object.values(value)) references(nested, retained);
+  return [...retained.values()];
+}
+
+function inventoryRecord(record, storeId) {
+  const value = record.value;
+  if (
+    !artifactReference(value?.ref) ||
+    value.ref.storeId !== storeId ||
+    record.key !== 'artifact/' + value.ref.sha256 ||
+    typeof value.body !== 'string'
+  )
+    return false;
+  const body = Buffer.from(value.body, 'base64');
+  return hash(body) === value.ref.sha256 && body.length === value.ref.bytes;
+}
+
+function artifactReceipt(entry, ref, storeId) {
+  const result = entry.receipt.result;
+  if (result?.encoding !== 'json' || !Array.isArray(result.value?.records) || !result.value.records.length)
+    return false;
+  return result.value.records.every((record) => {
+    if (record.value?.encoding !== 'json') return false;
+    const decoded = { ...record, value: record.value.value };
+    return (
+      inventoryRecord(decoded, storeId) &&
+      ['key', 'sha256', 'bytes'].every((key) => decoded.value.ref[key] === ref[key])
+    );
+  });
+}
+
+async function retainedPayloads(backend, artifacts, { excludeArtifactInventory, storeId }) {
+  const raw = await backend.retainedPayloads();
+  const decode = async (record) => ({ ...record, value: await unpack(record.value, artifacts) });
+  const records = [];
+  const receipts = [];
+  for (const record of raw.records) {
+    const decoded = await decode(record);
+    if (!excludeArtifactInventory || !inventoryRecord(decoded, storeId))
+      records.push({ ...decoded, refs: references([record.value, decoded.value]) });
+  }
+  for (const entry of raw.receipts) {
+    const receipt = entry.receipt;
+    const result = receipt.deleted ? { records: [] } : await unpack(receipt.result, artifacts);
+    assertStore(Array.isArray(result.records), 'The retained operation result is invalid.');
+    const decoded = await Promise.all(result.records.map(decode));
+    if (excludeArtifactInventory && decoded.length && decoded.every((record) => inventoryRecord(record, storeId)))
+      continue;
+    receipts.push({
+      id: entry.id,
+      inputDigest: receipt.inputDigest,
+      identity: receiptIdentity(receipt),
+      records: decoded,
+      refs: references([receipt.result || {}, result, decoded]),
+    });
+  }
+  return { records, receipts };
+}
+
+function retirementRequest(input) {
+  assertStore(
+    validKey(input?.operationId) && validKey(input.deletionId) && /^[\w-]{1,200}$/.test(input.issueId),
+    'Receipt deletion needs bounded operation and issue identities.'
+  );
+  assertStore(
+    Array.isArray(input.receipts) && input.receipts.length <= 99,
+    'Retire at most ninety-nine operation receipts at once.'
+  );
+  const receipts = input.receipts
+    .map(({ id, inputDigest, identity }) => {
+      assertStore(
+        validKey(id) && /^[a-f0-9]{64}$/.test(inputDigest) && /^[a-f0-9]{64}$/.test(identity),
+        'Choose verified retained operation receipts.'
+      );
+      return { id, inputDigest, identity };
+    })
+    .sort((a, b) => a.id.localeCompare(b.id));
+  assertStore(
+    new Set(receipts.map(({ id }) => id)).size === receipts.length,
+    'Retained operation receipts must be unique.'
+  );
+  const inputDigest = hash(canonical({ issueId: input.issueId, deletionId: input.deletionId, receipts }));
+  const result = { operationId: input.operationId, retired: receipts.map(({ id }) => id), records: [] };
+  return { ...input, receipts, inputDigest, receipt: { inputDigest, result: { encoding: 'json', value: result } } };
+}
+
+export function recordStore(backend, artifacts, { allowInlineLarge = false, storeId } = {}) {
   const decode = async (record) => record && { ...record, value: await unpack(record.value, artifacts) };
   return {
+    id: storeId,
     ...(backend.readSnapshot && {
       async readSnapshot(read) {
         return backend.readSnapshot((pinned) =>
@@ -132,8 +246,33 @@ export function recordStore(backend, artifacts, { allowInlineLarge = false } = {
       assertStore(typeof prefix === 'string' && !prefix.includes('\0'), 'A record prefix is required.');
       return Promise.all((await backend.list(prefix)).map(decode));
     },
+    async removeRecords({ operationId, expected }) {
+      assertStore(Array.isArray(expected), 'Checked record revisions are required for deletion.');
+      return this.commit({ operationId, expected, writes: expected.map(({ key }) => ({ key, value: null })) });
+    },
+    async retainedPayloads({ excludeArtifactInventory = false } = {}) {
+      return retainedPayloads(backend, artifacts, { excludeArtifactInventory, storeId });
+    },
+    async artifactReceipts(ref) {
+      assertStore(artifactReference(ref) && ref.storeId === storeId, 'Choose an Artifact reference in this store.');
+      const raw = await backend.retainedPayloads();
+      return raw.receipts
+        .filter((entry) => artifactReceipt(entry, ref, storeId))
+        .map(({ id, receipt }) => ({ id, inputDigest: receipt.inputDigest, identity: receiptIdentity(receipt) }));
+    },
+    async retireReceipts(input) {
+      const receipt = await backend.retireReceipts(retirementRequest(input));
+      const result = await unpack(receipt.result, artifacts);
+      return { operationId: result.operationId, retired: result.retired };
+    },
     async commit(input) {
       const request = normalizeRequest(input);
+      const prior = await backend.receipt(request.operationId);
+      if (prior) {
+        verifyReceipt(prior, request.inputDigest);
+        const result = await unpack(prior.result, artifacts);
+        return { ...result, records: await Promise.all(result.records.map(decode)) };
+      }
       const writes = await Promise.all(
         request.writes.map(async ({ key, value }) => ({
           key,

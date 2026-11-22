@@ -332,7 +332,7 @@ test('merged storage relocation preserves bytes and closure admission preserves 
   assert.equal(admission.flow.blocks.at(-1).attempts[0].status, 'running');
 });
 
-test('shared deletion is replayable and removes only the validated display report', async (t) => {
+test('shared deletion is replayable and removes canonical reports and their validated display cache', async (t) => {
   const f = await fixture(t);
   await f.project.refresh();
   const original = await f.project.readIssue(f.id);
@@ -342,7 +342,7 @@ test('shared deletion is replayable and removes only the validated display repor
   assert.equal((await f.project.listIssues()).length, 0);
   await f.project.refresh();
   assert.throws(() => readFileSync(join(f.root, '.issues', f.id + '.md')), { code: 'ENOENT' });
-  assert.equal((await f.issueStores.get('first').read(f.id)).report.toString(), original.report);
+  assert.equal(await f.issueStores.get('first').read(f.id), null);
 });
 
 test('issue moves expose retained report revisions and reject partial group moves', async (t) => {

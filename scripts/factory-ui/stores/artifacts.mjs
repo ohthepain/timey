@@ -350,6 +350,16 @@ class GitArtifacts extends ArtifactStore {
         expected: [{ key, revision: current.revision }],
         writes: [{ key, value: null }],
       });
+    const receipts = await this.records.artifactReceipts(ref);
+    for (let offset = 0; offset < receipts.length; offset += 99) {
+      const selected = receipts.slice(offset, offset + 99);
+      await this.records.retireReceipts({
+        operationId: 'artifact-retire-' + digest(JSON.stringify(selected)),
+        issueId: 'artifact-cleanup',
+        deletionId: 'artifact-' + ref.sha256,
+        receipts: selected,
+      });
+    }
   }
   async list() {
     return (await this.records.list('artifact/')).map((record) => record.value.ref);
