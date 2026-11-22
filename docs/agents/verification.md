@@ -876,7 +876,7 @@ are isolated; the user's production closed reports are never moved by this test.
 
 The project Issues browser check switches through the visible Open and Closed
 buttons in both directions, verifies that switching clears selection and the
-editor, and archives a closed selection with Archive all. It also verifies that
+editor, and archives a closed selection with Archive selected. It also verifies that
 the disabled direction caret is hidden for fixed status ordering and reappears
 for an order whose direction can change.
 
@@ -895,3 +895,9 @@ reads Archive selected and saves `closed-issues-action.json` beside its screensh
 `node scripts/flow-browser.mjs --issue-status-folders` compares the rendered Blocked
 and In progress carets with a regular sidebar folder in both states. It saves
 `issue-status-carets.json` and screenshots of each expanded and collapsed section.
+
+`node scripts/flow-browser.mjs --issue-scrollbar` checks the center issue flow's
+scrollbar. It verifies that wheel scrolling moves the flow and shows its thumb,
+then the thumb hides after scrolling stops. The flow width and scroll position
+remain stable. It saves `issue-scrollbar.json` and screenshots of the idle,
+scrolling and stopped states in the reported evidence directory.

@@ -2476,3 +2476,11 @@ kbd {
   font-size: 12px;
   line-height: 20px;
 }
+
+.graph-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+.graph-scroll[data-scrolling] {
+  scrollbar-color: var(--muted) transparent;
+}

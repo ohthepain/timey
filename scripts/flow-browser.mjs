@@ -277,6 +277,7 @@ function connectionRecoveryIssue() {
 function checkExcluded(name) {
   if (!browserScenarioSelected(name)) return true;
   const selections = [
+    ['--issue-scrollbar', 'Issue flow scrollbar appears only while scrolling'],
     ['--issue-status-folders', 'Status pseudo-folders track project issues without moving them'],
     ['--project-issues', 'Closed issue selections archive together and issue links open the normal view'],
     ['--actions-menu', 'Actions menu lists two running Flow blocks'],
@@ -450,7 +451,7 @@ try {
   server.listen(0, '127.0.0.1');
   await once(server, 'listening');
   const baseURL = 'http://127.0.0.1:' + server.address().port;
-  browser = await chromium.launch({ headless: true, channel: 'chrome' });
+  browser = await chromium.launch({ headless: true, channel: 'chrome', ignoreDefaultArgs: ['--hide-scrollbars'] });
   const context = await browser.newContext({ baseURL, viewport: { width: 1440, height: 960 } });
   page = await context.newPage();
   page.setDefaultTimeout(15000);
@@ -634,6 +635,60 @@ try {
   await check('Local notes capture and handoff preserve flow', async () => {
     await localNotesBrowserChecks({ page, project, service, poll, screenshot, output, candidate });
     assert.deepEqual(unexpectedConsoleErrors(logs.console), []);
+  });
+  await check('Issue flow scrollbar appears only while scrolling', async () => {
+    const id = '20261122-issue-scrollbar-fixture';
+    writeBrowserIssue(project, {
+      id,
+      title: 'Scroll the issue flow',
+      body: 'Show the scrollbar only during scrolling.',
+    });
+    try {
+      await page.setViewportSize({ width: 1440, height: 640 });
+      await page.goto('/?issue=' + id);
+      await page.locator('[data-node="__destination"]').waitFor();
+      const scroll = page.locator('#graph-scroll');
+      const observe = () =>
+        scroll.evaluate((node) => ({
+          scrollbarColor: getComputedStyle(node).scrollbarColor,
+          scrollTop: node.scrollTop,
+          clientWidth: node.clientWidth,
+          scrollHeight: node.scrollHeight,
+          clientHeight: node.clientHeight,
+        }));
+      const transparent = 'rgba(0, 0, 0, 0) rgba(0, 0, 0, 0)';
+      await page.waitForTimeout(900);
+      const idle = await observe();
+      writeFileSync(join(output, 'issue-scrollbar.json'), JSON.stringify({ candidate, idle }, null, 2) + '\n');
+      assert.ok(idle.scrollHeight > idle.clientHeight, 'The issue flow must overflow vertically.');
+      assert.equal(idle.scrollbarColor, transparent, 'The issue scrollbar must be hidden while idle.');
+      await screenshot('issue-scrollbar-idle');
+      await scroll.hover();
+      await page.mouse.wheel(0, idle.scrollTop > 0 ? -180 : 180);
+      const scrolling = await poll(
+        observe,
+        (value) => value.scrollTop !== idle.scrollTop && value.scrollbarColor !== transparent,
+        'The issue scrollbar appears during wheel scrolling.'
+      );
+      await screenshot('issue-scrollbar-active');
+      const stopped = await poll(
+        observe,
+        (value) => value.scrollbarColor === transparent,
+        'The issue scrollbar hides after scrolling stops.'
+      );
+      assert.equal(scrolling.clientWidth, idle.clientWidth, 'Showing the scrollbar must not shift the flow.');
+      assert.equal(stopped.clientWidth, idle.clientWidth, 'Hiding the scrollbar must not shift the flow.');
+      assert.equal(stopped.scrollTop, scrolling.scrollTop, 'Hiding the scrollbar must preserve the scroll position.');
+      await screenshot('issue-scrollbar-stopped');
+      writeFileSync(
+        join(output, 'issue-scrollbar.json'),
+        JSON.stringify({ candidate, idle, scrolling, stopped }, null, 2) + '\n'
+      );
+    } finally {
+      await page.goto('about:blank');
+      rmSync(join(project, '.issues', id + '.md'), { force: true });
+      await page.setViewportSize({ width: 1440, height: 960 });
+    }
   });
   await check(folderSettingsCheck, () =>
     flowFolderSettingsBrowserChecks({ page, project, service, logs, screenshot, poll })
