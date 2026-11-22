@@ -45,7 +45,9 @@ read-only rewrite, invalid input and provider failure.
 `node scripts/flow-browser.mjs --ai-text` checks top-right hover controls, real
 clipboard contents, the persistent
 blue bro toggle, restoring original text, caret/end insertion and hovered-field
-hotkey routing. It saves `ai-text-controls.png` and `ai-text-controls.json` in its
+hotkey routing. It also checks that short Automate me messages contain their
+hover toolbar so the conversation scroller cannot clip its buttons or interrupt Copy.
+It saves `ai-text-controls.png` and `ai-text-controls.json` in its
 evidence directory. The fixture injects model output and speech recognition.
 Live model quality and physical microphone recognition are not measured by it.
 The Factory refresh browser scenario checks that incoming AI text still follows
