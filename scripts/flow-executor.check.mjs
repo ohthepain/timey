@@ -872,7 +872,8 @@ function mergeFixture(
     async mergeDelay() {
       await onWait?.(advanceTarget);
     },
-    async execute({ cwd, args }) {
+    async execute({ cwd, args, log }) {
+      if (log) writeFileSync(log, '$ git ' + args.join(' ') + '\n', { flag: 'a' });
       onGit?.(args);
       const git = (...values) =>
         execFileSync('git', ['-C', cwd, ...values], { encoding: 'utf8', stdio: 'pipe' }).trim();
@@ -1068,14 +1069,17 @@ test('Merge repairs a target conflict in its owning checkout before it verifies 
 });
 
 test('Merge asks its worker to repair an inherited browser failure and verifies the repaired commit', async (t) => {
+  let failedEvidence;
   const f = mergeFixture(t, {
     beforeVerify({ checkout }) {
       if (readFileSync(join(checkout, 'source.txt'), 'utf8') === 'Initial source.\n') {
         const folder = join(f.root, '.issues/failed-merge');
         mkdirSync(folder, { recursive: true });
         const log = join(folder, 'browser.log');
+        const commandLog = join(folder, 'command.log');
         const summary = join(folder, 'summary.json');
         writeFileSync(log, 'AssertionError: Only explicit Send starts a reply\n');
+        writeFileSync(commandLog, 'Initial verification failed.\n');
         writeFileSync(
           summary,
           JSON.stringify({
@@ -1085,9 +1089,14 @@ test('Merge asks its worker to repair an inherited browser failure and verifies 
             ],
           })
         );
+        failedEvidence = [
+          { key: 'log', path: commandLog, label: 'Verification command output' },
+          { path: summary, label: 'Verification summary' },
+          { path: log, label: 'Failed verification checkpoint' },
+        ].map((item) => ({ ...item, sha256: digest(readFileSync(item.path)) }));
         throw Object.assign(Error('Closure waited for background resource checks.'), {
           verificationFailure: { summaries: [summary], logs: [log] },
-          evidence: [{ path: summary, label: 'Verification summary' }],
+          evidence: structuredClone(failedEvidence),
         });
       }
     },
@@ -1112,9 +1121,23 @@ test('Merge asks its worker to repair an inherited browser failure and verifies 
     execFileSync('git', ['-C', checkout, 'commit', '-am', 'Repair inherited browser failure']);
     return turn(...args);
   };
-  const result = await f.run('merge');
+  const result = await f.run('merge', {
+    definition: {
+      mergeWorkflow: { policy: 'automatic', pollSeconds: 5, checkTimeoutSeconds: 900, repairAttempts: 3 },
+      artifacts: [{ key: 'log', kind: 'file', label: 'Target fetch and merge output' }],
+    },
+  });
   assert.equal(repairs, 1);
   assert.equal(result.result.revision, 'actual-merge');
+  const selectedLog = result.artifacts.files.log;
+  assert.ok(selectedLog.path.endsWith('/merge.log'));
+  assert.equal(selectedLog.label, 'Target fetch and merge output');
+  assert.match(readFileSync(selectedLog.path, 'utf8'), /\$ git push origin /);
+  assert.deepEqual(result.evidence.slice(0, failedEvidence.length), failedEvidence);
+  for (const checkpoint of failedEvidence) {
+    assert.equal(digest(readFileSync(checkpoint.path)), checkpoint.sha256);
+  }
+  assert.equal(readFileSync(failedEvidence[0].path, 'utf8'), 'Initial verification failed.\n');
   assert.deepEqual(
     f.observations.map(({ operation }) => operation),
     ['ready', 'ready', 'verify', 'push', 'ready', 'ready', 'merge']
