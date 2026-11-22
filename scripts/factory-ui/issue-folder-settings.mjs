@@ -172,7 +172,7 @@ function fieldErrors(data, fields) {
 }
 
 function inheritedField(root, chain, field) {
-  const fallback = { value: field.fallback, source: 'Factory built-in' };
+  const fallback = { value: field.fallback, source: field.fallbackSource || 'Factory built-in' };
   for (const { record } of chain) {
     if (!record.exists) continue;
     if (record.errors.length)

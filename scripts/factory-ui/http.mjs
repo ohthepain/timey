@@ -1,3 +1,4 @@
+import { readOwnership, recoverOwnership } from './stores/recovery.mjs';
 import { skillSetup } from './required-skills.mjs';
 import { simplifyAIText } from './ai-text-bro.mjs';
 import { flowOwnsIssue } from './flow-ownership.mjs';
@@ -21,7 +22,6 @@ import { readQueue } from './data.mjs';
 import { decisionBasis } from './recorded-result.mjs';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join, basename } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { randomBytes } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { requireThat } from './common.mjs';
@@ -57,6 +57,14 @@ import { reportDiscussionView, reportDiscussionAction } from './report-discussio
 import { LocalNotes } from './local-notes.mjs';
 import { localNoteAction } from './local-note-routes.mjs';
 import { controlServerAction } from './server-action.mjs';
+import {
+  ensureProjectStores,
+  testStoreConnection,
+  closeProjectStores,
+  hydrateProjectEvidence,
+} from './stores/runtime.mjs';
+import { issueStoresView, handleStoreAction } from './stores/routes.mjs';
+import { hydrateClassicSnapshot } from './stores/classic-snapshot.mjs';
 import {
   deleteIssueWorktree,
   issueCleanupIdentities,
@@ -138,12 +146,35 @@ function authorize(request, token, port) {
   }
 }
 function requireClassicIdle(service, path, value) {
-  if (['/api/flow-action', '/api/issue-storage-move'].includes(path)) return;
+  if (localClassicControl(service, path, value)) return;
+  if (['/api/flow-action', '/api/issue-storage-move', '/api/issue-store-recovery'].includes(path)) return;
   if (value.issueId)
     requireThat(
       !flowOwnsIssue(service, value.issueId),
       'A flow block owns this issue. Stop it before using classic controls.'
     );
+}
+
+function localClassicControl(service, path, value) {
+  if (existingLocalControl(service, path, value)) return true;
+  const control =
+    ['/api/issue-strategy-stop', '/api/lifecycle-pause', '/api/issue-chat-stop'].includes(path) ||
+    (path === '/api/server-action' && ['stop', 'pause'].includes(value.operation));
+  if (!control) return false;
+  return [...(service.flows?.active.values() || [])].some(
+    (active) =>
+      active.classicOperation &&
+      (active.storeOwner?.issueId === value.issueId || active.classicOperation.runIds.has(value.runId))
+  );
+}
+
+function existingLocalControl(service, path, value) {
+  if (path === '/api/issue-chat-stop') return Boolean(service.issueChats?.active?.has(value.issueId));
+  if (['/api/issue-strategy-stop', '/api/lifecycle-pause'].includes(path))
+    return Boolean(service.lifecycleTasks?.has(value.issueId));
+  if (path === '/api/server-action' && ['stop', 'pause'].includes(value.operation))
+    return Boolean(service.store.connected?.has(value.runId));
+  return false;
 }
 
 const pauseSafeActions = {
@@ -174,7 +205,12 @@ const mergedReadRoutes = new Set([
   '/api/shared-queue-recover',
 ]);
 function preservesMergedIssue(path, value) {
-  return mergedReadRoutes.has(path) || (path === '/api/issue-decision' && value.kind === 'close');
+  return (
+    mergedReadRoutes.has(path) ||
+    (path === '/api/issue-decision' && value.kind === 'close') ||
+    path === '/api/issue-store-action' ||
+    path === '/api/issue-store-recovery'
+  );
 }
 function savedMutationIssueIds(root, value) {
   return [...new Set([value.issueId, value.input?.issueId, ...(value.issueIds || [])].filter(Boolean))].filter(
@@ -204,8 +240,42 @@ function reportChatAction(service, value) {
   return reportDiscussionAction(projectDiscuss(service), projectHome(service).investigations, report, value);
 }
 
+async function prepareStoreMutation(service, path, value) {
+  if (localClassicControl(service, path, value)) return;
+  if (
+    path === '/api/flow-action' &&
+    ['stop', 'pause'].includes(value.action) &&
+    service.flows?.active.has(value.issueId)
+  )
+    return;
+  if (path === '/api/issue-store-action' && ['configure', 'test'].includes(value.action)) return;
+  if (path === '/api/local-notes-action' && ['create', 'edit', 'complete', 'delete', 'move'].includes(value.action))
+    return;
+  await ensureProjectStores(service, {
+    fresh: path !== '/api/issue-store-action',
+    allowPending: path === '/api/issue-store-action',
+  });
+}
+
+function storeReadNeeded(path, query) {
+  if (path === '/api/issue-stores') return query.has('issueId');
+  return [
+    '/api/issue-store-recovery',
+    '/api/flow',
+    '/api/queue',
+    '/api/issue',
+    '/api/issue-report',
+    '/api/issue-storage',
+    '/api/issue-storage-report',
+    '/api/issue-closure',
+    '/api/project-home',
+    '/api/investigation-reports',
+  ].includes(path);
+}
+
 async function mutation(service, path, value, owner) {
   requireLiveMutation(service, path);
+  await prepareStoreMutation(service, path, value);
   requireClassicIdle(service, path, value);
   await requireEditableMutation(service, path, value);
   if (!mayFinishWhilePaused(path, value)) service.serverControl?.allow(path, value);
@@ -229,6 +299,13 @@ async function mutation(service, path, value, owner) {
   }
   if (Object.hasOwn(discussionRoutes, path)) return temporaryAction(discussionRoutes[path]);
   const routes = {
+    '/api/issue-store-recovery': () => recoverOwnership(service, value),
+    '/api/issue-store-action': async () => {
+      service.testStoreConnection ||= (storeId) => testStoreConnection(service, storeId);
+      const result = await handleStoreAction(service, value);
+      if (!['configure', 'test'].includes(value.action)) await ensureProjectStores(service, { fresh: true });
+      return result;
+    },
     '/api/ai-text-bro': () => simplifyAIText(service, value),
     '/api/local-notes-action': () => localNoteAction(service, value, () => projectDiscuss(service)),
     '/api/project-discuss-action': () => projectDiscuss(service).action(value),
@@ -413,7 +490,10 @@ export function createFactoryServer(service, options = {}) {
       response.end(JSON.stringify({ error: error.message }));
     }
   });
-  server.once('close', () => service.serverControl.close());
+  server.once('close', () => {
+    service.serverControl.close();
+    void closeProjectStores(service);
+  });
   return server;
 }
 
@@ -438,9 +518,24 @@ function page(service, request, response, token, port) {
 }
 async function read(service, request, response, owner) {
   const url = new URL(request.url, 'http://127.0.0.1');
+  if (service.reviewMode !== 'preview' && storeReadNeeded(url.pathname, url.searchParams))
+    await ensureProjectStores(service, {
+      fresh: url.pathname !== '/api/issue-stores',
+      allowPending: url.pathname === '/api/issue-stores',
+      allowCached: true,
+    });
   const selectedIssue = url.searchParams.get('issue');
   const issue = (value) => resolveIssueNumber(service, value);
+  if (
+    selectedIssue &&
+    ['/api/issue', '/api/queue'].includes(url.pathname) &&
+    service.projectStores &&
+    !service.storeStatus?.unavailable
+  )
+    await hydrateClassicSnapshot(service, [issue(selectedIssue)]);
   const routes = {
+    '/api/issue-store-recovery': () => readOwnership(service, Object.fromEntries(url.searchParams)),
+    '/api/issue-stores': () => issueStoresView(service, Object.fromEntries(url.searchParams)),
     '/api/folder-settings': () => {
       flows(service);
       return folderSettingsView(service.root, Object.fromEntries(url.searchParams));
@@ -514,7 +609,11 @@ async function read(service, request, response, owner) {
       service.issueChats.view(issue(url.searchParams.get('issue')), url.searchParams.get('before') || ''),
     '/api/issue-chat-skills': () => service.issueChats.skills(issue(url.searchParams.get('issue'))),
     '/api/document': () => service.readPlan(url.searchParams.get('path')),
-    '/api/shown-file': () => service.readShownFile(url.searchParams.get('path')),
+    '/api/shown-file': async () => {
+      const path = url.searchParams.get('path');
+      await hydrateProjectEvidence(service, null, { path });
+      return service.readShownFile(path);
+    },
     '/api/issue-storage': () => listIssueStorage(service, url.searchParams.get('location')),
     '/api/issue-storage-report': () =>
       readIssueStorageReport(service.root, issue(url.searchParams.get('issue')), url.searchParams.get('location')),
@@ -679,6 +778,8 @@ function readResource(service, request, response, owner) {
     '/site-review-ui.js': 'site-review-ui.js',
     '/discussion-ui.js': 'discussion-ui.js',
     '/issue-capture-ui.js': 'issue-capture-ui.js',
+    '/issue-store-ui.js': 'issue-store-ui.js',
+    '/issue-ownership-ui.js': 'issue-ownership-ui.js',
   };
   if (Object.hasOwn(scripts, request.url)) {
     response.setHeader(

@@ -69,6 +69,7 @@ export class RunStore {
           ? run.authorization
           : this.authorization({ ...run, ...values }, run.kind);
     Object.assign(run, values, { updated });
+    this.onUpdate?.(run);
     this.save();
   }
   event(message) {
@@ -91,12 +92,15 @@ export class RunStore {
     if (message.method === 'turn/started') run.completedTurnId = null;
     if (message.method === 'turn/completed' && message.params?.turn?.status === 'completed')
       run.completedTurnId = message.params.turn.id;
+    if (message.method === 'turn/completed')
+      run.nativeTerminal = { invocation: run.nativeInvocation, status: message.params?.turn?.status };
     const item = { at: new Date().toISOString(), ...redactValue(message) };
     const path = join(this.directory, `${run.id}.jsonl`);
     if (!Number.isSafeInteger(run.streamOffset)) run.streamOffset = existsSync(path) ? statSync(path).size : 0;
     const line = JSON.stringify(item) + '\n';
     appendFileSync(path, line, { mode: 0o600 });
     run.streamOffset += Buffer.byteLength(line);
+    this.onEvent?.(run, item);
     retainStreamEvent(run, item);
     if (!message.method.endsWith('/delta') && !message.method.endsWith('/outputDelta')) return this.save();
     if (!this.streamSave) this.streamSave = setTimeout(() => this.save(), 1000).unref();

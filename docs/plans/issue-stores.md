@@ -1,8 +1,9 @@
 # Issue, Coordination, and Artifact stores
 
-Draft specification, 22 November 2026. The user approved the product decisions
-below and requested continued design discussion before implementation. Application
-changes, infrastructure changes, migrations, and switching defaults remain paused.
+Accepted specification, 22 November 2026. The user approved implementation and
+verification after the design discussion. The [setup and migration guide](../agents/issue-stores.md)
+describes the implemented configuration and checked moves. Verification progress
+is tracked in the [implementation checklist](issue-store-implementation.md).
 
 [ADR 0022](../adr/0022-separate-issue-coordination-and-artifact-stores.md) records
 the agreed architecture. The earlier [storage comparison](issue-storage-adapters.md)
@@ -152,13 +153,14 @@ Archive does not delete evidence or move it to the initiating machine.
 
 This changes the local archive policy in [ADR 0012](../adr/0012-retain-closed-issues-and-archive-locally.md)
 and the local-history scope of [ADR 0019](../adr/0019-share-issue-claims-on-the-queue-branch.md)
-when the feature is implemented. Until then, their documented runtime behavior
-remains in effect. No new automatic retention or deletion policy is approved.
+for shared-store paths. Older installations retain their documented legacy
+behavior until upgraded. No automatic retention or deletion policy is added.
 
 ## Connections and resources to prepare
 
-These names were supplied by the user. No secret values were inspected, and no
-live resource or permission checks were performed during this design discussion.
+These names were supplied by the user. Configuration exposes their names and
+availability without exposing credential values. Remote verification uses isolated
+test namespaces and the configured Factory resources.
 
 | Setting                                           | Purpose                                                |
 | ------------------------------------------------- | ------------------------------------------------------ |
@@ -182,18 +184,18 @@ database target, including connections that differ only in credentials or schema
 The user confirmed that the supplied connection targets a dedicated Factory
 database. This is a configuration statement, not a live connection check.
 
-`factory` is the proposed schema name inside the dedicated Factory database.
+`factory` is the schema inside the dedicated Factory database.
 A migration identity needs ownership or appropriate creation privileges there.
 Runtime privileges should cover Factory's own objects, without requiring a
 superuser. PostgreSQL documents
 [schema access and creation privileges](https://www.postgresql.org/docs/current/ddl-schemas.html).
-Do not hand-create application tables before reviewing the migrations.
+Factory initializes its own tables when the selected provider opens.
 
-The proposed logical data groups are issue records and revisions, a project issue
+The logical data groups are issue records and revisions, a project issue
 catalog, flows and attempts, claims, operation receipts, runners and control
-requests, migration receipts, and optional Postgres artifact bytes. Physical
-table names, indexes, and relations remain implementation design work. These
-groups do not require separate databases.
+requests, migration receipts, and optional Postgres artifact bytes. Postgres uses `factory.store_records` and `factory.store_operations` for Issue and
+Coordination data, and `factory.artifact_objects` for optional Postgres artifact
+bytes. These groups do not require separate databases.
 
 The existing artifact bucket is sufficient. Isolate projects and disposable tests
 with separate prefixes. Grant the application access to the selected prefixes.
@@ -208,16 +210,16 @@ Use the existing AWS credential mechanism. The JavaScript SDK supports a
 [default credential provider chain](https://docs.aws.amazon.com/sdk-for-javascript/v3/developer-guide/setting-credentials-node.html)
 and accepts an explicit client region or a region through
 [`AWS_REGION` or shared configuration](https://docs.aws.amazon.com/sdk-for-javascript/v3/developer-guide/setting-region.html).
-The proposed S3 implementation passes `FACTORY_ARTIFACTS_BUCKET_REGION` as its
+The S3 implementation passes `FACTORY_ARTIFACTS_BUCKET_REGION` as its
 explicit region. It must not let a different DynamoDB or profile region silently
 override the bucket's region.
-No new application-specific AWS access-key secret is required by this proposal.
+No new application-specific AWS access-key secret is required.
 
-Choose the AWS account and region for DynamoDB. Leave table creation until the
-provisioning template defines partition keys, sort keys, indexes, capacity mode,
-and project namespaces. Issue and Coordination records are separate logical
-datasets. Their physical table count is not settled. Include isolated database
-and AWS test namespaces before running destructive integration checks.
+Choose the AWS account and region for DynamoDB. A configured table has string
+partition key `PK` and string sort key `SK`; it needs no secondary index or claim
+TTL. Issue and Coordination stores can share a table through project/store
+partition namespaces. Include isolated database and AWS test namespaces before
+running remote integration checks.
 
 ## Contracts and implementation planning
 
@@ -255,12 +257,11 @@ Required observable cases include the following:
 - Dedicated Factory database validation that rejects the installed application's
   database, including a separate schema or different credentials on that database.
 
-Draft the concrete interfaces, physical schemas, DynamoDB access patterns,
-checkpoint format, progress batching, and provisioning templates before coding.
-Coordinate Settings integration with its separate issue, which currently scopes
-its storage page to already implemented providers. This specification does not
-expand that issue's authorized implementation scope.
+The implementation uses awaitable provider operations and validated local display
+snapshots. Named configurations and role selectors are described in the
+[codebase map](../agents/codebase.md), and the [setup guide](../agents/issue-stores.md)
+lists resources, permissions, and connection references.
 
-The next checkpoint is review of this specification and the concrete schema and
-interface proposal. No provider implementation, resource creation, connection
-test, migration, publication, deployment, or issue closure is authorized here.
+Issue 193 is already merged. Its authorized storage verification must preserve
+report bytes, attempts, merge receipts, and immutable evidence. Verify migration
+and readback without rerunning Work, Publish, Merge, or acceptance.

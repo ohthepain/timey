@@ -280,7 +280,7 @@ export class ProjectInvestigations {
       'This investigation changed. Refresh before saving.'
     );
     const shared = this.service.sharedIssues?.acquireForApproval(issue);
-    updateStoredIssueMetadata(this.service.root, issue, {
+    await updateStoredIssueMetadata(this.service.root, issue, {
       request_type: 'investigation',
       reusable: input.reusable,
       updated: new Date().toISOString(),
@@ -291,7 +291,7 @@ export class ProjectInvestigations {
       instructions: config.instructions,
       branch: config.branch,
     };
-    this.flows.store.save(flow, flow.revision);
+    await this.flows.store.save(flow, flow.revision);
     if (shared) this.service.sharedIssues.checkpoint(issue.id, 'Investigation settings updated', shared);
     return this.issueView(issue.id);
   }
@@ -438,7 +438,7 @@ export class ProjectInvestigations {
       prompt: session.prompt,
       instructions: session.instructions,
     };
-    this.flows.store.save(flow, flow.revision);
+    await this.flows.store.save(flow, flow.revision);
     session.blockId = block.id;
     this.save(session);
     return block;

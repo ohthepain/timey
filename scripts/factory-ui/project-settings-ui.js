@@ -49,8 +49,12 @@
         headers: { 'Content-Type': 'application/json', 'X-Factory-Action': 'manual' },
         body: JSON.stringify(value),
       });
+    const issueStoreUI = window.createIssueStoreUI({ request });
     const form = () => content.querySelector('[data-settings-form]');
-    const values = () => (form() ? Object.fromEntries(new FormData(form())) : {});
+    const values = () =>
+      Object.fromEntries(
+        [...content.querySelectorAll('[data-settings-form]')].flatMap((element) => [...new FormData(element)])
+      );
     const snapshot = () => JSON.stringify([values(), [...resetPrompts]]);
     const dirty = () => baseline !== snapshot();
     function showError(message = '') {
@@ -80,7 +84,7 @@
       if (data.kind === 'plain')
         return '<p>No project folder.md exists yet.</p><button type="button" data-settings-create>Create project defaults</button>';
       return `<p>Project defaults are inherited by folders and issues unless overridden.</p><form data-settings-form><div class="folder-settings-fields">${data.fields
-        .filter(({ key }) => ['branch', 'skill', 'model', 'effort', 'selection_strategy'].includes(key))
+        .filter(({ key }) => ['issue_store', 'branch', 'skill', 'model', 'effort', 'selection_strategy'].includes(key))
         .map((field) => window.factorySettingField(field, data.settings[field.key], 'settings'))
         .join('')}</div>${source(data.path || 'folder.md')}${saveButton}</form>`;
     }
@@ -114,6 +118,152 @@
         )
         .join('')}</div><a href="/?projectTab=admin" data-settings-admin>Open Admin</a>`;
     }
+    function storeField(store, key, label) {
+      const readonly = key === 'schema' || (key !== 'label' && !store.unsaved);
+      return `<label class="field">${esc(label)}<input name="store:${esc(store.id)}:${key}" value="${esc(store[key] || '')}"${readonly ? ' readonly' : ''} /></label>`;
+    }
+    function configuredStore(store) {
+      const fields = {
+        postgres: [['schema', 'Schema']],
+        dynamodb: [
+          ['table', 'Table'],
+          ['region', 'Region'],
+        ],
+        s3: [
+          ['bucket', 'Bucket override'],
+          ['region', 'Region override'],
+          ['prefix', 'Prefix'],
+        ],
+        git: [
+          ['remote', 'Remote'],
+          ['branch', 'Queue branch'],
+        ],
+        files: [],
+      }[store.kind];
+      return `<fieldset><legend>${esc(store.label)} · ${esc(store.kind)}</legend>${storeField(store, 'label', 'Name')}${fields.map(([key, label]) => storeField(store, key, label)).join('')}${store.references ? references(store) : '<p>Connection references are checked after saving.</p>'}<button type="button" class="small-button" data-store-test="${esc(store.id)}"${store.unsaved ? ' disabled' : ''}>Test store connection</button><p data-store-result="${esc(store.id)}" role="status"></p></fieldset>`;
+    }
+    function roleChoice(role, label, selected) {
+      const key = role === 'artifact' ? 'artifacts' : role;
+      return `<label class="field">${label}<select name="role:${key}">${data.storeRegistry.stores
+        .filter((store) => store.roles.includes(role))
+        .map(
+          (store) =>
+            `<option value="${esc(store.id)}"${store.id === selected ? ' selected' : ''}>${esc(store.label)} · ${esc(store.kind)}</option>`
+        )
+        .join('')}</select></label>`;
+    }
+    function renderStoreSettings() {
+      const registry = data.storeRegistry;
+      if (!registry) return '<p>Store configuration is unavailable.</p>';
+      return `<h3>Project stores</h3><p>Issue defaults are configured on the Issues page. Changing Coordination or Artifact storage performs a checked project migration. To change a configured destination, add a store and move to it.</p><form data-settings-form data-store-settings>${roleChoice('coordination', 'Coordination store', registry.coordination)}${roleChoice('artifact', 'Artifact store', registry.artifacts)}${registry.stores.map(configuredStore).join('')}<label class="field">Add a configured store<select data-store-kind>${['files', 'git', 'postgres', 'dynamodb', 's3'].map((kind) => `<option value="add-${kind}">${kind}</option>`).join('')}</select></label><button type="button" class="small-button" data-store-add>Add store</button>${saveButton}</form>`;
+    }
+    function addedStore(kind) {
+      const roles =
+        kind === 's3'
+          ? ['artifact']
+          : kind === 'dynamodb'
+            ? ['issue', 'coordination']
+            : ['issue', 'coordination', 'artifact'];
+      return {
+        id: 'store-' + crypto.randomUUID(),
+        label: 'New ' + kind + ' store',
+        kind,
+        roles,
+        unsaved: true,
+        ...(kind === 'postgres' && {
+          schema: 'factory',
+          urlEnv: 'FACTORY_ISSUES_DB_URL',
+          userEnv: 'FACTORY_DB_USER',
+          passwordEnv: 'FACTORY_DB_PASSWORD',
+        }),
+        ...(kind === 'dynamodb' && { table: '', regionEnv: 'AWS_REGION' }),
+        ...(kind === 's3' && { bucketEnv: 'FACTORY_ARTIFACTS_BUCKET', regionEnv: 'FACTORY_ARTIFACTS_BUCKET_REGION' }),
+        ...(kind === 'git' && { remote: 'origin', branch: 'issue-queue' }),
+      };
+    }
+    function addStore() {
+      const original = baseline;
+      retainStoreFields(values());
+      data.storeRegistry.stores.push(addedStore(content.querySelector('[data-store-kind]').value.replace(/^add-/, '')));
+      render();
+      baseline = original;
+    }
+    function retainStoreFields(fields) {
+      for (const store of data.storeRegistry.stores)
+        for (const [name, value] of Object.entries(fields)) {
+          const prefix = `store:${store.id}:`;
+          if (!name.startsWith(prefix)) continue;
+          const key = name.slice(prefix.length);
+          if (value.trim()) store[key] = value.trim();
+          else delete store[key];
+        }
+    }
+    async function saveStoreSettings(fields) {
+      retainStoreFields(fields);
+      const registry = data.storeRegistry;
+      const next = { ...registry };
+      delete next.selected;
+      delete next.source;
+      delete next.pendingMigrations;
+      delete next.moveGroup;
+      delete next.available;
+      delete next.unavailable;
+      delete next.warning;
+      next.stores = next.stores.map(({ unsaved: _unsaved, ...store }) => store);
+      const saved = await post('/api/issue-store-action', {
+        action: 'configure',
+        revision: registry.revision,
+        config: next,
+      });
+      registry.revision = saved.revision;
+      registry.stores = saved.stores;
+      registry.pendingMigrations = saved.pendingMigrations;
+      const changes = Object.fromEntries(
+        data.storage.editableFields
+          .filter((key) => fields[key] !== String(data.storage.configuration[key]))
+          .map((key) => [key, fields[key] === 'true'])
+      );
+      if (Object.keys(changes).length)
+        data.storage = await post('/api/project-settings', {
+          action: 'save-storage',
+          revision: data.storage.revision,
+          changes,
+        });
+      for (const role of ['coordination', 'artifacts']) {
+        const storeId = fields['role:' + role];
+        if (!storeId || storeId === registry[role]) continue;
+        const input = { role, storeId };
+        const options = await issueStoreUI.read({ migrationStoreId: storeId });
+        const result = await post('/api/issue-store-action', {
+          action: 'move-role',
+          role,
+          storeId,
+          operationId: issueStoreUI.migrationId(options, input),
+        });
+        const confirmed = await request('/api/issue-stores');
+        Object.assign(registry, confirmed);
+        if (result.status !== 'confirmed' || confirmed[role] !== storeId)
+          throw Error('Project storage move is pending reconciliation. Refresh its status before continuing.');
+        issueStoreUI.finishMigration(confirmed, input);
+      }
+    }
+    async function testStore(button) {
+      button.disabled = true;
+      try {
+        const store = data.storeRegistry.stores.find(({ id }) => id === button.dataset.storeTest);
+        const result = await post('/api/issue-store-action', {
+          action: 'test',
+          storeId: store.id,
+          role: store.roles[0],
+        });
+        content.querySelector(`[data-store-result="${store.id}"]`).textContent =
+          result.message || 'Connection verified.';
+      } catch (failure) {
+        showError(failure.message);
+      } finally {
+        button.disabled = false;
+      }
+    }
     function renderStorage() {
       const storage = data.storage;
       const fields = Object.entries(storage.configuration)
@@ -123,7 +273,7 @@
             : `<p>${esc(key)} · ${esc(value)}</p>`
         )
         .join('');
-      return `<p>Current provider · ${esc(storage.provider)}</p><p>Existing providers · ${storage.providers.map(esc).join(', ')}</p><p>${esc(storage.status)}</p><form data-settings-form>${fields}${source(storage.source)}<p>${esc(storage.migration)}</p>${storage.restartRequired ? '<p>Publication options take effect when Factory starts. Restart Factory after saving.</p>' : ''}${storage.editableFields.length ? saveButton : ''}</form>${storage.provider === 'github' ? `<h3>Connection references</h3>${references(data.git)}` : ''}<button class="small-button" type="button" data-settings-action="test-storage">Test connection</button><p data-connection-result role="status"></p>`;
+      return `${renderStoreSettings()}<h3>Existing Git publication</h3><p>Provider · ${esc(storage.provider)}</p><p>${esc(storage.status)}</p><form data-settings-form>${fields}${source(storage.source)}<p>${esc(storage.migration)}</p>${storage.restartRequired ? '<p>Publication options take effect when Factory starts. Restart Factory after saving.</p>' : ''}</form>${storage.provider === 'github' ? `<h3>Connection references</h3>${references(data.git)}` : ''}<button class="small-button" type="button" data-settings-action="test-storage">Test connection</button><p data-connection-result role="status"></p>`;
     }
     function renderSkills() {
       return `<h3>Installed skills</h3><ul>${data.skills.map((skill) => `<li>${esc(skill.name)}${source(skill.path || skill.source || 'Installed project skill catalogue')}</li>`).join('')}</ul><h3>Required skill libraries</h3>${data.setup.sets.map((set) => `<p>${esc(set.name)} · ${set.missing.length ? 'Missing ' + esc(set.missing.join(', ')) : 'Available'}${source(set.source || 'user/skills/requirements.json')}</p>`).join('') || '<p>No required libraries configured.</p>'}`;
@@ -181,6 +331,8 @@
         const result = await request(endpoints[value] || '/api/project-settings');
         if (ticket !== sequence) return;
         data = result;
+        if (value === 'storage') data.storeRegistry = await request('/api/issue-stores');
+        if (ticket !== sequence) return;
         render();
       } catch (failure) {
         showCurrentError(ticket, failure);
@@ -215,12 +367,7 @@
               ),
             }),
           hotkeys: () => post('/api/project-preferences', { revision: data.revision, hotkeys: fields }),
-          storage: () =>
-            post('/api/project-settings', {
-              action: 'save-storage',
-              revision: data.storage.revision,
-              changes: Object.fromEntries(Object.entries(fields).map(([key, value]) => [key, value === 'true'])),
-            }),
+          storage: () => saveStoreSettings(fields),
         };
         await saves[page]();
         resetPrompts.clear();
@@ -303,6 +450,8 @@
       ['[data-settings-maintenance]', openMaintenance],
       ['[data-settings-initialize]', initialize],
       ['[data-settings-create]', createDefaults],
+      ['[data-store-add]', addStore],
+      ['[data-store-test]', testStore],
       [
         '[data-settings-admin]',
         (button) =>

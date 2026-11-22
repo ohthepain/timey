@@ -65,7 +65,7 @@ export function resumeDelivery(service, run, action) {
     'The integrated source changed before bookkeeping resumed.'
   );
   service.store.connected.add(run.id);
-  service.perform(run, async () => {
+  service.perform(run, async (service) => {
     recordIntegratedIssues(service, action, run, run.deliveryCheck, run.deliveryResult);
     completeDeliveryRun(service, run, run.deliveryResult, run.deliveryCheck.head);
   });

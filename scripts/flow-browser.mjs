@@ -51,6 +51,7 @@ import { actionsMenuBrowserChecks } from './flow-browser-actions-menu.mjs';
 import { mergedIssueBrowserChecks } from './flow-browser-merged-issue.mjs';
 import { noChangesBrowserChecks } from './flow-browser-no-changes.mjs';
 import { writeBrowserIssue } from './flow-browser-fixture.mjs';
+import { issueStoresBrowserChecks } from './flow-browser-stores.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const output = resolve(
@@ -91,6 +92,8 @@ const assets = [
   'flow.html',
   'flow.css',
   'flow-ui.js',
+  'issue-store-ui.js',
+  'issue-ownership-ui.js',
   'issue-folder-drag-ui.js',
   'sidebar-files-ui.js',
   'folder-settings-ui.js',
@@ -136,6 +139,7 @@ const reportsCheck = 'Investigation reports retain content, reading state and sh
 const investigationFlowsCheck = 'Investigations use ordinary flows and independent retained outputs';
 const discussCheck = 'Project Discuss retains independent conversations, settings and explicit controls';
 const settingsCheck = 'Project Settings addressable pages preserve drafts, sources and explicit saves';
+const storesCheck = 'Issue stores preserve explicit homes and perform checked moves without workspace updates';
 const aiTextCheck = 'AI text offers copy bro and caret-aware hovered dictation';
 const interfaceStateCheck = 'Refresh preserves expanded activity, editor size, drafts and copied selection';
 const issueResultsCheck = 'Issue results appear below the banner without replacing playback status';
@@ -297,6 +301,7 @@ function checkExcluded(name) {
     ['--project-navigation', navigationCheck],
     ['--project-discuss', discussCheck],
     ['--project-settings', settingsCheck],
+    ['--stores', storesCheck],
     ['--ai-text', aiTextCheck],
     ['--investigation-reports', reportsCheck],
     ['--investigation-flows', investigationFlowsCheck],
@@ -454,6 +459,7 @@ try {
   browser = await chromium.launch({ headless: true, channel: 'chrome', ignoreDefaultArgs: ['--hide-scrollbars'] });
   const context = await browser.newContext({ baseURL, viewport: { width: 1440, height: 960 } });
   page = await context.newPage();
+  if (process.env.NODE_V8_COVERAGE) await page.coverage.startJSCoverage({ resetOnNavigation: false });
   page.setDefaultTimeout(15000);
   page.on('console', (message) =>
     logs.console.push({ type: message.type(), text: message.text(), location: message.location() })
@@ -596,6 +602,7 @@ try {
       projectSettingsBrowserChecks({ page, project, service, logs, poll, screenshot, output, candidate })
     )
   );
+  await check(storesCheck, () => issueStoresBrowserChecks({ page, project, service, logs, poll, screenshot }));
   await check(aiTextCheck, () => aiTextBrowserChecks({ page, project, service, poll, screenshot }));
   await check(interfaceStateCheck, () => interfaceStateBrowserChecks({ page, project, service, poll, screenshot }));
   await check('Issues and Local notes use matching text styles', () =>
@@ -2540,6 +2547,18 @@ try {
   process.exitCode = 1;
 } finally {
   await Promise.all(pendingResponses);
+  if (page && process.env.NODE_V8_COVERAGE) {
+    const scripts = await page.coverage.stopJSCoverage().catch(() => []);
+    const result = scripts.flatMap((script) => {
+      const filename = new URL(script.url).pathname;
+      if (!/^\/[\w-]+\.js$/.test(filename)) return [];
+      const path = join(dirname(fileURLToPath(import.meta.url)), 'factory-ui', filename.slice(1));
+      if (!existsSync(path) || readFileSync(path, 'utf8') !== script.source) return [];
+      return [{ ...script, url: pathToFileURL(path).href }];
+    });
+    mkdirSync(process.env.NODE_V8_COVERAGE, { recursive: true });
+    writeFileSync(join(process.env.NODE_V8_COVERAGE, 'browser-' + randomUUID() + '.json'), JSON.stringify({ result }));
+  }
   await browser?.close();
   server.closeAllConnections();
   if (server.listening) await new Promise((done) => server.close(done));

@@ -5,6 +5,7 @@ import { progressBasis, progressIssue } from './next-action.mjs';
 import { digest, writeJson, requireThat } from './common.mjs';
 import { checklistView } from './plan-checks.mjs';
 import { requireIdlePlanDecision, savePlanDecision, remainingPlanChecks } from './plan-decision-record.mjs';
+import { afterReportWrite } from './stores/report-access.mjs';
 
 export function decidePlanCheck(service, id, state, checkId, status, basis, result) {
   service.ownServer();
@@ -21,11 +22,15 @@ export function decidePlanCheck(service, id, state, checkId, status, basis, resu
   validateDecision(service, queue, issue, check);
   const run = service.store.add({ id: 'implementation-approval' }, 'plan-decision', queue.head);
   try {
-    recordDecision(service, queue, issue, run, check, status, result);
-  } finally {
+    return afterReportWrite(
+      recordDecision(service, queue, issue, run, check, status, result),
+      () => ({ recorded: true }),
+      { onSettled: () => service.store.connected.delete(run.id) }
+    );
+  } catch (error) {
     service.store.connected.delete(run.id);
+    throw error;
   }
-  return { recorded: true };
 }
 function validateDecision(service, queue, issue, check) {
   const view = checklistView(queue, issue, service.store.list(service.codex.requests));
@@ -57,7 +62,7 @@ function recordDecision(service, queue, issue, run, check, status, result) {
   const receipt = join(service.store.directory, run.id + '-approval.json');
   writeJson(receipt, { actor: 'human', issue: issue.id, check: check.id, status, revision: queue.head, result });
   const summary = status === 'passed' ? 'User approval recorded.' : 'User requested changes.';
-  savePlanDecision(
+  return savePlanDecision(
     service,
     issue,
     run,

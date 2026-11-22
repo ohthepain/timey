@@ -1,4 +1,5 @@
 import { deliveryMode, draftHandoff } from './delivery-mode.mjs';
+import { afterReportWrite } from './stores/report-access.mjs';
 import { checkHandoff } from './handoff-checks.mjs';
 import { assertCurrentInputs, captureInputs } from './input-change.mjs';
 import { revalidatePlanning } from './planning-revalidation.mjs';
@@ -91,10 +92,11 @@ function dispatchProgress(service, queue, issue, choice, humanApproved) {
 
 function dispatchWork(service, issue, choice, humanApproved) {
   const preview = service.preflight(choice.actionId, choice.kind);
-  const started = service.start(preview.token, humanApproved);
-  const run = service.store.runs.find((item) => item.id === started.runId);
-  service.store.update(run, { issueId: issue.id, issueState: issue.state });
-  return started;
+  return afterReportWrite(service.start(preview.token, humanApproved), (started) => {
+    const run = service.store.runs.find((item) => item.id === started.runId);
+    service.store.update(run, { issueId: issue.id, issueState: issue.state });
+    return started;
+  });
 }
 function beginReview(service, queue, issue, actionId) {
   const lock = join(service.root, '.issues/factory-progress.lock');
@@ -106,7 +108,7 @@ function beginReview(service, queue, issue, actionId) {
   const run = service.store.add({ id: actionId }, 'coordinator', queue.head);
   service.store.update(run, { issueId: issue.id, issueState: issue.state, checkout: service.root });
   writeJson(join(lock, 'owner.json'), { runId: run.id, pid: process.pid });
-  service.perform(run, async () => {
+  service.perform(run, async (service) => {
     try {
       await reviewWorker(service, queue, issue, run);
     } finally {
@@ -245,7 +247,7 @@ async function applyReview(service, queue, issue, action, worker, run, result, e
   const skipSources = Object.fromEntries(
     savedRoute(issue, service.store.runs, queue).map((step) => [step.state, step.source])
   );
-  appendReview(service.root, issue, result, { ...run, skipSources }, evidence, target);
+  await appendReview(service.root, issue, result, { ...run, skipSources }, evidence, target);
   try {
     await applyCombinedCompletion(service, run, result);
   } catch (error) {

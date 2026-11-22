@@ -1,3 +1,5 @@
+import { ensureProjectStores, closeProjectStores } from './factory-ui/stores/runtime.mjs';
+import { mergedDelivery } from './factory-ui/merged-issue.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
@@ -11,6 +13,8 @@ import {
   strategyView,
   startIssueStrategy,
   verifyExternalIssueDelivery,
+  verifyIssueStrategyAgain,
+  stopIssueStrategy,
 } from './factory-ui/issue-strategy.mjs';
 import { GitHubAppCredentials, githubAppCredentials } from './factory-ui/github-app.mjs';
 import { generateKeyPairSync, verify } from 'node:crypto';
@@ -1951,7 +1955,16 @@ test('protected merge holds a non-cancellable issue operation and records local 
   const f = fixture(t);
   startIssueStrategy(f.service, f.input('full-send'));
   await f.service.lifecycleTasks.get(f.issue.id);
+  const reportPath = join(f.queue.root, '.issues', f.issue.id + '.md');
+  writeFileSync(
+    reportPath,
+    readFileSync(reportPath, 'utf8').replace('state: verify', 'title: Canonical merge fixture\nstate: verify')
+  );
+  await ensureProjectStores(f.service, { fresh: true });
+  f.service.ensureIssueFlows();
+  t.after(() => closeProjectStores(f.service));
   let operation;
+  const entered = Promise.withResolvers();
   let release;
   const held = new Promise((resolve) => {
     release = resolve;
@@ -1959,28 +1972,136 @@ test('protected merge holds a non-cancellable issue operation and records local 
   f.service.issueChats.reconcileFactoryOperation = async (issueId, input, perform) => {
     assert.equal(issueId, f.issue.id);
     operation = input;
+    entered.resolve();
     await held;
     return perform();
   };
   const merging = mergeReadyIssue(f);
+  await entered.promise;
   assert.equal(operation.kind, 'merge');
   assert.equal(operation.cancellable, false);
   assert.equal(f.counts().merges, 0);
+  const owned = f.service.flows.active.get(f.issue.id);
   release();
   await merging;
+  await owned.task;
   const work = f.service.lifecycleRuns[f.issue.id].work;
   assert.equal(f.counts().merges, 1);
   assert.ok(work.merge);
   assert.ok(work.localDevUpdate);
   assert.ok(work.localDevUpdatedAt);
+  const canonical = await f.service.projectStores.readIssue(f.issue.id);
+  assert.equal(
+    mergedDelivery(canonical.flow).revision,
+    work.merge.revision,
+    'A confirmed Classic merge freezes the canonical issue.'
+  );
   const recordedAt = work.mergedAt;
   const updatedAt = work.localDevUpdatedAt;
   f.service.issueChats.view = () => ({ queue: { operation } });
   const provider = f.service.strategyProvider();
   provider.ready = async () => ({ merged: true, merge: work.merge });
   f.service.strategyProvider = () => provider;
-  await mergeReadyIssue(f);
-  assert.equal(f.counts().merges, 1, 'a lost completion acknowledgement reconciles the existing merge');
+  await assert.rejects(mergeReadyIssue(f), /merged.*read-only|issue has merged/i);
+  assert.equal(f.counts().merges, 1, 'a confirmed canonical merge cannot restart delivery');
   assert.equal(work.mergedAt, recordedAt);
   assert.equal(work.localDevUpdatedAt, updatedAt);
+});
+
+async function completedCanonicalStrategy(t, strategy = 'full-send') {
+  const f = fixture(t);
+  startIssueStrategy(f.service, f.input(strategy));
+  await f.service.lifecycleTasks.get(f.issue.id);
+  const reportPath = join(f.queue.root, '.issues', f.issue.id + '.md');
+  writeFileSync(
+    reportPath,
+    readFileSync(reportPath, 'utf8').replace('state: verify', 'title: Saved candidate fixture\nstate: verify')
+  );
+  await ensureProjectStores(f.service, { fresh: true });
+  f.service.ensureIssueFlows();
+  t.after(() => closeProjectStores(f.service));
+  return f;
+}
+
+test('Verify again checks the saved isolated candidate without another model turn or source change', async (t) => {
+  const f = await completedCanonicalStrategy(t);
+  const work = f.service.lifecycleRuns[f.issue.id].work;
+  const candidate = git(work.checkout, 'rev-parse', 'HEAD');
+  const sourceHead = f.queue.git('rev-parse', 'HEAD');
+  const before = f.counts();
+  const issue = readQueue(f.queue.root).issues.find((entry) => entry.id === f.issue.id);
+  const verify = strategyView(f.service, issue).verifyAgain;
+  const started = await verifyIssueStrategyAgain(f.service, { issueId: issue.id, ...verify });
+  await f.service.flows.active.get(issue.id)?.task;
+  assert.equal(started.head, candidate);
+  assert.equal(f.counts().checks, before.checks + 1);
+  assert.equal(f.counts().calls, before.calls);
+  assert.equal(git(work.checkout, 'rev-parse', 'HEAD'), candidate);
+  assert.equal(f.queue.git('rev-parse', 'HEAD'), sourceHead);
+  assert.equal(f.service.lifecycleRuns[issue.id].status, 'completed');
+  assert.equal(await f.service.projectStores.records.get('claims/' + issue.id), null);
+  const shared = await f.service.projectStores.readIssue(issue.id);
+  const attempt = shared.flow.retiredBlocks.findLast((block) => block.operation === 'classic').attempts.at(-1);
+  assert.equal(attempt.status, 'completed');
+  assert.equal(attempt.result.classic.lifecycle.work.verification.head, candidate);
+  await assert.rejects(
+    verifyIssueStrategyAgain(f.service, { issueId: issue.id, ...verify, basis: 'stale-display' }),
+    /saved commit changed/
+  );
+  await f.service.flows.active.get(issue.id)?.task.catch(() => {});
+  assert.equal(f.counts().checks, before.checks + 1);
+});
+
+test('Stop interrupts the active strategy turn and retains its committed candidate until that turn settles', async (t) => {
+  const f = await completedCanonicalStrategy(t, 'full-stop');
+  const work = f.service.lifecycleRuns[f.issue.id].work;
+  const candidate = git(work.checkout, 'rev-parse', 'HEAD');
+  const entered = Promise.withResolvers();
+  const release = Promise.withResolvers();
+  const originalTurn = f.service.codex.turn;
+  let interrupts = 0;
+  const originalCall = f.service.codex.call;
+  f.service.codex.call = async (method, params) => {
+    if (method === 'turn/interrupt') {
+      interrupts++;
+      return {};
+    }
+    return originalCall(method, params);
+  };
+  f.service.codex.turn = async (threadId, ...args) => {
+    const turn = { started: Promise.resolve({ turn: { id: 'active-saved-candidate-turn' } }) };
+    f.service.codex.turns.set(threadId, turn);
+    entered.resolve();
+    await release.promise;
+    f.service.codex.turns.delete(threadId);
+    return originalTurn(threadId, ...args);
+  };
+  const issue = readQueue(f.queue.root).issues.find((entry) => entry.id === f.issue.id);
+  const started = await startIssueStrategy(f.service, {
+    ...f.input('full-stop'),
+    basis: strategyView(f.service, issue).basis,
+    instruction: 'Inspect the saved candidate and retain its existing commit while responding to this follow-up.',
+  });
+  const active = f.service.flows.active.get(f.issue.id);
+  await Promise.race([
+    entered.promise,
+    active.task.then(() => assert.fail(f.service.lifecycleRuns[f.issue.id].summary)),
+  ]);
+  await stopIssueStrategy(f.service, { issueId: f.issue.id, runId: started.runId });
+  assert.ok(interrupts > 0);
+  assert.ok(
+    await f.service.projectStores.records.get('claims/' + f.issue.id),
+    'Stop must await the provider outcome before releasing ownership.'
+  );
+  assert.equal(git(work.checkout, 'rev-parse', 'HEAD'), candidate);
+  release.resolve();
+  await assert.rejects(active.task, /Stopped from the Classic strategy controls/);
+  assert.equal(await f.service.projectStores.records.get('claims/' + f.issue.id), null);
+  assert.equal(git(work.checkout, 'rev-parse', 'HEAD'), candidate);
+  assert.equal(git(work.checkout, 'status', '--porcelain'), '');
+  assert.equal(f.counts().merges, 0);
+  const shared = await f.service.projectStores.readIssue(f.issue.id);
+  const attempt = shared.flow.retiredBlocks.findLast((block) => block.operation === 'classic').attempts.at(-1);
+  assert.equal(attempt.status, 'stopped');
+  assert.equal(attempt.result.classic.lifecycle.work.checkout, work.checkout);
 });

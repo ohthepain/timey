@@ -1,5 +1,9 @@
 ---
 fields:
+  issue_store:
+    label: Issue store
+    kind: issue-store
+    fallback: files
   branch:
     label: Target branch
     kind: branch

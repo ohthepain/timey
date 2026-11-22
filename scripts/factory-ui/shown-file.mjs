@@ -1,3 +1,4 @@
+import { evidencePath } from './stores/evidence.mjs';
 import { constants, closeSync, fstatSync, lstatSync, openSync, readFileSync, realpathSync } from 'node:fs';
 import { isAbsolute, join, relative } from 'node:path';
 import { requireThat } from './common.mjs';
@@ -13,7 +14,7 @@ export function readShownFile(project, input) {
   let descriptor;
   try {
     const root = realpathSync(project);
-    const candidate = isAbsolute(input) ? input : join(root, input);
+    const candidate = evidencePath(root, isAbsolute(input) ? input : join(root, input));
     let listed;
     try {
       listed = lstatSync(candidate);

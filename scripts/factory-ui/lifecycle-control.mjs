@@ -1,3 +1,4 @@
+import { classicFailure, classicOperation, trackClassicTask } from './stores/classic-operation.mjs';
 import { isRetriableLifecycleFailure, stopLifecycle } from './lifecycle-stop.mjs';
 import { canResumeLifecycle } from './lifecycle-stop.mjs';
 import { randomUUID } from 'node:crypto';
@@ -11,6 +12,15 @@ import { respondLifecycle } from './lifecycle-input.mjs';
 import { requireIndependentIssue } from './issue-group.mjs';
 
 export function startLifecycle(service, input) {
+  if (service.lifecycleTasks.has(input.issueId)) return { issueId: input.issueId, active: true };
+  return classicOperation(service, {
+    issueIds: [input.issueId],
+    label: 'Continue issue lifecycle',
+    run: (scoped) => startOwnedLifecycle(scoped, input),
+  });
+}
+
+function startOwnedLifecycle(service, input) {
   service.ownServer();
   requireIndependentIssue(service.root, input.issueId);
   const queue = readQueue(service.root);
@@ -46,10 +56,14 @@ export function startLifecycle(service, input) {
   return { issueId: input.issueId };
 }
 function launchLifecycle(service, record) {
-  requireThat(!service.sharedIssues, 'Use the issue strategy controls to claim and run a shared issue.');
+  requireThat(
+    !service.sharedIssues || service.projectStores,
+    'Use the issue strategy controls to claim and run a shared issue.'
+  );
   requireThat(!service.lifecycleTasks.has(record.issueId), 'Progress is already running for this issue.');
   saveLifecycle(service, record, {
     status: 'running',
+    uncertain: false,
     input: null,
     pauseRequested: false,
     summary: 'Continuing this issue within the approved plan.',
@@ -63,8 +77,17 @@ function launchLifecycle(service, record) {
       service.issueChats?.resumePending(record.issueId);
     });
   service.lifecycleTasks.set(record.issueId, task);
+  trackClassicTask(service, task);
 }
-export async function answerLifecycle(service, input) {
+export function answerLifecycle(service, input) {
+  return classicOperation(service, {
+    issueIds: [input.issueId],
+    label: 'Answer issue lifecycle question',
+    run: (scoped) => answerOwnedLifecycle(scoped, input),
+  });
+}
+
+async function answerOwnedLifecycle(service, input) {
   service.ownServer();
   const record = service.lifecycleRuns[input.issueId];
   requireThat(waitingForAnswer(record), 'This question is no longer waiting for an answer.');
@@ -103,6 +126,11 @@ function waitingForAnswer(record) {
 }
 
 function stopLifecycleError(service, record, error) {
+  classicFailure(null, error);
+  if (error.uncertain) {
+    saveLifecycle(service, record, { status: 'uncertain', uncertain: true, summary: error.message });
+    return;
+  }
   try {
     if (blockedHumanInput(service, record)) return;
   } catch (inspectionError) {
@@ -111,6 +139,16 @@ function stopLifecycleError(service, record, error) {
   stopLifecycle(service, record, error.message);
 }
 export function continueLifecycleAfter(service, issueId) {
+  const record = service.lifecycleRuns[issueId];
+  if (record?.work || !['waiting', 'blocked'].includes(record?.status) || service.lifecycleTasks.has(issueId)) return;
+  return classicOperation(service, {
+    issueIds: [issueId],
+    label: 'Resume issue lifecycle',
+    run: (scoped) => continueOwnedLifecycle(scoped, issueId),
+  });
+}
+
+function continueOwnedLifecycle(service, issueId) {
   const record = service.lifecycleRuns[issueId];
   if (record?.work) return;
   if (!['waiting', 'blocked'].includes(record?.status)) return;

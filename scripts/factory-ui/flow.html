@@ -31,6 +31,8 @@
     <script src="/investigation-issue-ui.js" defer></script>
     <script src="/investigation-flow-controls-ui.js" defer></script>
     <script src="/branch-repair-ui.js" defer></script>
+    <script src="/issue-store-ui.js" defer></script>
+    <script src="/issue-ownership-ui.js" defer></script>
     <script src="/flow-ui.js" defer></script>
     <script src="/local-notes-ui.js" defer></script>
     <script src="/sidebar-files-ui.js" defer></script>
@@ -198,6 +200,32 @@
                 <div id="issue-settings-fields" class="folder-settings-fields"></div>
                 <button class="small-button" type="submit">Save issue settings</button>
                 <p id="issue-settings-error" class="inline-error" role="alert" hidden></p>
+              </form>
+              <form id="issue-store-form" class="folder-settings-fields">
+                <label class="field">Issue store<select id="issue-store" required></select></label>
+                <button class="small-button" id="move-issue-store" type="submit">Move issue</button>
+                <p class="detail-copy" id="issue-store-source"></p>
+                <p id="issue-store-error" class="inline-error" role="alert" hidden></p>
+              </form>
+              <form id="issue-ownership-form" hidden>
+                <p id="issue-ownership-description" class="detail-copy"></p>
+                <fieldset id="issue-ownership-controls">
+                  <label class="field"
+                    >Recovery reason<textarea
+                      id="issue-ownership-reason"
+                      minlength="8"
+                      maxlength="2000"
+                      required
+                    ></textarea>
+                  </label>
+                  <label
+                    ><input id="issue-ownership-confirmed" type="checkbox" required /><span
+                      id="issue-ownership-confirmation"
+                    ></span
+                  ></label>
+                  <button class="small-button" type="submit">Recover ownership</button>
+                </fieldset>
+                <p id="issue-ownership-error" class="inline-error" role="alert" hidden></p>
               </form>
             </details>
             <p id="merged-issue-notice" class="detail-copy" role="status" hidden></p>
@@ -861,6 +889,7 @@
           </select></label
         >
         <label class="field">Folder<select id="capture-folder" name="folder" required></select></label>
+        <label class="field">Issue store<select id="capture-issue-store" name="issueStore" required></select></label>
         <label><input type="checkbox" id="capture-retro" /> Run a retro</label>
         <label><input type="checkbox" id="capture-needs-approval" /> Needs approval</label>
         <p id="capture-error" class="inline-error" role="alert" hidden></p>
@@ -917,6 +946,8 @@
           <span>Branch</span>
           <select id="destination-branch"></select>
         </label>
+        <label class="field">Issue store<select id="destination-issue-store" required></select></label>
+        <p class="detail-copy">Changing the Issue store moves the saved issue after verification.</p>
         <div class="block-actions">
           <button class="small-button" value="cancel">Cancel</button>
           <button class="small-button" id="retry-branches" type="button" hidden>Retry</button>

@@ -38,16 +38,16 @@ export function finishRecordUpdate(service, id, state, basis, update) {
     summary: 'Updating the issue record and checking preservation.',
   });
   writeJson(join(lock, 'owner.json'), { runId: run.id, pid: process.pid });
-  service.perform(run, async () => {
+  service.perform(run, async (service) => {
     try {
-      applyRecordUpdate(service, queue, issue, run, stages, update);
+      await applyRecordUpdate(service, queue, issue, run, stages, update);
     } finally {
       releaseReviewLock(lock, run);
     }
   });
   return { runId: run.id };
 }
-function applyRecordUpdate(service, queue, issue, run, stages, update) {
+async function applyRecordUpdate(service, queue, issue, run, stages, update) {
   const target = stages.at(-1).next;
   const unchanged = preservation(queue, issue.id);
   for (const step of stages) {
@@ -74,7 +74,7 @@ function applyRecordUpdate(service, queue, issue, run, stages, update) {
     progressBasis(readQueue(service.root), issue.id) === progressBasis(queue, issue.id),
     'The project changed before the record update. Nothing was saved.'
   );
-  appendReview(service.root, issue, result, run, evidence, target);
+  await appendReview(service.root, issue, result, run, evidence, target);
   const after = readQueue(service.root);
   requireThat(
     preservation(after, issue.id) === unchanged,

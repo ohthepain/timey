@@ -1,3 +1,4 @@
+import { classicOperation, bindClassicRun, recordClassicInput, classicFailure } from './stores/classic-operation.mjs';
 import { effectiveProjectPrompt } from './project-preferences.mjs';
 import { investigationReport } from './investigation-records.mjs';
 import { sharedIssueChatBinding, sharedChatTools } from './shared-chat-tools.mjs';
@@ -181,7 +182,7 @@ class IssueChats {
         'The saved strategy changed. Refresh before replying and continuing.'
       );
       const { issue } = this.selected(input.issueId);
-      const started = startIssueStrategy(this.service, {
+      const started = await startIssueStrategy(this.service, {
         issueId: issue.id,
         basis: strategyBasis(this.service, issue),
         strategy: record.work.strategy,
@@ -285,6 +286,23 @@ class IssueChats {
     return interruptCodexTurn(active.connection, active.threadId);
   }
   async respond(issueId, input) {
+    if (input.mode === 'work' && this.service.projectStores && !this.service.classicOperation)
+      return classicOperation(this.service, {
+        issueIds: [issueId],
+        label: 'Classic queued work prompt',
+        shareSourceCheckpoint: true,
+        onStop: () => {
+          const current = this.active.get(issueId);
+          if (!current) return;
+          current.stopRequested = true;
+          return this.interrupt(current);
+        },
+        run: (service) => {
+          const scoped = Object.create(this);
+          scoped.service = service;
+          return scoped.respond(issueId, input);
+        },
+      });
     const active = { messageId: input.id, stopRequested: false };
     this.active.set(issueId, active);
     try {
@@ -296,9 +314,10 @@ class IssueChats {
     }
   }
   responseError(issueId, input, active, error) {
+    if (this.service.classicOperation) classicFailure(active.run, error);
     if (active.run)
       this.service.store.update(active.run, {
-        status: stoppedError(error) ? 'cancelled' : 'blocked',
+        status: error.uncertain ? 'uncertain' : stoppedError(error) ? 'cancelled' : 'blocked',
         summary: error.message,
       });
     if (!stoppedError(error)) throw error;
@@ -353,6 +372,7 @@ class IssueChats {
     }
     active.threadId = threadId;
     active.run = this.service.store.add({ id: 'prompt:' + input.id }, 'issue-chat', null);
+    bindClassicRun(this.service, active.run);
     this.service.store.update(active.run, {
       issueId,
       threadId,
@@ -364,6 +384,7 @@ class IssueChats {
   }
   async runResponse(issueId, input, active, { root, cwd, connection, threadId, retain }) {
     const prompt = responsePrompt(this.service, issueId, input);
+    recordClassicInput(this.service, active.run, prompt);
     const selected = await responseSkills(connection, root, input);
     const role = conversationRole(selected);
     await nameConversationTurn(connection, root, issueId, threadId, role, 'active');

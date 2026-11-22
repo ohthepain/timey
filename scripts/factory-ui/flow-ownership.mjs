@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { requireThat } from './common.mjs';
 
 export function flowOwnsIssue(service, issueId) {
-  if (service.flowOperationIssueId === issueId) return false;
+  if (service.flowOperationIssueId === issueId || service.flowOperationIssueIds?.has(issueId)) return false;
   if (
     service.flows?.active.has(issueId) ||
     service.flows?.flowBuilds?.has(issueId) ||
@@ -19,7 +19,7 @@ export function flowOwnsIssue(service, issueId) {
     saved.version === 1 && saved.issueId === issueId && Array.isArray(saved.blocks),
     'The saved issue flow needs reconciliation before another operation can own it.'
   );
-  return saved.blocks.some((block) =>
+  return [...saved.blocks, ...(saved.retiredBlocks || [])].some((block) =>
     block.attempts.some(
       (attempt) => !attempt.reconciledAt && ['running', 'stopping', 'uncertain'].includes(attempt.status)
     )

@@ -350,7 +350,7 @@ export class FlowOvernight {
 
   async runBlock(run, issue, flow, block, catalog) {
     requireThat(
-      !this.flows.checkDefinition(issue, flow, block.id, catalog),
+      !(await this.flows.checkDefinition(issue, flow, block.id, catalog)),
       `${block.label} changed. Review its definition.`
     );
     if (block.kind === 'request') {

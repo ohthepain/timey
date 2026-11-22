@@ -865,8 +865,27 @@ writes do not load the application's Vite plugins.
 `shared-issue-config.mjs` owns the metadata path allowlist.
 The [Issue, Coordination, and Artifact store specification](../plans/issue-stores.md)
 and [ADR 0022](../adr/0022-separate-issue-coordination-and-artifact-stores.md)
-describe the accepted future storage roles and shared-provider contracts. Their
-implementation is paused. The following modules describe the existing Git path.
+describe the accepted storage roles and shared-provider contracts.
+`stores/config.mjs` validates named destinations and secret references;
+`stores/runtime.mjs` opens providers lazily, imports verified legacy data, follows
+confirmed role migrations, and registers canonical report access.
+`stores/project-stores.mjs` owns the catalog, numbers, attempts, claims, logs,
+remote Stop requests, and migrations. `stores/providers.mjs` supplies Issue and
+record contracts for files/Git, Postgres, and DynamoDB. `stores/artifacts.mjs`
+supplies files/Git, Postgres, and S3 bytes. `stores/snapshots.mjs` installs
+validated local display projections and preserves report drafts; report writers
+enter `stores/report-access.mjs` for authoritative checks. `stores/evidence.mjs`
+retains and resolves immutable evidence without rewriting hashed proof JSON.
+`stores/classic-operation.mjs` admits Classic workers, lifecycle loops, strategy
+jobs, and queued work prompts through the same ownership and journal protocol.
+It acquires every issue claim before grouped work and retains RunStore events
+before display truncation. `stores/classic-snapshot.mjs` projects shared legacy
+history locally, removes foreign transport pointers, and restores committed
+source checkpoints after admission. A storage barrier keeps downstream Classic
+publication and merge waiting when shared confirmation is unavailable.
+`issue-store-ui.js` shares required creation choices and checked moves across the
+visible controls. See the [setup and migration guide](issue-stores.md).
+The following modules support the legacy Git queue before verified bootstrap.
 `shared-issue-paths.mjs` validates claim documents and their canonical paths.
 `shared-issue-git.mjs` owns private-index commits, App pushes, and claim snapshots. `shared-issue-claims.mjs` stores version 2 claim files
 on the queue branch. Its expected-tip updates preserve unrelated metadata and

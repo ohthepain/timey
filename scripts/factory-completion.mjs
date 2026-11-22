@@ -7,7 +7,16 @@ import { requireThat } from './factory-ui/common.mjs';
 import { storedIssuePath } from './factory-ui/issue-report-storage.mjs';
 import { formatIssueReport } from './factory-ui/issue-report-format.mjs';
 import { describeAuthorization } from './factory-authorization.mjs';
-export function appendCompletion(root, issue, result, run, evidence, target) {
+import { commitStoredReport, registeredProjectStores } from './factory-ui/stores/report-access.mjs';
+export function appendCompletion(root, issue, result, run, evidence, target, options = {}) {
+  if (registeredProjectStores(root))
+    return commitStoredReport(root, issue, completedReport(issue, result, run, evidence, target), {
+      purpose:
+        result.closure || result.user_decision === 'close' || result.human_check_update?.blocks === 'closure'
+          ? 'closure'
+          : 'edit',
+      ...options,
+    });
   const path = storedIssuePath(root, issue.id, issue.reportLocation),
     lock = join(root, '.issues/factory.lock');
   mkdirSync(lock);
@@ -17,26 +26,32 @@ export function appendCompletion(root, issue, result, run, evidence, target) {
       content === issue.content,
       'The issue changed before its result could be recorded. Refresh and review again.'
     );
-    const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
-    requireThat(match, 'The report frontmatter is missing.');
-    const doc = parseDocument(match[1]);
-    requireThat(!doc.errors.length, 'The report frontmatter is invalid.');
-    doc.set('updated', new Date().toISOString());
-    if (result.priority_update) doc.set('priority', result.priority_update);
-    recordChecklistMetadata(doc, issue, result);
-    recordInterviewMetadata(doc, result);
-    recordAcceptedMetadata(doc, result);
-    recordClosureMetadata(doc, result);
-    if (target) doc.set('state', target);
-    recordStage(doc, issue, target, result, run, evidence);
-    const notes = `\n\n## ${reviewHeading(result)} — ${new Date().toISOString()}\n\n${result.summary}\n\n${result.notes}\n\n${recordedBy(run)}\n\nEvidence:\n${formatReviewEvidence(evidence)}\n\nRemaining work:\n${result.remaining.map((text) => '- ' + text).join('\n') || 'No additional task identified by this review. Human acceptance remains separate.'}\n${transitionNote(issue, target, result)}`;
-    const next = '---\n' + doc.toString() + '---' + content.slice(match[0].length) + notes;
+    const next = completedReport(issue, result, run, evidence, target);
     const temp = join(dirname(path), '.review-' + randomUUID() + '.tmp');
-    writeFileSync(temp, formatIssueReport(next), { mode: 0o600 });
+    writeFileSync(temp, next, { mode: 0o600 });
     renameSync(temp, path);
   } finally {
     rmSync(lock, { recursive: true });
   }
+}
+
+function completedReport(issue, result, run, evidence, target) {
+  const content = issue.content;
+  const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
+  requireThat(match, 'The report frontmatter is missing.');
+  const doc = parseDocument(match[1]);
+  requireThat(!doc.errors.length, 'The report frontmatter is invalid.');
+  doc.set('updated', new Date().toISOString());
+  if (result.priority_update) doc.set('priority', result.priority_update);
+  recordChecklistMetadata(doc, issue, result);
+  recordInterviewMetadata(doc, result);
+  recordAcceptedMetadata(doc, result);
+  recordClosureMetadata(doc, result);
+  if (target) doc.set('state', target);
+  recordStage(doc, issue, target, result, run, evidence);
+  const notes = `\n\n## ${reviewHeading(result)} — ${new Date().toISOString()}\n\n${result.summary}\n\n${result.notes}\n\n${recordedBy(run)}\n\nEvidence:\n${formatReviewEvidence(evidence)}\n\nRemaining work:\n${result.remaining.map((text) => '- ' + text).join('\n') || 'No additional task identified by this review. Human acceptance remains separate.'}\n${transitionNote(issue, target, result)}`;
+  const next = '---\n' + doc.toString() + '---' + content.slice(match[0].length) + notes;
+  return formatIssueReport(next);
 }
 
 function recordedBy(run) {

@@ -17,16 +17,16 @@ export function beginPlannedSkip(service, queue, issue) {
     summary: 'Recording the planned stage skip.',
   });
   writeJson(join(lock, 'owner.json'), { runId: run.id, pid: process.pid });
-  service.perform(run, async () => {
+  service.perform(run, async (service) => {
     try {
-      recordPlannedSkip(service, queue, issue, run);
+      await recordPlannedSkip(service, queue, issue, run);
     } finally {
       releaseReviewLock(lock, run);
     }
   });
   return { runId: run.id };
 }
-function recordPlannedSkip(service, queue, issue, run) {
+async function recordPlannedSkip(service, queue, issue, run) {
   const stage = queue.lifecycle.find((item) => item.state === issue.state);
   const step = savedRoute(issue, service.store.runs, queue).find(
     (item) => item.state === issue.state && item.decision === 'skip'
@@ -64,7 +64,7 @@ function recordPlannedSkip(service, queue, issue, run) {
     progressBasis(readQueue(service.root), issue.id) === progressBasis(queue, issue.id),
     'The issue changed while recording the skip. Refresh and review the current route.'
   );
-  appendReview(service.root, issue, result, run, evidence, stage.next);
+  await appendReview(service.root, issue, result, run, evidence, stage.next);
   saveDeferredRecommendations(service, review, issue.id);
   service.store.update(run, { status: 'completed', summary: result.summary, result, evidence });
 }

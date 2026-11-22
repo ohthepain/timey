@@ -4,6 +4,7 @@ import { appendCompletion } from '../factory-completion.mjs';
 import { readQueue, currentAction } from './data.mjs';
 import { digest, git, requireThat, writeJson } from './common.mjs';
 import { pendingBranchMerge, updateVerificationBranch } from './verification-merge.mjs';
+import { afterReportWrite } from './stores/report-access.mjs';
 
 export function failedVerification(service, run, action, result, error) {
   const head = git(run.checkout, 'rev-parse', 'HEAD');
@@ -15,36 +16,42 @@ export function failedVerification(service, run, action, result, error) {
   const path = join(service.store.directory, run.id + '-implementation.json');
   writeJson(path, { runId: run.id, actionId: action.id, head, result, verification: run.verification });
   const queue = readQueue(service.root);
-  for (const id of action.issues) {
+  const advance = (index) => {
+    if (index >= action.issues.length) return;
+    const id = action.issues[index];
     const issue = queue.issues.find((i) => i.id === id);
     const stage = queue.lifecycle.find((s) => s.state === issue?.state);
     const next = queue.lifecycle.find((s) => s.state === stage?.next);
-    if (stage?.role !== 'ready-to-fix' || next?.role !== 'ready-to-verify') continue;
+    if (stage?.role !== 'ready-to-fix' || next?.role !== 'ready-to-verify') return advance(index + 1);
     requireThat(
       !git(run.checkout, 'status', '--porcelain'),
       'Preserve the unfinished checkout before recording implementation.'
     );
     service.guard(service.root, action, 'advance', queue.head, { target_state: next.state });
-    appendCompletion(
-      service.root,
-      issue,
-      {
-        outcome: 'completed',
-        summary: 'Implementation finished; verification still needs attention.',
-        notes:
-          'The worker returned its completed implementation. Wider verification failed: ' +
-          error.message +
-          '\nThis is not a passed check or permission to commit, integrate or close. No outside repair has been assigned to this worker.',
-        remaining: [
-          'Fix the failing check separately, then retry verification or update from a selected branch and retry.',
-        ],
-        skipped_steps: [],
-      },
-      { ...run, base: head },
-      [{ path, sha256: digest(readFileSync(path)) }],
-      next.state
+    return afterReportWrite(
+      appendCompletion(
+        service.root,
+        issue,
+        {
+          outcome: 'completed',
+          summary: 'Implementation finished; verification still needs attention.',
+          notes:
+            'The worker returned its completed implementation. Wider verification failed: ' +
+            error.message +
+            '\nThis is not a passed check or permission to commit, integrate or close. No outside repair has been assigned to this worker.',
+          remaining: [
+            'Fix the failing check separately, then retry verification or update from a selected branch and retry.',
+          ],
+          skipped_steps: [],
+        },
+        { ...run, base: head },
+        [{ path, sha256: digest(readFileSync(path)) }],
+        next.state
+      ),
+      () => advance(index + 1)
     );
-  }
+  };
+  return advance(0);
 }
 function recoveryRun(service, queue, issue) {
   const ids = new Set(
@@ -136,36 +143,40 @@ export function retryVerification(service, input, after) {
     : null;
   requireThat(!input.branch || branch, 'The selected branch changed or is unavailable. Refresh the branch selector.');
   service.guard(service.root, action, 'verify', queue.head);
-  if (queue.lifecycle.find((s) => s.state === issue.state)?.role === 'ready-to-fix')
-    failedVerification(service, run, action, run.result, Error(run.verification.error));
-  const lock = join(service.store.directory, 'verification-' + run.id + '.lock');
-  mkdirSync(lock);
-  service.store.connected.add(run.id);
-  service.store.update(run, {
-    status: 'checking',
-    verification: { ...run.verification, status: 'running' },
-    summary: branch
-      ? 'Updating from ' + branch.name + ', then checking the combined changes.'
-      : 'Retrying verification of the existing implementation.',
-  });
-  const task = executeRetry(service, run, action, branch)
-    .finally(() => {
-      service.store.connected.delete(run.id);
-      rmSync(lock, { recursive: true });
-    })
-    .then(() => {
-      if (run.status === 'completed' && !service.lifecycleRuns[issue.id]?.input) after?.(issue.id);
+  const recorded =
+    queue.lifecycle.find((s) => s.state === issue.state)?.role === 'ready-to-fix'
+      ? failedVerification(service, run, action, run.result, Error(run.verification.error))
+      : undefined;
+  return afterReportWrite(recorded, () => {
+    const lock = join(service.store.directory, 'verification-' + run.id + '.lock');
+    mkdirSync(lock);
+    service.store.connected.add(run.id);
+    service.store.update(run, {
+      status: 'checking',
+      verification: { ...run.verification, status: 'running' },
+      summary: branch
+        ? 'Updating from ' + branch.name + ', then checking the combined changes.'
+        : 'Retrying verification of the existing implementation.',
     });
-  service.verificationTasks ||= new Map();
-  service.verificationTasks.set(run.id, task);
-  void task.then(
-    () => service.verificationTasks.delete(run.id),
-    (error) => {
-      service.verificationTasks.delete(run.id);
-      service.store.update(run, { status: 'blocked', summary: error.message });
-    }
-  );
-  return { runId: run.id };
+    const task = executeRetry(service, run, action, branch)
+      .finally(() => {
+        service.store.connected.delete(run.id);
+        rmSync(lock, { recursive: true });
+      })
+      .then(() => {
+        if (run.status === 'completed' && !service.lifecycleRuns[issue.id]?.input) after?.(issue.id);
+      });
+    service.verificationTasks ||= new Map();
+    service.verificationTasks.set(run.id, task);
+    void task.then(
+      () => service.verificationTasks.delete(run.id),
+      (error) => {
+        service.verificationTasks.delete(run.id);
+        service.store.update(run, { status: 'blocked', summary: error.message });
+      }
+    );
+    return { runId: run.id };
+  });
 }
 async function executeRetry(service, run, action, branch) {
   try {

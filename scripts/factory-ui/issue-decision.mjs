@@ -19,6 +19,7 @@ import {
 } from './issue-cleanup.mjs';
 import { cancelIssueActionsOnClose } from './issue-action-cancellation.mjs';
 import { groupChildren, requireIndependentIssue } from './issue-group.mjs';
+import { afterReportWrite } from './stores/report-access.mjs';
 
 export function decideIssue(
   service,
@@ -48,36 +49,43 @@ export function decideIssue(
   const action = { issues: [id] };
   const shared = acquireDecisionClaim(service.sharedIssues, issue, groupClosure);
   const prepared = prepareDecision(service, queue, issue, action, { kind, dismissed, target }, artifact);
-  queue = prepared.queue;
-  issue = prepared.issue;
-  basis = decisionBasis(queue, issue);
-  const run = service.store.add({ id }, 'decision', queue.head);
-  const summary = decisionSummary(kind, choice, dismissed, automatic);
-  const result = { ...decisionResult(issue, target, kind, summary, reason), accepted_result: prepared.accepted };
-  applyClosure(result, choice, reason, target, dismissed);
-  if (automatic && result.closure) result.closure.source = 'auto-close-opt-in';
-  const evidence = [{ path: storedIssuePath(service.root, id, location), sha256: digest(issue.content) }];
-  const destination = kind === 'close' ? 'closed' : 'open';
-  const moveTo = !shared && location !== destination ? destination : null;
-  if (moveTo)
-    requireThat(
-      !existsSync(storedIssuePath(service.root, id, moveTo)),
-      'Another report already exists at the destination.'
-    );
-  const decision = recordDecision(service, issue, run, result, evidence, target, basis, {
-    location,
-    moveTo,
+  return afterReportWrite(prepared, (prepared) => {
+    queue = prepared.queue;
+    issue = prepared.issue;
+    basis = decisionBasis(queue, issue);
+    const run = service.store.add({ id }, 'decision', queue.head);
+    const summary = decisionSummary(kind, choice, dismissed, automatic);
+    const result = { ...decisionResult(issue, target, kind, summary, reason), accepted_result: prepared.accepted };
+    applyClosure(result, choice, reason, target, dismissed);
+    if (automatic && result.closure) result.closure.source = 'auto-close-opt-in';
+    const evidence = [{ path: storedIssuePath(service.root, id, location), sha256: digest(issue.content) }];
+    const destination = kind === 'close' ? 'closed' : 'open';
+    const moveTo = !shared && location !== destination ? destination : null;
+    if (moveTo)
+      requireThat(
+        !existsSync(storedIssuePath(service.root, id, moveTo)),
+        'Another report already exists at the destination.'
+      );
+    const decision = recordDecision(service, issue, run, result, evidence, target, basis, {
+      location,
+      moveTo,
+    });
+    return afterReportWrite(decision, (decision) => {
+      if (shared) {
+        const publication = publishDecision(service.sharedIssues, issue, shared, groupClosure, destination);
+        return {
+          ...decision,
+          publication: { status: publication.status, url: publication.url, error: publication.error },
+        };
+      }
+      if (kind !== 'close') return decision;
+      if (deferCleanup) {
+        cancelIssueActionsOnClose(service, id);
+        return decision;
+      }
+      return finishIssueClosure(service, id, decision, cleanup, resolution);
+    });
   });
-  if (shared) {
-    const publication = publishDecision(service.sharedIssues, issue, shared, groupClosure, destination);
-    return { ...decision, publication: { status: publication.status, url: publication.url, error: publication.error } };
-  }
-  if (kind !== 'close') return decision;
-  if (deferCleanup) {
-    cancelIssueActionsOnClose(service, id);
-    return decision;
-  }
-  return finishIssueClosure(service, id, decision, cleanup, resolution);
 }
 
 function validateGroupDecision(root, issue, kind, flowGroupClosure) {
@@ -161,9 +169,10 @@ function prepareDecision(service, queue, issue, action, decision, suppliedArtifa
     artifact || !delivery || delivery.state === 'verified',
     'Complete independent issue PR integration verification before accepting the fix.'
   );
-  queue = recordClosingApproval(service, queue, issue, artifact);
-  issue = progressIssue(queue, issue.id, issue.state);
-  return { queue, issue, accepted: checkClosure(service, queue, issue, action, artifact) };
+  return afterReportWrite(recordClosingApproval(service, queue, issue, artifact), (queue) => {
+    issue = progressIssue(queue, issue.id, issue.state);
+    return { queue, issue, accepted: checkClosure(service, queue, issue, action, artifact) };
+  });
 }
 function decisionSummary(kind, choice, dismissed, automatic) {
   if (kind === 'reopen') return 'Reopened by the user for investigation.';
@@ -197,16 +206,26 @@ function recordDecision(service, issue, run, result, evidence, target, basis, { 
       ) === basis,
       'The issue changed. Refresh before deciding.'
     );
-    appendReview(service.root, issue, result, run, evidence, target);
-    if (moveTo) moveStoredIssue(service.root, id, location, moveTo);
-    service.store.update(run, { issueId: id, issueState: state, status: 'completed', summary, result });
+    return afterReportWrite(
+      appendReview(service.root, issue, result, run, evidence, target),
+      () =>
+        afterReportWrite(moveTo ? moveStoredIssue(service.root, id, location, moveTo) : undefined, () => {
+          service.store.update(run, { issueId: id, issueState: state, status: 'completed', summary, result });
+          return { state: target };
+        }),
+      {
+        onFailure: (error) => {
+          service.store.update(run, { issueId: id, issueState: state, status: 'blocked', summary: error.message });
+          throw error;
+        },
+        onSettled: () => service.store.connected.delete(run.id),
+      }
+    );
   } catch (error) {
     service.store.update(run, { issueId: id, issueState: state, status: 'blocked', summary: error.message });
-    throw error;
-  } finally {
     service.store.connected.delete(run.id);
+    throw error;
   }
-  return { state: target };
 }
 
 function checkIdle(service, queue, issue, decision) {

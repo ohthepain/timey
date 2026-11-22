@@ -1680,7 +1680,7 @@ test('opted-in closure holds the worktree until Retro succeeds and files idle ap
   );
   const queue = readQueue(root, { issueId: id });
   const issue = queue.issues[0];
-  flows.closeWithReason({
+  await flows.closeWithReason({
     issueId: id,
     flowRevision: view.flow.revision,
     state: issue.state,
@@ -1756,10 +1756,10 @@ test('opted-in closure holds the worktree until Retro succeeds and files idle ap
   const closedQueue = readQueue(root, { issueId: id, location: 'closed' });
   const closedIssue = closedQueue.issues[0];
   service.decideIssue(id, closedIssue.state, 'reopen', decisionBasis(closedQueue, closedIssue));
-  flows.reopened(id);
+  await flows.reopened(id);
   const reopenedQueue = readQueue(root, { issueId: id });
   const reopened = reopenedQueue.issues[0];
-  flows.closeWithReason({
+  await flows.closeWithReason({
     issueId: id,
     flowRevision: read().revision,
     state: reopened.state,

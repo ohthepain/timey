@@ -2140,6 +2140,7 @@
     <script src="/hotkeys-ui.js"></script>
     <script src="/ai-text-ui.js"></script>
     <script src="/view-state.js"></script>
+    <script src="/issue-store-ui.js"></script>
     <script src="/issue-capture-ui.js"></script>
     <script src="/server-control-ui.js"></script>
     <script src="/queue-lifecycle-ui.js"></script>
@@ -3056,6 +3057,7 @@
         });
         try {
           const views = await Promise.all(issues.map((issue) => request(`flow?issue=${encodeURIComponent(issue.id)}`)));
+          const storeOptions = await request('issue-stores');
           let branches = [];
           const branchResult = await request('flow-action', {
             issueId: issues[0].id,
@@ -3064,7 +3066,7 @@
           });
           if (!branchResult.branchesUnavailable) branches = branchResult.branches || [];
           if (projectIssueBulk.idsKey !== key) return;
-          Object.assign(projectIssueBulk, { views, branches, loading: false });
+          Object.assign(projectIssueBulk, { views, branches, stores: storeOptions.stores, loading: false });
         } catch (error) {
           if (projectIssueBulk.idsKey !== key) return;
           Object.assign(projectIssueBulk, { loading: false, error: error.message });
@@ -3107,6 +3109,7 @@
         const priorities = commonProjectIssueValue(issues.map((issue) => issue.priorityInfo?.id));
         const currentBranches = views.map((view) => view.destination.branch || '');
         const branches = commonProjectIssueValue(currentBranches);
+        const issueStores = commonProjectIssueValue(views.map((entry) => entry.issue.storeId || 'files'));
         const branchOptions = [...new Set([...projectIssueBulk.branches, ...currentBranches.filter(Boolean)])];
         const allBranchEditable = views.every((view) => !view.destination.locked);
         const investigation = views.every(
@@ -3127,6 +3130,15 @@
           'Priority',
           priorities,
           data.priorities.map((priority) => [priority.id, priority.name])
+        )}${projectIssueBulkField(
+          'issueStore',
+          'Issue store',
+          issueStores,
+          (projectIssueBulk.stores || [])
+            .filter((store) => store.roles.includes('issue'))
+            .map((store) => [store.id, store.label]),
+          false,
+          'Moves selected issues after verifying their saved data.'
         )}${projectIssueBulkField('targetBranch', 'Target branch', branches, [['__default__', 'Follow project default'], ...branchOptions.map((branch) => [branch, branch])], !allBranchEditable, allBranchEditable ? 'Sets the pull request destination branch.' : 'Locked because at least one selected issue already has a pull request.')}${
           investigation
             ? projectIssueBulkField('reusable', 'Reusable', reusable === '__mixed__' ? reusable : String(reusable), [

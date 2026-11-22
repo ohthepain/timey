@@ -1,0 +1,397 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
+import { randomUUID, createHash } from 'node:crypto';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import {
+  DynamoDBClient,
+  CreateTableCommand,
+  DeleteTableCommand,
+  waitUntilTableExists,
+  waitUntilTableNotExists,
+} from '@aws-sdk/client-dynamodb';
+import { openRecordStore, openIssueStore } from './factory-ui/stores/providers.mjs';
+import { createFactoryPool, ensureFactoryDatabase } from './factory-ui/stores/postgres-connection.mjs';
+import { cleanEnvironment } from './factory-ui/common.mjs';
+
+const providers = (process.env.TIMEY_STORE_TEST_PROVIDERS || 'files,git').split(',');
+const sha = (value) => createHash('sha256').update(value).digest('hex');
+const fails = (code) => (error) => error.code === code;
+
+function git(root, ...args) {
+  return execFileSync('git', ['-C', root, ...args], {
+    env: cleanEnvironment(),
+    encoding: 'utf8',
+    stdio: 'pipe',
+  }).trim();
+}
+
+async function fixture(t, kind) {
+  const directory = await mkdtemp(join(tmpdir(), 'timey-store-contract-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const artifactDirectory = join(directory, 'artifacts');
+  await mkdir(artifactDirectory);
+  const artifacts = {
+    async put({ body, mediaType }) {
+      const digest = sha(body);
+      await writeFile(join(artifactDirectory, digest), body);
+      return { storeId: 'fixture-artifacts', key: digest, sha256: digest, bytes: body.length, mediaType };
+    },
+    async get(ref) {
+      const body = await readFile(join(artifactDirectory, ref.key));
+      assert.equal(sha(body), ref.sha256);
+      assert.equal(body.length, ref.bytes);
+      return body;
+    },
+  };
+  const projectId = `test-project-${randomUUID()}`;
+  const config = { id: `test-records-${randomUUID()}`, kind };
+  const roots = [join(directory, 'one'), join(directory, 'two')];
+  await Promise.all(roots.map((root) => mkdir(root)));
+  let unchanged;
+  if (kind === 'files') config.directory = join(directory, 'records');
+  if (kind === 'git') {
+    const remote = join(directory, 'remote.git');
+    execFileSync('git', ['init', '--bare', remote], { stdio: 'pipe' });
+    git(roots[0], 'init', '-b', 'main');
+    git(roots[0], 'config', 'user.name', 'Store fixture');
+    git(roots[0], 'config', 'user.email', 'fixture@timey.invalid');
+    await writeFile(join(roots[0], 'source.txt'), 'base\n');
+    git(roots[0], 'add', 'source.txt');
+    git(roots[0], 'commit', '-m', 'Source fixture');
+    git(roots[0], 'remote', 'add', 'origin', remote);
+    git(roots[0], 'push', 'origin', 'main');
+    execFileSync('git', ['clone', '--branch', 'main', remote, roots[1]], { stdio: 'pipe' });
+    for (const root of roots) {
+      await writeFile(join(root, 'source.txt'), 'staged\n');
+      git(root, 'add', 'source.txt');
+      await writeFile(join(root, 'source.txt'), 'unstaged\n');
+    }
+    config.branch = 'issue-queue';
+    unchanged = roots.map((root) => [
+      git(root, 'rev-parse', 'HEAD'),
+      git(root, 'write-tree'),
+      git(root, 'status', '--porcelain'),
+      git(root, 'show-ref', '--heads'),
+      'unstaged\n',
+    ]);
+  }
+  if (kind === 'postgres') {
+    roots.fill(process.cwd());
+    if (process.env.TIMEY_STORE_TEST_BOOTSTRAP === '1') await ensureFactoryDatabase({ root: process.cwd() });
+    t.after(async () => {
+      const pool = createFactoryPool({}, { root: process.cwd() });
+      try {
+        await pool.query('DELETE FROM factory.store_operations WHERE project_id=$1', [projectId]);
+        await pool.query('DELETE FROM factory.store_records WHERE project_id=$1', [projectId]);
+      } finally {
+        await pool.end();
+      }
+    });
+  }
+  if (kind === 'dynamodb') {
+    config.region = process.env.TIMEY_STORE_DYNAMODB_REGION || 'eu-central-1';
+    config.table = process.env.TIMEY_STORE_DYNAMODB_TABLE || `timey-store-test-${randomUUID()}`;
+    assert.match(config.table, /^timey-store-test-/, 'Remote contracts require an isolated test table.');
+    const client = new DynamoDBClient({ region: config.region });
+    if (!process.env.TIMEY_STORE_DYNAMODB_TABLE) {
+      assert.equal(process.env.TIMEY_STORE_DYNAMODB_CREATE, '1', 'Explicitly enable disposable DynamoDB provisioning.');
+      await client.send(
+        new CreateTableCommand({
+          TableName: config.table,
+          BillingMode: 'PAY_PER_REQUEST',
+          AttributeDefinitions: [
+            { AttributeName: 'PK', AttributeType: 'S' },
+            { AttributeName: 'SK', AttributeType: 'S' },
+          ],
+          KeySchema: [
+            { AttributeName: 'PK', KeyType: 'HASH' },
+            { AttributeName: 'SK', KeyType: 'RANGE' },
+          ],
+        })
+      );
+      t.after(async () => {
+        try {
+          await client.send(new DeleteTableCommand({ TableName: config.table }));
+          await waitUntilTableNotExists(
+            { client, maxWaitTime: 60, minDelay: 1, maxDelay: 3 },
+            { TableName: config.table }
+          );
+        } finally {
+          client.destroy();
+        }
+      });
+      await waitUntilTableExists({ client, maxWaitTime: 60, minDelay: 1, maxDelay: 3 }, { TableName: config.table });
+    } else t.after(() => client.destroy());
+  }
+  const opened = [];
+  const open = async (index = 0, extra = {}) => {
+    const records = await openRecordStore({ ...config, ...extra }, { root: roots[index], projectId, artifacts });
+    opened.push(records);
+    return records;
+  };
+  t.after(async () => {
+    for (const records of opened) await records.close();
+  });
+  return {
+    config,
+    roots,
+    projectId,
+    artifacts,
+    open,
+    async checkSource() {
+      if (!unchanged) return;
+      for (const [index, root] of roots.entries())
+        assert.deepEqual(
+          [
+            git(root, 'rev-parse', 'HEAD'),
+            git(root, 'write-tree'),
+            git(root, 'status', '--porcelain'),
+            git(root, 'show-ref', '--heads'),
+            await readFile(join(root, 'source.txt'), 'utf8'),
+          ],
+          unchanged[index]
+        );
+    },
+  };
+}
+
+for (const kind of providers)
+  test(`${kind}: shared record and issue contract`, async (t) => {
+    assert.ok(['files', 'git', 'postgres', 'dynamodb'].includes(kind));
+    const f = await fixture(t, kind);
+    const one = await f.open();
+    const two = await f.open(1);
+    assert.equal(await one.get('missing'), null);
+    assert.deepEqual(await one.list(''), []);
+    const first = {
+      operationId: 'create',
+      expected: [
+        { key: 'a', revision: null },
+        { key: 'b', revision: null },
+      ],
+      writes: [
+        { key: 'a', value: { second: 2, first: 1 } },
+        { key: 'b', value: ['preserved'] },
+      ],
+    };
+    const created = await one.commit(first);
+    assert.equal(created.records.length, 2);
+    assert.deepEqual((await two.get('a')).value, { first: 1, second: 2 });
+    assert.deepEqual(
+      await two.commit({
+        ...first,
+        writes: [
+          { key: 'b', value: ['preserved'] },
+          { key: 'a', value: { first: 1, second: 2 } },
+        ],
+      }),
+      created
+    );
+    await assert.rejects(
+      () => two.commit({ ...first, writes: [{ key: 'a', value: 'changed' }] }),
+      fails('STORE_OPERATION_MISMATCH')
+    );
+    await assert.rejects(
+      () => one.commit({ operationId: 'bad', expected: [], writes: [{ key: 'unbound', value: 1 }] }),
+      fails('STORE_INVALID')
+    );
+    await assert.rejects(
+      () =>
+        one.commit({
+          operationId: 'undefined',
+          expected: [{ key: 'u', revision: null }],
+          writes: [{ key: 'u', value: { missing: undefined } }],
+        }),
+      fails('STORE_INVALID')
+    );
+    await assert.rejects(
+      () =>
+        one.commit({
+          operationId: 'stale-multi',
+          expected: [
+            { key: 'a', revision: null },
+            { key: 'partial', revision: null },
+          ],
+          writes: [
+            { key: 'a', value: 'wrong' },
+            { key: 'partial', value: true },
+          ],
+        }),
+      fails('STORE_CONFLICT')
+    );
+    assert.equal(await two.get('partial'), null);
+    const initialA = await one.get('a');
+    await two.commit({
+      operationId: 'update-a',
+      expected: [{ key: 'a', revision: initialA.revision }],
+      writes: [{ key: 'a', value: 3 }],
+    });
+    assert.deepEqual(
+      await one.commit(first),
+      created,
+      'An old operation returns its original receipt after later writes.'
+    );
+    assert.equal((await two.get('a')).value, 3);
+    if (one.readSnapshot) {
+      await one.readSnapshot(async (pinned) => {
+        const before = await pinned.get('a');
+        const copied = await pinned.get('b');
+        copied.value.push('caller mutation');
+        assert.deepEqual((await pinned.get('b')).value, ['preserved']);
+        await two.commit({
+          operationId: 'during-pinned-read',
+          expected: [{ key: 'a', revision: before.revision }],
+          writes: [{ key: 'a', value: 3 }],
+        });
+        assert.equal((await pinned.get('a')).revision, before.revision);
+        assert.notEqual((await one.get('a')).revision, before.revision);
+      });
+    }
+    await assert.rejects(
+      () =>
+        one.commit({
+          operationId: 'read-dependency',
+          expected: [
+            { key: 'a', revision: initialA.revision },
+            { key: 'dependent', revision: null },
+          ],
+          writes: [{ key: 'dependent', value: 'must not land' }],
+        }),
+      fails('STORE_CONFLICT')
+    );
+    assert.equal(await two.get('dependent'), null);
+
+    await Promise.all(
+      [one, two].map((store, i) =>
+        store.commit({
+          operationId: `unrelated-${i}`,
+          expected: [{ key: `unrelated/${i}`, revision: null }],
+          writes: [{ key: `unrelated/${i}`, value: i }],
+        })
+      )
+    );
+    assert.equal((await one.list('unrelated/')).length, 2, 'Concurrent unrelated commits preserve both records.');
+
+    const race = await Promise.allSettled(
+      [one, two].map((store, i) =>
+        store.commit({
+          operationId: `racer-${i}`,
+          expected: [{ key: 'claim', revision: null }],
+          writes: [{ key: 'claim', value: { owner: i } }],
+        })
+      )
+    );
+    assert.equal(race.filter((item) => item.status === 'fulfilled').length, 1);
+    assert.equal(race.find((item) => item.status === 'rejected').reason.code, 'STORE_CONFLICT');
+    const claim = await one.get('claim');
+    const release = {
+      operationId: 'release',
+      expected: [{ key: 'claim', revision: claim.revision }],
+      writes: [{ key: 'claim', value: null }],
+    };
+    assert.deepEqual((await one.commit(release)).records, []);
+    await two.commit({
+      operationId: 'replacement',
+      expected: [{ key: 'claim', revision: null }],
+      writes: [{ key: 'claim', value: 'new owner' }],
+    });
+    await one.commit(release);
+    assert.equal((await two.get('claim')).value, 'new owner');
+    await assert.rejects(() => one.commit({ ...release, operationId: 'delayed-release' }), fails('STORE_CONFLICT'));
+    const payload = { beginning: 'retained', content: 'x'.repeat(750_000), ending: 'retained' };
+    await one.commit({
+      operationId: 'large',
+      expected: [{ key: 'large', revision: null }],
+      writes: [{ key: 'large', value: payload }],
+    });
+    assert.deepEqual((await two.get('large')).value, payload);
+    const replayLarge = await two.commit({
+      operationId: 'large',
+      expected: [{ key: 'large', revision: null }],
+      writes: [{ key: 'large', value: payload }],
+    });
+    assert.deepEqual(replayLarge.records[0].value, payload);
+    const receiptBatch = {
+      operationId: 'large-receipt',
+      expected: Array.from({ length: 20 }, (_, i) => ({ key: `batch/${i}`, revision: null })),
+      writes: Array.from({ length: 20 }, (_, i) => ({ key: `batch/${i}`, value: 'y'.repeat(10_000) })),
+    };
+    const batchResult = await one.commit(receiptBatch);
+    assert.equal(batchResult.records.length, 20);
+    assert.deepEqual(await two.commit(receiptBatch), batchResult);
+    const namespace = await f.open(0, { id: f.config.id + '-isolated' });
+    assert.equal(await namespace.get('a'), null);
+    const reopened = await f.open();
+    assert.equal((await reopened.get('a')).value, 3);
+    const lostReply = {
+      operationId: 'reply-lost-after-commit',
+      expected: [{ key: 'lost-reply', revision: null }],
+      writes: [{ key: 'lost-reply', value: { retained: true } }],
+    };
+    await one.commit(lostReply);
+    const recovered = await reopened.commit(lostReply);
+    assert.deepEqual(
+      recovered.records[0],
+      await two.get('lost-reply'),
+      'A fresh client recovers the landed operation after its original reply was discarded.'
+    );
+    const issues = await openIssueStore(f.config, { root: f.roots[0], projectId: f.projectId, artifacts: f.artifacts });
+    t.after(() => issues.close());
+    const report = Buffer.from('\uFEFF---\r\nid: test-issue\r\nunknown: kept\r\n---\r\n# Exact bytes\r\n');
+    const issueRequest = {
+      issueId: 'test-issue',
+      expectedRevision: null,
+      operationId: 'issue-create',
+      report,
+      location: 'open',
+    };
+    const original = await issues.commit(issueRequest);
+    assert.deepEqual(original.report, report);
+    const closed = await issues.commit({
+      ...issueRequest,
+      operationId: 'issue-close',
+      expectedRevision: original.revision,
+      location: 'closed',
+    });
+    assert.deepEqual(await issues.commit(issueRequest), original);
+    assert.equal((await issues.read('test-issue')).revision, closed.revision);
+    assert.deepEqual(
+      (await issues.history('test-issue')).map((item) => item.location),
+      ['open', 'closed']
+    );
+    assert.deepEqual((await issues.history('test-issue'))[1].report, report);
+    assert.equal((await issues.list({ location: 'closed' })).length, 1);
+    assert.equal((await issues.list({ location: 'archive' })).length, 0);
+    await f.checkSource();
+  });
+
+test('Postgres rejects the installed application database without a connection or exposed credentials', async () => {
+  const previous = process.env.DATABASE_URL;
+  process.env.DATABASE_URL = 'postgresql://app:secret@localhost/timey_app?options=-csearch_path%3Dapp';
+  try {
+    assert.throws(
+      () =>
+        createFactoryPool(
+          {
+            connectionString: 'postgresql://factory:another-secret@localhost/timey_app?options=-csearch_path%3Dfactory',
+          },
+          { root: tmpdir() }
+        ),
+      (error) => error.code === 'STORE_INVALID' && !error.message.includes('secret')
+    );
+    assert.throws(
+      () =>
+        createFactoryPool(
+          { connectionString: 'postgresql://factory:another-secret@localhost/postgres' },
+          { root: tmpdir() }
+        ),
+      fails('STORE_INVALID')
+    );
+  } finally {
+    if (previous === undefined) delete process.env.DATABASE_URL;
+    else process.env.DATABASE_URL = previous;
+  }
+});

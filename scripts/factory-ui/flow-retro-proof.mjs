@@ -1,9 +1,10 @@
 import { readFileSync, realpathSync } from 'node:fs';
-import { basename, isAbsolute, relative, resolve, sep } from 'node:path';
+import { basename, isAbsolute, relative, sep } from 'node:path';
 import { conversationTimeline } from './conversation-view.mjs';
 import { readQueue } from './data.mjs';
 import { digest, requireThat } from './common.mjs';
 import { redactValue } from './activity.mjs';
+import { evidencePath } from './stores/evidence.mjs';
 
 const maxArtifacts = 12;
 const maxExcerpt = 1800;
@@ -46,7 +47,7 @@ function verifyArtifact(root, artifact) {
 
 function readArtifact(root, artifact) {
   try {
-    const actual = realpathSync(resolve(artifact.path));
+    const actual = realpathSync(evidencePath(root, artifact.path, artifact.sha256));
     if (!insideCheckout(root, actual)) return { status: 'rejected-outside-checkout' };
     const bytes = readFileSync(actual);
     if (digest(bytes) !== artifact.sha256) return { status: 'digest-mismatch' };

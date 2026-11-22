@@ -43,7 +43,10 @@
     captureId: null,
     checkedBlock: null,
     toastTimer: null,
+    storeSelection: null,
   };
+  const issueStoreUI = window.createIssueStoreUI({ request: json, post, changed: () => load(true) });
+  const issueOwnershipUI = window.createIssueOwnershipUI({ request: json, post, changed: () => load(true) });
   const kinds = {
     request: { icon: '💬', color: '#aaa49b', description: 'The goal and the evidence that will show it is done.' },
     sharpen: { icon: '◇', color: '#c6b66b', description: 'Refine the request and agree on what to do.' },
@@ -257,7 +260,13 @@
 
   function renderErrors() {
     const waiting = serverControlUI.isWaitingForServer();
-    const message = waiting ? 'Waiting for server…' : state.error || state.connectionError;
+    const message = waiting
+      ? 'Waiting for server…'
+      : state.error ||
+        state.connectionError ||
+        (storeUnavailable()
+          ? 'Shared storage is unavailable. Browse cached history and keep local drafts; shared changes and new runs are paused.'
+          : '');
     if (document.documentElement.dataset.projectIssueRequestEmbed === 'true') {
       $('request-embed-error').hidden = !message;
       view.text($('request-embed-error-message'), message);
@@ -265,7 +274,39 @@
     }
     $('error-banner').hidden = !message;
     view.text($('error-message'), message);
-    $('dismiss-error').hidden = waiting;
+    $('dismiss-error').hidden = waiting || storeUnavailable();
+  }
+
+  function storeUnavailable() {
+    return Boolean((state.index?.storeStatus || state.view?.storeStatus)?.unavailable);
+  }
+
+  function localStoreControl(action) {
+    return state.view?.issue?.localOwner && ['stop', 'pause'].includes(action);
+  }
+
+  function applyStoreAvailability() {
+    if (!storeUnavailable()) return;
+    document
+      .querySelectorAll(
+        '[data-action], [data-add-kind], #capture-submit, #export-flow-submit, #folder-form button[type="submit"], #rename-issue, #move-starting-branch, #starting-branch, #target-update-menu, #merge-state-menu, #issue-input-continue, #run-block, #inspector-body button[type="submit"]'
+      )
+      .forEach((button) => {
+        if (!localStoreControl(button.dataset.action)) button.disabled = true;
+      });
+    document
+      .querySelectorAll(
+        '#issue-flow-picker, #issue-settings-form, #issue-store-form, #rename-issue-form, #issue-grouping, [data-skill-picker]'
+      )
+      .forEach((element) => {
+        element.inert = true;
+      });
+    document.querySelectorAll('#inspector-body input, #inspector-body select').forEach((field) => {
+      field.disabled = true;
+    });
+    $('issue-playback').disabled ||= !localStoreControl(playbackAction(state.view?.flow?.blocks || []));
+    $('worktree-menu').querySelector('option[value="update"]').disabled = true;
+    updateIssueDecisionControls(true);
   }
 
   function toast(message) {
@@ -387,6 +428,7 @@
       $('connection-status').innerHTML = '<span class="connection-dot"></span> Live · 2s';
       if (announce) state.error = '';
       applyView(result);
+      void refreshIssueStore();
       if (announce) toast('Saved flow refreshed.');
     } catch (error) {
       if (error.name === 'AbortError' || sequence !== state.sequence || serverControlUI.isWaitingForServer()) return;
@@ -422,6 +464,10 @@
 
   async function action(name, fields = {}, options = {}) {
     if (state.pending) return null;
+    if (storeUnavailable() && !localStoreControl(name)) {
+      renderErrors();
+      return null;
+    }
     if (!options.global && state.view?.issue?.readOnly && !state.view.issue.readOnlyActions.includes(name)) {
       showError(state.view.issue.readOnlyReason);
       return null;
@@ -537,6 +583,8 @@
     $('worktree-menu').disabled = busy || state.view?.environment?.worktreeExists !== true;
     $('merge-state-menu').disabled = busy || frozen || Boolean(state.view?.flow?.blocks.some(isRunning));
     updateIssueDecisionControls(busy);
+    $('issue-store-form').inert = busy;
+    applyStoreAvailability();
   }
 
   function updateIssueDecisionControls(busy) {
@@ -1015,6 +1063,7 @@
       return;
     }
     $('issue-settings').hidden = false;
+    issueOwnershipUI.render(view.issue, view.storeStatus?.unavailable).catch((error) => showError(error.message));
     const fields = settings.fields || [];
     const values = settings.values || {};
     $('issue-settings-form').querySelector('button[type="submit"]').disabled = Boolean(settings.frozen);
@@ -1410,6 +1459,10 @@
   async function loadDestinationBranches() {
     const dialog = $('destination-dialog');
     const result = await action('destination-branches');
+    const store = await issueStoreUI.fill($('destination-issue-store'), {
+      issueId: state.issueId,
+    });
+    $('destination-issue-store').dataset.saved = store.selected;
     if (!dialog.open) return;
     if (result) destinationChecks.set(state.issueId, result);
     renderGraph();
@@ -2457,8 +2510,9 @@
     path.textContent = path.dataset.directory + '/' + ($('export-flow-id').value || 'flow-name') + '.md';
   }
 
-  function openCapture(folder) {
+  async function openCapture(folder) {
     state.captureNote = null;
+    if (!state.index.folders.length) await load(true);
     const selected =
       typeof folder === 'string'
         ? folder
@@ -2475,8 +2529,54 @@
     $('capture-error').textContent = !selected ? state.index.defaultFolderError || '' : '';
     $('capture-error').hidden = !$('capture-error').textContent;
     $('capture-dialog').showModal();
+    void loadCaptureStore();
     if (!$('capture-folder').value) $('capture-folder').focus();
     else $('capture-description').focus();
+  }
+
+  async function loadCaptureStore() {
+    const submit = $('capture-submit');
+    submit.disabled = true;
+    try {
+      await issueStoreUI.fill($('capture-issue-store'), { folder: $('capture-folder').value });
+      submit.disabled = !$('capture-issue-store').value;
+    } catch (error) {
+      $('capture-error').textContent = error.message;
+      $('capture-error').hidden = false;
+    }
+  }
+
+  async function refreshIssueStore(force = false) {
+    const id = state.issueId;
+    if (!id || (!force && state.storeSelection === id)) return;
+    state.storeSelection = id;
+    try {
+      const data = await issueStoreUI.fill($('issue-store'), { issueId: id });
+      if (id !== state.issueId) return;
+      $('issue-store').dataset.saved = data.selected;
+      $('issue-store-source').textContent = 'Saved home · ' + data.selected;
+      $('move-issue-store').disabled = true;
+    } catch (error) {
+      state.storeSelection = null;
+      $('issue-store-error').textContent = error.message;
+      $('issue-store-error').hidden = false;
+    }
+  }
+
+  async function moveIssueStore(storeId) {
+    const options = await issueStoreUI.read({ issueId: state.issueId, migrationStoreId: storeId });
+    const issueIds = options.moveGroup?.issueIds || [state.issueId];
+    const subject =
+      issueIds.length > 1
+        ? options.moveGroup?.masterId
+          ? `the master issue and its ${issueIds.length - 1} attached sub-issues (${issueIds.length} issues)`
+          : `${issueIds.length} issues in the pending storage move`
+        : 'this issue';
+    if (!confirm(`Move ${subject} to the selected store? Existing history and references are retained.`)) return false;
+    await issueStoreUI.move(state.issueId, storeId, { issueIds });
+    await refreshIssueStore(true);
+    toast('Issue store move confirmed.');
+    return true;
   }
 
   function openPalette() {
@@ -3325,6 +3425,16 @@
       if (event.submitter?.id !== 'save-destination') return;
       event.preventDefault();
       const branch = $('destination-branch').value || null;
+      const storeId = $('destination-issue-store').value;
+      if (!storeId) return;
+      if (storeId !== $('destination-issue-store').dataset.saved) {
+        try {
+          if (!(await moveIssueStore(storeId))) return;
+        } catch (error) {
+          $('destination-message').textContent = error.message;
+          return;
+        }
+      }
       if (await action('destination', { branch })) $('destination-dialog').close();
       else await loadDestinationBranches();
     });
@@ -3558,10 +3668,30 @@
     $('folder-name').focus();
   });
 
+  $('capture-folder').addEventListener('change', () => void loadCaptureStore());
+  $('issue-store').addEventListener('change', () => {
+    $('move-issue-store').disabled =
+      !$('issue-store').value || $('issue-store').value === $('issue-store').dataset.saved;
+  });
+  $('issue-store-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (state.pending || !$('issue-store').value) return;
+    $('issue-store-error').hidden = true;
+    try {
+      $('issue-store-form').inert = true;
+      await moveIssueStore($('issue-store').value);
+    } catch (error) {
+      $('issue-store-error').textContent = error.message;
+      $('issue-store-error').hidden = false;
+    } finally {
+      $('issue-store-form').inert = false;
+    }
+  });
+
   $('capture-form').addEventListener('submit', async (event) => {
     event.preventDefault();
     const description = $('capture-description').value.trim();
-    if (!description || !$('capture-folder').value || state.pending) return;
+    if (!description || !$('capture-folder').value || !$('capture-issue-store').value || state.pending) return;
     state.captureId ||= crypto.randomUUID();
     $('capture-error').hidden = true;
     const result = await action(
@@ -3571,6 +3701,7 @@
         description,
         type: $('capture-type').value,
         folder: $('capture-folder').value,
+        issueStore: $('capture-issue-store').value,
         needsApproval: $('capture-needs-approval').checked,
         runRetro: $('capture-retro').checked,
       },

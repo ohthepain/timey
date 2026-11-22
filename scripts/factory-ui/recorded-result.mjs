@@ -1,4 +1,5 @@
 import { readFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { evidencePath } from './stores/evidence.mjs';
 import { dirname, join, relative, isAbsolute } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
@@ -46,16 +47,17 @@ function proseRevision(issue) {
   return issue.content.match(/Committed as\s+`?([a-f0-9]{40})/i)?.[1] || null;
 }
 function recordedBytes(queue, artifact, entry) {
-  const current = matchingBytes(entry);
+  const current = matchingBytes(queue.root, entry);
   if (current) return current;
-  if (mutableContext(queue, entry)) return readFileSync(entry.path);
+  if (mutableContext(queue, entry)) return readFileSync(evidencePath(queue.root, entry.path));
   const bytes = committedBytes(artifact, entry);
   requireThat(matchesBytes(bytes, entry), 'Supporting evidence changed or is missing: ' + entry.path);
   return bytes;
 }
-function matchingBytes(entry) {
-  if (!existsSync(entry.path)) return null;
-  const bytes = readFileSync(entry.path);
+function matchingBytes(root, entry) {
+  const path = evidencePath(root, entry.path, entry.sha256);
+  if (!existsSync(path)) return null;
+  const bytes = readFileSync(path);
   return digest(bytes) === entry.sha256 ? bytes : null;
 }
 function matchesBytes(bytes, entry) {

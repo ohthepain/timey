@@ -4,7 +4,9 @@ status: accepted
 
 # Separate Issue, Coordination, and Artifact stores
 
-Record these as accepted design decisions. Implementation remains paused.
+These accepted decisions define the implemented storage boundaries. See the
+[configuration and migration guide](../agents/issue-stores.md) for setup and
+provider checks.
 
 An issue selects one Issue store for its report, lifecycle state, and metadata.
 Each project selects one Coordination store for claims and full flow and attempt
@@ -37,7 +39,7 @@ Include checked migrations and shared archives. Keep each master and its
 sub-issues in one configured Issue store. This revises the future local-history
 scope of [ADR 0019](0019-share-issue-claims-on-the-queue-branch.md) and archive
 policy of [ADR 0012](0012-retain-closed-issues-and-archive-locally.md). Their
-existing runtime behavior remains in effect until this design is implemented.
+shared-store paths now retain archives and history across connected runners.
 
-The [draft store specification](../plans/issue-stores.md) records the user
-decisions, resource preparation, shared contracts, and remaining design work.
+The [store specification](../plans/issue-stores.md) records the user decisions,
+resource preparation, and shared contracts.

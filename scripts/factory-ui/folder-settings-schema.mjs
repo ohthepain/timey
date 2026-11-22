@@ -5,6 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { parse } from 'yaml';
 import { uiDirectory } from './ui-source.mjs';
 import { requireThat } from './common.mjs';
+import { issueStoreChoices, readStoreConfig } from './stores/config.mjs';
 
 const info = (path) => lstatSync(path, { throwIfNoEntry: false });
 const reference = resolve(uiDirectory(), '../../factory/system/folder.md');
@@ -23,6 +24,7 @@ function personalSkillsDirectory() {
 }
 
 function dynamicChoices(project, kind) {
+  if (kind === 'issue-store') return issueStoreChoices(project);
   if (kind === 'skill')
     return [
       resolve(uiDirectory(), '../../.agents/skills'),
@@ -80,6 +82,9 @@ export function folderSettingsFields(project, { branchChoices = true } = {}) {
     return {
       key,
       ...field,
+      ...(field.kind === 'issue-store'
+        ? { fallback: readStoreConfig(project).issueDefault, fallbackSource: 'Project store default' }
+        : {}),
       choices: choices.filter(({ value }, index) => choices.findIndex((entry) => entry.value === value) === index),
     };
   });

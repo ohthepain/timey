@@ -6,6 +6,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { appendReview } from './review-result.mjs';
 import { digest, requireThat } from './common.mjs';
+import { afterReportWrite } from './stores/report-access.mjs';
 
 // The existing append path locks the report, compares exact original bytes and
 // preserves lifecycle metadata. Only the separate Save and continue choice invokes Progress.
@@ -34,18 +35,22 @@ export function recordDiscussion(service, queue, issue, intent, continueWork = f
     notes: `Human-approved discussion output; original text may be model-written. This does not complete a workflow stage, approve a plan or imply acceptance.\n\nSelected-output SHA-256: ${intent.hash}\nReport basis SHA-256: ${digest(issue.content)}\nSource revision: ${queue.head}\n\n${intent.text}`,
     remaining: ['Human judgment, workflow permissions and acceptance remain separate.'],
   };
-  appendReview(
-    service.root,
-    issue,
-    result,
-    { authorization: { kind: 'direct-user', operation: 'record-discussion-output' } },
-    [],
-    null
+  return afterReportWrite(
+    appendReview(
+      service.root,
+      issue,
+      result,
+      { authorization: { kind: 'direct-user', operation: 'record-discussion-output' } },
+      [],
+      null
+    ),
+    () => {
+      recordGeneralDecision(service, queue, issue, intent);
+      refreshGrillingAssessment(service, issue, intent.stage);
+      if (continueWork) return continueAfterGrilling(service, issue, result.stage_grilling);
+      return { recorded: true };
+    }
   );
-  recordGeneralDecision(service, queue, issue, intent);
-  refreshGrillingAssessment(service, issue, intent.stage);
-  if (continueWork) return continueAfterGrilling(service, issue, result.stage_grilling);
-  return { recorded: true };
 }
 
 function recordGeneralDecision(service, queue, issue, intent) {

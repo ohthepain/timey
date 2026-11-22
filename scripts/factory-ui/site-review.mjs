@@ -7,6 +7,7 @@ import { randomUUID } from 'node:crypto';
 import { readQueue } from './data.mjs';
 import { digest, requireThat, writeJson } from './common.mjs';
 import { appendCompletion } from '../factory-completion.mjs';
+import { afterReportWrite } from './stores/report-access.mjs';
 
 const execute = promisify(execFile);
 const applications = {
@@ -174,27 +175,31 @@ export function createSiteReviews(service, launch = openBrowser, choices = brows
         opened: receipt,
         at: new Date().toISOString(),
       });
-      appendCompletion(
-        service.root,
-        issue,
-        {
-          summary: resultSummary(input.status),
-          notes: input.result,
-          remaining: ['Technical verification, integration and final acceptance remain separate.'],
-          human_check_update: {
-            ...check,
-            status: input.status,
-            revision: target.revision,
-            result: input.result,
-            evidence_refs: [path],
+      return afterReportWrite(
+        appendCompletion(
+          service.root,
+          issue,
+          {
+            summary: resultSummary(input.status),
+            notes: input.result,
+            remaining: ['Technical verification, integration and final acceptance remain separate.'],
+            human_check_update: {
+              ...check,
+              status: input.status,
+              revision: target.revision,
+              result: input.result,
+              evidence_refs: [path],
+            },
           },
-        },
-        { base: target.revision, authorization: { kind: 'direct-user', operation: 'site-review' } },
-        [{ path, sha256: digest(readFileSync(path)) }],
-        null
+          { base: target.revision, authorization: { kind: 'direct-user', operation: 'site-review' } },
+          [{ path, sha256: digest(readFileSync(path)) }],
+          null
+        ),
+        () => {
+          opened.delete(identity);
+          return { recorded: true, status: input.status };
+        }
       );
-      opened.delete(identity);
-      return { recorded: true, status: input.status };
     },
   };
 }
