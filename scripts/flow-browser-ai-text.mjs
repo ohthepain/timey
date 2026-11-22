@@ -205,6 +205,17 @@ export async function aiTextBrowserChecks({ page, service, project, poll, screen
   await page.locator('[data-session-id="ai-text-home"]').click();
   const homeMessage = page.locator('#home-automate-messages [data-ai-text]');
   await homeMessage.hover();
+  const homeControls = await homeMessage.evaluate((node) => {
+    const block = node.getBoundingClientRect();
+    const toolbar = node.querySelector('[data-ai-controls]').getBoundingClientRect();
+    return { block: block.toJSON(), toolbar: toolbar.toJSON() };
+  });
+  assert.ok(
+    homeControls.toolbar.bottom <= homeControls.block.bottom,
+    'Automate me message must contain its toolbar so scrolling cannot hide the hovered controls: ' +
+      JSON.stringify(homeControls)
+  );
+  proof.homeControls = homeControls;
   await homeMessage.locator('[data-ai-action="copy"]').click();
   assert.equal(await page.evaluate(() => navigator.clipboard.readText()), source);
   const draftField = page.locator('#home-automate-content');

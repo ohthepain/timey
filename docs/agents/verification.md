@@ -45,7 +45,9 @@ read-only rewrite, invalid input and provider failure.
 `node scripts/flow-browser.mjs --ai-text` checks top-right hover controls, real
 clipboard contents, the persistent
 blue bro toggle, restoring original text, caret/end insertion and hovered-field
-hotkey routing. It saves `ai-text-controls.png` and `ai-text-controls.json` in its
+hotkey routing. It also checks that short Automate me messages contain their
+hover toolbar so the conversation scroller cannot clip its buttons or interrupt Copy.
+It saves `ai-text-controls.png` and `ai-text-controls.json` in its
 evidence directory. The fixture injects model output and speech recognition.
 Live model quality and physical microphone recognition are not measured by it.
 The Factory refresh browser scenario checks that incoming AI text still follows
@@ -60,12 +62,17 @@ empty commits. `node scripts/flow-browser.mjs --no-changes` drives the no-change
 Publish preview, Cannot Reproduce suggestion, cancellation and explicit closure
 in a disposable project. It saves `no-changes-close-offer.png`; no live issue is
 closed and no GitHub publication occurs.
-The no-change scenario uses its own injected cleanup executor and waits for
-completed cleanup before restoring the shared executor. It removes lifecycle
-configuration only when the scenario created it. This preserves later scenarios'
-assertions that no work has started and lifecycle setup is still required. It also
-restores the disposable project's Git configuration after adding its publication remote. Run
-`node scripts/flow-browser.mjs --no-changes --folder-settings` to check that boundary.
+The no-change and folder-settings scenarios use `withBrowserScenarioFixture`.
+It snapshots executor and provider state, Git configuration, and lifecycle files.
+It waits for execution and cleanup tasks, including tasks spawned by completion,
+before restoring the snapshot after success or failure.
+Run `node --test scripts/flow-browser-scenario-fixture.check.mjs` for injected
+failure and chained-cleanup coverage with both existing and absent configuration.
+Run the scenarios individually with `--no-changes` and `--folder-settings`.
+Run `node scripts/flow-browser.mjs --no-changes --folder-settings` together.
+Add `--reverse-fixture-scenarios` to run folder settings before no-change publication.
+The main browser workflow intentionally shares state between checks and does not
+use this boundary. Independent scenarios opt in at their exported entry point.
 The missing-lifecycle browser scenario removes the disposable project's lifecycle
 file before opening settings, even when earlier scenarios initialized it.
 

@@ -342,3 +342,7 @@
     padding: 20px;
   }
 }
+
+[data-home-message] > [data-ai-text] {
+  min-height: 44px;
+}
