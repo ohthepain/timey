@@ -89,3 +89,5 @@ lease; it changes no repository or global Git settings. Real HTTP regressions
 cover rejected chunked uploads and a lost acknowledgement with a newer peer tip.
 Coordination migration also excludes Issue records and raw Artifact bodies when
 all three roles share one physical Git namespace.
+Local server pause, restart, and restart cancellation remain independent of store
+bootstrap and availability. Shared issue actions retain authoritative admission.

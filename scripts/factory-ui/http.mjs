@@ -241,6 +241,7 @@ function reportChatAction(service, value) {
 }
 
 async function prepareStoreMutation(service, path, value) {
+  if (['/api/server-pause', '/api/server-restart', '/api/server-cancel-restart'].includes(path)) return;
   if (localClassicControl(service, path, value)) return;
   if (
     path === '/api/flow-action' &&
