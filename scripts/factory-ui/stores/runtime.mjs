@@ -493,7 +493,8 @@ async function hydrateManifest(runtime, record) {
   assertStore(/^[\w-]+$/.test(id), 'STORE_INVALID_ID', 'The evidence issue identity is invalid.');
   runtime.evidence ||= new Map();
   const cached = runtime.evidence.get(id);
-  if (cached?.revision === record.revision && cached.resolver.gaps.length === 0) return cached.resolver;
+  if (cached?.revision === record.revision && cached.resolver.files.length === record.value.files.length)
+    return cached.resolver;
   const directory = join(runtime.service.root, '.issues/store-runtime/evidence', id);
   const resolver = await hydrateEvidence({
     manifest: record.value,

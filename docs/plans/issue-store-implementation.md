@@ -91,3 +91,6 @@ Coordination migration also excludes Issue records and raw Artifact bodies when
 all three roles share one physical Git namespace.
 Local server pause, restart, and restart cancellation remain independent of store
 bootstrap and availability. Shared issue actions retain authoritative admission.
+Verified evidence now reuses an unchanged manifest's local cache even when its
+history includes permanent gaps. New transport gaps still retry, and a changed
+manifest revision refreshes the materialized evidence.

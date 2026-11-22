@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, readFileSync, readdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdirSync, readFileSync, readdirSync, writeFileSync, rmSync, statSync, utimesSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { gitFixture } from './git-fixture.mjs';
@@ -221,4 +221,87 @@ void test('bootstrap retains nested proof bytes and hydrated evidence survives s
   const [cached] = await hydrateProjectEvidence(f.service, null, { path: proofPath });
   assert.equal(cached.gaps.length, 0);
   assert.equal(readFileSync(evidencePath(f.root, proofPath), 'utf8'), summary);
+});
+
+async function retainedEvidenceFixture(t) {
+  const f = fixture(t);
+  const directory = join(f.root, '.issues/evidence/cache-reuse');
+  mkdirSync(directory, { recursive: true });
+  const available = join(directory, 'available.txt');
+  const historical = join(directory, 'removed-historical-proof.txt');
+  writeFileSync(available, 'Verified retained evidence.\n');
+  const flow = {
+    version: 1,
+    issueId: '20261122-runtime',
+    revision: 0,
+    blocks: [
+      { kind: 'work', attempts: [{ status: 'completed', evidence: [{ path: available }, { path: historical }] }] },
+    ],
+  };
+  writeFileSync(join(f.root, '.issues/flows/20261122-runtime/flow.json'), JSON.stringify(flow));
+  const stores = await ensureProjectStores(f.service, { fresh: true });
+  const record = await stores.records.get('evidence/20261122-runtime');
+  assert.equal(record.value.files.length, 1);
+  assert.equal(record.value.gaps.length, 1);
+  return { ...f, stores, record, available };
+}
+
+void test('unchanged evidence with permanent historical gaps reuses verified materialization without rewriting files', async (t) => {
+  const f = await retainedEvidenceFixture(t);
+  const { stores, record, available } = f;
+  const [first] = await hydrateProjectEvidence(f.service, '20261122-runtime');
+  assert.equal(first.files.length, 1);
+  assert.equal(first.gaps.length, 1);
+  const path = first.resolve(available);
+  utimesSync(path, new Date('2001-01-01T00:00:00Z'), new Date('2001-01-01T00:00:00Z'));
+  const before = statSync(path, { bigint: true });
+  const [second] = await hydrateProjectEvidence(f.service, '20261122-runtime');
+  const after = statSync(path, { bigint: true });
+  assert.equal(after.ino, before.ino);
+  assert.equal(after.mtimeNs, before.mtimeNs);
+  assert.equal(second, first, 'Permanent manifest gaps cannot be recovered by rehydrating the same revision.');
+  assert.equal(second.read(available).toString(), 'Verified retained evidence.\n');
+  const addedPath = join(f.root, '.issues/evidence/newly-retained.txt');
+  const ref = await stores.artifacts.put({ body: 'New manifest evidence.\n' });
+  await stores.coordination.commit(
+    'append-manifest-file',
+    [{ key: record.key, revision: record.revision }],
+    [
+      {
+        key: record.key,
+        value: {
+          ...record.value,
+          files: [...record.value.files, { path: addedPath, sha256: ref.sha256, bytes: ref.bytes, ref }],
+        },
+      },
+    ]
+  );
+  const [changed] = await hydrateProjectEvidence(f.service, '20261122-runtime');
+  assert.notEqual(changed, first);
+  assert.equal(changed.files.length, 2);
+  assert.equal(changed.gaps.length, 1);
+  assert.equal(changed.read(addedPath).toString(), 'New manifest evidence.\n');
+});
+
+void test('unchanged manifests retry newly unavailable or corrupt artifacts while preserving historical gaps', async (t) => {
+  for (const failure of ['unavailable', 'corrupt'])
+    await t.test(failure, async (t) => {
+      const f = await retainedEvidenceFixture(t);
+      const get = f.stores.artifacts.get;
+      f.stores.artifacts.get = async () => {
+        if (failure === 'unavailable') throw Error('Temporary artifact outage.');
+        return Buffer.from('Corrupt transport bytes.');
+      };
+      const [incomplete] = await hydrateProjectEvidence(f.service, '20261122-runtime');
+      assert.equal(incomplete.files.length, 0);
+      assert.equal(incomplete.gaps.length, 2);
+      f.stores.artifacts.get = get;
+      const [recovered] = await hydrateProjectEvidence(f.service, '20261122-runtime');
+      assert.notEqual(recovered, incomplete);
+      assert.equal(recovered.files.length, 1);
+      assert.equal(recovered.gaps.length, 1);
+      assert.equal(recovered.read(f.available).toString(), 'Verified retained evidence.\n');
+      const [cached] = await hydrateProjectEvidence(f.service, '20261122-runtime');
+      assert.equal(cached, recovered);
+    });
 });
