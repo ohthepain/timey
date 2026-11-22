@@ -122,6 +122,14 @@ import { branchStartingPoint, captureStartingPoint, flowBranches } from './flow-
 import { FlowFolderSelection } from './flow-folder-selection.mjs';
 import { FlowOvernight } from './flow-overnight.mjs';
 
+function folderSettingsSnapshot() {
+  const settings = new Map();
+  return (root, folder) => {
+    if (!settings.has(folder)) settings.set(folder, resolveFolderSettings(root, folder));
+    return settings.get(folder);
+  };
+}
+
 const hiddenRepoFolders = new Set(['.git', '.issues', 'node_modules', '.next', '.turbo', 'coverage', 'dist', 'build']);
 const confirmationBlocks = new Set(['close', 'delete-worktree']);
 
@@ -403,14 +411,19 @@ class IssueFlows {
     requireThat(issue, 'This issue no longer exists. Choose a saved issue.');
     return issue;
   }
-  read(issue, catalog = this.catalog.read().entries, folderSettings = readIssueFolderSettings(this.service.root)) {
+  read(
+    issue,
+    catalog = this.catalog.read().entries,
+    folderSettings = readIssueFolderSettings(this.service.root),
+    resolveFolder
+  ) {
     const flow = this.store.read(issue, flowTarget(this.service.root), catalog);
     if (mergedDelivery(flow)) return flow;
     const fallback = folderSettings.find(({ id }) => id === this.inboxFolder.id)?.name || this.inboxFolder.name;
     if (Object.hasOwn(issue, 'folder_id'))
       flow.folder = folderSettings.find(({ id }) => id === issue.folder_id)?.name || flow.folder || fallback;
     flow.folder ||= fallback;
-    const settings = this.issueSettings(issue, flow);
+    const settings = this.issueSettings(issue, flow, resolveFolder);
     flow.resolvedBranch = settings.values.branch;
     if (typeof issue.run_retro === 'boolean') requestBlock(flow).data.runRetro = issue.run_retro;
     setRetroBlock(flow, catalog);
@@ -424,25 +437,26 @@ class IssueFlows {
     adoptIdleInvestigation(this, issue, flow, catalog);
     return flow;
   }
-  issueSettings(issue, flow) {
+  issueSettings(issue, flow, resolveFolder) {
     if (isInvestigation(issue, flow) && !this.active.has(issue.id))
       return resolveIssueExecutionSettings(
         this.service.root,
         issue,
         { ...flow, executionSettings: undefined, destination: undefined },
-        { started: false }
+        { started: false, resolveFolder }
       );
     return resolveIssueExecutionSettings(this.service.root, issue, flow, {
       started: executionStarted(this.service, flow),
+      resolveFolder,
     });
   }
-  groupEligible(issue, flow) {
+  groupEligible(issue, flow, resolveFolder = resolveFolderSettings) {
     if (!this.folderSelection.eligible(issue, flow)) return false;
     try {
-      const folder = resolveFolderSettings(this.service.root, flow.folder);
+      const folder = resolveFolder(this.service.root, flow.folder);
       return (
         !folder.errors.length &&
-        !this.issueSettings(issue, flow).errors.length &&
+        !this.issueSettings(issue, flow, resolveFolder).errors.length &&
         deliveryTarget(flow).branch === folder.values.branch
       );
     } catch {
@@ -475,7 +489,7 @@ class IssueFlows {
     const needsInitialReport = id && !this.issues(id).length;
     return this.service.sharedIssues.refreshInBackground(Boolean(needsInitialReport));
   }
-  indexIssue(issue, flow, issues) {
+  indexIssue(issue, flow, issues, resolveFolder) {
     const activeBlock = flow.blocks.find((block) =>
       ['running', 'stopping', 'in-progress'].includes(block.attempts.at(-1)?.status)
     );
@@ -495,7 +509,7 @@ class IssueFlows {
       folderLocked: Boolean(flow.folderLocked),
       readOnly: Boolean(mergedDelivery(flow)),
       folderEligible: this.folderSelection.eligible(issue, flow),
-      groupEligible: this.groupEligible(issue, flow),
+      groupEligible: this.groupEligible(issue, flow, resolveFolder),
       resolvedBranch: deliveryTarget(flow).branch,
       activeBlock: activeBlock ? { id: activeBlock.id, kind: activeBlock.kind } : null,
       humanInput: availableHumanInput(issue, flow),
@@ -521,9 +535,12 @@ class IssueFlows {
       this.service.root,
       requestOnly ? {} : { includeCopies: true, includeBroken: true }
     );
+    const resolveFolder = folderSettingsSnapshot();
     const index = requestOnly
       ? []
-      : issues.map((issue) => this.indexIssue(issue, this.read(issue, catalog, folderSettings), issues));
+      : issues.map((issue) =>
+          this.indexIssue(issue, this.read(issue, catalog, folderSettings, resolveFolder), issues, resolveFolder)
+        );
     const data = {
       project: basename(this.service.root),
       sharedQueueWarning,
@@ -554,11 +571,11 @@ class IssueFlows {
     }
     if (!id) return data;
     const issue = this.selected(id);
-    const observedFlow = this.read(issue, catalog);
+    const observedFlow = this.read(issue, catalog, undefined, resolveFolder);
     const environment = await this.observer.observe(observedFlow);
     const savedFlow = this.observedDelivery(issue, observedFlow, environment, catalog);
     const flow = this.visibleFlow(savedFlow);
-    const issueSettings = this.issueSettings(issue, savedFlow);
+    const issueSettings = this.issueSettings(issue, savedFlow, resolveFolder);
     assignBlockSkills(flow, catalog, issueSettings);
     const flowDefinitions = requestOnly ? null : this.flowDefinitionOptions(flow, catalog);
     const legacyRun = this.service.store?.runs?.findLast(
@@ -586,7 +603,7 @@ class IssueFlows {
     this.suggestTargetUpdate(flow, environment, catalog);
     const issuesWithSelected = issues.some((entry) => entry.id === id) ? issues : [...issues, issue];
     const selectedRow = requestOnly
-      ? this.indexIssue(issue, savedFlow, issuesWithSelected)
+      ? this.indexIssue(issue, savedFlow, issuesWithSelected, resolveFolder)
       : selectedFlowRow(data.issues, id);
     if (requestOnly) data.issues = [selectedRow];
     if (!['closed', 'needs-approval'].includes(selectedRow.status) && !this.active.has(id)) {

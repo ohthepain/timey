@@ -24,6 +24,10 @@ progress-save and group-eligibility paths over five alternating runs. Its
 disposable project contains 27 issues and two output streams. The JSON at `PATH`
 retains HTTP index latency, callback time, exact persisted output bytes and errors.
 This isolates local server work and does not measure model or GitHub latency.
+`node --test scripts/flow-view-settings.check.mjs` checks that each view uses its
+own folder settings snapshot, issue overrides stay separate, edits appear in the
+next view, and started work retains its frozen settings. The folder-settings
+checks also reject grouping after its preview's settings change.
 
 `node --test scripts/factory-server-control.check.mjs` checks that No new actions
 allows chat requests across issue, project, report, temporary, and coordinator
