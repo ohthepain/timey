@@ -2505,6 +2505,13 @@ class IssueFlows {
     if (['running', 'stopping'].includes(attempt.status)) attempt.lastActiveAt = new Date().toISOString();
     this.store.stage(reconcileInvestigationFindings(flow, block), flow.revision);
   }
+  changeAttemptStep(issue, blockId, attemptId, step) {
+    this.changeAttempt(issue, blockId, attemptId, (current) => {
+      if (step === current.step || current.status === 'stopping' || current.inputRequestedAt) return;
+      current.step = step;
+      current.stepStartedAt = new Date().toISOString();
+    });
+  }
   async execute(issue, flow, blockId, attemptId, controller, input, definition) {
     const block = flow.blocks.find((item) => item.id === blockId);
     return withDiagnosticContext(this.service.root, { issueId: issue.id, step: block.kind, attemptId, blockId }, () =>
@@ -2595,12 +2602,7 @@ class IssueFlows {
                   current.summary = String(text).trim().split('\n').at(-1)?.slice(0, 500) || current.summary;
                 });
               },
-              onStep: (step) =>
-                this.changeAttempt(issue, blockId, attemptId, (current) => {
-                  if (step === current.step || current.status === 'stopping' || current.inputRequestedAt) return;
-                  current.step = step;
-                  current.stepStartedAt = new Date().toISOString();
-                }),
+              onStep: (step) => this.changeAttemptStep(issue, blockId, attemptId, step),
               onInputRequired: () =>
                 this.changeAttempt(issue, blockId, attemptId, (current) => {
                   current.inputRequestedAt ??= new Date().toISOString();

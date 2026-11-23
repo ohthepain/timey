@@ -1735,6 +1735,50 @@ test('Update Branch shows the worker decision when its response leaves conflicts
   await assert.rejects(f.run('update-branch'), /Decision needed: include or exclude the installed agent tooling/);
 });
 
+for (const dependencyProblem of [
+  'installed dependencies do not match the snapshot lockfile.',
+  'installed dependency lock missing: node_modules/.pnpm/lock.yaml.',
+]) {
+  test(`Update Branch stops conflict retries when dependency preflight reports ${dependencyProblem}`, async (t) => {
+    const f = await branchUpdateFixture(t, 'source.txt');
+    const target = f.advance();
+    writeFileSync(join(f.checkout, 'source.txt'), 'Issue edit.\n');
+    f.work('commit', '-am', 'Issue change');
+    const head = f.work('rev-parse', 'HEAD');
+    const hooks = join(f.root, '.git', 'hooks');
+    const countFile = join(f.checkout, '.issues', 'commit-hook-count');
+    f.git('config', 'core.hooksPath', hooks);
+    writeFileSync(
+      join(hooks, 'pre-commit'),
+      '#!/bin/sh\nprintf x >> .issues/commit-hook-count\n' +
+        'echo "Execution preflight: ' +
+        dependencyProblem +
+        ' Run pnpm install --frozen-lockfile in this checkout." >&2\nexit 1\n',
+      { mode: 0o755 }
+    );
+    let calls = 0;
+    const turn = f.connection.turn.bind(f.connection);
+    f.connection.turn = async (...args) => {
+      calls++;
+      writeFileSync(join(f.checkout, 'source.txt'), 'Issue and target edits.\n');
+      f.work('add', 'source.txt');
+      return turn(...args);
+    };
+    let failure;
+    await assert.rejects(f.run('update-branch'), (error) => {
+      failure = error;
+      return true;
+    });
+    assert.equal(calls, 1, 'Dependency failures cannot be repaired by another conflict-resolution turn.');
+    assert.equal(readFileSync(countFile, 'utf8'), 'x');
+    assert.match(failure.message, /pnpm install --frozen-lockfile/);
+    assert.equal(f.work('rev-parse', 'HEAD'), head);
+    assert.equal(f.work('rev-parse', 'MERGE_HEAD'), target);
+    assert.equal(f.work('diff', '--name-only', '--diff-filter=U'), '');
+    assert.equal(f.work('show', ':source.txt'), 'Issue and target edits.');
+  });
+}
+
 test('Update Branch automatically retries a failed resolution with its diagnostic and then commits', async (t) => {
   const f = await branchUpdateFixture(t, 'source.txt');
   const target = f.advance();

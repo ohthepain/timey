@@ -102,6 +102,13 @@ async function commitConflictResolution(checkout, result, invoke, signal) {
     await invoke('git', ['commit', '--no-edit']);
     return null;
   } catch (error) {
+    const dependencyFailure = error.commandOutput?.match(
+      /^Execution preflight: (?:installed dependenc(?:ies|y lock)|workspace dependencies)[^\r\n]*Run pnpm install --frozen-lockfile[^\r\n]*/m
+    );
+    if (dependencyFailure) {
+      error.message = dependencyFailure[0] + ' ' + error.message;
+      throw error;
+    }
     const terminal = [signal.aborted, permissionFailure(error), result.blocker === 'human-input'];
     if (terminal.some(Boolean)) throw error;
     return error;

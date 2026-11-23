@@ -135,6 +135,10 @@ finishes, and its view must survive the earlier action's response.
 
 `node --test scripts/flow-progress.check.mjs` checks interleaved issue output,
 workspace updates, timing, terminal results and concurrent-edit protection.
+`node --test --test-name-pattern='manual operation displays live progress' scripts/project-stores-flow.check.mjs`
+checks live manual Update Branch summaries and steps, stable timing for repeated
+steps, input and stopping guards, and retained progress after completion. It holds
+a disposable operation open and supplies progress events without a live provider.
 `node scripts/flow-progress-benchmark.mjs PATH` compares the previous and current
 progress-save and group-eligibility paths over five alternating runs. Its
 disposable project contains 27 issues and two output streams. The JSON at `PATH`
@@ -975,6 +979,12 @@ and verifies that a successful explicit Refresh clears its old error banner.
 Background polling retains action errors. The running-Work browser scenario also
 checks that both Update Branch entry points are disabled while a block is active;
 opening the worktree remains available.
+
+`node --test --test-name-pattern='Update Branch stops conflict retries when dependency preflight' scripts/flow-executor.check.mjs`
+checks that a resolved merge stops after one worker turn and one commit-hook failure
+when installed dependencies are stale or their installed lock is missing. The
+failure retains the install command and staged merge. These fixtures use a failing
+Git hook and an injected conflict worker; they install no dependencies.
 
 Update Branch automatically makes up to three conflict-resolution attempts in the
 same conversation. Each attempt receives the previous failure, retains separate

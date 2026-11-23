@@ -497,6 +497,73 @@ test('a newer terminal generation rebases after an earlier committed upload lose
   assert.equal(store.staged.has(f.id), false);
 });
 
+test('manual operation displays live progress and preserves step timing while waiting or stopping', async (t) => {
+  const f = await fixture(t);
+  const { runOwnedOperation } = await import('./factory-ui/stores/owned-operation.mjs');
+  const issue = f.flows.selected(f.id);
+  const entered = Promise.withResolvers();
+  const release = Promise.withResolvers();
+  const task = runOwnedOperation(f.flows, {
+    issue,
+    flow: f.flows.read(issue),
+    label: 'Update issue branch manually',
+    operation: 'manual-update',
+    run: async (context) => {
+      entered.resolve(context);
+      await release.promise;
+      return { summary: 'Branch updated.' };
+    },
+  });
+  const context = await entered.promise;
+  const current = () =>
+    f.flows
+      .read(issue)
+      .blocks.find((block) => block.id === context.block.id)
+      .attempts.at(-1);
+  try {
+    context.onProgress('Merge failed.\nResolving branch conflicts (1/3).\n');
+    assert.equal(current().summary, 'Resolving branch conflicts (1/3).');
+    assert.match(current().output, /Merge failed/);
+    context.onProgress('\n');
+    assert.equal(current().summary, 'Resolving branch conflicts (1/3).');
+    context.onStep('Resolving branch conflicts (1/3).');
+    assert.equal(current().step, 'Resolving branch conflicts (1/3).');
+    assert.ok(current().stepStartedAt);
+    const retainedTime = '2026-11-22T12:00:00.000Z';
+    context.change((attempt) => {
+      attempt.stepStartedAt = retainedTime;
+    });
+    context.onStep('Resolving branch conflicts (1/3).');
+    assert.equal(current().stepStartedAt, retainedTime);
+    context.onStep('git commit --no-edit');
+    assert.equal(current().step, 'git commit --no-edit');
+    assert.notEqual(current().stepStartedAt, retainedTime);
+    context.onInputRequired();
+    assert.ok(current().inputRequestedAt);
+    context.change((attempt) => {
+      attempt.inputRequestedAt = retainedTime;
+    });
+    context.onInputRequired();
+    context.onStep('Ignored while waiting');
+    assert.equal(current().inputRequestedAt, retainedTime);
+    assert.equal(current().step, 'git commit --no-edit');
+    context.change((attempt) => {
+      delete attempt.inputRequestedAt;
+      attempt.status = 'stopping';
+    });
+    context.onStep('Ignored while stopping');
+    assert.equal(current().step, 'git commit --no-edit');
+  } finally {
+    release.resolve();
+    await task;
+  }
+  const saved = await f.project.readIssue(f.id);
+  const attempt = saved.flow.retiredBlocks.find((block) => block.operation === 'manual-update').attempts.at(-1);
+  assert.equal(attempt.summary, 'Branch updated.');
+  assert.equal(attempt.step, 'git commit --no-edit');
+  assert.match(attempt.output, /Resolving branch conflicts/);
+});
+
 test('an uncertain retired manual operation remains an active ownership guard until explicit recovery', async (t) => {
   const f = await fixture(t);
   const { runOwnedOperation } = await import('./factory-ui/stores/owned-operation.mjs');
