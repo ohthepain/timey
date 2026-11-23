@@ -910,6 +910,10 @@ supplies files/Git, Postgres, and S3 bytes. `stores/snapshots.mjs` installs
 validated local display projections and preserves report drafts; report writers
 enter `stores/report-access.mjs` for authoritative checks. `stores/evidence.mjs`
 retains and resolves immutable evidence without rewriting hashed proof JSON.
+`stores/coordination.mjs` returns the exact records supplied by confirmed
+operation commits. Opening, updating, and confirming an operation do not reread
+those records over the network; admission reads, revision checks, and recovery
+after an uncertain commit retain their existing authority checks.
 `stores/classic-operation.mjs` admits Classic workers, lifecycle loops, strategy
 jobs, and queued work prompts through the same ownership and journal protocol.
 It acquires every issue claim before grouped work and retains RunStore events

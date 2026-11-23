@@ -186,13 +186,13 @@ export function createCoordination(records, { runnerId = randomUUID(), now = () 
           ...(claimAdmission && { claimAdmission: true }),
         };
         try {
-          await this.commit(id + '/open', [{ key, revision: null }], [{ key, value }]);
+          const saved = await this.commit(id + '/open', [{ key, revision: null }], [{ key, value }]);
+          return saved.records.find((record) => record.key === key);
         } catch (error) {
           const recorded = await this.get(key);
           if (recorded) return this.matchOperation(recorded, hash);
           throw error;
         }
-        return this.get(key);
       },
       matchOperation(record, hash) {
         assertStoreState(
@@ -214,13 +214,13 @@ export function createCoordination(records, { runnerId = randomUUID(), now = () 
         const current = await this.get(key);
         this.matchOperation(current, operation.value.inputHash);
         const value = { ...current.value, ...cloneRecord(changes) };
-        await this.commit(
+        const saved = await this.commit(
           operation.value.id + '/' + stage,
           [{ key, revision: current.revision }],
           [{ key, value }],
           sealToken
         );
-        return this.get(key);
+        return saved.records.find((record) => record.key === key);
       },
       owner(operation, issueId, attemptId = operation.value.id) {
         return {
@@ -277,12 +277,12 @@ export function createCoordination(records, { runnerId = randomUUID(), now = () 
         if (options.release) value.result = options.result;
         const updates = [...writes, { key: current.key, value }];
         if (options.release) updates.push({ key: claim.key, value: null });
-        await this.commit(
+        const saved = await this.commit(
           operation.value.id + '/confirm',
           [...expected, { key: current.key, revision: current.revision }, { key: claim.key, revision: claim.revision }],
           updates
         );
-        return (await this.get(current.key)).value;
+        return saved.records.find((record) => record.key === current.key).value;
       },
       async pending(operation, error) {
         const current = await this.get(operation.key);

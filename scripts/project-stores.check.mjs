@@ -23,6 +23,37 @@ const flow = (id) => ({
   ],
 });
 
+test('confirmed coordination writes return during a subsequent read outage', async (t) => {
+  const f = await fixture(t);
+  const coordination = f.project.coordination;
+  const get = f.records.get.bind(f.records);
+  const commit = f.records.commit.bind(f.records);
+  let writtenKey;
+  f.records.commit = async (input) => {
+    const result = await commit(input);
+    writtenKey = result.records.find((record) => record.key.startsWith('operations/'))?.key;
+    return result;
+  };
+  f.records.get = async (key) => {
+    assert.notEqual(key, writtenKey, 'A confirmed write must not depend on another remote read.');
+    return get(key);
+  };
+  const operation = await coordination.operation('confirmed-read-outage', 'fixture', { value: 'original' });
+  assert.equal(operation.value.status, 'pending');
+  assert.deepEqual(operation, await get(operation.key));
+  writtenKey = undefined;
+  const updated = await coordination.updateOperation(operation, { note: 'Retained' }, 'note');
+  assert.equal(updated.value.note, 'Retained');
+  assert.deepEqual(updated, await get(operation.key));
+  writtenKey = undefined;
+  const owner = coordination.owner(operation, f.id);
+  await coordination.acquire(owner, 'confirmed-read-outage/claim');
+  const confirmed = await coordination.finalize(operation, owner);
+  assert.equal(confirmed.status, 'confirmed');
+  assert.deepEqual(confirmed, (await get(operation.key)).value);
+  assert.equal(await get('claims/' + f.id), null);
+});
+
 async function fixture(t) {
   const base = gitFixture(t, 'project-stores-');
   writeFileSync(join(base.root, '.gitignore'), '.issues/\n');

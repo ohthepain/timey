@@ -93,3 +93,25 @@ Issue 197 was closed as Fixed through the UI and remained closed after reload;
 all six flow blocks, including Cleanup, completed. The menu was ready in 518 ms
 in one live UI observation, including automation overhead. Closure acknowledgement
 was observed by polling and is not a precise server-duration measurement.
+
+## Issue 200 monitoring and confirmed writes
+
+After committing and loading the profile and latency fixes, issue 200 was approved
+and started through Factory. Its Request, Investigate, Generate report and Create
+Issues blocks all completed without errors; the UI showed Flow complete and zero
+running operations. The generated report explains the candidate revision change
+and maps the five behaviors, while retaining the unavailable historical proof as
+an explicit limitation. Create Issues linked the existing report rather than
+creating a duplicate. No new application checks or issue acceptance were claimed.
+
+Monitoring exposed unnecessary remote reads after confirmed coordination commits.
+Operation creation, updates and confirmation now return the exact records in the
+commit result. Fresh admission reads, revision checks, claim release and uncertain
+commit recovery remain enforced. The regression failed before the change and
+passes with reads of just-written operations made unavailable. The storage suite
+passes with 185 checks and six opt-in skips. The strict step audit against
+`d1033b047fb12bc289429e5148246f48bcacf24d` passes.
+
+The live run included noticeable remote Git storage waits. Removing redundant
+reads establishes fewer required network operations; it is not a measured live
+speedup or a guarantee of bounded remote Git latency.

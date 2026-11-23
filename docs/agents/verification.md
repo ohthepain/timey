@@ -33,6 +33,12 @@ rejected first input instead of resuming a thread with no persisted history.
 
 ## Commands and evidence
 
+`node --test --test-name-pattern='confirmed coordination writes' scripts/project-stores.check.mjs`
+uses the real record provider and makes subsequent reads of each written operation
+unavailable. Opening, updating, and confirming must still return the committed
+records, and confirmation must release its claim. This checks unnecessary remote
+read dependencies, not live Git latency.
+
 `node --test scripts/closure-menu.check.mjs` holds a shared-store refresh while
 opening the Close menu through the real HTTP route. The menu must return saved
 issue context without waiting for that refresh. Confirming closure still waits
