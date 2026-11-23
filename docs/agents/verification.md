@@ -242,11 +242,10 @@ and check evidence, Stop, restart visibility, and bounded provider repair with
 injected model and check responses. It preserves staged and uncommitted edits.
 `node scripts/flow-browser.mjs --branch-repair` drives the real issue-page button,
 red check-failure state, progress after reload, candidate diff, and explicit
-approval in a disposable checkout. It holds the initial inspector request and
-checks that repair controls remain available while it waits, then releases the
-inspection before accepting a repair command. It injects
-the repair worker and does not run
-a live model or repair a production issue.
+approval in a disposable checkout. It holds an explicit issue refresh and
+checks that repair controls remain available, then releases the refresh before
+accepting a repair command. The scenario uses an injected repair worker in the
+disposable checkout.
 
 `node --test scripts/block-skills.check.mjs scripts/flow-folder-settings.check.mjs`
 checks per-block defaults, personal/project extensions and explicit skill choices.

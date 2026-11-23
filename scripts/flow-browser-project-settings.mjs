@@ -114,7 +114,7 @@ async function checkIncompleteStorage({ page, project, observations }) {
     const settings = await response.json();
     assert.equal(settings.storage.provider, 'github');
     assert.ok(settings.storage.status);
-    await dialog.getByRole('button', { name: 'Test connection', exact: true }).waitFor();
+    await dialog.locator('[data-settings-action="test-storage"]').waitFor();
     assert.equal(await page.locator('#project-settings-error').isVisible(), false);
     observations.push({
       check: 'Incomplete GitHub storage configuration leaves Settings available',

@@ -2286,7 +2286,7 @@ try {
     await closeDialog.waitFor();
     await closeDialog.getByRole('button', { name: 'Cancel', exact: true }).click();
     assert.equal(await page.locator('#issue-results').isVisible(), true);
-    assert.equal(await page.locator('#issue-heading + #issue-results').count(), 1);
+    assert.equal(await page.locator('#issue-heading ~ #issue-results').count(), 1);
     assert.equal(await page.locator('#playback-status').textContent(), 'Paused');
     assert.equal(await page.locator('[data-block="request"][aria-pressed="true"]').count(), 1);
     assert.equal(await page.locator('#waiting-block').isVisible(), false);
@@ -2553,7 +2553,7 @@ try {
     service.flows.pause(resultsIssueId, message);
     await page.reload();
     await page.locator('#issue-results-message').filter({ hasText: message }).waitFor();
-    assert.equal(await page.locator('#issue-heading + #issue-results').count(), 1);
+    assert.equal(await page.locator('#issue-heading ~ #issue-results').count(), 1);
     assert.equal(await page.locator('#playback-status').textContent(), 'Paused');
     const banner = await page.locator('#issue-heading').boundingBox();
     const results = await page.locator('#issue-results').boundingBox();
@@ -2589,6 +2589,7 @@ try {
     flow.autoClose = false;
     flow.destination = { ...flow.destination, branch: 'dev', pr: 17, url: 'https://github.com/test/fixture/pull/17' };
     await service.flows.store.save(flow, flow.revision);
+    const savedMerge = () => service.flows.read(issue).blocks.find((block) => block.id === merge.id);
     let approved = false;
     let calls = 0;
     const run = executor.run;
@@ -2641,14 +2642,11 @@ try {
       assert.equal(calls, 0);
       await page.locator('#issue-input-continue').click();
       await poll(
-        async () => service.flows.read(issue),
-        (value) => value.blocks.find((b) => b.id === merge.id).attempts.length === 2 && !service.flows.active.has(id),
+        savedMerge,
+        (block) => block.attempts.length === 2 && !service.flows.active.has(id),
         'Explicit Continue did not record the review request.'
       );
-      const attempt = service.flows
-        .read(issue)
-        .blocks.find((b) => b.id === merge.id)
-        .attempts.at(-1);
+      const attempt = savedMerge().attempts.at(-1);
       assert.equal(attempt.result.humanInput.kind, 'pr-review');
       assert.equal(attempt.result.verification.head, 'retained-proof');
       await page.reload();
@@ -2660,8 +2658,8 @@ try {
       assert.equal(calls, 1, 'Approval and reload must not resume Merge');
       await page.locator('#issue-input-continue').click();
       await poll(
-        async () => service.flows.read(issue),
-        (value) => value.blocks.find((b) => b.id === merge.id).attempts.at(-1)?.status === 'completed',
+        savedMerge,
+        (block) => block.attempts.at(-1)?.status === 'completed' && !service.flows.active.has(id),
         'Continue did not complete Merge.'
       );
       await page.reload();

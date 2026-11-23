@@ -410,7 +410,7 @@ export async function issueStoresBrowserChecks({ page, project, service, poll, s
   };
   Object.assign(records, { get: unavailable, list: unavailable, readSnapshot: unavailable });
   try {
-    await page.reload();
+    await page.locator('#refresh').click();
     await page
       .getByText(
         'Shared storage is unavailable. Browse cached history and keep local drafts; shared changes and new runs are paused.',
@@ -425,6 +425,8 @@ export async function issueStoresBrowserChecks({ page, project, service, poll, s
     await screenshot('issue-store-cached-outage');
   } finally {
     Object.assign(records, original);
+    await page.locator('#refresh').click();
+    await page.locator('#error-banner').waitFor({ state: 'hidden' });
   }
   return { issueId: issue.id, createdStore: storeId, movedStore: 'files', sourceUnchanged: true };
 }

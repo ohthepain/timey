@@ -9,6 +9,7 @@ export async function mergeStateBrowserChecks({ page, project, service, screensh
     action: 'capture',
     requestId: randomUUID(),
     description: 'Show a pending local merge.',
+    storageProfile: 'default',
   });
   const id = captured.issue.id;
   const flow = service.flows.read(service.flows.selected(id));
