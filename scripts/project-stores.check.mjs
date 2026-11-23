@@ -550,6 +550,13 @@ test('a successful Merge flow write with a lost response replays its confirmed o
     return result;
   };
   const input = { issueId: f.id, flow: next, expectedRevision: 1, operationId: 'save-merge' };
+  await f.project.coordination.operation('save-merge', 'save-flow', {
+    issueId: f.id,
+    flow: next,
+    expectedRevision: 1,
+    owner: null,
+    purpose: 'edit',
+  });
   await assert.rejects(f.project.saveFlow(input), /Merge response lost/);
   const saved = await f.project.saveFlow(input);
   assert.equal(saved.blocks[2].attempts[0].result.pr, 111);

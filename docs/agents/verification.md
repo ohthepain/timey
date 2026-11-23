@@ -90,6 +90,15 @@ concurrent revisions, and uncertain replies with disposable stores.
 full and selected refresh overlap, cold initialization, and direct controller
 freshness. Its HTTP fixture checks a peer update without reading unrelated reports.
 
+`node --test scripts/store-atomic-flow.check.mjs scripts/flow-save-git.check.mjs`
+checks idle flow saves against claims, migration seals, changed revisions,
+concurrent saves, and uncertain replies. The real Git fixture reorders
+investigation outputs while retaining attempt bytes. It counts remote-head
+checks and pushes for small flows and flows with overflowing history, verifies
+the saved results, and checks fresh peer reads and idempotent retries. All Git
+remotes and artifacts are disposable. These counts measure store operations,
+not live GitHub response times.
+
 `node --test scripts/closure-menu.check.mjs` holds a shared-store refresh while
 opening the Close menu through the real HTTP route. The menu must return saved
 issue context without waiting for that refresh. Confirming closure still waits

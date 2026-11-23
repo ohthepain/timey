@@ -107,6 +107,12 @@ still wait for fresh authoritative checks. Opening an issue refreshes its retain
 evidence in the background; opening a retained file waits for that file's evidence.
 Opening selected Classic details still waits for its authoritative snapshot.
 
+Rebuilding an idle flow saves its changed structure and confirmed operation in
+one Coordination transaction. The transaction checks the catalog, original flow,
+absent claim, migration gate, and operation revisions together. It does not
+publish a temporary claim before saving. Saves belonging to a running attempt
+and recovery of older pending operations retain their existing ownership protocol.
+
 ## Move existing issues
 
 1. Open an idle issue's **Issue settings**, choose its **Issue storage profile**,
