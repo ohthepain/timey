@@ -47,6 +47,7 @@ import { projectNavigationBrowserChecks } from './flow-browser-project-navigatio
 import {
   projectHomeBrowserChecks,
   investigationFlowsBrowserChecks,
+  investigationToolbarBrowserChecks,
   automateActivityBrowserChecks,
 } from './flow-browser-project-home.mjs';
 import { projectDiscussBrowserChecks } from './flow-browser-project-discuss.mjs';
@@ -329,6 +330,7 @@ function checkExcluded(name) {
     ['--ai-text', aiTextCheck],
     ['--investigation-reports', reportsCheck],
     ['--investigation-flows', investigationFlowsCheck],
+    ['--investigation-toolbar', 'Investigation controls remain above the graph'],
     ['--interface-state', interfaceStateCheck],
     ['--investigation-followups', followupsCheck],
     ['--branch-repair', 'Branch repair progress survives reload and requires candidate approval'],
@@ -617,6 +619,9 @@ try {
   );
   await check(reportsCheck, () =>
     investigationReportsBrowserChecks({ page, project, service, poll, screenshot, output })
+  );
+  await check('Investigation controls remain above the graph', () =>
+    investigationToolbarBrowserChecks({ page, service, screenshot })
   );
   await check(investigationFlowsCheck, () =>
     withQueueConfiguration({ page, project, root }, () =>

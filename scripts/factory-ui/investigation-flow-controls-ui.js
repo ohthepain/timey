@@ -4,7 +4,7 @@ window.createInvestigationFlowControls = ({ request, post, changed, archive }) =
   panel.hidden = true;
   panel.innerHTML =
     '<button type="button" class="small-button" data-investigation-settings>Investigation settings</button><button type="button" class="small-button" data-investigation-again hidden>Run again</button><button type="button" class="small-button" data-investigation-archive>Archive</button><form hidden><label class="field"><span>Reusable</span><input name="reusable" type="checkbox"></label><label class="field">Branch<select name="branch"></select></label><label class="field">Investigation prompt<textarea name="prompt" rows="3" required></textarea></label><label class="field">Additional instructions<textarea name="instructions" rows="2"></textarea></label><button class="small-button" type="submit">Save investigation settings</button></form><span role="alert"></span>';
-  document.getElementById('graph-scroll').before(panel);
+  document.getElementById('graph-region').before(panel);
   const form = panel.querySelector('form');
   const error = panel.querySelector('[role="alert"]');
   const again = panel.querySelector('[data-investigation-again]');

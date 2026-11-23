@@ -49,7 +49,9 @@ Automate me tab and dialog. Its tab controller also handles the sidebar Home,
 Issues, Discuss, and Reports links. `project-investigations.mjs` owns reusable inquiry settings
 and runs. `flow-ui.js` renders the ordinary investigation workspace;
 `investigation-flow-controls-ui.js` supplies its reusable settings and direct
-archive controls. `investigation-history.mjs` projects retained runs and linked
+archive controls above the graph region. The controls attach before
+`#graph-region`, keeping them outside its horizontal graph/overlay container.
+`investigation-history.mjs` projects retained runs and linked
 current issue states. Legacy custom layouts retain their original execution path
 until explicitly rebuilt.
 `investigation-snapshot.mjs` creates temporary detached copies and removes them

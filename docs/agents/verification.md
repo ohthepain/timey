@@ -1106,3 +1106,10 @@ checks scroll position before and after them, reads copied install commands from
 the real clipboard, and verifies that only a clicked Install sends that action.
 Both Anthropic and Google are exercised. Saving and ordinary Settings navigation
 retain their existing checks.
+
+`node scripts/flow-browser.mjs --investigation-toolbar` checks the investigation
+controls above the graph and their removal for an ordinary flow. It uses a saved
+fixture flow, starts no investigation, and does not archive an issue.
+The geometry assertion also runs in the full investigation browser scenario;
+that broader scenario currently stops earlier at an investigation-creation HTTP
+400 and therefore does not establish coverage of the remaining workflow.

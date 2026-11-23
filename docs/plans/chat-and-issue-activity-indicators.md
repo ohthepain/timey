@@ -104,3 +104,13 @@ blocked and no full verification, publication, merge, or acceptance is claimed.
 The existing conversation and human-input terminology remains sufficient. This
 change introduces no project-specific domain term or architectural commitment
 that requires a glossary entry or ADR.
+
+## Investigation toolbar layout correction
+
+The activity overlay introduced a horizontal `graph-region` wrapper around the
+scrolling graph. Investigation controls still inserted themselves before the
+inner `graph-scroll`, placing them beside the graph. This was an unintended
+layout regression. The controls now insert before the outer region and retain
+their existing position above the flow. A focused saved-flow browser scenario
+checks geometry and ordinary-flow hiding without creating or running an
+investigation.

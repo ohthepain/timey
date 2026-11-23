@@ -1,3 +1,4 @@
+import { writeBrowserIssue } from './flow-browser-fixture.mjs';
 import assert from 'node:assert/strict';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -148,6 +149,14 @@ async function investigate(page, service, calls, screenshot, poll) {
   assert.equal(calls.investigations, 0, 'Creation starts no model work.');
   assert.equal(await page.locator('#investigation-page').isVisible(), false);
   assert.equal(await page.locator('#issue-playback').isVisible(), true);
+  const toolbar = await page.locator('.investigation-flow-controls').boundingBox();
+  const graphRegion = await page.locator('#graph-region').boundingBox();
+  assert.ok(toolbar && graphRegion);
+  assert.ok(
+    toolbar.y + toolbar.height <= graphRegion.y + 1,
+    'Investigation controls remain above the graph instead of creating a side column.'
+  );
+  await screenshot('investigation-toolbar-layout');
   const issueId = new URL(page.url()).searchParams.get('issue');
   const owner = service.projectHome.investigations;
   const inquiry = await runInvestigationBlock(page, service, issueId, 'investigate', poll);
@@ -200,6 +209,34 @@ async function prepareHome(page, service) {
   await page.goto('/');
   return calls;
 }
+export async function investigationToolbarBrowserChecks({ page, service, screenshot }) {
+  const id = '20261123-investigation-toolbar';
+  writeBrowserIssue(service.root, {
+    id,
+    title: 'Investigation toolbar layout',
+    body: 'Check layout without running an investigation.',
+  });
+  const issue = service.flows.selected(id);
+  const flow = service.flows.read(issue);
+  const originalType = flow.routeType;
+  flow.routeType = 'investigation';
+  await service.flows.store.save(flow, flow.revision);
+  await page.goto('/?issue=' + id);
+  const panel = page.locator('.investigation-flow-controls');
+  await panel.waitFor();
+  const toolbar = await panel.boundingBox(),
+    graph = await page.locator('#graph-region').boundingBox();
+  assert.ok(toolbar && graph);
+  assert.ok(toolbar.y + toolbar.height <= graph.y + 1, 'Investigation controls stay above the graph.');
+  assert.ok(graph.width > toolbar.width, 'The toolbar does not consume a column beside the graph.');
+  await screenshot('investigation-toolbar-layout');
+  const saved = service.flows.read(service.flows.selected(id));
+  saved.routeType = originalType;
+  await service.flows.store.save(saved, saved.revision);
+  await page.reload();
+  await panel.waitFor({ state: 'hidden' });
+}
+
 export async function investigationFlowsBrowserChecks({ page, service, screenshot, poll }) {
   const calls = await prepareHome(page, service);
   await page.locator('#home-title').waitFor();
