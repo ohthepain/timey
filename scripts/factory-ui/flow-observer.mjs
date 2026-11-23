@@ -13,7 +13,7 @@ import { mergedDelivery } from './merged-issue.mjs';
 const execute = promisify(execFile);
 export async function flowGit(root, ...args) {
   const { stdout } = await execute('git', ['-C', root, ...args], {
-    env: cleanEnvironment(),
+    env: { ...cleanEnvironment(), GIT_OPTIONAL_LOCKS: '0' },
     encoding: 'utf8',
     timeout: 2000,
     maxBuffer: 1024 * 1024,

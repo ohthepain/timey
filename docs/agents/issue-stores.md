@@ -79,6 +79,8 @@ or profile; no Factory-specific AWS access-key secret is required.
 5. Choose **Coordination** and **Coordination artifacts** independently for the
    project. Changing either role uses a checked project migration. All affected
    work must be idle and pending operations reconciled first.
+   **Test connection** beside the Coordination store selector checks the selected
+   destination before saving, without moving coordination data.
 
 Configured destinations and roles are fixed after saving. To change a database,
 table, directory, or Git branch, add a new named store and perform a checked move.

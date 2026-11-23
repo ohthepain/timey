@@ -41,9 +41,9 @@ or replaced, the old selection need not survive.
   open. Collapse it explicitly and confirm it stays closed.
 - Resize Your words and edit its text while the issue updates. Confirm that the
   dimensions, draft, caret, and editor scroll remain stable.
-- Highlight chat text and an issue error message across polling cycles. Confirm
+- Highlight chat text and an issue error message across live updates. Confirm
   that selection remains and copying yields the highlighted text. Include a
-  selection drag that spans a poll.
+  selection drag that spans an issue update.
 - Navigate away and back, then reload in the same tab. Confirm restoration of
   drafts, sizes, expansion choices, and reading position for the original item.
 - Open a different item and confirm it does not inherit another item's state.
@@ -82,8 +82,8 @@ repair output use the shared preservation boundary. Classic keeps its full redra
 and event binding lifecycle, with selection and view restoration around replacement.
 
 The browser scenario is `node scripts/flow-browser.mjs --interface-state`.
-It uses disposable issues and conversations, checks a real mouse selection across
-polling, and reads the clipboard after Copy. Other checks cover growth of tool
+It uses disposable issues and conversations, checks that an idle issue issues no view requests across the old polling intervals,
+preserves a real mouse selection across atomic report changes, and reads the clipboard after Copy. Other checks cover growth of tool
 output, explicit collapse, reload, navigation, and isolation between requests and tabs.
 
 ## Verification

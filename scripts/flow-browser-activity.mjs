@@ -52,7 +52,6 @@ export async function activityBrowserChecks({ page, project, service, poll, scre
     const work = flow.blocks.find(({ kind }) => kind === 'work');
     await service.flows.action({ action: 'start', issueId: id, blockId: work.id, revision: flow.revision });
     await poll(() => Boolean(pending), Boolean, 'Held work starts');
-    await page.locator('#refresh').click();
     await indicator.waitFor();
     assert.equal(await indicator.locator('.activity-dots i').count(), 3);
     const observe = () =>
@@ -105,7 +104,6 @@ export async function activityBrowserChecks({ page, project, service, poll, scre
       (size) => size === 0,
       'Held work finishes'
     );
-    await page.locator('#refresh').click();
     await indicator.waitFor({ state: 'detached' });
     await page.route('**/api/flow?**', showRepair);
     repairStatus = 'running';

@@ -1,3 +1,4 @@
+import { createFlowChanges } from './flow-changes.mjs';
 import { readProviderConfig } from './provider-config.mjs';
 import { providerSettings, saveProviderSettings } from './provider-runtime.mjs';
 import { refreshProvider, setupProvider, installProvider } from './provider-setup.mjs';
@@ -587,6 +588,7 @@ async function mutation(service, path, value, owner) {
 }
 export function createFactoryServer(service, options = {}) {
   service.serverControl = serverControl(service, options.restart);
+  service.flowChanges = createFlowChanges(service.root);
   service.sharedChatToolOptions = { flows: () => flows(service), home: () => projectHome(service) };
   const token = randomBytes(32).toString('hex');
   const server = createServer(async (request, response) => {
@@ -613,6 +615,7 @@ export function createFactoryServer(service, options = {}) {
     }
   });
   server.once('close', () => {
+    service.flowChanges.close();
     service.serverControl.close();
     void closeProjectStores(service);
   });
@@ -622,9 +625,18 @@ export function createFactoryServer(service, options = {}) {
 async function respond(service, request, response, token, port) {
   if (isPage(request)) return page(service, request, response, token, port);
   authorize(request, token, port);
+  const url = new URL(request.url, 'http://127.0.0.1');
+  if (request.method === 'GET' && url.pathname === '/api/flow-changes')
+    return service.flowChanges.subscribe(response, resolveIssueNumber(service, url.searchParams.get('issue')));
   response.setHeader('Content-Type', 'application/json');
   if (request.method === 'GET') return readResource(service, request, response, token);
-  if (request.method === 'POST') return response.end(JSON.stringify(await postedAction(service, request, token)));
+  if (request.method === 'POST') {
+    const result = await postedAction(service, request, token);
+    if (url.pathname === '/api/ui-sources') service.flowChanges.notify('sources');
+    else if (['/api/flow-action', '/api/issue-storage-move', '/api/issue-capture'].includes(url.pathname))
+      service.flowChanges.notify();
+    return response.end(JSON.stringify(result));
+  }
   response.statusCode = 405;
   response.end(JSON.stringify({ error: 'Unsupported method' }));
 }

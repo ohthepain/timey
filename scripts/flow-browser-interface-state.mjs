@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
-import { writeFileSync } from 'node:fs';
+import { readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { randomUUID } from 'node:crypto';
+import { resolveIssueStorage } from './factory-ui/stores/settings.mjs';
 
 export async function interfaceStateBrowserChecks({ page, service, project, screenshot }) {
   service.projectDiscussOptions = { skills: async () => [] };
@@ -57,11 +59,16 @@ export async function interfaceStateBrowserChecks({ page, service, project, scre
     await fresh.close();
   }
 
-  const id = '20261121-preserve-interface-state';
-  writeFileSync(
-    join(project, '.issues', id + '.md'),
-    `---\nid: ${id}\ntitle: Preserve reading and editing\nstate: backlog\n---\n\nOriginal wording.\n`
-  );
+  async function capture(description) {
+    const { issue } = await service.flows.action({
+      action: 'capture',
+      requestId: randomUUID(),
+      description,
+      storageProfile: resolveIssueStorage(project).profileId,
+    });
+    return issue.id;
+  }
+  const id = await capture('Preserve reading and editing');
   const error = 'This error message must stay selected while the issue refreshes.';
   await page.route('**/api/flow?**', async (route) => {
     const response = await route.fetch();
@@ -69,9 +76,34 @@ export async function interfaceStateBrowserChecks({ page, service, project, scre
     if (result.issue?.id === id) result.error = error;
     await route.fulfill({ response, json: result });
   });
+  let idleRequests = 0;
+  const countRefreshes = (request) => {
+    if (['/api/flow', '/api/ui-sources'].includes(new URL(request.url()).pathname)) idleRequests++;
+  };
+  page.on('request', countRefreshes);
+  await page.clock.install();
   await page.goto('/?issue=' + id);
   const wording = page.locator('[data-field="wording"]');
   await wording.waitFor();
+  await page.waitForTimeout(500);
+  const initialRequests = idleRequests;
+  // Cover both former polling intervals.
+  await page.waitForTimeout(2400);
+  assert.equal(idleRequests, initialRequests, 'An idle issue made another snapshot or UI sources request.');
+  page.off('request', countRefreshes);
+  const editor = await wording.elementHandle();
+  const remoteCheck = page.waitForResponse((response) => {
+    const url = new URL(response.url());
+    return url.pathname === '/api/flow' && url.searchParams.get('refresh') === 'true';
+  });
+  await page.clock.fastForward(60_000);
+  assert.equal((await remoteCheck).ok(), true);
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)));
+  assert.equal(
+    await editor.evaluate((field) => field.isConnected),
+    true,
+    'An unchanged remote check replaced the editor.'
+  );
   const draft = Array.from({ length: 50 }, (_, index) => 'Unsaved request line ' + index).join('\n');
   await wording.fill(draft);
   await wording.evaluate((field) => {
@@ -93,7 +125,7 @@ export async function interfaceStateBrowserChecks({ page, service, project, scre
   const issue = service.flows.selected(id);
   const flow = service.flows.read(issue);
   flow.folderLocked = true;
-  service.flows.store.save(flow, flow.revision);
+  await service.flows.store.save(flow, flow.revision);
   await page.locator('#issue-folder-locked:checked').waitFor();
   assert.deepEqual(await editorState(), before, 'Inspector refresh reset the draft, dimensions, caret or scroll.');
 
@@ -105,15 +137,21 @@ export async function interfaceStateBrowserChecks({ page, service, project, scre
   await page.mouse.move(bounds.x + 180, bounds.y + bounds.height / 2, { steps: 8 });
   const duringDrag = await selected();
   assert.ok(duringDrag.length > 5, 'The browser must create a real mouse selection.');
-  const polled = page.waitForResponse((response) => new URL(response.url()).pathname === '/api/flow');
-  await polled;
+  async function changeIssueTitle(title) {
+    const refreshed = page.waitForResponse((response) => new URL(response.url()).pathname === '/api/flow');
+    const report = join(project, '.issues', id + '.md');
+    writeFileSync(report + '.tmp', readFileSync(report, 'utf8').replace(/^title: .+$/m, 'title: ' + title));
+    renameSync(report + '.tmp', report);
+    await refreshed;
+  }
+  await changeIssueTitle('Preserve selection while dragging');
   await page.mouse.move(bounds.x + 220, bounds.y + bounds.height / 2, { steps: 4 });
   await page.mouse.up();
   const highlighted = await selected();
-  assert.ok(highlighted.length > duringDrag.length, 'Selection drag could not continue across polling.');
-  await page.waitForResponse((response) => new URL(response.url()).pathname === '/api/flow');
+  assert.ok(highlighted.length > duringDrag.length, 'Selection drag could not continue across an update.');
+  await changeIssueTitle('Preserve highlighted selection');
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(resolve)));
-  assert.equal(await selected(), highlighted, 'Polling cleared the highlighted issue error.');
+  assert.equal(await selected(), highlighted, 'An update cleared the highlighted issue error.');
   await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
   await page.keyboard.press('ControlOrMeta+C');
   assert.equal(await page.evaluate(() => navigator.clipboard.readText()), highlighted, 'Copy lost the selection.');
@@ -130,11 +168,7 @@ export async function interfaceStateBrowserChecks({ page, service, project, scre
   await wording.waitFor();
   assert.equal(await wording.inputValue(), draft, 'Reload discarded an unsaved request.');
   assert.equal(await wording.evaluate((field) => field.style.height), '310px');
-  const otherId = id + '-other';
-  writeFileSync(
-    join(project, '.issues', otherId + '.md'),
-    `---\nid: ${otherId}\ntitle: Independent request\nstate: backlog\n---\n\nDifferent wording.\n`
-  );
+  const otherId = await capture('Independent request');
   await page.goto('/?issue=' + otherId);
   await wording.waitFor();
   assert.equal(
