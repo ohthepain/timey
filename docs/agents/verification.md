@@ -437,6 +437,16 @@ verification command after 15 minutes. Evidence reuse requires matching inputs,
 including focused commands and the required scope. GitHub CI retains its full
 suite and existing branch protection.
 
+To verify an update, open the latest **Update Branch** attempt in Flow. Confirm
+that it shows `completed` and records `containsFetchedCommit: true`. Copy the
+exact `fetchedCommit` hash from the result.
+
+In the issue worktree, replace `FETCHED_COMMIT` with the copied hash and run
+`git merge-base --is-ancestor FETCHED_COMMIT HEAD`. Exit status `0` confirms
+that the current issue branch still contains that commit, even if `HEAD` has
+advanced since the update. Keep the attempt result and the Git check outcome
+with the smoke-test evidence.
+
 Drag-and-drop browser scenarios are excluded from ordinary verification and
 full regression, including Merge and CI. They run only when explicitly requested
 with `pnpm run test:browser:drag-and-drop`. This covers legacy queue reordering,
