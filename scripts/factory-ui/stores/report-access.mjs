@@ -312,6 +312,6 @@ export async function deleteRegisteredReport(root, issue, purpose) {
     purpose,
   });
   requireThat(result.status === 'confirmed', 'The issue deletion is pending authoritative confirmation.');
-  await stores.refresh();
+  await stores.refresh({ issueIds: [issue.id] });
   return result;
 }

@@ -1,5 +1,6 @@
+import { configuredCodexSettings } from './native-codex-settings.mjs';
 import { temporaryGrillingSkill } from './discussion-grilling.mjs';
-import { spawn, execFileSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import {
   mkdtempSync,
@@ -22,8 +23,8 @@ import { validateTextInput } from './codex-input.mjs';
 
 // A separate read-only process, never the worker/recovery connection.
 class DiscussionCodex extends CodexConnection {
-  constructor({ root, onEvent } = {}, suppliedText = false) {
-    super({ onEvent });
+  constructor({ root, onEvent, model } = {}, suppliedText = false) {
+    super({ onEvent, root, model });
     this.runtime = realpathSync(mkdtempSync(join(tmpdir(), 'timey-discussion-runtime-')));
     this.files = join(this.runtime, 'evidence');
     this.suppliedText = suppliedText;
@@ -34,7 +35,7 @@ class DiscussionCodex extends CodexConnection {
   }
   async connect() {
     try {
-      const settings = configuredModel();
+      const settings = { ...configuredCodexSettings(), ...(this.model ? { model: this.model } : {}) };
       symlinkSync(join(process.env.CODEX_HOME || join(homedir(), '.codex'), 'auth.json'), join(this.home, 'auth.json'));
       writeFileSync(join(this.home, 'config.toml'), configuration(settings, this.home, this.suppliedText), {
         mode: 0o600,
@@ -173,20 +174,6 @@ function copySkillTree(source, destination) {
     }
   };
   copy(source, destination);
-}
-function configuredModel() {
-  // Read only model selection, never serialize configuration or credential contents.
-  const home = process.env.CODEX_HOME || join(homedir(), '.codex');
-  const script =
-    'import tomllib,sys,json,pathlib; c=tomllib.loads((pathlib.Path(sys.argv[1])/"config.toml").read_text()); print(json.dumps({k:c.get(k) for k in ["model","model_provider","profile"]}))';
-  const settings = JSON.parse(
-    execFileSync('python3', ['-c', script, home], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
-  );
-  requireThat(
-    !settings.profile && !settings.model_provider && typeof settings.model === 'string',
-    'Unsupported provider configuration.'
-  );
-  return settings;
 }
 function configuration(settings, home, suppliedText) {
   return `model = ${JSON.stringify(settings.model)}

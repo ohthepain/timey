@@ -26,6 +26,7 @@ function rewriteSettings(service, options) {
 export async function simplifyAIText(service, input, options = service.aiTextOptions || {}) {
   checkedText(input.text, 48000, 'Choose text under 48 KB to simplify.');
   const connection = rewriteConnection(options);
+  connection.root ||= service.root;
   try {
     const skills = await listAvailableSkills(connection, service.root);
     const bro = skills.find(({ name }) => name === 'bro');

@@ -251,6 +251,7 @@ test('slash skill selector filters metadata and inserts a removable read-only co
   });
   dom.window.eval(
     readFileSync(join(process.cwd(), 'scripts/factory-ui/view-state.js'), 'utf8') +
+      readFileSync(join(process.cwd(), 'scripts/factory-ui/activity-indicator-ui.js'), 'utf8') +
       readFileSync(join(process.cwd(), 'scripts/factory-ui/issue-chat-ui.js'), 'utf8')
   );
   const form = dom.window.document.querySelector('form'),
@@ -362,6 +363,7 @@ test('persistent chat view escapes text, preserves draft/focus across role updat
   t.after(() => dom.window.close());
   dom.window.eval(
     readFileSync('scripts/factory-ui/view-state.js', 'utf8') +
+      readFileSync('scripts/factory-ui/activity-indicator-ui.js', 'utf8') +
       readFileSync('scripts/factory-ui/issue-chat-ui.js', 'utf8') +
       '\nwindow.chatTest=issueChatUI;'
   );
@@ -405,6 +407,27 @@ test('persistent chat view escapes text, preserves draft/focus across role updat
   assert.equal(document.activeElement, draft);
   assert.equal(draft.value, 'Still typing');
   assert.match(panel.textContent, /Independent review result/);
+  data.conversation.connected = true;
+  data.conversation.status = 'responding';
+  const mount = () => {
+    ui.beforeRender();
+    document.getElementById('app').innerHTML = '<div id="issue-chat-slot"></div>';
+    ui.mount(
+      'one',
+      data,
+      async () => {},
+      async () => {}
+    );
+  };
+  mount();
+  assert.equal(panel.querySelectorAll('.activity-indicator').length, 1);
+  data.issues[0].lifecycle = { input: { type: 'questions' } };
+  mount();
+  assert.equal(panel.querySelectorAll('.activity-indicator').length, 0, 'Human input must stop the dots.');
+  data.issues[0].lifecycle = {};
+  data.conversation.connected = false;
+  mount();
+  assert.equal(panel.querySelectorAll('.activity-indicator').length, 0, 'A disconnected response must not animate.');
 });
 
 test('chat replies retain real human answer provenance through the existing lifecycle handler', async (t) => {
@@ -631,6 +654,7 @@ test('Stop control retains the draft, binds the displayed response and shows can
   t.after(() => dom.window.close());
   dom.window.eval(
     readFileSync('scripts/factory-ui/view-state.js', 'utf8') +
+      readFileSync('scripts/factory-ui/activity-indicator-ui.js', 'utf8') +
       readFileSync('scripts/factory-ui/issue-chat-ui.js', 'utf8') +
       '\nwindow.chatTest=issueChatUI;'
   );

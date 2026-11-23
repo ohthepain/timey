@@ -57,7 +57,7 @@ async function checkDirectPages({ page, screenshot, observations }) {
   const dialog = page.locator('#project-settings-dialog');
   await dialog.waitFor({ state: 'visible' });
   assert.ok((await dialog.boundingBox()).width >= 800, 'Desktop Settings has room for its sidebar and category page.');
-  await page.getByRole('button', { name: 'Close project settings', exact: true }).click();
+  await page.getByRole('button', { name: 'Close Factory settings', exact: true }).click();
   for (const name of ['issues', 'lifecycle', 'git', 'storage', 'skills', 'prompts', 'hotkeys']) {
     const dialog = await settingsPage(page, name);
     assert.ok((await dialog.locator('#project-settings-content').innerText()).trim(), name + ' has content');
@@ -157,17 +157,17 @@ async function checkPromptDrafts({ page, poll, observations }) {
   await choosePage(page, 'prompts');
   await project.waitFor();
   await project.fill('Retained closing draft.');
-  await dialog.getByRole('button', { name: 'Close project settings', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Close Factory settings', exact: true }).click();
   await unsavedChoice(page, 'Cancel');
   assert.equal(await project.inputValue(), 'Retained closing draft.');
-  await dialog.getByRole('button', { name: 'Close project settings', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Close Factory settings', exact: true }).click();
   await unsavedChoice(page, 'Discard');
   await dialog.waitFor({ state: 'hidden' });
   assert.equal((await preferences(page)).prompts.project.value, 'Saved project-only prompt fixture.');
   await settingsPage(page, 'prompts');
   await project.waitFor();
   await project.fill('Saved while closing.');
-  await dialog.getByRole('button', { name: 'Close project settings', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Close Factory settings', exact: true }).click();
   await unsavedChoice(page, 'Save');
   await dialog.waitFor({ state: 'hidden' });
   assert.equal((await preferences(page)).prompts.project.value, 'Saved while closing.');
@@ -228,7 +228,7 @@ async function checkHotkeyDrafts({ page, logs, poll, observations }) {
   await dialog.locator('[name="dictateCold"]').fill('Ctrl+Alt+C');
   assert.equal(await issue.inputValue(), 'Ctrl+Alt+J');
   await saveHotkeys(page, dialog, poll, 'Ctrl+Alt+K', 'The edited hotkey did not persist.');
-  await dialog.getByRole('button', { name: 'Close project settings', exact: true }).click();
+  await dialog.getByRole('button', { name: 'Close Factory settings', exact: true }).click();
   await dialog.waitFor({ state: 'hidden' });
   await page.keyboard.press('Control+Alt+K');
   await page.locator('#local-note-editor').waitFor({ state: 'visible' });

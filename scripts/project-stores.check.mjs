@@ -459,6 +459,52 @@ test('display snapshots pin Coordination and each Issue store once for the whole
   assert.equal(issuePins, 1);
 });
 
+test('a scoped snapshot reads only the selected catalog, flow and coordination records', async (t) => {
+  const f = await fixture(t);
+  const other = '20261122-unrelated';
+  await f.project.importIssue({
+    id: other,
+    report: report(other),
+    flow: flow(other),
+    storeId: 'first',
+    operationId: 'import-unrelated',
+  });
+  const { owner } = await f.project.beginAttempt({
+    issueId: other,
+    blockId: 'work',
+    attempt: { id: 'unrelated-work' },
+    expectedRevision: 1,
+    operationId: 'start-unrelated',
+  });
+  await f.project.refresh();
+
+  const readSnapshot = f.records.readSnapshot.bind(f.records);
+  const reads = [];
+  f.records.readSnapshot = (callback) =>
+    readSnapshot((pinned) =>
+      callback({
+        get(key) {
+          reads.push(key);
+          return pinned.get(key);
+        },
+        list(prefix) {
+          reads.push(prefix);
+          return pinned.list(prefix);
+        },
+      })
+    );
+  const saved = await f.project.refresh({ issueIds: [f.id] });
+  assert.deepEqual(
+    reads.sort(),
+    ['catalog/', 'claims/', 'commands/', 'flows/'].map((key) => key + f.id + (key === 'commands/' ? '/' : '')).sort()
+  );
+  assert.deepEqual(
+    saved.issues.map(({ id }) => id),
+    [f.id, other]
+  );
+  assert.deepEqual(saved.claims, [owner]);
+});
+
 test('explicit recovery reconciles the old attempt and fences its late publications', async (t) => {
   const f = await fixture(t);
   const { owner } = await f.project.beginAttempt({

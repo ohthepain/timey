@@ -19,6 +19,14 @@ Generate report uses the selectable `generate-report` skill. It produces a
 polished report inside Timey with an executive summary, findings, evidence links,
 and recommendations. PDF and other exports are deferred.
 
+The default skill now passes all source content through `/bro` for copy and
+applies the [editorial HTML design prompt](../../factory/system/skills/generate-report/report-design.md).
+It saves a single self-contained HTML document with embedded styles and no
+external dependencies or images. This applies only to user-facing reports.
+Internal issue records, evidence logs, and machine-readable results retain their
+formats. Existing immutable publications remain readable in their saved format;
+new deliberate generations use the updated design.
+
 The project workspace gains a Reports tab. Each successful report generation
 adds a separate dated report linked to its exact investigation run. Published
 reports remain readable after the investigation is archived or rerun. Later

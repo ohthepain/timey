@@ -165,12 +165,16 @@ export function createProjectStores({
         };
         return typeof this.records.readSnapshot === 'function' ? this.records.readSnapshot(read) : read(this.records);
       },
-      async listCatalogIssues({ location, issueIds } = {}) {
-        const selected = issueIds && new Set(issueIds);
-        const entries = (await this.coordination.list('catalog/')).filter((entry) => entry.value.state === 'active');
+      async displayCatalogs(issueIds) {
+        if (!issueIds) return this.coordination.list('catalog/');
+        return (await Promise.all(issueIds.map((id) => this.coordination.get(catalogKey(id))))).filter(Boolean);
+      },
+      async listCatalogIssues({ location, issueIds } = {}, catalogs) {
+        const entries = (catalogs ?? (await this.displayCatalogs(issueIds))).filter(
+          (entry) => entry.value.state === 'active'
+        );
         const groups = new Map();
         for (const entry of entries) {
-          if (selected && !selected.has(entry.value.id)) continue;
           const key = entry.value.storeId;
           if (!groups.has(key)) groups.set(key, []);
           groups.get(key).push(entry);
@@ -193,14 +197,39 @@ export function createProjectStores({
       snapshot(options = {}) {
         return this.pinnedRead((view) => view.readDisplaySnapshot(options));
       },
-      async readDisplaySnapshot(options) {
-        const issues = await this.listCatalogIssues(options);
-        const claims = (await this.coordination.list('claims/')).map((entry) => entry.value);
-        const commands = (await this.coordination.list('commands/')).map((entry) => entry.value);
-        const deletedIssueIds = (await this.coordination.list('catalog/'))
+      async displayClaims(scope) {
+        const records = scope
+          ? await Promise.all(scope.map((id) => this.coordination.get('claims/' + id)))
+          : await this.coordination.list('claims/');
+        return records.filter(Boolean).map(({ value }) => value);
+      },
+      async displayCommands(scope) {
+        const records = scope
+          ? (await Promise.all(scope.map((id) => this.coordination.list('commands/' + id + '/')))).flat()
+          : await this.coordination.list('commands/');
+        return records.map(({ value }) => value);
+      },
+      async readDisplaySnapshot({ issueIds, ...options }) {
+        const scope = issueIds?.length ? [...new Set(issueIds)] : undefined;
+        const catalogs = await this.displayCatalogs(scope);
+        const [issues, claims, commands] = await Promise.all([
+          this.listCatalogIssues(options, catalogs),
+          this.displayClaims(scope),
+          this.displayCommands(scope),
+        ]);
+        const deletedIssueIds = catalogs
           .filter((entry) => entry.value.state === 'deleted')
           .map((entry) => entry.value.id);
-        return { version: 1, projectId: this.projectId, capturedAt: now(), issues, claims, commands, deletedIssueIds };
+        return {
+          version: 1,
+          projectId: this.projectId,
+          capturedAt: now(),
+          issues,
+          claims,
+          commands,
+          deletedIssueIds,
+          ...(scope && { issueIds: scope }),
+        };
       },
       async refresh(options = {}) {
         try {

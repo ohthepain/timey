@@ -19,7 +19,7 @@ import {
 } from './issue-cleanup.mjs';
 import { cancelIssueActionsOnClose } from './issue-action-cancellation.mjs';
 import { groupChildren, requireIndependentIssue } from './issue-group.mjs';
-import { afterReportWrite } from './stores/report-access.mjs';
+import { afterReportWrite, registeredProjectStores } from './stores/report-access.mjs';
 
 export function decideIssue(
   service,
@@ -206,13 +206,17 @@ function recordDecision(service, issue, run, result, evidence, target, basis, { 
       ) === basis,
       'The issue changed. Refresh before deciding.'
     );
+    const publishedMove = moveTo && registeredProjectStores(service.root);
     return afterReportWrite(
-      appendReview(service.root, issue, result, run, evidence, target),
+      appendReview(service.root, issue, result, run, evidence, target, publishedMove ? { location: moveTo } : {}),
       () =>
-        afterReportWrite(moveTo ? moveStoredIssue(service.root, id, location, moveTo) : undefined, () => {
-          service.store.update(run, { issueId: id, issueState: state, status: 'completed', summary, result });
-          return { state: target };
-        }),
+        afterReportWrite(
+          moveTo && !publishedMove ? moveStoredIssue(service.root, id, location, moveTo) : undefined,
+          () => {
+            service.store.update(run, { issueId: id, issueState: state, status: 'completed', summary, result });
+            return { state: target };
+          }
+        ),
       {
         onFailure: (error) => {
           service.store.update(run, { issueId: id, issueState: state, status: 'blocked', summary: error.message });

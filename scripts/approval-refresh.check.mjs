@@ -136,7 +136,7 @@ test('HTTP approval refreshes the selected peer report without loading unrelated
   );
 });
 
-test('direct approval requires selected freshness while other direct actions retain a full refresh', async (t) => {
+test('direct approval and block opening refresh only the selected issue', async (t) => {
   const { service, stores } = await fixture(t);
   service.flows = createIssueFlows(service);
   service.flows.dispatch = async () => ({ inspected: true });
@@ -148,5 +148,5 @@ test('direct approval requires selected freshness while other direct actions ret
   };
   await service.flows.action({ action: 'approve-issue', issueId: selectedId, revision: 0 });
   await service.flows.action({ action: 'open-block', issueId: selectedId, blockId: 'request', revision: 0 });
-  assert.deepEqual(calls, [[selectedId], null]);
+  assert.deepEqual(calls, [[selectedId], [selectedId]]);
 });

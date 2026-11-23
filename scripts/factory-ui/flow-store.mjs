@@ -400,7 +400,7 @@ export function editFlow(flow, input, catalog) {
       requireThat(values && typeof values === 'object', 'Supply block edits.');
       for (const key of Object.keys(values))
         requireThat(
-          ['label', 'skill', 'prompt', 'iterations', 'lane', 'edits', 'inputs', 'links'].includes(key),
+          ['label', 'skill', 'prompt', 'iterations', 'lane', 'edits', 'inputs', 'links', 'model'].includes(key),
           'Unknown block edit.'
         );
       if ('label' in values)
@@ -426,6 +426,11 @@ export function editFlow(flow, input, catalog) {
         requireThat(
           Number.isInteger(values.iterations) && values.iterations >= 1 && values.iterations <= 10,
           'Choose one to ten iterations.'
+        );
+      if ('model' in values)
+        requireThat(
+          typeof values.model === 'string' && values.model.length <= 200,
+          'Choose a model or use the issue default.'
         );
       if ('lane' in values) validLane(values.lane);
       if ('edits' in values)

@@ -240,7 +240,7 @@ export async function startClassicOperation(
   service,
   { issueIds, label, run, shareSourceCheckpoint = false, onStop, runRecord }
 ) {
-  await ensureProjectStores(service, { fresh: true });
+  await ensureProjectStores(service, { fresh: true, issueIds });
   service.ensureIssueFlows?.();
   for (const id of issueIds)
     requireThat(

@@ -17,8 +17,10 @@
     const attributes = homeMessageAttributes(message.role, text, key);
     return `<article data-home-message><strong>${message.role === 'user' ? 'You' : 'Assistant'}</strong><div${attributes}>${escape(text)}</div></article>`;
   }
-  function renderMessages(id, messages, sessionId) {
-    const markup = (messages || []).map((message, index) => homeMessage(message, index, id, sessionId)).join('');
+  function renderMessages(id, messages, sessionId, working) {
+    const markup =
+      (messages || []).map((message, index) => homeMessage(message, index, id, sessionId)).join('') +
+      window.timeyActivity.markup(working);
     const scope = 'home-messages:' + id + ':' + sessionId;
     const first = !window.timeyView.read(scope);
     window.timeyView.render($(id), markup, scope);
@@ -290,7 +292,7 @@
     function renderAutomate(fillDraft = false) {
       const session = state.automate;
       setRunButtons('automate', session);
-      renderMessages('home-automate-messages', session.messages, session.id);
+      renderMessages('home-automate-messages', session.messages, session.id, busy(session) || state.responding);
       automateReplyControls(session);
       $('home-automate-coverage').textContent = coverageText(session.history);
       $('home-automate-review').hidden = !session.draft;
@@ -351,6 +353,8 @@
     async function send(kind, action, input) {
       if (state.pending) return;
       state.pending = true;
+      state.responding = ['automate-start', 'automate-message'].includes(action);
+      renderSelected(kind);
       const submission = stableSubmission(action, input);
       $(`home-${kind}-error`).textContent = '';
       try {
@@ -366,6 +370,7 @@
         return false;
       } finally {
         state.pending = false;
+        state.responding = false;
         renderSelected(kind);
       }
     }

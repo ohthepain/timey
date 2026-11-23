@@ -12,6 +12,7 @@ function discussFixture(t) {
   const { window } = dom;
   const load = (name) => window.eval(readFileSync(new URL('./factory-ui/' + name, import.meta.url), 'utf8'));
   load('view-state.js');
+  load('activity-indicator-ui.js');
   load('issue-chat-ui.js');
   load('skill-select.js');
   load('project-discuss-ui.js');
@@ -30,6 +31,33 @@ function discussFixture(t) {
   });
   return { window, selected, ui };
 }
+
+test('Discuss activity persists through streaming and refresh, and stops for input and terminal states', async (t) => {
+  const { window, selected, ui } = discussFixture(t);
+  ui.setVisible(true);
+  await new Promise((resolve) => setImmediate(resolve));
+  const indicator = () => window.document.querySelector('#discuss-messages > .activity-indicator');
+  assert.equal(indicator(), null);
+  selected.status = 'running';
+  await ui.refresh();
+  const original = indicator();
+  assert.equal(original.getAttribute('role'), 'status');
+  assert.equal(original.textContent, 'Working');
+  selected.messages[0].text += ' Streamed text.';
+  await ui.refresh();
+  assert.equal(indicator(), original, 'Streaming must not restart the animation or activity announcement.');
+  selected.approvals = [{ requestId: 'permission', params: { reason: 'Allow fixture?' } }];
+  await ui.refresh();
+  assert.equal(indicator(), null, 'Waiting for human input must not look active.');
+  selected.approvals = [];
+  await ui.refresh();
+  assert.ok(indicator());
+  for (const status of ['idle', 'paused', 'stopped', 'interrupted', 'failed']) {
+    selected.status = status;
+    await ui.refresh();
+    assert.equal(indicator(), null, status + ' must not animate.');
+  }
+});
 
 test('Discuss keeps expanded tool activity and highlighted text through unchanged and growing refreshes', async (t) => {
   const { window, selected, ui } = discussFixture(t);

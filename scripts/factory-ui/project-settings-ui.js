@@ -5,7 +5,8 @@
     ['lifecycle', 'Issue Lifecycle'],
     ['git', 'Git'],
     ['storage', 'Issue Storage'],
-    ['skills', 'Skills', 'AI Skills'],
+    ['providers', 'AI providers', 'AI'],
+    ['skills', 'Skills'],
     ['prompts', 'Prompts'],
     ['hotkeys', 'Hotkeys'],
   ];
@@ -369,6 +370,7 @@
         )}<button class="small-button" type="button" data-restore-hotkeys>Restore defaults</button>${saveButton}</form>`;
     }
     const renderers = {
+      providers: () => window.factoryProviderSettings.render(data, esc, saveButton),
       issues: renderIssues,
       lifecycle: renderLifecycle,
       git: renderGit,
@@ -384,15 +386,19 @@
       window.factoryAgentOptions(content);
       baseline = snapshot();
     }
-    async function load(value) {
+    async function load(
+      value,
+      { preserveScroll = false, scrollTop = dialog.querySelector('.settings-body').scrollTop } = {}
+    ) {
       const ticket = ++sequence;
       page = value;
       resetPrompts.clear();
       showError();
-      content.textContent = 'Loading settings…';
+      if (!preserveScroll) content.textContent = 'Loading settings…';
       baseline = snapshot();
       navigation();
       const endpoints = {
+        providers: '/api/ai-providers',
         issues: '/api/folder-settings?project=true',
         prompts: '/api/project-preferences',
         hotkeys: '/api/project-preferences',
@@ -405,6 +411,7 @@
         if (value === 'storage') data.storeRegistry = await request('/api/issue-stores');
         if (ticket !== sequence) return;
         render();
+        dialog.querySelector('.settings-body').scrollTop = preserveScroll ? scrollTop : 0;
       } catch (failure) {
         showCurrentError(ticket, failure);
       }
@@ -414,6 +421,7 @@
     }
     function notifySaved() {
       changed?.();
+      window.dispatchEvent(new Event('factory-provider-settings-saved'));
       content
         .querySelector('[data-settings-status]')
         ?.append(page === 'storage' ? 'Saved. Restart Factory to apply publication options.' : 'Saved');
@@ -426,6 +434,7 @@
       try {
         const fields = values();
         const saves = {
+          providers: () => post('/api/ai-providers', window.factoryProviderSettings.input(data, fields)),
           issues: () =>
             post('/api/folder-settings', { project: true, action: 'save', revision: data.revision, changes: fields }),
           prompts: () =>
@@ -442,7 +451,7 @@
         };
         await saves[page]();
         resetPrompts.clear();
-        await load(page);
+        await load(page, { preserveScroll: true });
         await window.FactoryHotkeys.refresh();
         notifySaved();
         return true;
@@ -513,6 +522,8 @@
       });
     }
     const clicks = [
+      ['[data-provider-copy]', copyProviderCommand],
+      ['[data-provider-action]', (button) => leave(() => void providerAction(button))],
       ['[data-settings-page]', (button) => select(button.dataset.settingsPage)],
       ['[data-settings-close]', close],
       ['[data-restore-prompt]', restorePrompt],
@@ -541,6 +552,65 @@
         void action(button);
         break;
       }
+    });
+    async function copyProviderCommand(button) {
+      const setup = data.providers.find((provider) => provider.id === button.dataset.providerCopy)?.setup;
+      const command = { install: setup?.command, check: setup?.checkCommand, signin: setup?.loginCommand }[
+        button.dataset.commandKind
+      ];
+      if (!command) return;
+      try {
+        await navigator.clipboard.writeText(command);
+        button.textContent = 'Copied';
+      } catch {
+        showError('Copy the displayed command manually; clipboard access is unavailable.');
+      }
+    }
+    let pendingProviderSetup = null;
+    async function providerAction(button) {
+      if (busy) return;
+      const body = dialog.querySelector('.settings-body'),
+        scrollTop = body.scrollTop;
+      busy = true;
+      dialog.inert = true;
+      showError();
+      const id = button.dataset.providerId,
+        action = button.dataset.providerAction;
+      const output = content.querySelector(`[data-provider-result="${id}"]`);
+      if (output)
+        output.textContent = {
+          install: 'Opening installation in Terminal…',
+          setup: 'Checking setup…',
+          refresh: 'Checking native sign-in, models, and quota…',
+        }[action];
+      try {
+        const result = await post('/api/ai-provider-action', { provider: id, action });
+        await load('providers', { preserveScroll: true, scrollTop });
+        providerActionResult(id, action, result);
+        body.scrollTop = scrollTop;
+      } catch (failure) {
+        showError(failure.message);
+      } finally {
+        busy = false;
+        dialog.inert = false;
+      }
+    }
+    function providerActionResult(id, action, result) {
+      if (action === 'refresh') {
+        changed?.();
+        window.dispatchEvent(new Event('factory-provider-settings-saved'));
+        return;
+      }
+      pendingProviderSetup = result.ready || !['signin', 'installing'].includes(result.setup?.step) ? null : id;
+      if (data.providers.find((provider) => provider.id === id)?.message === result.message) return;
+      const status = content.querySelector(`[data-provider-result="${id}"]`);
+      if (status) status.textContent = result.message;
+    }
+    window.addEventListener('focus', () => {
+      if (!pendingProviderSetup || !dialog.open || page !== 'providers' || busy || dirty()) return;
+      const id = pendingProviderSetup;
+      pendingProviderSetup = null;
+      void providerAction({ dataset: { providerId: id, providerAction: 'refresh' } });
     });
     async function runAction(button) {
       button.disabled = true;

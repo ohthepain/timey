@@ -200,7 +200,11 @@ function inheritedField(root, chain, field) {
     const value = record.data[field.key];
     if (value === undefined || value === 'default') continue;
     const message = validateFieldValue(field, value);
-    if (message) return { ...fallback, error: { key: field.key, message } };
+    if (message)
+      return {
+        ...(field.key === 'model' ? { value, source: relative(root, record.path) } : fallback),
+        error: { key: field.key, message },
+      };
     return { value, source: relative(root, record.path).split(sep).join('/') };
   }
   return fallback;

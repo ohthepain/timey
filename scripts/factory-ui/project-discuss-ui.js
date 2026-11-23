@@ -89,6 +89,7 @@
     let settingsVersion = 0;
     let desiredSettings = null;
     let pendingActions = 0;
+    let pendingResponses = 0;
     let creating = false;
     let draftRevision = 0;
     let visible = false,
@@ -239,6 +240,8 @@
       const requested = selectedId;
       const previous = actionSave;
       pendingActions++;
+      const responseAction = ['send', 'retry', 'steer', 'resume', 'answer'].includes(name);
+      if (responseAction) pendingResponses++;
       pending = true;
       updateControls();
       error('');
@@ -255,14 +258,20 @@
         return null;
       } finally {
         pendingActions--;
+        if (responseAction) pendingResponses--;
         pending = pendingActions > 0;
         updateControls();
       }
     }
     function choices(id, entries, selected) {
       const node = byId(id);
+      if (selected && !entries.some((entry) => entry.value === selected))
+        entries = [...entries, { value: selected, label: selected + ' · unavailable', disabled: true }];
       const html = entries
-        .map(({ value, label }) => `<option value="${escape(value)}">${escape(label)}</option>`)
+        .map(
+          ({ value, label, disabled }) =>
+            `<option value="${escape(value)}"${disabled ? ' disabled' : ''}>${escape(label)}</option>`
+        )
         .join('');
       if (node.innerHTML !== html) node.innerHTML = html;
       if (entries.some((entry) => entry.value === selected)) node.value = selected;
@@ -294,6 +303,10 @@
     }
     function isChatBusy() {
       return running(session()?.status) || pending;
+    }
+    function responseWorking() {
+      const { status, approvals = [] } = session() || {};
+      return approvals.length === 0 && (running(status) || pendingResponses > 0);
     }
     function messageEditAction(message, user) {
       if (user)
@@ -365,7 +378,7 @@
           )
           .join('') || emptyConversation();
       restoreOpeningScroll(scope);
-      view.render(log, html, scope);
+      view.render(log, html + window.timeyActivity.markup(responseWorking()), scope);
       view.render(
         byId('discuss-queue'),
         (current?.queue || [])
@@ -425,6 +438,7 @@
     }
     function updateControls() {
       const active = running(session()?.status);
+      window.timeyActivity.sync(log, responseWorking());
       draft.disabled = creating;
       byId('discuss-files').disabled = creating;
       for (const id of ['discuss-model', 'discuss-effort', 'discuss-clarification']) byId(id).disabled = creating;

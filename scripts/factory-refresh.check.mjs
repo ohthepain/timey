@@ -14,6 +14,7 @@ function refreshFixture(t) {
   t.after(() => dom.window.close());
   dom.window.eval(
     readFileSync('scripts/factory-ui/view-state.js', 'utf8') +
+      readFileSync('scripts/factory-ui/activity-indicator-ui.js', 'utf8') +
       readFileSync('scripts/factory-ui/coordinator-ui.js', 'utf8') +
       '\nwindow.coordinatorUI = coordinatorUI;\n' +
       readFileSync('scripts/factory-ui/server-control-ui.js', 'utf8') +

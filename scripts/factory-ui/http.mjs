@@ -1,3 +1,6 @@
+import { readProviderConfig } from './provider-config.mjs';
+import { providerSettings, saveProviderSettings } from './provider-runtime.mjs';
+import { refreshProvider, setupProvider, installProvider } from './provider-setup.mjs';
 import { readDiagnosticActivity, resetCodexActivity } from './diagnostic-activity.mjs';
 import { readCodexQuota } from './codex-quota.mjs';
 import { readGitHubCalls, resetGitHubCalls } from './github-call-history.mjs';
@@ -22,6 +25,7 @@ import { createServer } from 'node:http';
 import { runtimeInfo } from './runtime.mjs';
 import { queueResponse } from './queue-response.mjs';
 import { readQueue } from './data.mjs';
+import { issueContext } from '../factory-inputs.mjs';
 import { decisionBasis } from './recorded-result.mjs';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join, basename } from 'node:path';
@@ -41,7 +45,7 @@ import {
 import { recoverMergedStrategyDelivery } from './strategy-delivery-recovery.mjs';
 import { saveDefaultModelSettings, saveIssueModelSettings } from './model-settings.mjs';
 import { openIssueWorkFolder } from './open-issue-work-folder.mjs';
-import { createIssueFlows } from './flow-service.mjs';
+import { createIssueFlows, prepareFlowActionStores } from './flow-service.mjs';
 import { SidebarFiles } from './sidebar-files.mjs';
 import { folderSettingsView, changeFolderSettings } from './folder-settings-routes.mjs';
 import { folderStrategies, changeFolderStrategy } from './folder-strategies.mjs';
@@ -199,14 +203,18 @@ function mayFinishWhilePaused(path, value) {
   return pauseSafeActions[path]?.includes(value.action);
 }
 
-const mergedReadRoutes = new Set([
-  '/api/flow-action',
+const cachedIssueActions = new Set([
   '/api/issue-cleanup-preview',
   '/api/issue-cleanup-identities',
   '/api/issue-cleanup-resource',
   '/api/issue-cleanup-workspace-size',
   '/api/issue-report-reveal',
   '/api/issue-work-folder-open',
+]);
+
+const mergedReadRoutes = new Set([
+  ...cachedIssueActions,
+  '/api/flow-action',
   '/api/issue-storage-open-folder',
   '/api/issue-chat-stop',
   '/api/issue-strategy-stop',
@@ -251,23 +259,108 @@ function reportChatAction(service, value) {
   return reportDiscussionAction(projectDiscuss(service), projectHome(service).investigations, report, value);
 }
 
+const queueMutations = new Set([
+  '/api/evaluate',
+  '/api/save-review',
+  '/api/issue-storage-migrate',
+  '/api/folder-delete',
+  '/api/project-worktree-cleanup',
+  '/api/project-local-branch-cleanup',
+  '/api/project-remote-branch-cleanup',
+  '/api/project-archive-deletion',
+]);
+
+const classicActionRoutes = new Set([
+  '/api/preflight',
+  '/api/start',
+  '/api/resume',
+  '/api/answer',
+  '/api/server-action',
+]);
+
+function actionScope(service, actionId) {
+  const queue = readQueue(service.root);
+  const action = queue.actions.find((entry) => entry.id === actionId);
+  return action ? issueContext(queue, action.issues[0]).issues.map((issue) => issue.id) : [];
+}
+
+function actionIntent(service, value) {
+  return service.intents?.get(value.token) ?? {};
+}
+
+function savedActionRun(service, runId) {
+  return service.store.runs.find((entry) => entry.id === runId) ?? {};
+}
+
+function classicActionIssueIds(service, value) {
+  const run = savedActionRun(service, value.runId);
+  const id = value.actionId || actionIntent(service, value).id || run.actionId;
+  return id ? actionScope(service, id) : [run.issueId].filter(Boolean);
+}
+
+function arrayValue(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function numberedIssueIds(service, value) {
+  return arrayValue(value.issueNumbers)
+    .filter(Number.isSafeInteger)
+    .map((number) => resolveIssueNumber(service, String(number)));
+}
+
+function mutationIssueIds(service, path, value) {
+  const intent = actionIntent(service, value);
+  const investigationId = path === '/api/project-home-action' ? value.id : null;
+  const ids = [
+    value.issueId,
+    value.input?.issueId,
+    intent.issueId,
+    intent.input?.issueId,
+    value.subIssueId,
+    investigationId,
+    ...numberedIssueIds(service, value),
+    ...arrayValue(value.issueIds),
+  ];
+  return [...new Set(ids)].filter((id) => typeof id === 'string' && /^[\w-]+$/.test(id));
+}
+
+const independentActions = new Set([
+  '/api/ai-providers',
+  '/api/ai-provider-action',
+  '/api/server-pause',
+  '/api/server-restart',
+  '/api/server-cancel-restart',
+]);
+
+const localActions = new Map([
+  ['/api/issue-store-action', ['configure', 'test']],
+  ['/api/local-notes-action', ['create', 'edit', 'complete', 'delete', 'move']],
+]);
+
+function activeFlowControl(service, path, value) {
+  return (
+    path === '/api/flow-action' && ['stop', 'pause'].includes(value.action) && service.flows?.active.has(value.issueId)
+  );
+}
+
+function skipsStoreAdmission(service, path, value) {
+  return (
+    independentActions.has(path) ||
+    localActions.get(path)?.includes(value.action) ||
+    localClassicControl(service, path, value) ||
+    activeFlowControl(service, path, value)
+  );
+}
+
 async function prepareStoreMutation(service, path, value) {
-  if (['/api/server-pause', '/api/server-restart', '/api/server-cancel-restart'].includes(path)) return;
-  if (localClassicControl(service, path, value)) return;
-  if (
-    path === '/api/flow-action' &&
-    ['stop', 'pause'].includes(value.action) &&
-    service.flows?.active.has(value.issueId)
-  )
-    return;
-  if (path === '/api/issue-store-action' && ['configure', 'test'].includes(value.action)) return;
-  if (path === '/api/local-notes-action' && ['create', 'edit', 'complete', 'delete', 'move'].includes(value.action))
-    return;
-  await ensureProjectStores(service, {
-    fresh: path !== '/api/issue-store-action',
-    allowPending: path === '/api/issue-store-action',
-    ...(path === '/api/flow-action' && value.action === 'approve-issue' && { issueIds: [value.issueId] }),
-  });
+  if (skipsStoreAdmission(service, path, value)) return;
+  if (path === '/api/issue-store-action') return ensureProjectStores(service, { allowPending: true });
+  if (path === '/api/flow-action') return prepareFlowActionStores(service, value);
+  if (path === '/api/issue-capture') return ensureProjectStores(service);
+  const classic = classicActionRoutes.has(path);
+  const issueIds = classic ? classicActionIssueIds(service, value) : mutationIssueIds(service, path, value);
+  const fresh = queueMutations.has(path) || (!cachedIssueActions.has(path) && issueIds.length > 0);
+  await ensureProjectStores(service, { fresh, display: !fresh && !classic, issueIds });
 }
 
 function storeReadNeeded(path, query) {
@@ -284,6 +377,15 @@ function storeReadNeeded(path, query) {
     '/api/project-home',
     '/api/investigation-reports',
   ].includes(path);
+}
+
+async function storeAction(service, value) {
+  service.testStoreConnection ||= (storeId) => testStoreConnection(service, storeId);
+  const result = await handleStoreAction(service, value);
+  if (value.action === 'move-role') await ensureProjectStores(service, { fresh: true });
+  if (['move-issue', 'resume-move'].includes(value.action))
+    await ensureProjectStores(service, { fresh: true, issueIds: result.issues.map(({ id }) => id) });
+  return result;
 }
 
 async function mutation(service, path, value, owner) {
@@ -313,12 +415,7 @@ async function mutation(service, path, value, owner) {
   if (Object.hasOwn(discussionRoutes, path)) return temporaryAction(discussionRoutes[path]);
   const routes = {
     '/api/issue-store-recovery': () => recoverOwnership(service, value),
-    '/api/issue-store-action': async () => {
-      service.testStoreConnection ||= (storeId) => testStoreConnection(service, storeId);
-      const result = await handleStoreAction(service, value);
-      if (!['configure', 'test'].includes(value.action)) await ensureProjectStores(service, { fresh: true });
-      return result;
-    },
+    '/api/issue-store-action': () => storeAction(service, value),
     '/api/ai-text-bro': () => simplifyAIText(service, value),
     '/api/local-notes-action': () => localNoteAction(service, value, () => projectDiscuss(service)),
     '/api/project-discuss-action': () => projectDiscuss(service).action(value),
@@ -335,6 +432,18 @@ async function mutation(service, path, value, owner) {
     },
     '/api/folder-delete': () => flows(service).deleteFolder(value),
     '/api/sidebar-files-action': () => new SidebarFiles(service.root).change(value),
+    '/api/ai-providers': () => {
+      service.ownServer();
+      return saveProviderSettings(service.root, value);
+    },
+    '/api/ai-provider-action': () => {
+      service.ownServer();
+      requireThat(['setup', 'refresh', 'install'].includes(value.action), 'Choose Install, Sign in, or Check again.');
+      if (value.action === 'install') return installProvider(service.root, value.provider);
+      return value.action === 'setup'
+        ? setupProvider(service.root, value.provider)
+        : refreshProvider(service.root, value.provider);
+    },
     '/api/project-settings': () => changeProjectSettings(service, value),
     '/api/project-preferences': () => saveProjectPreferences(service, value),
     '/api/project-settings-initialize': () => initializeProjectLifecycle(service, value),
@@ -533,6 +642,18 @@ function displayRead(url) {
   return url.pathname !== '/api/issue-store-recovery';
 }
 
+function scopedReadIds(service, url) {
+  const selector = {
+    '/api/flow': 'issue',
+    '/api/issue': 'issue',
+    '/api/issue-report': 'issue',
+    '/api/issue-closure': 'issue',
+    '/api/issue-store-recovery': 'issueId',
+  }[url.pathname];
+  const id = selector && url.searchParams.get(selector);
+  return id ? [resolveIssueNumber(service, id)] : undefined;
+}
+
 const classicDisplayLoads = new WeakMap();
 function hydrateClassicDisplay(service, id) {
   const capturedAt = readSnapshot(service.root)?.capturedAt;
@@ -553,6 +674,7 @@ async function read(service, request, response, owner) {
       allowPending: url.pathname === '/api/issue-stores',
       allowCached: true,
       display: displayRead(url),
+      issueIds: scopedReadIds(service, url),
     });
   const selectedIssue = url.searchParams.get('issue');
   const issue = (value) => resolveIssueNumber(service, value);
@@ -576,6 +698,9 @@ async function read(service, request, response, owner) {
     '/api/sidebar-directory': () => new SidebarFiles(service.root).directory(Object.fromEntries(url.searchParams)),
     '/api/sidebar-file': () => new SidebarFiles(service.root).file(Object.fromEntries(url.searchParams)),
     '/api/capture-grilling-skills': () => readClarificationSkills(service.root).filter((item) => item.kind === 'skill'),
+    '/api/ai-provider-status': () =>
+      readProviderConfig(service.root) ? providerSettings(service.root) : { providers: [] },
+    '/api/ai-providers': () => providerSettings(service.root, { initialize: service.reviewMode !== 'preview' }),
     '/api/project-settings': () => readProjectSettingsOverview(service),
     '/api/project-preferences': () => readProjectPreferences(service.root),
     '/api/project-home': () => projectHome(service).view(),
@@ -777,6 +902,7 @@ function readResource(service, request, response, owner) {
     '/ai-text-ui.js': 'ai-text-ui.js',
     '/ai-text.css': 'ai-text.css',
     '/view-state.js': 'view-state.js',
+    '/activity-indicator-ui.js': 'activity-indicator-ui.js',
     '/local-notes-ui.js': 'local-notes-ui.js',
     '/local-notes.css': 'local-notes.css',
     '/project-discuss-ui.js': 'project-discuss-ui.js',
@@ -791,6 +917,7 @@ function readResource(service, request, response, owner) {
     '/github-calls.css': 'github-calls.css',
     '/diagnostics-ui.js': 'diagnostics-ui.js',
     '/diagnostics.css': 'diagnostics.css',
+    '/provider-settings-ui.js': 'provider-settings-ui.js',
     '/project-settings-ui.js': 'project-settings-ui.js',
     '/project-settings.css': 'project-settings.css',
     '/hotkeys-ui.js': 'hotkeys-ui.js',
@@ -800,6 +927,7 @@ function readResource(service, request, response, owner) {
     '/project-home.css': 'project-home.css',
     '/issue-folder-drag-ui.js': 'issue-folder-drag-ui.js',
     '/sidebar-files-ui.js': 'sidebar-files-ui.js',
+    '/block-model-ui.js': 'block-model-ui.js',
     '/folder-settings-ui.js': 'folder-settings-ui.js',
     '/investigation-followups-ui.js': 'investigation-followups-ui.js',
     '/view-inspection.js': 'view-inspection.js',

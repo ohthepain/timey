@@ -67,7 +67,7 @@ function retroEvidence(root, history) {
 }
 
 export async function runRetro(service, ctx, create = createDiscussionRuntime) {
-  const session = create(undefined, { root: service.root });
+  const session = create(undefined, { root: service.root, model: ctx.attempt?.modelSettings?.model });
   let evidence;
   let timer;
   let abort;

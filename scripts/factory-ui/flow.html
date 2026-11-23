@@ -15,11 +15,13 @@
     <script src="/github-calls-ui.js" defer></script>
     <link rel="stylesheet" href="/diagnostics.css" />
     <script src="/diagnostics-ui.js" defer></script>
+    <script src="/provider-settings-ui.js" defer></script>
     <script src="/project-settings-ui.js" defer></script>
     <link rel="stylesheet" href="/project-discuss.css" />
     <link rel="stylesheet" href="/project-reports.css" />
     <link rel="stylesheet" href="/local-notes.css" />
     <script src="/view-state.js" defer></script>
+    <script src="/activity-indicator-ui.js" defer></script>
     <script src="/issue-chat-ui.js" defer></script>
     <script src="../../node_modules/markdown-it/dist/markdown-it.min.js" defer></script>
     <script src="/skill-select.js" defer></script>
@@ -28,6 +30,7 @@
     <script src="/server-control-ui.js" defer></script>
     <script src="/issue-closure-ui.js" defer></script>
     <script src="/issue-folder-drag-ui.js" defer></script>
+    <script src="/block-model-ui.js" defer></script>
     <script src="/folder-settings-ui.js" defer></script>
     <script src="/investigation-followups-ui.js" defer></script>
     <script src="/project-admin-ui.js" defer></script>
@@ -92,7 +95,7 @@
               <span id="github-call-total">–</span>
               <span class="github-call-failed" id="github-call-failed" hidden></span>
             </button>
-            <button class="icon-button" id="project-settings" aria-label="Project settings" title="Project settings">
+            <button class="icon-button" id="project-settings" aria-label="Factory settings" title="Factory settings">
               <svg
                 width="18"
                 height="18"
@@ -200,6 +203,10 @@
         ></div>
       </aside>
       <main class="flow-main">
+        <aside id="provider-status-banner" class="provider-status-banner" role="status" hidden>
+          <span data-provider-status-text></span>
+          <button type="button" data-provider-settings-open>Factory settings</button>
+        </aside>
         <header class="flow-heading">
           <div class="breadcrumb">
             <span>Workspace</span><span class="breadcrumb-divider">/</span><span id="flow-view-title">Issue flow</span>
@@ -301,6 +308,12 @@
             <button class="small-button" id="skip-retro" type="button" hidden>Continue to Cleanup</button>
             <span class="muted" id="playback-status" aria-live="polite"></span>
           </div>
+        </section>
+        <section id="last-blocking-error" class="issue-results" aria-labelledby="last-blocking-error-title" hidden>
+          <h2 id="last-blocking-error-title">Last blocking error</h2>
+          <p id="last-blocking-error-context" class="muted"></p>
+          <p id="last-blocking-error-message" role="alert"></p>
+          <button type="button" class="small-button" id="last-blocking-error-open">Open block details</button>
         </section>
         <section id="issue-results" class="issue-results" aria-labelledby="issue-results-title" hidden>
           <h2 id="issue-results-title">Results</h2>
@@ -790,19 +803,24 @@
             </dialog>
           </section>
         </section>
-        <section
-          id="graph-scroll"
-          class="graph-scroll"
-          aria-label="Issue flow, from starting point at the top to destination at the bottom"
-        >
-          <div class="workspace-empty" id="workspace-empty">
-            <div class="empty-graphic" aria-hidden="true"><span>◇</span><i></i><span>□</span><i></i><span>○</span></div>
-            <h1>Your work, one block at a time.</h1>
-            <p>Choose an issue to see its flow.<br />You decide what runs and what comes next.</p>
-            <button class="primary-button" id="empty-new-issue">＋ Create an issue</button>
-          </div>
-          <div id="graph" class="graph" hidden></div>
-        </section>
+        <div class="graph-region" id="graph-region">
+          <section
+            id="graph-scroll"
+            class="graph-scroll"
+            aria-label="Issue flow, from starting point at the top to destination at the bottom"
+          >
+            <div class="workspace-empty" id="workspace-empty">
+              <div class="empty-graphic" aria-hidden="true">
+                <span>◇</span><i></i><span>□</span><i></i><span>○</span>
+              </div>
+              <h1>Your work, one block at a time.</h1>
+              <p>Choose an issue to see its flow.<br />You decide what runs and what comes next.</p>
+              <button class="primary-button" id="empty-new-issue">＋ Create an issue</button>
+            </div>
+            <div id="graph" class="graph" hidden></div>
+          </section>
+          <div id="issue-activity" class="issue-activity"></div>
+        </div>
         <footer class="flow-footer">
           <span><span class="footer-dot"></span> <span id="flow-footer-label">Changes are saved locally</span></span
           ><span class="direction-hint">Flow runs from top to bottom ↓</span>
@@ -1105,8 +1123,8 @@
     </section>
     <dialog id="project-settings-dialog" class="modal" aria-labelledby="project-settings-title">
       <div class="modal-heading">
-        <h2 id="project-settings-title">Project settings</h2>
-        <button class="icon-button" type="button" data-settings-close aria-label="Close project settings">×</button>
+        <h2 id="project-settings-title">Factory settings</h2>
+        <button class="icon-button" type="button" data-settings-close aria-label="Close Factory settings">×</button>
       </div>
       <div class="settings-layout">
         <nav id="settings-navigation" aria-label="Settings categories"></nav>
