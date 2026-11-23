@@ -1,3 +1,6 @@
+import { readProviderConfig } from './provider-config.mjs';
+import { providerSettings, saveProviderSettings } from './provider-runtime.mjs';
+import { refreshProvider, setupProvider, installProvider } from './provider-setup.mjs';
 import { readDiagnosticActivity, resetCodexActivity } from './diagnostic-activity.mjs';
 import { readCodexQuota } from './codex-quota.mjs';
 import { readGitHubCalls, resetGitHubCalls } from './github-call-history.mjs';
@@ -251,7 +254,16 @@ function reportChatAction(service, value) {
   return reportDiscussionAction(projectDiscuss(service), projectHome(service).investigations, report, value);
 }
 
+function mutationNeedsFreshSnapshot(path, value) {
+  return (
+    path !== '/api/issue-store-action' &&
+    path !== '/api/issue-capture' &&
+    !(path === '/api/flow-action' && value.action === 'capture')
+  );
+}
+
 async function prepareStoreMutation(service, path, value) {
+  if (['/api/ai-providers', '/api/ai-provider-action'].includes(path)) return;
   if (['/api/server-pause', '/api/server-restart', '/api/server-cancel-restart'].includes(path)) return;
   if (localClassicControl(service, path, value)) return;
   if (
@@ -264,7 +276,7 @@ async function prepareStoreMutation(service, path, value) {
   if (path === '/api/local-notes-action' && ['create', 'edit', 'complete', 'delete', 'move'].includes(value.action))
     return;
   await ensureProjectStores(service, {
-    fresh: path !== '/api/issue-store-action',
+    fresh: mutationNeedsFreshSnapshot(path, value),
     allowPending: path === '/api/issue-store-action',
     ...(path === '/api/flow-action' && value.action === 'approve-issue' && { issueIds: [value.issueId] }),
   });
@@ -335,6 +347,18 @@ async function mutation(service, path, value, owner) {
     },
     '/api/folder-delete': () => flows(service).deleteFolder(value),
     '/api/sidebar-files-action': () => new SidebarFiles(service.root).change(value),
+    '/api/ai-providers': () => {
+      service.ownServer();
+      return saveProviderSettings(service.root, value);
+    },
+    '/api/ai-provider-action': () => {
+      service.ownServer();
+      requireThat(['setup', 'refresh', 'install'].includes(value.action), 'Choose Install, Sign in, or Check again.');
+      if (value.action === 'install') return installProvider(service.root, value.provider);
+      return value.action === 'setup'
+        ? setupProvider(service.root, value.provider)
+        : refreshProvider(service.root, value.provider);
+    },
     '/api/project-settings': () => changeProjectSettings(service, value),
     '/api/project-preferences': () => saveProjectPreferences(service, value),
     '/api/project-settings-initialize': () => initializeProjectLifecycle(service, value),
@@ -576,6 +600,9 @@ async function read(service, request, response, owner) {
     '/api/sidebar-directory': () => new SidebarFiles(service.root).directory(Object.fromEntries(url.searchParams)),
     '/api/sidebar-file': () => new SidebarFiles(service.root).file(Object.fromEntries(url.searchParams)),
     '/api/capture-grilling-skills': () => readClarificationSkills(service.root).filter((item) => item.kind === 'skill'),
+    '/api/ai-provider-status': () =>
+      readProviderConfig(service.root) ? providerSettings(service.root) : { providers: [] },
+    '/api/ai-providers': () => providerSettings(service.root, { initialize: service.reviewMode !== 'preview' }),
     '/api/project-settings': () => readProjectSettingsOverview(service),
     '/api/project-preferences': () => readProjectPreferences(service.root),
     '/api/project-home': () => projectHome(service).view(),
@@ -777,6 +804,7 @@ function readResource(service, request, response, owner) {
     '/ai-text-ui.js': 'ai-text-ui.js',
     '/ai-text.css': 'ai-text.css',
     '/view-state.js': 'view-state.js',
+    '/activity-indicator-ui.js': 'activity-indicator-ui.js',
     '/local-notes-ui.js': 'local-notes-ui.js',
     '/local-notes.css': 'local-notes.css',
     '/project-discuss-ui.js': 'project-discuss-ui.js',
@@ -791,6 +819,7 @@ function readResource(service, request, response, owner) {
     '/github-calls.css': 'github-calls.css',
     '/diagnostics-ui.js': 'diagnostics-ui.js',
     '/diagnostics.css': 'diagnostics.css',
+    '/provider-settings-ui.js': 'provider-settings-ui.js',
     '/project-settings-ui.js': 'project-settings-ui.js',
     '/project-settings.css': 'project-settings.css',
     '/hotkeys-ui.js': 'hotkeys-ui.js',

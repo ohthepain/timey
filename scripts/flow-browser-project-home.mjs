@@ -107,6 +107,7 @@ function configureHome(service, calls) {
         async turn(_session, input) {
           calls.automate++;
           calls.duration = input.context.duration;
+          await calls.beforeTurn?.();
           return calls.automate === 1
             ? { message: 'Which working habit matters most?', draft: null }
             : { message: 'Review this proposed skill.', draft: { name: 'fixture-mode', content: draft } };
@@ -203,6 +204,35 @@ export async function investigationFlowsBrowserChecks({ page, service, screensho
   const calls = await prepareHome(page, service);
   await page.locator('#home-title').waitFor();
   await investigate(page, service, calls, screenshot, poll);
+}
+
+export async function automateActivityBrowserChecks({ page, service, screenshot }) {
+  const calls = await prepareHome(page, service);
+  let turn = Promise.withResolvers();
+  calls.beforeTurn = () => turn.promise;
+  try {
+    await page.getByRole('tab', { name: 'Automate me', exact: true }).click();
+    await page.getByRole('button', { name: 'Run Automate me', exact: true }).click();
+    const dialog = page.locator('#home-automate-dialog');
+    const indicator = dialog.locator('#home-automate-messages > .activity-indicator');
+    await dialog.getByRole('button', { name: 'Start conversation', exact: true }).click();
+    await indicator.waitFor();
+    await screenshot('automate-activity-running');
+    turn.resolve();
+    await dialog.getByText('Which working habit matters most?', { exact: true }).waitFor();
+    await indicator.waitFor({ state: 'detached' });
+    turn = Promise.withResolvers();
+    await dialog.locator('#home-automate-message').fill('Make verification explicit.');
+    await dialog.getByRole('button', { name: 'Send reply', exact: true }).click();
+    await indicator.waitFor();
+    turn.resolve();
+    await dialog.locator('#home-automate-review:not([hidden])').waitFor();
+    await indicator.waitFor({ state: 'detached' });
+    await dialog.getByRole('button', { name: 'Close Automate me', exact: true }).click();
+  } finally {
+    turn.resolve();
+    calls.beforeTurn = null;
+  }
 }
 
 async function automate(page, service, calls, screenshot) {

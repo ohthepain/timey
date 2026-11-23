@@ -111,6 +111,7 @@ function selectedClosedIssues(root, queue, id) {
 
 function projectCodexConnection(service) {
   return new CodexConnection({
+    root: service.root,
     onEvent: (message) => service.store.event(message),
     mcpTools: () => sharedChatTools(service),
   });

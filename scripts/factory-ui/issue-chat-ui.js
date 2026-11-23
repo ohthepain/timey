@@ -298,7 +298,7 @@ const issueChatUI = (() => {
     api = null,
     after = null,
     openEvidence = null;
-  let log, draft, mode, status, pending, toggle, body, historyButton, stop;
+  let log, activity, draft, mode, status, pending, toggle, body, historyButton, stop;
   let skillComposer,
     queueList,
     pause,
@@ -401,6 +401,7 @@ const issueChatUI = (() => {
     log.className = 'discussion-output';
     log.setAttribute('role', 'log');
     log.setAttribute('aria-label', 'Issue conversation');
+    activity = node('div');
     pending = node('section');
     pending.className = 'conversation-request';
     queueList = node('section');
@@ -496,7 +497,7 @@ const issueChatUI = (() => {
       'small',
       'Send queues behind active work. Pause holds later prompts; Stop interrupts the current turn and holds the queue. Work edits the issue checkout. Merge and acceptance use their own controls.'
     );
-    body.append(historyButton, log, pending, queueList, mode, form, status, notice);
+    body.append(historyButton, log, activity, pending, queueList, mode, form, status, notice);
     section.append(toggle, body);
     return section;
   }
@@ -510,6 +511,7 @@ const issueChatUI = (() => {
     historyButton.hidden = historyComplete || !conversation.hasMore;
     renderPending(inputHtml);
     const issue = latest.issues.find((entry) => entry.id === current);
+    updateActivity(conversation);
     syncReplyMode(issue.lifecycle);
     renderQueue(conversation);
     renderStop(conversation);
@@ -522,6 +524,11 @@ const issueChatUI = (() => {
     stop.disabled = stopping.has(current);
     stop.textContent = stop.disabled ? 'Stopping…' : 'Stop';
     bindStop(conversation, queue);
+  }
+  function updateActivity(conversation) {
+    const { lifecycle = {} } = latest.issues.find((entry) => entry.id === current);
+    const active = conversation.connected || sending.has(current);
+    window.timeyActivity.sync(activity, active && conversation.status !== 'attention' && !lifecycle.input);
   }
   function stopAvailable(conversation, queue) {
     return Boolean(conversation.responseId || queue.activeTurn?.canStop || cancellableOperation(queue.operation));
@@ -817,6 +824,7 @@ const issueChatUI = (() => {
     if (sending.has(current) || !skillComposer.canSubmit(draft.value)) return;
     const input = composeMessage();
     sending.add(input.issueId);
+    updateActivity(selectedConversation(latest, current));
     status.textContent = 'Saving your message…';
     try {
       const result = await saveComposedMessage(input);
@@ -825,8 +833,12 @@ const issueChatUI = (() => {
     } catch (error) {
       messageError(input, error);
     } finally {
-      sending.delete(input.issueId);
+      finishSend(input.issueId);
     }
+  }
+  function finishSend(issueId) {
+    sending.delete(issueId);
+    if (current === issueId) updateActivity(selectedConversation(latest, current));
   }
   function saveComposedMessage(input) {
     if (editing)

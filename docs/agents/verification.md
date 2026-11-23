@@ -798,6 +798,12 @@ one PR per complete issue. Historical records retain their original meaning.
 
 ## Issue capture checks
 
+Run `node --test scripts/issue-creation.check.mjs` for HTTP and direct Flow creation,
+multi-issue Classic capture, retry identity, and peer deletion after capture.
+The disposable provider refuses unrelated report reads, so these checks detect
+queue-wide refreshes during creation while confirming new report persistence and
+preservation of the existing display snapshot. They measure no cloud latency.
+
 Run `node --test scripts/factory-capture.check.mjs` for disposable reports and real
 HTTP capture requests, including mapped routing, skip reasons, preserved original
 wording, independent outcomes, collisions, concurrent/replayed submissions, partial
@@ -1026,6 +1032,17 @@ then the thumb hides after scrolling stops. The flow width and scroll position
 remain stable. It saves `issue-scrollbar.json` and screenshots of the idle,
 scrolling and stopped states in the reported evidence directory.
 
+`node scripts/flow-browser.mjs --activity-indicators --project-discuss --automate-activity` checks
+three-dot activity during streamed chat output and its removal after Stop or
+failure. The issue fixture holds actual Flow execution and checks the overlay's
+fixed position during wheel scrolling, mobile placement, pointer pass-through,
+reduced motion, human-input waits, and completion. It also checks injected
+branch-repair display states and held Automate me responses. It saves
+`activity-indicator.json` and chat and issue screenshots. These fixtures start no
+live model turns. `node --test scripts/interface-state.check.mjs` also checks
+that streamed text preserves the same indicator node and that human-input and
+terminal states remove it.
+
 `node --test scripts/actions-menu.check.mjs scripts/factory-server-control.check.mjs`
 checks two-second action-list admission, no overlapping requests, preserved feedback
 and drafts, block purposes, and named triggers for operations outside blocks.
@@ -1058,3 +1075,34 @@ retains no credentials, and reports only supported protocol metadata. A passing
 handshake does not prove login, billing, coding, approval pauses, or continuation
 against a live model. The authenticated workflow checks remain listed in the
 [native agent plan](../plans/anthropic-google-model-support.md).
+
+## AI provider settings
+
+`node --test scripts/provider-settings.check.mjs scripts/provider-setup.check.mjs`
+checks migration, saved choices, threshold boundaries, multiple windows, scoped
+quota, freshness, explicit unknown-quota permission, exhaustion, revision guards,
+and metadata discovery through disposable native-protocol executables. The
+executables reject unexpected methods and retain requests, establishing that
+Setup discovery sends no model prompt or sign-in request. These fixtures do not
+prove live vendor entitlements or browser sign-in completion.
+
+`node --test scripts/native-agent.check.mjs` checks actual child-process
+interruption when a model is disabled and refusal of a later prompt. The focused
+`node --test --test-name-pattern='provider disable lets' scripts/flow.check.mjs`
+checks a publication already underway: it retains its outcome, receives no abort,
+and starts no later merge after provider disablement.
+
+`node scripts/flow-browser.mjs --ai-providers` checks the real Settings form,
+explicit Save, unsaved edits, unchecked discovery, filtered model dropdowns,
+warning banner, and desktop/mobile layout. Its allowance observations are
+fixtures; it launches no live model or vendor login.
+
+Provider setup checks also cover missing Claude/Gemini executables, an installed
+CLI that fails to start, npm prerequisites, recipe-only explicit installation,
+terminal launch failure, and native executables in a user install directory.
+The install launcher is injected: these checks install no software and open no
+real sign-in or terminal. The provider browser scenario holds Setup responses,
+checks scroll position before and after them, reads copied install commands from
+the real clipboard, and verifies that only a clicked Install sends that action.
+Both Anthropic and Google are exercised. Saving and ordinary Settings navigation
+retain their existing checks.

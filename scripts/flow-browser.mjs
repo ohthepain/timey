@@ -1,3 +1,5 @@
+import { providerSettingsBrowserChecks } from './flow-browser-provider-settings.mjs';
+import { activityBrowserChecks } from './flow-browser-activity.mjs';
 import { investigationReportsBrowserChecks } from './flow-browser-investigation-reports.mjs';
 import { issueStatusFoldersBrowserChecks } from './flow-browser-issue-status-folders.mjs';
 import { projectIssuesBrowserChecks } from './flow-browser-project-issues.mjs';
@@ -42,7 +44,11 @@ import { flowFollowupsBrowserChecks } from './flow-browser-followups.mjs';
 import { investigationProposals } from './investigation-followups-fixture.mjs';
 import { withQueueConfiguration } from './flow-browser-queue-configuration.mjs';
 import { projectNavigationBrowserChecks } from './flow-browser-project-navigation.mjs';
-import { projectHomeBrowserChecks, investigationFlowsBrowserChecks } from './flow-browser-project-home.mjs';
+import {
+  projectHomeBrowserChecks,
+  investigationFlowsBrowserChecks,
+  automateActivityBrowserChecks,
+} from './flow-browser-project-home.mjs';
 import { projectDiscussBrowserChecks } from './flow-browser-project-discuss.mjs';
 import { projectSettingsBrowserChecks } from './flow-browser-project-settings.mjs';
 import { aiTextBrowserChecks } from './flow-browser-ai-text.mjs';
@@ -90,6 +96,7 @@ const assets = [
   'ai-text.css',
   'ai-text-bro.mjs',
   'view-state.js',
+  'activity-indicator-ui.js',
   'flow.html',
   'flow.css',
   'flow-ui.js',
@@ -98,6 +105,7 @@ const assets = [
   'issue-folder-drag-ui.js',
   'sidebar-files-ui.js',
   'folder-settings-ui.js',
+  'provider-settings-ui.js',
   'project-settings-ui.js',
   'project-settings.css',
   'github-calls-ui.js',
@@ -293,6 +301,8 @@ function connectionRecoveryIssue() {
 function checkExcluded(name) {
   if (!browserScenarioSelected(name)) return true;
   const selections = [
+    ['--activity-indicators', 'Activity dots stay anchored and reflect actual work'],
+    ['--automate-activity', 'Automate me dots follow each active response'],
     ['--issue-scrollbar', 'Issue flow scrollbar appears only while scrolling'],
     ['--issue-status-folders', 'Status pseudo-folders track project issues without moving them'],
     ['--project-issues', 'Closed issue selections archive together and issue links open the normal view'],
@@ -313,6 +323,7 @@ function checkExcluded(name) {
     ['--project-navigation', navigationCheck],
     ['--project-discuss', discussCheck],
     ['--project-settings', settingsCheck],
+    ['--ai-providers', 'Factory provider settings save enablement and quota warnings'],
     ['--native-agents', 'Native Flow approvals and questions retain their exact attempt'],
     ['--stores', storesCheck],
     ['--ai-text', aiTextCheck],
@@ -613,6 +624,9 @@ try {
     )
   );
   await check(discussCheck, () => projectDiscussBrowserChecks({ page, project, service, poll, screenshot }));
+  await check('Factory provider settings save enablement and quota warnings', () =>
+    providerSettingsBrowserChecks({ page, project, screenshot })
+  );
   await check(settingsCheck, () =>
     withQueueConfiguration({ page, project, root }, () =>
       projectSettingsBrowserChecks({ page, project, service, logs, poll, screenshot, output, candidate })
@@ -661,6 +675,12 @@ try {
     await localNotesBrowserChecks({ page, project, service, poll, screenshot, output, candidate });
     assert.deepEqual(unexpectedConsoleErrors(logs.console), []);
   });
+  await check('Automate me dots follow each active response', () =>
+    automateActivityBrowserChecks({ page, service, screenshot })
+  );
+  await check('Activity dots stay anchored and reflect actual work', () =>
+    activityBrowserChecks({ page, project, service, poll, screenshot, output })
+  );
   await check('Issue flow scrollbar appears only while scrolling', async () => {
     const id = '20261122-issue-scrollbar-fixture';
     writeBrowserIssue(project, {

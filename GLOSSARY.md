@@ -17,8 +17,16 @@ A model the person has chosen to permit for Factory work. Quota pauses or other
 restrictions may still make it unavailable.
 
 **Provider quota pause**:
-A temporary block on all models from a provider when its reported remaining
-allowance falls below the project's configured threshold.
+A temporary block on a provider's models caused by a shared allowance limit and
+the configured disable threshold.
+
+**Model quota pause**:
+A temporary block on the models covered by a model-specific allowance limit and
+the configured disable threshold.
+
+**Quota warning**:
+An indication that reported remaining allowance has reached the configured warning
+threshold for the affected provider or models.
 
 **Allow work without quota monitoring**:
 The person's explicit choice to permit Factory work with a provider whose remaining

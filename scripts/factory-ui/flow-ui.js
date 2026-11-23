@@ -186,6 +186,21 @@
     return runningStatuses.has(status(block));
   }
 
+  function blockWorking(block) {
+    const attempt = latest(block);
+    const awaitingAgent = state.view?.agentApprovals?.some((request) => request.blockId === block.id);
+    return (
+      isRunning(block) && !attempt?.inputRequestedAt && !attempt?.input && !blockHumanInput(block) && !awaitingAgent
+    );
+  }
+
+  function issueWorking() {
+    const blocks = state.view?.flow?.blocks || [];
+    const repairing = ['running', 'stopping'].includes(state.view?.branchRepair?.status);
+    const updating = Boolean(state.issueId) && state.updatingBranch === state.issueId;
+    return blocks.some(blockWorking) || repairing || updating;
+  }
+
   function statusText(value, attempt) {
     if (value === 'blocked' && attempt?.result?.humanInput) return 'Needs your input';
     return value === 'blocked' && attempt?.result?.completed?.length ? 'Needs retry' : words(value);
@@ -1108,6 +1123,7 @@
     workspace.closest('.workspace').classList.toggle('folder-open', selected);
     workspace.closest('.workspace').querySelector('.inspector').hidden = selected;
     $('graph-scroll').hidden = selected;
+    $('graph-region').hidden = selected;
     $('flow-view-title').textContent = selected ? 'Folder' : 'Issue flow';
     $('issue-folder-content').hidden = !state.folder;
     if (!selected) return;
@@ -1352,6 +1368,7 @@
 
   function renderEnvironment() {
     branchRepairUI.update(state.view);
+    window.timeyActivity.sync($('issue-activity'), Boolean(state.view?.issue) && issueWorking());
     const environment = state.view?.environment;
     $('environment').hidden = !environment;
     if (!environment) return;
@@ -2209,7 +2226,7 @@
 
   function renderConversation(block) {
     const messages = state.view?.conversation || [];
-    return `<p class="conversation-context">This issue's conversation shows notes and responses from its blocks.</p>${messages.length ? `<div class="timeline">${messages.map(conversationMessage).join('')}</div>` : '<p class="inline-empty">No conversation entries yet. Starting a block will retain its activity here.</p>'}${block ? commentForm(block) : ''}`;
+    return `<p class="conversation-context">This issue's conversation shows notes and responses from its blocks.</p>${messages.length ? `<div class="timeline">${messages.map(conversationMessage).join('')}</div>` : '<p class="inline-empty">No conversation entries yet. Starting a block will retain its activity here.</p>'}${window.timeyActivity.markup(issueWorking())}${block ? commentForm(block) : ''}`;
   }
 
   function renderArtifacts(block, artifacts) {
@@ -2404,6 +2421,7 @@
     $('app').dataset.homeView = showHome ? 'open' : 'closed';
     if (showHome) {
       $('graph-scroll').hidden = true;
+      $('graph-region').hidden = true;
       document.querySelector('.inspector').hidden = true;
       $('flow-view-title').textContent = 'Project home';
     }

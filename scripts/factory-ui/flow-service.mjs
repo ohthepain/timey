@@ -1,3 +1,4 @@
+import { guardProviderWork } from './provider-runtime.mjs';
 import { withDiagnosticContext } from './diagnostic-activity.mjs';
 import { storeUnavailable } from './stores/availability.mjs';
 import { abortOwnedMerge, moveOwnedStartingPoint, updateOwnedWorktree } from './stores/manual-operations.mjs';
@@ -1199,7 +1200,7 @@ class IssueFlows {
   async prepareActionStores(input, storesReady) {
     if (!storesReady && this.actionNeedsFreshStore(input))
       await ensureProjectStores(this.service, {
-        fresh: true,
+        fresh: input.action !== 'capture',
         ...(input.action === 'approve-issue' && { issueIds: [input.issueId] }),
       });
   }
@@ -2402,8 +2403,14 @@ class IssueFlows {
     checkpoint.unref();
     let outcome;
     let claim;
+    let providerGuard;
     const queue = this.service.sharedIssues;
     try {
+      const model = this.issueSettings(issue, flow).values.model;
+      providerGuard = await guardProviderWork(this.service.root, model, (error) => {
+        this.pause(issue.id, error.message);
+        if (!['publish', 'merge', 'update-branch', 'cleanup'].includes(block.kind)) controller.abort(error);
+      });
       if (!owner && !['request', 'retro', 'cleanup', 'close'].includes(block.kind))
         claim = queue?.acquireFlowBlock(issue, blockId, input.action === 'continue');
       const result =
@@ -2516,6 +2523,7 @@ class IssueFlows {
         outcome = current;
       });
     } finally {
+      providerGuard?.close();
       clearInterval(checkpoint);
       if (owner && outcome) {
         if (unresolvedAttempt(outcome)) {
@@ -2705,6 +2713,8 @@ class IssueFlows {
       input.reusable === undefined || (input.type === 'investigation' && typeof input.reusable === 'boolean'),
       'Reusable applies to investigation issues.'
     );
+    if (this.service.projectStores && input.sourceIssue)
+      await this.service.projectStores.refresh({ issueIds: [this.selected(input.sourceIssue).id] });
     validateCaptureSource(input, this);
     if (input.startingRef !== undefined) branchStartingPoint(await this.codeBranches(), input.startingRef);
     const folder = requireIssueFolder(
@@ -2820,6 +2830,7 @@ class IssueFlows {
     requireThat(receipt.identity === identity, 'This request identity already contains different wording.');
     if (receipt.deleted) return { deleted: true, issueId: receipt.id };
     if (receipt.complete !== false) {
+      if (this.service.projectStores) await this.service.projectStores.refresh({ issueIds: [receipt.id] });
       if (
         !existsSync(storedIssuePath(this.service.root, receipt.id)) &&
         !existsSync(storedIssuePath(this.service.root, receipt.id, 'closed')) &&
@@ -2873,7 +2884,7 @@ class IssueFlows {
       flow: receipt.flow,
       operationId: 'capture-' + input.requestId,
     });
-    await this.service.projectStores.refresh();
+    await this.service.projectStores.refresh({ issueIds: [receipt.id] });
     writeJson(receiptPath, { ...receipt, complete: true });
     return this.view(receipt.id);
   }

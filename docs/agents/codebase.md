@@ -439,7 +439,11 @@ The Close-menu context is also a display read
 from the saved snapshot; confirming closure still requires fresh state and the
 existing acceptance checks. Confirmed report publications use the existing scoped
 snapshot refresh for the affected issue; snapshot installation preserves other
-saved issues. `FlowService.storageView` consumes that status
+saved issues. Flow and Classic creation initialize and validate the configured
+stores without reloading existing reports, then refresh only the newly created
+issues after confirmed publication. Cold startup still builds the initial snapshot.
+Completed Flow capture retries refresh their saved issue before checking whether
+another runner deleted or moved it. `FlowService.storageView` consumes that status
 without repeating the project refresh. Selected-issue evidence loads once and
 can reload on explicit Refresh. Explicit file reads await evidence hydration.
 Selected Classic views reuse hydration for each confirmed snapshot generation. Flow persists
@@ -849,6 +853,14 @@ controls share a row with Send. Discuss hides
 the shared Flow footer. The shared skill composer, message envelope, send icon, and dictation handler
 live in `issue-chat-ui.js`. Project, report, and Classic issue chats reuse these
 controls. Flow conversation entries reuse the same message envelope.
+`activity-indicator-ui.js` supplies the shared three-dot activity indicator for
+chat histories, Automate me, Classic decision review, coordinator conversations,
+and active issue work. `project-discuss.css` owns its animation and reduced-motion
+styles. Flow places the issue indicator outside `graph-scroll`, in an overlay
+anchored to `graph-region`, so blocks scroll behind it. Agent permissions and
+human-input waits suppress activity. Active branch updates and repairs also show
+the issue indicator. The [activity indicator design](../plans/chat-and-issue-activity-indicators.md)
+records the agreed behavior and duration-estimate limits.
 Open conversation tabs stay in creation order; closing a tab marks its conversation
 closed and retains its saved history.
 
@@ -1118,9 +1130,11 @@ dynamic tool registrations. Loading the application starts no conversation or tu
 
 ## Native coding agents
 
-`factory/system/folder.md` lists the supported Codex, Claude, and Gemini choices.
-`model-settings.mjs` exposes provider metadata through the existing inherited
-settings. `agent-models.mjs` resolves the supported native aliases and keeps
+`factory/system/folder.md` retains the legacy model choices and built-in defaults.
+Once provider settings are initialized, `folder-settings-schema.mjs` and
+`model-settings.mjs` expose enabled, advertised, currently usable models from the
+native catalog. Saved unavailable selections retain their identity and reason.
+`agent-models.mjs` preserves exact native provider/model identities and keeps
 native session identities distinct from Codex threads.
 
 `issue-chat-runtime.mjs` selects `NativeAgentConnection` for native models and
@@ -1137,3 +1151,30 @@ group ends. Recovery sends no prompt. Project discussion provider changes retain
 the original conversation and supply a handoff with the history location. Existing
 issue execution settings remain frozen after execution starts. Background helpers
 and the explicitly named Sol reviewer retain their Codex execution path.
+
+## AI provider settings
+
+`provider-config.mjs` owns project-scoped choices and quota thresholds in
+`user/ai-providers.json`. Initialization preserves referenced default, issue,
+frozen execution and helper model choices. `provider-runtime.mjs` owns local
+native observations, availability, monitoring and interruption watches; its
+observations live under `.issues/factory-ui/` and contain no credentials.
+
+`provider-setup.mjs` discovers native metadata without a model prompt and separates
+missing executables, startup errors and sign-in. `provider-installation.mjs` owns
+fixed vendor install/sign-in recipes and explicit native-terminal launches.
+`native-agent-command.mjs` resolves the same PATH and user install locations for
+inspection and execution. Install commands are displayed and copyable before an
+explicit Install action; missing npm gets prerequisite instructions. `codex-account.mjs`
+is a metadata-only transport shared by discovery and `codex-quota.mjs`; it cannot
+start a turn or change sign-in. Claude quota events provide scoped observations,
+but cannot establish a complete fresh account snapshot. Gemini ACP context usage
+is not account allowance. Both remain unknown unless supported allowance data
+exist; the explicit unmonitored-work option governs admission.
+
+`provider-settings-ui.js` renders the provider controls and persistent warning
+banner in Flow and Classic. `project-settings-ui.js` retains the shared Factory
+settings Save and unsaved-change handling. The execution adapters check policy
+before turns and interrupt affected work. Flow also checks each block, aborts
+cancellable work, and lets protected Git/publication operations retain an outcome
+before pausing the route. Quota recovery restores eligibility, never autoplay.

@@ -672,6 +672,27 @@ kbd {
 .environment a {
   color: #adbad1;
 }
+.graph-region {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+.issue-activity {
+  position: absolute;
+  bottom: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 4;
+  pointer-events: none;
+}
+.issue-activity .activity-indicator {
+  border: 1px solid #444;
+  border-radius: 999px;
+  background: #222;
+  box-shadow: 0 3px 14px #0006;
+  color: #c6c6c6;
+}
 .graph-scroll {
   flex: 1;
   overflow: auto;

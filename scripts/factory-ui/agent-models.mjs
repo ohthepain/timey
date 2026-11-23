@@ -10,6 +10,8 @@ const nativeModels = [
 export function agentModel(id) {
   const native = nativeModels.find((entry) => entry.id === id);
   if (native) return native;
+  const match = /^(anthropic|google):([a-zA-Z0-9][a-zA-Z0-9._/-]{0,170})$/.exec(id || '');
+  if (match) return { id, provider: match[1], model: match[2], supportsEffort: false };
   requireThat(!id || !id.includes(':'), 'Choose a listed model. Custom providers and endpoints are not supported.');
   return { id, provider: 'codex', model: id, supportsEffort: true };
 }

@@ -1,3 +1,5 @@
+import { initializeProviderConfig, readProviderConfig } from './factory-ui/provider-config.mjs';
+import { observeProvider, saveProviderSettings } from './factory-ui/provider-runtime.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
@@ -111,6 +113,27 @@ for (const provider of ['anthropic', 'google']) {
     await rejected;
     assert.equal(connection.turns.size, 0);
     assert.equal(connection.requests.size, 0);
+    assert.equal(existsSync(join(root, 'result.txt')), false);
+  });
+  test(`${provider} manual disable interrupts the running native turn and blocks a later prompt`, async (t) => {
+    const { root, connection } = setup(t, provider);
+    initializeProviderConfig(root);
+    const model = provider === 'anthropic' ? 'anthropic:sonnet' : 'google:pro';
+    observeProvider(root, provider, { ready: true, models: [{ id: model, name: model }] });
+    let config = readProviderConfig(root);
+    config.providers[provider].enabled = [model];
+    config.providers[provider].allowUnmonitored = true;
+    saveProviderSettings(root, config);
+    const id = await connection.start(root);
+    const response = connection.turn(id, root, 'WAIT');
+    const rejected = assert.rejects(response, /Resume explicitly/);
+    await waitFor(() => existsSync(join(root, 'waiting.txt')));
+    config = readProviderConfig(root);
+    config.providers[provider].enabled = [];
+    saveProviderSettings(root, config);
+    await rejected;
+    assert.equal(connection.turns.size, 0);
+    await assert.rejects(connection.turn(id, root, 'Edit the fixture.'), /disabled/);
     assert.equal(existsSync(join(root, 'result.txt')), false);
   });
   test(`${provider} invokes guarded Timey tools through the active MCP bridge`, async (t) => {

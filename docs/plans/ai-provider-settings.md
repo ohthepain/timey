@@ -1,7 +1,7 @@
 # AI provider settings
 
-This design interview is ongoing. Shared understanding and implementation approval
-have not yet been confirmed for this change.
+Shared understanding and implementation were approved by the user with “lfg”.
+The implementation is present locally. Verification is recorded below.
 
 ## Requested behavior
 
@@ -24,15 +24,10 @@ folder settings reference. Native agent startup checks some advertised model
 metadata but does not expose provider setup or a discovered model catalog in
 Settings. Started issue execution settings retain a frozen snapshot.
 
-## Open decisions
+## Design review status
 
-- Whether each provider has its own threshold.
-- Which quota windows determine remaining allowance, how model-specific limits
-  differ from shared provider limits, and how stale quota information affects eligibility.
-- What Setup performs and how readiness is verified.
-- Which advertised models Factory can support and how the list refreshes.
-- Initial enablement, newly discovered models, and unavailable models.
-- How saved defaults and retained conversations behave when model availability changes.
+The interview and consolidated implementation defaults were confirmed before
+implementation.
 
 ## Confirmed decisions
 
@@ -49,10 +44,18 @@ including flows, chats, and helpers. Other providers' work continues. Disabling
 does not merely hide a model from dropdowns.
 
 Factory must support automatic disablement when a model's allowance is exhausted.
-A configurable remaining-allowance percentage threshold must temporarily disable
-all models from the affected provider when the reported percentage falls below it.
-The user supplied no threshold value yet. Provider quota reporting and reset
-semantics require factual investigation before specifying a universal percentage.
+Each provider has independently configurable warning and disable thresholds,
+expressed as remaining allowance. The warning default is 5%; the disable default
+is 2%. These replace the previously proposed 10% default.
+
+At or below the warning threshold, show a persistent in-app warning in the main
+UI and Factory settings while work continues. At or below the disable threshold,
+disable the affected models and interrupt their work.
+
+Apply quota restrictions at their reported scope. A shared provider limit pauses
+the provider's models; a model-specific limit pauses only the affected models.
+Provider quota reporting and reset semantics require factual validation rather
+than assuming that every model shares one allowance.
 
 Manual model choices remain separate from temporary quota pauses. Fresh quota
 data confirming sufficient allowance restores availability automatically, but
@@ -61,6 +64,51 @@ manually disabled models remain disabled. Interrupted work requires explicit Res
 Unknown quota blocks a provider unless the person explicitly enables Allow work
 without quota monitoring. Do not invent a percentage. Confirmed exhaustion still
 stops affected work even when that override is enabled.
+
+Discover models from each configured native agent and offer the models the Factory
+integration can run. This expands the earlier small fixed catalog agreed in the
+[native-agent plan](anthropic-google-model-support.md). It does not add manual
+model IDs, custom endpoints, or another provider integration.
+
+On upgrade, preserve model choices referenced by current defaults, saved issue
+settings, and configured helpers. Newly discovered models start unchecked.
+
+Setup guides installation and vendor sign-in, opening a browser or native
+terminal when needed, then rechecks readiness. Setup sends no paid model request.
+Credentials remain with the vendor's native agent and are not copied into the project.
+
+Use the lowest remaining allowance across applicable quota windows. Respect each
+window's scope: a shared weekly limit can pause a provider even while its shorter
+window has capacity; a model-specific window affects only its covered models.
+
+Check quota before starting AI work and refresh every 30 seconds during active
+work where supported. Observations older than two minutes are unknown and follow
+the explicit unmonitored-work policy. Reporting and cancellation delays mean
+thresholds cannot guarantee an exact spending cutoff. Unsupported fresh quota
+reporting must remain visibly unknown rather than use unofficial credential access.
+
+Interrupt affected AI work promptly and start no further steps. A push, merge,
+or publication already underway must reach a recorded outcome or be reconciled
+before the pause finishes. Do not assume cancellation reversed an external effect.
+Interrupted work requires explicit Resume.
+
+## Implementation defaults
+
+- Keep manual model choices and thresholds in project-scoped Factory
+  configuration. Keep credentials with the native agent and live account quota
+  observations local to the execution environment.
+- Discover models after Setup and on explicit Refresh. Preserve choices by stable
+  provider/model identity. Retain a missing model's saved choice as unavailable
+  rather than deleting its history or choosing a replacement.
+- Offer enabled, supported, currently usable models in selectors. Keep an invalid
+  saved default visible with its blocking reason; never silently replace it.
+  Retained execution snapshots and conversation history remain intact.
+- Reuse the existing explicit Save and unsaved-change behavior. Saving a model
+  disablement or stricter threshold applies its execution policy immediately.
+- Validate percentage settings so the disable threshold is below the warning
+  threshold and both are within 0% to 100%.
+
+Provider setup compatibility still needs implementation evidence.
 
 ## Quota evidence and limits
 
@@ -81,7 +129,99 @@ settings can govern only this project's Factory work.
   does not establish remaining account allowance.
 
 No missing percentage may be invented or inferred from chat context utilization.
-Unknown allowance requires the explicit override above; stale-data policy remains
-undecided. Subscription
+Unknown or stale allowance requires the explicit override above. Subscription
 allowances, request-rate limits, and API credit balances need distinct meanings;
 a shared percentage calculation is not yet established for every account type.
+
+## Setup evidence and limits
+
+Native sign-in persistence belongs to the vendor's agent. Factory must not extract
+tokens or copy them into a project. Explicit native sign-in may change the OS
+user's shared agent account even though Factory settings remain project-local.
+
+- [Codex app-server](https://github.com/openai/codex/blob/main/codex-rs/app-server/README.md)
+  exposes account reads, native login start/completion/cancellation, and model lists.
+- [Claude CLI commands](https://code.claude.com/docs/en/cli-reference) expose native
+  auth status and login. Terminal-free login completion and cancellation need a
+  compatibility probe before being promised.
+- [Gemini ACP](https://geminicli.com/docs/cli/acp-mode/) and
+  [native authentication](https://geminicli.com/docs/get-started/authentication/)
+  support explicit browser sign-in. A manual-code fallback can need a terminal.
+
+Installation, sign-in, advertised models, manual model enablement, and known quota
+are separate facts. A successful model-list response is not proof of authentication
+or access to every listed model. Setup must not infer an unlimited allowance from
+successful initialization.
+
+## Implementation and verification
+
+Factory settings now contains AI providers for OpenAI, Anthropic and Google.
+The supported native discovery paths send no model prompt. Guided Setup opens
+installation instructions or native vendor login; returning to Factory rechecks
+readiness, and explicit Refresh remains available. No credentials are copied.
+
+Project choices and thresholds are saved in `user/ai-providers.json`; native
+observations are local under `.issues/factory-ui/`. Missing models retain saved
+identity. Enabled, advertised, usable models feed selectors; unavailable defaults
+remain visible. Policy checks cover native and Codex turns, including helpers,
+and Flow blocks. Protected publication/Git operations retain an outcome while
+the route pauses. Active interruption is idempotent.
+
+Codex account allowance is polled through its native metadata interface while
+Factory runs, including while idle so selectors can recover after a reset.
+Claude's scoped events can establish exhaustion or a reported percentage but
+cannot prove a complete fresh snapshot. A documented Claude `credits_required` rejection blocks the shared provider even
+without a percentage; request-rate rejections are not invented account exhaustion.
+If an exhausted native allowance has no reported reset or supported fresh read,
+Factory cannot verify recovery until the native agent supplies new evidence.
+Gemini ACP exposes no supported account
+allowance snapshot here. Their unknown-quota policy remains explicit. Context
+window usage is never converted into account allowance. Vendor request rejection
+and reporting delays can still precede a quota observation.
+
+Live Codex account/model discovery succeeded without a model prompt. Native
+Claude/Gemini discovery and interruption are covered by disposable protocol
+executables; authenticated vendor setup and live model access were not exercised.
+The local machine has no `claude` or `gemini` command on its normal PATH.
+
+Automated proof includes provider policy/setup checks, native interruption checks,
+chat/settings regressions, a protected-publication Flow check, and the browser
+scenario documented in the verification guide. The broad regression run exposed
+a folder-copy membership failure that also reproduces on unchanged HEAD; it is
+outside provider settings. Final logs and screenshots are retained with the
+verification evidence for this change.
+
+## Guided installation and retained scroll position
+
+The first Setup implementation collapsed every version-check failure into a
+missing-agent message and supplied only an installation-guide link. It also
+cleared the Settings content before reloading it after Setup, reducing the scroll
+height and losing the person's position. Regression fixtures reproduce both
+missing actionable guidance and the scroll jump.
+
+Setup now distinguishes a missing executable from one that exists but fails to
+start. Missing agents have named, ordered instructions with copyable install,
+version-check and sign-in commands. Anthropic uses its
+[recommended native installer](https://code.claude.com/docs/en/setup#install-claude-code),
+which does not need npm. Google uses its
+[documented npm installation](https://geminicli.com/docs/get-started/installation/#install-gemini-cli).
+The Google and OpenAI paths explain the Node/npm prerequisite when unavailable.
+
+On macOS, an explicit Install button opens Terminal with the displayed fixed
+vendor command, running from the person's home directory. No command comes from
+the browser request. Setup and Check again never install software automatically;
+installation and sign-in remain separate steps. Other platforms receive exact
+manual commands. Failed terminal launches retain those instructions. Installation
+has machine-user scope, while model choices remain project-scoped.
+
+The native command resolver also checks the user's `.local/bin` and
+`.npm-global/bin` directories. Discovery and execution use the same resolver, so
+an agent installed by the guided flow does not disappear when execution starts.
+Other PATH differences have an explicit restart-from-the-same-terminal instruction.
+
+Setup, Install, Check again and Save keep the existing Settings content during
+refresh and restore its scroll offset. Changing Settings categories still starts
+the new page at the top. Browser checks cover Anthropic and Google, copying the
+real clipboard text, explicit Install requests, and position both while pending
+and after responses. Terminal execution is injected in those checks; no vendor
+software is installed on the user's machine by verification.

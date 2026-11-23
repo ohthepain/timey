@@ -67,7 +67,7 @@ const endpoint = '/api/issue-capture';
 async function captureStorage(service, input) {
   if (service.projectStores) {
     requireThat(input.storageProfile, 'Choose an Issue storage profile before creating the issue.');
-    await ensureProjectStores(service, { fresh: true });
+    await ensureProjectStores(service);
   }
   if (!input.storageProfile) return undefined;
   const { profileId, storeId, artifactStoreId } = resolveIssueStorage(service.root, {
@@ -190,7 +190,7 @@ export function createCaptures(service, options = {}) {
         flow,
       });
     }
-    await service.projectStores.refresh();
+    await service.projectStores.refresh({ issueIds: saved.reports.map((report) => report.id) });
   }
   return {
     save,

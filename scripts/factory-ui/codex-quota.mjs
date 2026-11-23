@@ -1,4 +1,4 @@
-import { CodexConnection } from './codex.mjs';
+import { CodexAccountConnection } from './codex-account.mjs';
 
 const lifetime = 5 * 60 * 1000;
 let snapshot;
@@ -42,7 +42,7 @@ async function fetchQuota(connect) {
   }
 }
 
-export function readCodexQuota({ force = false, connect = () => new CodexConnection() } = {}) {
+export function readCodexQuota({ force = false, connect = () => new CodexAccountConnection() } = {}) {
   if (pending) return pending;
   if (!force && snapshot && Date.now() - snapshot.checkedAt < lifetime) return snapshot;
   pending = fetchQuota(connect)
