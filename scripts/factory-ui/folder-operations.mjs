@@ -142,6 +142,7 @@ export class FolderOperations {
     const preview = this.previews.get(previewId);
     requireThat(preview && preview.expires > Date.now(), 'Preview this selection again before continuing.');
     this.previews.delete(previewId);
+    await this.flows.service.projectStores?.refresh({ issueIds: preview.entries.map(({ id }) => id) });
     const results = [];
     for (const entry of preview.entries) {
       try {

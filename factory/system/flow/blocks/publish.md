@@ -10,9 +10,11 @@ Push the confirmed issue commit and publish its pull request when you choose.
 
 Push the confirmed issue commit and publish its pull request when you choose.
 
-Keep all work inside the saved issue checkout. Preserve unrelated changes. Report actual evidence and uncertainty. Do not turn advice into execution.
-
-Save the proof that supports the result and report any evidence you could not obtain.
+Publish only the existing committed candidate. Do not run tests, install dependencies,
+format files, repair failures, edit source, or create commits. Failed or missing test
+evidence does not block PR publication. Work and Merge own testing and repairs.
+Retain the push and GitHub publication evidence. Report publication failures as
+publication failures, leaving the candidate unchanged.
 
 # Details
 

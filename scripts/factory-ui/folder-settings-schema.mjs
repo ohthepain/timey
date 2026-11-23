@@ -1,3 +1,4 @@
+import { providerModelChoices, providerModelMetadata } from './provider-runtime.mjs';
 import { readFileSync, readdirSync, lstatSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { homedir } from 'node:os';
@@ -76,12 +77,13 @@ export function folderSettingsFields(project, { branchChoices = true } = {}) {
       'The system folder settings reference has an invalid field.'
     );
     const choices = [
-      ...(field.choices || []),
+      ...(key === 'model' ? (providerModelChoices(project) ?? field.choices ?? []) : field.choices || []),
       ...(field.kind === 'branch' && !branchChoices ? [] : dynamicChoices(project, field.kind)),
     ];
     return {
       key,
       ...field,
+      ...(key === 'model' ? { availability: providerModelMetadata(project) } : {}),
       ...(field.kind === 'storage-profile'
         ? { fallback: readStoreConfig(project).profileDefault, fallbackSource: 'Project storage profile default' }
         : {}),
@@ -107,6 +109,7 @@ export function validateFieldValue(field, value) {
   if (value === 'default') return null;
   if (typeof value !== 'string' || !value.trim() || value.length > 200)
     return field.label + ' needs a value or default.';
+  if (field.key === 'model' && field.availability && Object.hasOwn(field.availability, value)) return null;
   if (field.kind === 'branch') {
     if (branchValidation.has(value)) return branchValidation.get(value);
     try {

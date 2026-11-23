@@ -10,23 +10,32 @@
   const choiceLabel = (choice) =>
     typeof choice === 'string' ? choice : (choice.name ?? choice.label ?? choiceValue(choice));
 
+  function settingSelect(field, raw, id, disabled, unavailable) {
+    const choices = field.choices || [];
+    const options = choices
+      .filter((choice) => choiceValue(choice) !== 'default')
+      .map(
+        (choice) =>
+          `<option value="${escape(choiceValue(choice))}"${raw === choiceValue(choice) ? ' selected' : ''}>${escape(choiceLabel(choice))}</option>`
+      );
+    if (raw !== 'default' && !choices.some((choice) => choiceValue(choice) === raw))
+      options.push(
+        `<option value="${escape(raw)}" selected>${escape(raw)}${unavailable ? ' · unavailable' : ''}</option>`
+      );
+    return `<select id="${escape(id)}" name="${escape(field.key)}"${disabled ? ' disabled' : ''}><option value="default">Default</option>${options.join('')}</select>`;
+  }
   function settingInput(field, setting = {}, prefix, disabled = false) {
     const raw = setting?.raw == null || setting.raw === '' ? 'default' : setting.raw;
     const id = `${prefix}-${field.key}`;
-    const choices = field.choices || [];
-    const input = choices.length
-      ? `<select id="${escape(id)}" name="${escape(field.key)}"${disabled ? ' disabled' : ''}><option value="default">Default</option>${choices
-          .filter((choice) => choiceValue(choice) !== 'default')
-          .map(
-            (choice) =>
-              `<option value="${escape(choiceValue(choice))}"${raw === choiceValue(choice) ? ' selected' : ''}>${escape(choiceLabel(choice))}</option>`
-          )
-          .join(
-            ''
-          )}${raw !== 'default' && !choices.some((choice) => choiceValue(choice) === raw) ? `<option value="${escape(raw)}" selected>${escape(raw)}</option>` : ''}</select>`
-      : `<input id="${escape(id)}" name="${escape(field.key)}" value="${escape(raw)}" placeholder="default" autocomplete="off"${disabled ? ' disabled' : ''} />`;
+    const selectedAvailability = field.availability?.[setting.value];
+    const unavailable =
+      selectedAvailability && !['available', 'warning', 'unmonitored'].includes(selectedAvailability.status);
+    const input =
+      field.choices?.length || field.key === 'model'
+        ? settingSelect(field, raw, id, disabled, unavailable)
+        : `<input id="${escape(id)}" name="${escape(field.key)}" value="${escape(raw)}" placeholder="default" autocomplete="off"${disabled ? ' disabled' : ''} />`;
     const effective = setting?.value == null ? '' : `${setting.value}${setting.source ? ` · ${setting.source}` : ''}`;
-    return `<label class="folder-setting-field" for="${escape(id)}" data-setting-value="${escape(setting.value)}"><span>${escape(field.label || field.key)}</span>${input}<small class="muted">${escape(effective)}</small></label>`;
+    return `<label class="folder-setting-field" for="${escape(id)}" data-setting-value="${escape(setting.value)}"><span>${escape(field.label || field.key)}</span>${input}<small class="muted">${escape(effective)}${unavailable ? ' · ' + escape(selectedAvailability.reason) : ''}</small></label>`;
   }
 
   function settingsWand(view) {

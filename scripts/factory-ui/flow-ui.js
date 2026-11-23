@@ -186,6 +186,21 @@
     return runningStatuses.has(status(block));
   }
 
+  function blockWorking(block) {
+    const attempt = latest(block);
+    const awaitingAgent = state.view?.agentApprovals?.some((request) => request.blockId === block.id);
+    return (
+      isRunning(block) && !attempt?.inputRequestedAt && !attempt?.input && !blockHumanInput(block) && !awaitingAgent
+    );
+  }
+
+  function issueWorking() {
+    const blocks = state.view?.flow?.blocks || [];
+    const repairing = ['running', 'stopping'].includes(state.view?.branchRepair?.status);
+    const updating = Boolean(state.issueId) && state.updatingBranch === state.issueId;
+    return blocks.some(blockWorking) || repairing || updating;
+  }
+
   function statusText(value, attempt) {
     if (value === 'blocked' && attempt?.result?.humanInput) return 'Needs your input';
     return value === 'blocked' && attempt?.result?.completed?.length ? 'Needs retry' : words(value);
@@ -1111,6 +1126,7 @@
     workspace.closest('.workspace').classList.toggle('folder-open', selected);
     workspace.closest('.workspace').querySelector('.inspector').hidden = selected;
     $('graph-scroll').hidden = selected;
+    $('graph-region').hidden = selected;
     $('flow-view-title').textContent = selected ? 'Folder' : 'Issue flow';
     $('issue-folder-content').hidden = !state.folder;
     if (!selected) return;
@@ -1355,6 +1371,7 @@
 
   function renderEnvironment() {
     branchRepairUI.update(state.view);
+    window.timeyActivity.sync($('issue-activity'), Boolean(state.view?.issue) && issueWorking());
     const environment = state.view?.environment;
     $('environment').hidden = !environment;
     if (!environment) return;
@@ -2080,7 +2097,7 @@
     let result = '';
     if (attempt.result)
       result = typeof attempt.result === 'string' ? attempt.result : JSON.stringify(attempt.result, null, 2);
-    return `<div class="block-progress" data-attempt-id="${escape(attempt.id)}"><div class="progress-heading"><span>${statusIcon(attempt.status)} ${escape(statusText(attempt.status, attempt))}${attempt.invalidatedAt ? ' · Invalidated' : ''}</span><span class="progress-meta">Attempt ${index + 1}</span></div><p class="detail-copy" data-ai-text data-ai-key="summary-${escape(attempt.id)}" data-ai-source="${escape(summary)}">${escape(summary)}</p>${attempt.result?.pr ? prLink({ number: attempt.result.pr, url: attempt.result.url }) : ''}<p class="progress-meta" style="margin-top:9px">${escape(date(attempt.startedAt))}${attempt.endedAt ? ` · ended ${escape(date(attempt.endedAt))}` : ''}</p>${attempt.output ? `<pre class="attempt-output" data-ai-text data-ai-key="live-${escape(attempt.id)}" data-ai-source="${escape(attempt.output)}">${escape(attempt.output)}</pre>` : ''}${result && result !== summary ? `<pre class="attempt-output" data-ai-text data-ai-key="result-${escape(attempt.id)}" data-ai-source="${escape(result)}">${escape(result)}</pre>` : ''}${attempt.details?.length ? `<details data-preserve="details-${escape(attempt.id)}"><summary>Details used</summary><pre class="attempt-output">${escape(JSON.stringify(attempt.details, null, 2))}</pre></details>` : ''}${attempt.systemPrompt ? `<details data-preserve="prompt-${escape(attempt.id)}"><summary>System prompt used</summary><pre class="attempt-output">${escape(attempt.systemPrompt)}</pre></details>` : ''}${evidenceLinks(attempt)}</div>`;
+    return `<div class="block-progress" data-attempt-id="${escape(attempt.id)}"><div class="progress-heading"><span>${statusIcon(attempt.status)} ${escape(statusText(attempt.status, attempt))}${attempt.invalidatedAt ? ' · Invalidated' : ''}</span><span class="progress-meta">Attempt ${index + 1}</span></div><p class="detail-copy" data-ai-text data-ai-key="summary-${escape(attempt.id)}" data-ai-source="${escape(summary)}">${escape(summary)}</p>${attempt.result?.pr ? prLink({ number: attempt.result.pr, url: attempt.result.url }) : ''}<p class="progress-meta" style="margin-top:9px">${escape(date(attempt.startedAt))}${attempt.modelSettings?.model ? ` · ${attempt.modelSettings.conditional ? 'Repair model (if needed)' : 'Model'}: ${escape(attempt.modelSettings.model)}` : ''}${attempt.endedAt ? ` · ended ${escape(date(attempt.endedAt))}` : ''}</p>${attempt.output ? `<pre class="attempt-output" data-ai-text data-ai-key="live-${escape(attempt.id)}" data-ai-source="${escape(attempt.output)}">${escape(attempt.output)}</pre>` : ''}${result && result !== summary ? `<pre class="attempt-output" data-ai-text data-ai-key="result-${escape(attempt.id)}" data-ai-source="${escape(result)}">${escape(result)}</pre>` : ''}${attempt.details?.length ? `<details data-preserve="details-${escape(attempt.id)}"><summary>Details used</summary><pre class="attempt-output">${escape(JSON.stringify(attempt.details, null, 2))}</pre></details>` : ''}${attempt.systemPrompt ? `<details data-preserve="prompt-${escape(attempt.id)}"><summary>System prompt used</summary><pre class="attempt-output">${escape(attempt.systemPrompt)}</pre></details>` : ''}${evidenceLinks(attempt)}</div>`;
   }
 
   function comments(block) {
@@ -2190,7 +2207,13 @@
       return '<section class="detail-section"><p class="detail-copy">Restart the Factory server to edit this flow. Your saved issue is available.</p></section>';
     if (block.readOnly)
       return `<section class="detail-section"><p class="detail-copy">This operation started through the existing issue controls. Inspect or stop it there before starting a new flow block.</p><a href="/classic?issue=${encodeURIComponent(state.issueId)}">Open its original controls</a>${block.attempts.map(attemptCard).join('')}</section>`;
-    if (block.kind === 'request') return definitionActions(block) + requestDetails(block) + contentSection(block);
+    if (block.kind === 'request')
+      return (
+        window.factoryBlockModel(state.view.blockModels?.[block.id]) +
+        definitionActions(block) +
+        requestDetails(block) +
+        contentSection(block)
+      );
     const changes = draft();
     const values = { ...block, ...changes };
     const attempts = block.attempts || [];
@@ -2201,10 +2224,10 @@
     const progress = blockProgress(block, last, attempts, published);
     const running = isRunning(block);
     if (['retro', 'cleanup'].includes(block.kind))
-      return `<section class="detail-section">${last ? attemptCard(last, attempts.length - 1) : '<p>This block runs during Close.</p>'}${block.kind === 'cleanup' ? cleanupResults(last) : ''}${attempts.length > 1 ? `<details><summary>Earlier attempts</summary>${attempts.slice(0, -1).map(attemptCard).join('')}</details>` : ''}</section>`;
+      return `${window.factoryBlockModel(state.view.blockModels?.[block.id])}<section class="detail-section">${last ? attemptCard(last, attempts.length - 1) : '<p>This block runs during Close.</p>'}${block.kind === 'cleanup' ? cleanupResults(last) : ''}${attempts.length > 1 ? `<details><summary>Earlier attempts</summary>${attempts.slice(0, -1).map(attemptCard).join('')}</details>` : ''}</section>`;
     const locked = state.pending ? ' disabled' : '';
     const sections = {
-      settings: `<form id="block-form">${investigationSourcePicker(block)}${declaredDetails(block, true)}${outputsSection(block)}${systemPromptEditor(block, values, locked)}${editChecklist(block, changes)}<section class="detail-section"><div class="section-label">Block settings</div><label class="field">Name<input name="label" data-field="label" value="${escape(values.label || '')}" /></label><div class="field-row"><label class="field">Parallel lane<select name="lane" data-field="lane">${[0, 1, 2, 3].map((lane) => `<option value="${lane}"${Number(values.lane || 0) === lane ? ' selected' : ''}>${lane === 0 ? 'Main lane' : `Parallel lane ${lane + 1}`}</option>`).join('')}</select></label>${block.kind === 'sol' ? `<label class="field">Iterations<input type="number" name="iterations" data-field="iterations" min="1" max="20" value="${escape(values.iterations || 1)}" /></label>` : ''}</div></section>${saveRow()}</form>`,
+      settings: `<form id="block-form">${window.factoryBlockModel(state.view.blockModels?.[block.id], values.model || '')}${investigationSourcePicker(block)}${declaredDetails(block, true)}${outputsSection(block)}${systemPromptEditor(block, values, locked)}${editChecklist(block, changes)}<section class="detail-section"><div class="section-label">Block settings</div><label class="field">Name<input name="label" data-field="label" value="${escape(values.label || '')}" /></label><div class="field-row"><label class="field">Parallel lane<select name="lane" data-field="lane">${[0, 1, 2, 3].map((lane) => `<option value="${lane}"${Number(values.lane || 0) === lane ? ' selected' : ''}>${lane === 0 ? 'Main lane' : `Parallel lane ${lane + 1}`}</option>`).join('')}</select></label>${block.kind === 'sol' ? `<label class="field">Iterations<input type="number" name="iterations" data-field="iterations" min="1" max="20" value="${escape(values.iterations || 1)}" /></label>` : ''}</div></section>${saveRow()}</form>`,
       progress: `<section class="detail-section"><div class="section-label">${running ? 'Current progress' : 'Progress'}<span data-ui-value="Status comes from the saved block.">${escape(statusText(status(block), last))}</span></div>${progress}${previousAttempts.length ? `<details class="attempt-history" data-preserve="attempt-history"><summary>${previousAttempts.length} earlier ${previousAttempts.length === 1 ? 'attempt' : 'attempts'}</summary>${previousAttempts.map(attemptCard).join('')}</details>` : ''}</section>`,
       sequence: `<section class="detail-section"><div class="section-label">Sequence</div><p class="detail-copy">Move this step toward the destination or toward the starting point.</p><div class="block-actions"><button class="small-button" data-action="move" data-direction="down"${locked}>↑ Earlier</button><button class="small-button" data-action="move" data-direction="up"${locked}>↓ Later</button></div></section>`,
       notes: comments(block),
@@ -2233,7 +2256,7 @@
 
   function renderConversation(block) {
     const messages = state.view?.conversation || [];
-    return `<p class="conversation-context">This issue's conversation shows notes and responses from its blocks.</p>${messages.length ? `<div class="timeline">${messages.map(conversationMessage).join('')}</div>` : '<p class="inline-empty">No conversation entries yet. Starting a block will retain its activity here.</p>'}${block ? commentForm(block) : ''}`;
+    return `<p class="conversation-context">This issue's conversation shows notes and responses from its blocks.</p>${messages.length ? `<div class="timeline">${messages.map(conversationMessage).join('')}</div>` : '<p class="inline-empty">No conversation entries yet. Starting a block will retain its activity here.</p>'}${window.timeyActivity.markup(issueWorking())}${block ? commentForm(block) : ''}`;
   }
 
   function renderArtifacts(block, artifacts) {
@@ -2385,6 +2408,27 @@
     $('issue-input-link').textContent = input?.actionLabel || 'Review PR';
   }
 
+  function renderBlockingError() {
+    const error = state.view?.lastBlockingError;
+    $('last-blocking-error').hidden = !error;
+    $('last-blocking-error-message').textContent = error?.message || '';
+    $('last-blocking-error-context').textContent = error
+      ? [error.blockLabel || error.operation || 'Issue', error.model, date(error.at)].filter(Boolean).join(' · ')
+      : '';
+    $('last-blocking-error-open').hidden = !error?.blockId;
+  }
+  $('last-blocking-error-open').addEventListener('click', () => {
+    const error = state.view?.lastBlockingError;
+    if (!error?.blockId) return;
+    state.blockId = error.blockId;
+    state.tab = 'details';
+    state.graphScrollIntent = { nodeId: state.blockId, mode: 'reveal' };
+    renderGraph();
+    renderInspector();
+    $('inspector-body')
+      .querySelector('[data-block-model-error], [name="model"], .block-progress')
+      ?.scrollIntoView({ block: 'center' });
+  });
   function render() {
     renderSidebar();
     renderFolderWorkspace();
@@ -2402,6 +2446,7 @@
     issueNumber.hidden = issue?.issueNumber == null;
     issueNumber.textContent = issueNumber.hidden ? '' : `#${issue.issueNumber}`;
     $('issue-title').textContent = issue?.title || '';
+    renderBlockingError();
     renderMergedIssueNotice(issue);
     if ($('rename-issue-form').dataset.issue !== issue?.id) closeRename();
     renderFlowPicker();
@@ -2428,6 +2473,7 @@
     $('app').dataset.homeView = showHome ? 'open' : 'closed';
     if (showHome) {
       $('graph-scroll').hidden = true;
+      $('graph-region').hidden = true;
       document.querySelector('.inspector').hidden = true;
       $('flow-view-title').textContent = 'Project home';
     }
@@ -2691,25 +2737,24 @@
     return { skill: promptMode === 'skill' ? values.get('skill') || null : null };
   }
 
-  async function saveBlock(event) {
-    event.preventDefault();
-    const block = activeBlock();
-    if (!block) return;
-    const key = draftKey();
-    const values = new FormData(event.target);
-    const promptMode = values.get('prompt-mode') || 'text';
-    const changes = {
-      label: String(values.get('label') || ''),
-      prompt: promptMode === 'text' ? String(values.get('prompt') || '') : '',
-      lane: Number(values.get('lane') || 0),
-      ...blockSkillChanges(values, promptMode),
-    };
-    changes.inputs = {};
-    changes.links = {};
+  function confirmBlockProviderChange(block, changes) {
+    if (changes.model === undefined) return false;
+    const model = state.view.blockModels?.[block.id];
+    const selected = changes.model || model.defaultModel || '';
+    const provider = selected.split(':').length > 1 ? selected.split(':')[0] : 'codex';
+    if (!model.conversationProvider || model.conversationProvider === provider) return false;
+    return confirm(
+      'Changing provider starts a fresh conversation with a handoff summary and preserves the original history. Continue?'
+    )
+      ? true
+      : null;
+  }
+  function blockDetailChanges(form, values, block) {
+    const changes = { inputs: {}, links: {} };
     for (const detail of (block.details || []).filter((item) => item.input && !item.fixed)) {
       const mode = values.get('mode-' + detail.key) || detail.mode;
       if (mode === 'manual') {
-        const field = event.target.elements.namedItem('input-' + detail.key);
+        const field = form.elements.namedItem('input-' + detail.key);
         if (!field) continue;
         let value = field.type === 'checkbox' ? field.checked : field.value;
         if (detail.type === 'number' && value !== '') value = Number(value);
@@ -2718,14 +2763,41 @@
         const selected = values.get('link-' + detail.key) || detail.selected;
         if (detail.candidates?.length > 1 && !selected) {
           showError(`Choose a source for ${detail.label}, or switch it to Manual.`);
-          return;
+          return null;
         }
         if (selected) changes.links[detail.key] = selected;
       }
     }
+    return changes;
+  }
+  async function saveBlock(event) {
+    event.preventDefault();
+    const block = activeBlock();
+    if (!block) return;
+    const key = draftKey();
+    const values = new FormData(event.target);
+    const promptMode = values.get('prompt-mode') || 'text';
+    let changes = {
+      label: String(values.get('label') || ''),
+      prompt: promptMode === 'text' ? String(values.get('prompt') || '') : '',
+      lane: Number(values.get('lane') || 0),
+      ...blockSkillChanges(values, promptMode),
+    };
+    if (values.has('model')) changes.model = String(values.get('model') || '');
+    const details = blockDetailChanges(event.target, values, block);
+    if (!details) return;
+    Object.assign(changes, details);
     if (block.kind === 'sol') changes.iterations = Number(values.get('iterations') || 1);
     if (block.kind === 'edit') changes.edits = draft().edits || block.edits || [];
-    const result = await action('update', { blockId: block.id, changes });
+    if (Object.hasOwn(draft(), 'model') && Object.keys(draft()).every((key) => ['model', 'comment'].includes(key)))
+      changes = { model: changes.model };
+    const handoff = confirmBlockProviderChange(block, changes);
+    if (handoff === null) return;
+    const result = await action('update', {
+      blockId: block.id,
+      changes,
+      ...(handoff ? { confirmedModelHandoff: true } : {}),
+    });
     if (!result) return;
     const comment = state.drafts.get(key)?.comment;
     state.drafts.delete(key);
@@ -3329,7 +3401,7 @@
       if (!(await action(field.id, { enabled: field.checked }))) field.checked = !field.checked;
       return;
     }
-    if (field.dataset.field?.startsWith('mode-') || field.dataset.field === 'prompt-mode') {
+    if (field.dataset.field?.startsWith('mode-') || ['prompt-mode', 'model'].includes(field.dataset.field)) {
       setDraft(field.dataset.field, field.value);
       renderInspector();
       return;

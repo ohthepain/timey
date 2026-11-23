@@ -1,3 +1,4 @@
+import { nativeAgentCommand } from './native-agent-command.mjs';
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { StringDecoder } from 'node:string_decoder';
@@ -9,7 +10,12 @@ export class AgentProcess {
     this.pending = new Map();
     this.buffer = '';
     this.decoder = new StringDecoder('utf8');
-    this.child = spawn(command, args, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'], detached: true });
+    this.child = spawn(nativeAgentCommand(command, { path: env?.PATH, home: env?.HOME }), args, {
+      cwd,
+      env,
+      stdio: ['pipe', 'pipe', 'pipe'],
+      detached: true,
+    });
     this.child.stdin.on('error', (error) => this.fail(error));
     this.child.on('error', (error) =>
       this.fail(
@@ -109,7 +115,7 @@ export class AgentProcess {
         this.send(
           this.protocol === 'claude'
             ? { type: 'control_request', request_id: id, request: { subtype: method, ...params } }
-            : { jsonrpc: '2.0', id, method, params }
+            : { ...(this.protocol === 'codex' ? {} : { jsonrpc: '2.0' }), id, method, params }
         );
       } catch (error) {
         clearTimeout(timer);

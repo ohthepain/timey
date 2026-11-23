@@ -3611,6 +3611,7 @@ async function activityScreen(t, wideSidebar = false, prepareSnapshot = () => {}
     .replace(/\n\s*refresh\(\);\n\s*setInterval\(refresh, 4000\);/, '');
   dom.window.eval(
     readFileSync(resolve('scripts/factory-ui/view-state.js'), 'utf8') +
+      readFileSync(resolve('scripts/factory-ui/activity-indicator-ui.js'), 'utf8') +
       readFileSync(resolve('scripts/factory-ui/coordinator-ui.js'), 'utf8') +
       '\n' +
       readFileSync(resolve('scripts/factory-ui/file-link-ui.js'), 'utf8') +
@@ -3630,6 +3631,7 @@ async function activityScreen(t, wideSidebar = false, prepareSnapshot = () => {}
       readFileSync(resolve('scripts/factory-ui/issue-closure-ui.js'), 'utf8') +
       '\n' +
       (readFileSync(resolve('scripts/factory-ui/view-state.js'), 'utf8') +
+        readFileSync(resolve('scripts/factory-ui/activity-indicator-ui.js'), 'utf8') +
         readFileSync(resolve('scripts/factory-ui/issue-chat-ui.js'), 'utf8')) +
       '\n' +
       readFileSync(resolve('scripts/factory-ui/discussion-ui.js'), 'utf8') +
@@ -3705,6 +3707,12 @@ test('the coordinator page links back to the issue queue', async (t) => {
   window.screenTest.show(snapshot);
   const link = window.document.querySelector('[data-view-id="coordinator"] a[href="#/queue"]');
   assert.equal(link?.textContent, '← Issue queue');
+  snapshot.coordinator.active = { operation: 'Responding' };
+  window.screenTest.show(snapshot);
+  assert.equal(window.document.querySelectorAll('#coordinator-activity .activity-indicator').length, 1);
+  snapshot.coordinator.active = null;
+  window.screenTest.show(snapshot);
+  assert.equal(window.document.querySelectorAll('#coordinator-activity .activity-indicator').length, 0);
 });
 
 test('narrow issue views retain the existing queue link and full queue page', async (t) => {

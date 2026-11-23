@@ -4,7 +4,8 @@ const coordinatorUI = (() => {
     selected = '',
     request,
     refresh,
-    currentData;
+    currentData,
+    pendingResponses = 0;
   const esc = (value) =>
     String(value ?? '').replace(
       /[&<>"']/g,
@@ -32,7 +33,7 @@ const coordinatorUI = (() => {
     }
     if (document.getElementById('coordinator-output')) return;
     document.getElementById('app').innerHTML =
-      `<section data-view-id="coordinator"><div class="issue-navigation-row"><a href="#/queue">← Issue queue</a></div><h1>Coordinator</h1><p id="coordinator-status" role="status"></p><p id="coordinator-active"></p><p>Messages guide discussion. Use the issue’s existing controls for answers, approvals and acceptance.</p><div class="actions"><button id="coordinator-stop">Stop</button><button id="coordinator-continue">Continue</button><button id="coordinator-fresh">Start fresh</button></div><p id="coordinator-workers"></p><ul id="coordinator-waiting"></ul><label><input type="checkbox" id="coordinator-show-history"> Show archived conversations</label><label>Conversation <select id="coordinator-history" aria-label="Coordinator history"></select></label><div id="coordinator-messages"></div><pre id="coordinator-output" aria-label="Coordinator live output" style="max-height:45vh;overflow:auto;white-space:pre-wrap"></pre><div><button id="coordinator-follow">Follow latest</button></div><label>Message<textarea id="coordinator-message" data-draft-key="coordinator-message" maxlength="12000"></textarea></label><div class="actions"><button id="coordinator-send">Send</button><button id="coordinator-steer">Steer</button></div><p id="coordinator-feedback" role="status"></p></section>`;
+      `<section data-view-id="coordinator"><div class="issue-navigation-row"><a href="#/queue">← Issue queue</a></div><h1>Coordinator</h1><p id="coordinator-status" role="status"></p><p id="coordinator-active"></p><p>Messages guide discussion. Use the issue’s existing controls for answers, approvals and acceptance.</p><div class="actions"><button id="coordinator-stop">Stop</button><button id="coordinator-continue">Continue</button><button id="coordinator-fresh">Start fresh</button></div><p id="coordinator-workers"></p><ul id="coordinator-waiting"></ul><label><input type="checkbox" id="coordinator-show-history"> Show archived conversations</label><label>Conversation <select id="coordinator-history" aria-label="Coordinator history"></select></label><div id="coordinator-messages"></div><pre id="coordinator-output" aria-label="Coordinator live output" style="max-height:45vh;overflow:auto;white-space:pre-wrap"></pre><div id="coordinator-activity"></div><div><button id="coordinator-follow">Follow latest</button></div><label>Message<textarea id="coordinator-message" data-draft-key="coordinator-message" maxlength="12000"></textarea></label><div class="actions"><button id="coordinator-send">Send</button><button id="coordinator-steer">Steer</button></div><p id="coordinator-feedback" role="status"></p></section>`;
     const input = document.getElementById('coordinator-message');
     input.value = draft;
     window.timeyView.track(input, 'coordinator-editor');
@@ -53,6 +54,9 @@ const coordinatorUI = (() => {
   }
   async function submit(action) {
     const feedback = document.getElementById('coordinator-feedback');
+    const responding = ['send', 'steer', 'continue'].includes(action);
+    if (responding) pendingResponses++;
+    update(currentData);
     try {
       const value = ['send', 'steer'].includes(action)
         ? {
@@ -73,6 +77,9 @@ const coordinatorUI = (() => {
       await refresh();
     } catch (error) {
       feedback.textContent = error.message;
+    } finally {
+      if (responding) pendingResponses--;
+      update(currentData);
     }
   }
   function update(data) {
@@ -144,6 +151,10 @@ const coordinatorUI = (() => {
       'coordinator-messages:' + selected
     );
     updateOutput(thread);
+    window.timeyActivity.sync(
+      document.getElementById('coordinator-activity'),
+      selected === state.threads.at(-1)?.id && Boolean(!state.paused && (state.active || pendingResponses))
+    );
   }
   function updateOutput(thread) {
     const output = document.getElementById('coordinator-output');

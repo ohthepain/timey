@@ -1,3 +1,4 @@
+import { modelAvailability, providerModelMetadata } from './provider-runtime.mjs';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { writeJson, requireThat } from './common.mjs';
@@ -27,6 +28,8 @@ export function readModelSettings(root, { initialize = false } = {}) {
   return {
     defaults: { model: values.model, effort: values.effort },
     errors,
+    defaultAvailability: modelAvailability(root, values.model),
+    availability: providerModelMetadata(root),
     models: fields
       .find(({ key }) => key === 'model')
       .choices.map(({ value, label, description }) => ({

@@ -1,5 +1,5 @@
 import { mergeGitHubProvider, inspectMergeOutcome } from './flow-merge-github.mjs';
-import { verificationFailureKey } from './flow-repair-evidence.mjs';
+import { verificationFailureKey, verificationFailureMessage } from './flow-repair-evidence.mjs';
 import { retainGitHubFailure } from './flow-ci-evidence.mjs';
 import { abortPendingMerge } from './flow-update-branch.mjs';
 import { existsSync } from 'node:fs';
@@ -98,6 +98,7 @@ function reserveRepair(error, tree, state) {
 
 async function repairCandidate(ctx, workspace, error, options, state) {
   if (ctx.signal.aborted || !repairableMergeFailure(error) || permissionFailure(error)) throw error;
+  error.message = verificationFailureMessage(error);
   const before = headOf(workspace);
   const tree = treeOf(workspace);
   const attempt = reserveRepair(error, tree, state);
@@ -105,9 +106,11 @@ async function repairCandidate(ctx, workspace, error, options, state) {
   state.evidence.push(...(error.evidence ?? []));
   state.repairs += 1;
   ctx.onProgress('Repairing this Merge blocker (' + attempt + '/' + state.workflow.repairAttempts + ').\n', true);
-  const repair = await options.repair(error, state.repairs);
-  state.evidence.push(...(repair.evidence ?? []));
-  requireThat(repair.status !== 'blocked', repair.summary);
+  await attemptRepair(error, async () => {
+    const repair = await options.repair(error, state.repairs);
+    state.evidence.push(...(repair.evidence ?? []));
+    requireThat(repair.status !== 'blocked', repair.summary);
+  });
   const after = headOf(workspace);
   requireThat(
     cleanCheckout(workspace) &&
@@ -116,6 +119,18 @@ async function repairCandidate(ctx, workspace, error, options, state) {
       (conflict || treeOf(workspace) !== tree),
     'The repair did not produce a changed, committed issue candidate. Review the retained work before retrying.'
   );
+}
+
+async function attemptRepair(error, operation) {
+  try {
+    return await operation();
+  } catch (failure) {
+    if (!error.verificationFailure || failure.name === 'AbortError') throw failure;
+    failure.message = error.message + ' Repair stopped: ' + failure.message;
+    failure.verificationFailure = error.verificationFailure;
+    failure.evidence = [error.evidence, failure.evidence].flat().filter(Boolean);
+    throw failure;
+  }
 }
 
 async function mergeWhenReady(service, ctx, workspace, provider, pr, readiness, options, state) {

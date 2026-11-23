@@ -1,3 +1,56 @@
+.activity-indicator {
+  display: flex;
+  align-items: center;
+  width: max-content;
+  padding: 12px 16px;
+  color: var(--muted, #b0b0b0);
+}
+.activity-dots {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 12px;
+}
+.activity-dots i {
+  display: block;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: activity-bounce 1.2s ease-in-out infinite;
+}
+.activity-dots i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.activity-dots i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+.activity-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+@keyframes activity-bounce {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+  }
+  30% {
+    transform: translateY(-5px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .activity-dots i {
+    animation: none;
+  }
+}
+
 .project-workspace-tabs {
   display: flex;
   gap: 5px;

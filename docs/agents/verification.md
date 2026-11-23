@@ -1,5 +1,12 @@
 # Verification
 
+`node scripts/flow-browser.mjs --investigation-reports` checks retained Markdown
+and HTML reports in the actual reader. The editorial HTML fixture checks embedded
+styles, mobile width, hidden mobile navigation, scroll restoration, retained and
+missing evidence links, blocked scripts, and blocked external resources. It uses
+saved fixture content, not live model generation, so it does not establish that a
+model follows the report design prompt.
+
 `node --test scripts/discussion-evidence.check.mjs` checks temporary discussion
 protocol configuration, complete context/input references above the provider
 limit, small follow-up messages, and cleanup that preserves the project. It uses
@@ -93,6 +100,14 @@ is pending and keeps confirmation disabled if loading fails. These checks never
 close a live issue or launch work.
 The HTTP action regression also requires exactly one shared refresh before
 dispatch and verifies that direct controller calls retain their own fresh read.
+Close and Reopen each publish one authoritative report with its destination,
+retain decision history, and preserve the prior report when publication fails.
+
+`node --test scripts/flow-delivery.check.mjs` checks publication against a
+GitHub-observed destination commit absent locally. A disposable SSH transport
+serves a local Git repository. Publish fetches the missing commit without changing
+the issue commit or files, pushing, or creating a PR. The fixture uses no live
+GitHub credentials or network requests.
 
 `pnpm run test:stores` includes the `storage-profiles-*.check.mjs` fixtures. They
 check metadata-only registry activation, pinned destination pairs, profile edits
@@ -128,6 +143,10 @@ finishes, and its view must survive the earlier action's response.
 
 `node --test scripts/flow-progress.check.mjs` checks interleaved issue output,
 workspace updates, timing, terminal results and concurrent-edit protection.
+`node --test --test-name-pattern='manual operation displays live progress' scripts/project-stores-flow.check.mjs`
+checks live manual Update Branch summaries and steps, stable timing for repeated
+steps, input and stopping guards, and retained progress after completion. It holds
+a disposable operation open and supplies progress events without a live provider.
 `node scripts/flow-progress-benchmark.mjs PATH` compares the previous and current
 progress-save and group-eligibility paths over five alternating runs. Its
 disposable project contains 27 issues and two output streams. The JSON at `PATH`
@@ -791,6 +810,12 @@ one PR per complete issue. Historical records retain their original meaning.
 
 ## Issue capture checks
 
+Run `node --test scripts/issue-creation.check.mjs` for HTTP and direct Flow creation,
+multi-issue Classic capture, retry identity, and peer deletion after capture.
+The disposable provider refuses unrelated report reads, so these checks detect
+queue-wide refreshes during creation while confirming new report persistence and
+preservation of the existing display snapshot. They measure no cloud latency.
+
 Run `node --test scripts/factory-capture.check.mjs` for disposable reports and real
 HTTP capture requests, including mapped routing, skip reasons, preserved original
 wording, independent outcomes, collisions, concurrent/replayed submissions, partial
@@ -963,6 +988,12 @@ Background polling retains action errors. The running-Work browser scenario also
 checks that both Update Branch entry points are disabled while a block is active;
 opening the worktree remains available.
 
+`node --test --test-name-pattern='Update Branch stops conflict retries when dependency preflight' scripts/flow-executor.check.mjs`
+checks that a resolved merge stops after one worker turn and one commit-hook failure
+when installed dependencies are stale or their installed lock is missing. The
+failure retains the install command and staged merge. These fixtures use a failing
+Git hook and an injected conflict worker; they install no dependencies.
+
 Update Branch automatically makes up to three conflict-resolution attempts in the
 same conversation. Each attempt receives the previous failure, retains separate
 evidence, and preserves the target, HEAD, and unrelated staged files. An explicit
@@ -1019,6 +1050,17 @@ then the thumb hides after scrolling stops. The flow width and scroll position
 remain stable. It saves `issue-scrollbar.json` and screenshots of the idle,
 scrolling and stopped states in the reported evidence directory.
 
+`node scripts/flow-browser.mjs --activity-indicators --project-discuss --automate-activity` checks
+three-dot activity during streamed chat output and its removal after Stop or
+failure. The issue fixture holds actual Flow execution and checks the overlay's
+fixed position during wheel scrolling, mobile placement, pointer pass-through,
+reduced motion, human-input waits, and completion. It also checks injected
+branch-repair display states and held Automate me responses. It saves
+`activity-indicator.json` and chat and issue screenshots. These fixtures start no
+live model turns. `node --test scripts/interface-state.check.mjs` also checks
+that streamed text preserves the same indicator node and that human-input and
+terminal states remove it.
+
 `node --test scripts/actions-menu.check.mjs scripts/factory-server-control.check.mjs`
 checks two-second action-list admission, no overlapping requests, preserved feedback
 and drafts, block purposes, and named triggers for operations outside blocks.
@@ -1051,3 +1093,59 @@ retains no credentials, and reports only supported protocol metadata. A passing
 handshake does not prove login, billing, coding, approval pauses, or continuation
 against a live model. The authenticated workflow checks remain listed in the
 [native agent plan](../plans/anthropic-google-model-support.md).
+
+## AI provider settings
+
+`node --test scripts/provider-settings.check.mjs scripts/provider-setup.check.mjs`
+checks migration, saved choices, threshold boundaries, multiple windows, scoped
+quota, freshness, explicit unknown-quota permission, exhaustion, revision guards,
+and metadata discovery through disposable native-protocol executables. The
+executables reject unexpected methods and retain requests, establishing that
+Setup discovery sends no model prompt or sign-in request. These fixtures do not
+prove live vendor entitlements or browser sign-in completion.
+
+`node --test scripts/native-agent.check.mjs` checks actual child-process
+interruption when a model is disabled and refusal of a later prompt. The focused
+`node --test --test-name-pattern='provider disable lets' scripts/flow.check.mjs`
+checks a publication already underway: it retains its outcome, receives no abort,
+and starts no later merge after provider disablement.
+
+`node scripts/flow-browser.mjs --ai-providers` checks the real Settings form,
+explicit Save, unsaved edits, unchecked discovery, filtered model dropdowns,
+warning banner, and desktop/mobile layout. Its allowance observations are
+fixtures; it launches no live model or vendor login.
+
+Provider setup checks also cover missing Claude/Gemini executables, an installed
+CLI that fails to start, npm prerequisites, recipe-only explicit installation,
+terminal launch failure, and native executables in a user install directory.
+The install launcher is injected: these checks install no software and open no
+real sign-in or terminal. The provider browser scenario holds Setup responses,
+checks scroll position before and after them, reads copied install commands from
+the real clipboard, and verifies that only a clicked Install sends that action.
+Both Anthropic and Google are exercised. Saving and ordinary Settings navigation
+retain their existing checks.
+
+`node scripts/flow-browser.mjs --investigation-toolbar` checks the investigation
+controls above the graph and their removal for an ordinary flow. It uses a saved
+fixture flow, starts no investigation, and does not archive an issue.
+The geometry assertion also runs in the full investigation browser scenario;
+that broader scenario currently stops earlier at an investigation-creation HTTP
+400 and therefore does not establish coverage of the remaining workflow.
+
+## Block models and blocking errors
+
+`node --test scripts/block-model-errors.check.mjs scripts/flow-executor.check.mjs`
+checks frozen defaults, idle block overrides, retained attempt settings and
+results, live availability, admission rejection before an attempt, retained
+errors after controller recreation, and successful resolution without erasing
+history. It checks running and uncertain ownership guards, explicit provider
+handoff and fresh conversation startup, fixed helper models, and command blocks.
+Fixtures inject provider execution and make no live model turn.
+
+`node scripts/flow-browser.mjs --block-models` saves a model through Details,
+checks that earlier results remain valid, disables the saved model, and observes
+its inline error. A rejected Run displays Last blocking error across block
+selection and reload. Saving an available replacement starts no work; explicit
+Run resolves the blocker. The scenario saves unavailable and recovered
+screenshots. Provider observations and execution results are disposable fixtures;
+this does not establish live model entitlements or output quality.

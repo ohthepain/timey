@@ -155,6 +155,6 @@ export async function recoverOwnership(service, input) {
   if (prior?.value.status !== 'confirmed' && service.flows?.active?.has(requested.issueId))
     throw storeFailure('STORE_ACTIVE_RUN', 'Stop this local attempt before recovering its ownership.');
   await stores.recoverAttempt({ ...requested, operationId: id, confirmed: true });
-  await stores.refresh();
+  await stores.refresh({ issueIds: [requested.issueId] });
   return { ...(await readOwnership(service, requested)), recovered: true, recoveredAttemptId: requested.attemptId };
 }

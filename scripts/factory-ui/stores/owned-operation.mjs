@@ -7,6 +7,7 @@ function recordProgress(flows, issue, block, attempt, owner, value) {
   flows.service.projectStores.recordProgress(owner, { kind: 'output', text });
   flows.changeAttempt(issue, block.id, attempt.id, (current) => {
     current.output = (current.output + text).slice(-64000);
+    current.summary = text.trim().split('\n').at(-1)?.slice(0, 500) || current.summary;
   });
 }
 
@@ -19,6 +20,11 @@ function operationContext(flows, issue, admitted, block, attempt, controller) {
     signal: controller.signal,
     change: (change) => flows.changeAttempt(issue, block.id, attempt.id, change),
     onProgress: (value) => recordProgress(flows, issue, block, attempt, owner, value),
+    onStep: (step) => flows.changeAttemptStep(issue, block.id, attempt.id, step),
+    onInputRequired: () =>
+      flows.changeAttempt(issue, block.id, attempt.id, (current) => {
+        current.inputRequestedAt ??= new Date().toISOString();
+      }),
     onEvent: (event) =>
       flows.service.projectStores.recordProgress(owner, { kind: 'provider', event: redactValue(event) }),
   };

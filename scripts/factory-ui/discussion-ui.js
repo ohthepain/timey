@@ -90,6 +90,7 @@ const discussionUI = (() => {
     log.className = 'discussion-output';
     log.setAttribute('role', 'log');
     log.setAttribute('aria-label', 'Chat output');
+    const activity = document.createElement('div');
     const empty = document.createElement('p');
     empty.className = 'muted';
     empty.textContent = 'Your conversation will appear here.';
@@ -362,6 +363,7 @@ const discussionUI = (() => {
     async function run(work, message = 'Codex is responding…') {
       if (pending) return;
       pending = true;
+      window.timeyActivity.sync(activity, true);
       const current = generation;
       send.disabled = grill.disabled = record.disabled = results.disabled = true;
       status.textContent = message;
@@ -383,6 +385,7 @@ const discussionUI = (() => {
     function settle(current) {
       if (current !== generation) return;
       pending = false;
+      window.timeyActivity.sync(activity, false);
       send.disabled = grill.disabled = saved;
       record.disabled = results.disabled = false;
     }
@@ -439,7 +442,7 @@ const discussionUI = (() => {
       );
       return confirm;
     }
-    body.append(stageLabel, log, form, status, record, results, preview, retroPanel, details);
+    body.append(stageLabel, log, activity, form, status, record, results, preview, retroPanel, details);
     node.append(toggle, body);
     return node;
   }

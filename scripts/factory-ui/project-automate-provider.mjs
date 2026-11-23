@@ -55,6 +55,7 @@ export class AutomateProvider {
   constructor(service, connection = new AutomateConnection()) {
     this.service = service;
     this.connection = connection;
+    this.connection.root ||= service.root;
     this.stop = this.stop.bind(this);
     this.close = this.close.bind(this);
   }

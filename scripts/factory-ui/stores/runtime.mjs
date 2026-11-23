@@ -406,14 +406,13 @@ function activate(runtime) {
   runtime.registeredProject = runtime.project;
 }
 
-async function synchronize(runtime, fresh, allowPending, scope) {
+async function synchronize(runtime, fresh, scope) {
   await followProjectRoles(runtime);
   await importLegacy(runtime);
   await activateStorageProfiles(runtime.project, runtime.config);
   persistStorageProfiles(runtime.service.root);
   if (runtime.registeredProject !== runtime.project) activate(runtime);
-  if (fresh || (!runtime.ready && !allowPending))
-    await runtime.project.refresh(scope ? { issueIds: [...scope] } : undefined);
+  if (fresh) await runtime.project.refresh(scope ? { issueIds: [...scope] } : undefined);
   runtime.ready = true;
   runtime.service.storeStatus = {
     phase: 'ready',
@@ -424,13 +423,13 @@ async function synchronize(runtime, fresh, allowPending, scope) {
   return runtime.project;
 }
 
-function synchronizeOnce(runtime, fresh, allowPending, scope) {
+function synchronizeOnce(runtime, fresh, scope) {
   if (!runtime.pending) {
-    runtime.pendingFresh = fresh || (!runtime.ready && !allowPending);
+    runtime.pendingFresh = fresh;
     runtime.pendingScope = scope;
     runtime.lastRefresh = Date.now();
     runtime.pending = observeActivity('stores', 'Refresh stores', diagnosticContext(runtime.service.root), () =>
-      synchronize(runtime, fresh, allowPending, scope)
+      synchronize(runtime, fresh, scope)
     )
       .catch((error) => {
         runtime.service.storeStatus = {
@@ -448,6 +447,14 @@ function synchronizeOnce(runtime, fresh, allowPending, scope) {
       });
   }
   return runtime.pending;
+}
+
+function needsInitialSnapshot(runtime) {
+  return !runtime.ready || readSnapshot(runtime.service.root)?.projectId !== runtime.config.projectId;
+}
+
+function snapshotRefreshNeeded(runtime, { fresh, display, allowPending }) {
+  return fresh || display || (!allowPending && needsInitialSnapshot(runtime));
 }
 
 export async function ensureProjectStores(
@@ -478,12 +485,12 @@ export async function ensureProjectStores(
     return runtime.project;
   }
   if (display && !fresh && runtime.lastRefresh && !runtime.pending && !runtime.ready) return runtime.project;
-  if (display) fresh = true;
+  fresh = snapshotRefreshNeeded(runtime, { fresh, display, allowPending });
   const scope = issueIds?.length && snapshot?.projectId === config.projectId ? new Set(issueIds) : null;
   try {
     for (;;) {
       if (runtime.pending) countStoreRead(service.root, 'Joined refreshes');
-      const pending = synchronizeOnce(runtime, fresh, allowPending, scope);
+      const pending = synchronizeOnce(runtime, fresh, scope);
       const wait = beginActivity('stores', 'Wait for stores', diagnosticContext(service.root));
       const pendingFresh = runtime.pendingFresh;
       const pendingScope = runtime.pendingScope;

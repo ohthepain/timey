@@ -49,7 +49,9 @@ Automate me tab and dialog. Its tab controller also handles the sidebar Home,
 Issues, Discuss, and Reports links. `project-investigations.mjs` owns reusable inquiry settings
 and runs. `flow-ui.js` renders the ordinary investigation workspace;
 `investigation-flow-controls-ui.js` supplies its reusable settings and direct
-archive controls. `investigation-history.mjs` projects retained runs and linked
+archive controls above the graph region. The controls attach before
+`#graph-region`, keeping them outside its horizontal graph/overlay container.
+`investigation-history.mjs` projects retained runs and linked
 current issue states. Legacy custom layouts retain their original execution path
 until explicitly rebuilt.
 `investigation-snapshot.mjs` creates temporary detached copies and removes them
@@ -430,7 +432,11 @@ separate read-only app-server connection and retains the latest snapshot in memo
 
 Flow, Classic, and project Home display reads use the last confirmed store
 snapshot. `stores/runtime.mjs` performs initial synchronization when no snapshot
-exists, explicit refresh, and fresh mutation admission. Cached startup uses saved
+exists, explicit refresh, and fresh mutation admission. Single-issue actions and selected bulk actions
+refresh their selected reports, flows, claims, and commands. Scoped snapshots
+retain other issues and their saved coordination state. Queue-wide operations
+and unscoped Refresh still read the complete queue. Local controls and previews
+that use saved context skip snapshot refresh. Cached startup uses saved
 state and does not start a background refresh. Storage status retains its last
 confirmed check time and an explicit null warning after recovery. Failed refreshes
 retain saved data and do not restart from display polling. See
@@ -439,7 +445,14 @@ The Close-menu context is also a display read
 from the saved snapshot; confirming closure still requires fresh state and the
 existing acceptance checks. Confirmed report publications use the existing scoped
 snapshot refresh for the affected issue; snapshot installation preserves other
-saved issues. `FlowService.storageView` consumes that status
+saved issues. Close and Reopen publish the decision and destination together
+through registered stores, avoiding a second publication just to move the report.
+Unregistered local reports retain their filesystem move after saving the decision.
+Flow and Classic creation initialize and validate the configured
+stores without reloading existing reports, then refresh only the newly created
+issues after confirmed publication. Cold startup still builds the initial snapshot.
+Completed Flow capture retries refresh their saved issue before checking whether
+another runner deleted or moved it. `FlowService.storageView` consumes that status
 without repeating the project refresh. Selected-issue evidence loads once and
 can reload on explicit Refresh. Explicit file reads await evidence hydration.
 Selected Classic views reuse hydration for each confirmed snapshot generation. Flow persists
@@ -849,6 +862,14 @@ controls share a row with Send. Discuss hides
 the shared Flow footer. The shared skill composer, message envelope, send icon, and dictation handler
 live in `issue-chat-ui.js`. Project, report, and Classic issue chats reuse these
 controls. Flow conversation entries reuse the same message envelope.
+`activity-indicator-ui.js` supplies the shared three-dot activity indicator for
+chat histories, Automate me, Classic decision review, coordinator conversations,
+and active issue work. `project-discuss.css` owns its animation and reduced-motion
+styles. Flow places the issue indicator outside `graph-scroll`, in an overlay
+anchored to `graph-region`, so blocks scroll behind it. Agent permissions and
+human-input waits suppress activity. Active branch updates and repairs also show
+the issue indicator. The [activity indicator design](../plans/chat-and-issue-activity-indicators.md)
+records the agreed behavior and duration-estimate limits.
 Open conversation tabs stay in creation order; closing a tab marks its conversation
 closed and retains its saved history.
 
@@ -880,7 +901,16 @@ explicit generation gets another identity. `investigation-outputs.mjs` owns
 approval-needed issue capture and per-finding receipts shared across skills.
 `investigation-output-execution.mjs` binds these guarded tools to the active output
 and retains returned saved-result references before snapshot cleanup.
-`project-reports-ui.js` owns the Reports library and full-width reader. Its lower
+The default `factory/system/skills/generate-report/SKILL.md` uses `/bro` for
+user-facing copy and its linked `report-design.md` for a self-contained editorial
+HTML document. Internal issue records and machine-readable outputs keep their
+existing formats. The Generate report block delegates copy and layout to the
+selected skill.
+`project-reports-ui.js` owns the Reports library and full-width reader. Complete
+HTML reports render in a script-disabled iframe with isolated styles and a
+restrictive resource policy. Evidence links resolve to verified retained copies;
+unavailable evidence stays explicit. The reader preserves HTML scroll position
+and continues to render existing Markdown publications. Its lower
 panel reuses `project-discuss-ui.js`; `report-discussion.mjs` binds that conversation
 to the investigation and copies selected report context into each message.
 Archived inquiry execution stays guarded while retained report discussion remains
@@ -1043,6 +1073,11 @@ It binds deletion to the archived report contents and uses the same local branch
 cleanup for explicitly selected branches associated with the deleted reports.
 `flow-delivery.mjs` reads live destination branches, prepares the publication
 preview, and validates or refreshes independent verification evidence.
+Explicit Publish fetches a destination commit missing from the local object
+database before comparing changes against GitHub's observed commit. It uses
+`flow-update-branch.mjs` to fetch without merging or changing the issue checkout.
+Saved-state display refresh does not fetch Git objects. Publication distinguishes
+fetch failure, an unavailable observed commit, and missing common history.
 `flow-reconciliation.mjs` checks disconnected blocks' original provider
 conversations or retained input rejections before a manual update can release
 their ownership. It starts no model turn and preserves the failed attempts.
@@ -1079,6 +1114,23 @@ defaults, computes the definition checksum, and writes exported definitions.
 discussion to produce the block list. The controller applies the list or
 links an export through the existing revision-checked flow store.
 
+`factory-ui/block-models.mjs` resolves block overrides against the issue's frozen
+execution settings, describes fixed helper and conditional repair models, and
+checks live provider availability before admission. Each attempt saves the model
+it actually uses. A model-only edit preserves prior results and pauses autoplay;
+a confirmed provider change retains a handoff and opens a fresh conversation.
+`native-codex-settings.mjs` reads the configured model for temporary Request and
+Retro helpers without exposing native credentials.
+
+`factory-ui/block-errors.mjs` projects the latest unresolved blocking error from
+retained attempts, admission errors and closure failures. Admission errors live
+in the existing Flow record even when no attempt could start. Success resolves
+only the relevant step's errors; permitted removal or Retro skip hides its
+blockers while retaining history. Passive inspection writes no error. The issue
+heading shows Last blocking error, and `block-model-ui.js` renders model controls
+in the existing Details panel. See the
+[block model design](../plans/block-models-and-blocking-errors.md).
+
 The shared Flow UI owns the card layout, inspector sections, and controls.
 Selecting a block renders its saved details without an automatic mutation
 request. Start and explicit definition updates retain their server-side freshness
@@ -1109,9 +1161,11 @@ dynamic tool registrations. Loading the application starts no conversation or tu
 
 ## Native coding agents
 
-`factory/system/folder.md` lists the supported Codex, Claude, and Gemini choices.
-`model-settings.mjs` exposes provider metadata through the existing inherited
-settings. `agent-models.mjs` resolves the supported native aliases and keeps
+`factory/system/folder.md` retains the legacy model choices and built-in defaults.
+Once provider settings are initialized, `folder-settings-schema.mjs` and
+`model-settings.mjs` expose enabled, advertised, currently usable models from the
+native catalog. Saved unavailable selections retain their identity and reason.
+`agent-models.mjs` preserves exact native provider/model identities and keeps
 native session identities distinct from Codex threads.
 
 `issue-chat-runtime.mjs` selects `NativeAgentConnection` for native models and
@@ -1128,3 +1182,30 @@ group ends. Recovery sends no prompt. Project discussion provider changes retain
 the original conversation and supply a handoff with the history location. Existing
 issue execution settings remain frozen after execution starts. Background helpers
 and the explicitly named Sol reviewer retain their Codex execution path.
+
+## AI provider settings
+
+`provider-config.mjs` owns project-scoped choices and quota thresholds in
+`user/ai-providers.json`. Initialization preserves referenced default, issue,
+frozen execution and helper model choices. `provider-runtime.mjs` owns local
+native observations, availability, monitoring and interruption watches; its
+observations live under `.issues/factory-ui/` and contain no credentials.
+
+`provider-setup.mjs` discovers native metadata without a model prompt and separates
+missing executables, startup errors and sign-in. `provider-installation.mjs` owns
+fixed vendor install/sign-in recipes and explicit native-terminal launches.
+`native-agent-command.mjs` resolves the same PATH and user install locations for
+inspection and execution. Install commands are displayed and copyable before an
+explicit Install action; missing npm gets prerequisite instructions. `codex-account.mjs`
+is a metadata-only transport shared by discovery and `codex-quota.mjs`; it cannot
+start a turn or change sign-in. Claude quota events provide scoped observations,
+but cannot establish a complete fresh account snapshot. Gemini ACP context usage
+is not account allowance. Both remain unknown unless supported allowance data
+exist; the explicit unmonitored-work option governs admission.
+
+`provider-settings-ui.js` renders the provider controls and persistent warning
+banner in Flow and Classic. `project-settings-ui.js` retains the shared Factory
+settings Save and unsaved-change handling. The execution adapters check policy
+before turns and interrupt affected work. Flow also checks each block, aborts
+cancellable work, and lets protected Git/publication operations retain an outcome
+before pausing the route. Quota recovery restores eligibility, never autoplay.

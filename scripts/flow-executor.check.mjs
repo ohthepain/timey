@@ -8,7 +8,12 @@ import { createFlowExecutor } from './factory-ui/flow-executor.mjs';
 import { digest } from './factory-ui/common.mjs';
 import { BlockCatalog } from './factory-ui/block-catalog.mjs';
 import { blockDetails, definitionMap } from './factory-ui/flow-block-data.mjs';
-import { conversationMessages, conversationState, conversationFiles } from './factory-ui/conversation-store.mjs';
+import {
+  conversationMessages,
+  conversationState,
+  conversationFiles,
+  saveConversationState,
+} from './factory-ui/conversation-store.mjs';
 import { resumeWorkDependencies, runWorkVerification } from './factory-ui/flow-verification.mjs';
 
 function fixture(t, options = {}) {
@@ -1181,6 +1186,44 @@ test('Merge asks its worker to repair an inherited browser failure and verifies 
   );
 });
 
+for (const thrown of [false, true])
+  test(`Merge names the failed test when its repair ${thrown ? 'throws' : 'returns blocked'}`, async (t) => {
+    let failure;
+    const f = mergeFixture(t, {
+      beforeVerify() {
+        const folder = join(f.root, '.issues/failed-browser');
+        mkdirSync(folder, { recursive: true });
+        const summary = join(folder, 'summary.json');
+        writeFileSync(summary, JSON.stringify({ checks: [{ name: 'browser', passed: false }] }));
+        failure = Object.assign(Error('Fixture issues are absent from the initialized store.'), {
+          verificationFailure: { summaries: [summary], logs: [] },
+        });
+        throw failure;
+      },
+    });
+    await f.run('understand');
+    f.connection.turn = async () => {
+      if (thrown) throw Error('Three repair approaches were exhausted.');
+      return '```flow-result\n' + JSON.stringify({ failure: 'Three repair approaches were exhausted.' }) + '\n```';
+    };
+    await assert.rejects(
+      f.run('merge', {
+        definition: {
+          artifacts: [],
+          mergeWorkflow: { policy: 'automatic', pollSeconds: 5, checkTimeoutSeconds: 900, repairAttempts: 3 },
+        },
+      }),
+      (error) => {
+        assert.match(error.message, /tests or verification checks failed.*browser/i);
+        assert.match(error.message, /Three repair approaches were exhausted/);
+        assert.match(error.message, /Fixture issues are absent/);
+        assert.deepEqual(error.verificationFailure, failure.verificationFailure);
+        return true;
+      }
+    );
+    assert.ok(!f.observations.some(({ operation }) => ['push', 'merge'].includes(operation)));
+  });
+
 test('external merge reconciliation records GitHub facts without manufacturing verification or acceptance', async (t) => {
   const f = mergeFixture(t, { merged: true });
   await f.run('understand');
@@ -1691,6 +1734,50 @@ test('Update Branch shows the worker decision when its response leaves conflicts
     'Decision needed: include or exclude the installed agent tooling?\n\n```flow-result\n{"status":"failure","values":{"decision":"Choose the audit scope."}}\n```';
   await assert.rejects(f.run('update-branch'), /Decision needed: include or exclude the installed agent tooling/);
 });
+
+for (const dependencyProblem of [
+  'installed dependencies do not match the snapshot lockfile.',
+  'installed dependency lock missing: node_modules/.pnpm/lock.yaml.',
+]) {
+  test(`Update Branch stops conflict retries when dependency preflight reports ${dependencyProblem}`, async (t) => {
+    const f = await branchUpdateFixture(t, 'source.txt');
+    const target = f.advance();
+    writeFileSync(join(f.checkout, 'source.txt'), 'Issue edit.\n');
+    f.work('commit', '-am', 'Issue change');
+    const head = f.work('rev-parse', 'HEAD');
+    const hooks = join(f.root, '.git', 'hooks');
+    const countFile = join(f.checkout, '.issues', 'commit-hook-count');
+    f.git('config', 'core.hooksPath', hooks);
+    writeFileSync(
+      join(hooks, 'pre-commit'),
+      '#!/bin/sh\nprintf x >> .issues/commit-hook-count\n' +
+        'echo "Execution preflight: ' +
+        dependencyProblem +
+        ' Run pnpm install --frozen-lockfile in this checkout." >&2\nexit 1\n',
+      { mode: 0o755 }
+    );
+    let calls = 0;
+    const turn = f.connection.turn.bind(f.connection);
+    f.connection.turn = async (...args) => {
+      calls++;
+      writeFileSync(join(f.checkout, 'source.txt'), 'Issue and target edits.\n');
+      f.work('add', 'source.txt');
+      return turn(...args);
+    };
+    let failure;
+    await assert.rejects(f.run('update-branch'), (error) => {
+      failure = error;
+      return true;
+    });
+    assert.equal(calls, 1, 'Dependency failures cannot be repaired by another conflict-resolution turn.');
+    assert.equal(readFileSync(countFile, 'utf8'), 'x');
+    assert.match(failure.message, /pnpm install --frozen-lockfile/);
+    assert.equal(f.work('rev-parse', 'HEAD'), head);
+    assert.equal(f.work('rev-parse', 'MERGE_HEAD'), target);
+    assert.equal(f.work('diff', '--name-only', '--diff-filter=U'), '');
+    assert.equal(f.work('show', ':source.txt'), 'Issue and target edits.');
+  });
+}
 
 test('Update Branch automatically retries a failed resolution with its diagnostic and then commits', async (t) => {
   const f = await branchUpdateFixture(t, 'source.txt');
@@ -2214,4 +2301,33 @@ test('a peer checkpoint replaces a stale same-path workspace without changing it
   assert.notEqual(result.workspace.checkout, original.workspace.checkout);
   assert.equal(readFileSync(join(result.workspace.checkout, 'source.txt'), 'utf8'), 'New shared checkpoint.\n');
   assert.deepEqual(readFileSync(join(original.workspace.checkout, 'source.txt')), staleBytes);
+});
+
+test('block override reaches the provider while confirmed provider changes start a fresh conversation', async (t) => {
+  const f = fixture(t);
+  f.flow.executionSettings = { values: { model: 'gpt-6-astra', effort: 'high' }, sources: {}, basis: 'frozen' };
+  saveConversationState(f.root, f.issue.id, {
+    flowBlocks: { 'block-work': { threadId: 'anthropic:previous', basis: 'old' } },
+  });
+  await assert.rejects(f.run('work', { model: 'gpt-6.1-sol', continuing: true }), /Confirm the provider handoff/);
+  assert.equal(
+    f.calls.some((call) => call.method === 'turn'),
+    false
+  );
+  const handoff = {
+    fromThreadId: 'anthropic:previous',
+    toModel: 'gpt-6.1-sol',
+    summary: 'Keep the prior diagnosis.',
+    history: 'retained-history.json',
+  };
+  const result = await f.run('work', { model: 'gpt-6.1-sol', continuing: true, modelHandoff: handoff });
+  const turn = f.calls.find((call) => call.method === 'turn');
+  assert.equal(turn.settings.model, 'gpt-6.1-sol');
+  assert.equal(result.modelSettings.model, 'gpt-6.1-sol');
+  assert.equal(f.flow.executionSettings.values.model, 'gpt-6-astra');
+  assert.equal(
+    f.calls.some((call) => call.method === 'resume'),
+    false
+  );
+  assert.match(f.calls.find((call) => call.method === 'start').instructions, /Keep the prior diagnosis/);
 });

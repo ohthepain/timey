@@ -154,6 +154,34 @@ void test('display without a confirmed snapshot waits for shared storage', async
   assert.equal(readSnapshot(f.root).issues[0].report, f.report);
 });
 
+void test('non-fresh admission after pending initialization builds the complete initial snapshot', async (t) => {
+  const f = fixture(t);
+  const stores = await ensureProjectStores(f.service, { allowPending: true });
+  assert.equal(readSnapshot(f.root), null);
+  assert.equal(await ensureProjectStores(f.service), stores);
+  assert.equal(readSnapshot(f.root)?.issues[0].report, f.report);
+});
+
+void test('non-fresh admission upgrades a pending initialization that has no display snapshot', async (t) => {
+  const f = fixture(t);
+  const stores = await ensureProjectStores(f.service, { allowPending: true });
+  const entered = Promise.withResolvers();
+  const release = Promise.withResolvers();
+  const get = stores.records.get.bind(stores.records);
+  stores.records.get = async (...args) => {
+    entered.resolve();
+    await release.promise;
+    return get(...args);
+  };
+  t.after(() => release.resolve());
+  const pending = ensureProjectStores(f.service, { allowPending: true });
+  await entered.promise;
+  const admission = ensureProjectStores(f.service);
+  release.resolve();
+  await Promise.all([pending, admission]);
+  assert.equal(readSnapshot(f.root)?.issues[0].report, f.report);
+});
+
 void test('a restarted display uses the confirmed cache until refresh or operation admission', async (t) => {
   const f = fixture(t);
   await ensureProjectStores(f.service, { fresh: true });

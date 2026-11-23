@@ -492,6 +492,7 @@ test('temporary panel survives redraw without storage, rejects scripted actions 
   const calls = [];
   dom.window.eval(
     readFileSync(resolve('scripts/factory-ui/view-state.js'), 'utf8') +
+      readFileSync(resolve('scripts/factory-ui/activity-indicator-ui.js'), 'utf8') +
       readFileSync(resolve('scripts/factory-ui/issue-chat-ui.js'), 'utf8') +
       readFileSync(resolve('scripts/factory-ui/discussion-ui.js'), 'utf8') +
       '\nwindow.chatTest = discussionUI;'
@@ -540,6 +541,7 @@ test('issue detail retro opens the temporary panel and displays unchecked recomm
   t.after(() => dom.window.close());
   dom.window.eval(
     readFileSync(resolve('scripts/factory-ui/view-state.js'), 'utf8') +
+      readFileSync(resolve('scripts/factory-ui/activity-indicator-ui.js'), 'utf8') +
       readFileSync(resolve('scripts/factory-ui/issue-chat-ui.js'), 'utf8') +
       readFileSync(resolve('scripts/factory-ui/discussion-ui.js'), 'utf8') +
       '\nwindow.chatTest = discussionUI;'
@@ -926,6 +928,7 @@ test('stage button opens the temporary chat with a bound stage and preserves it 
   t.after(() => dom.window.close());
   dom.window.eval(
     readFileSync(resolve('scripts/factory-ui/view-state.js'), 'utf8') +
+      readFileSync(resolve('scripts/factory-ui/activity-indicator-ui.js'), 'utf8') +
       readFileSync(resolve('scripts/factory-ui/issue-chat-ui.js'), 'utf8') +
       readFileSync(resolve('scripts/factory-ui/discussion-ui.js'), 'utf8') +
       '\nwindow.chatTest = discussionUI;'

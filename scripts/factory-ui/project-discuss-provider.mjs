@@ -66,7 +66,7 @@ class ProjectDiscussProvider {
     this.tools =
       options.tools ||
       createProjectDiscussTools(service, { ...options, reportContext: () => this.active?.message.reportContext });
-    this.connection = options.connection || new DiscussConnection({ experimentalApi: true });
+    this.connection = options.connection || new DiscussConnection({ experimentalApi: true, root: service.root });
     this.connection.toolHandler = (params) => this.invokeTool(params);
     this.connection.onEvent = (event) => this.event(event);
     this.active = null;
@@ -211,7 +211,7 @@ class ProjectDiscussProvider {
     this.connection.close();
     this.connection =
       target === 'codex'
-        ? new DiscussConnection({ experimentalApi: true })
+        ? new DiscussConnection({ experimentalApi: true, root: this.service.root })
         : new NativeAgentConnection({
             root: this.service.root,
             model: settings.model,

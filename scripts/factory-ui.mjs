@@ -1,3 +1,5 @@
+import { monitorProviders } from './factory-ui/provider-runtime.mjs';
+import { initializeProviderConfig } from './factory-ui/provider-config.mjs';
 import { handoffRestart, waitForPrevious, resumeAfterRestart } from './factory-ui/restart-process.mjs';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -8,6 +10,7 @@ import { createFactoryServer } from './factory-ui/http.mjs';
 async function main() {
   await waitForPrevious(Number(optionValue('--after-pid') || 0));
   const { project, port } = options();
+  if (!process.argv.includes('--preview')) initializeProviderConfig(project);
   const service = new FactoryUI(project, {
       preview: process.argv.includes('--preview'),
       authoritativeUrl: optionValue('--authoritative-url'),
@@ -19,7 +22,9 @@ async function main() {
     );
     resumeAfterRestart(service);
   });
+  const stopProviderMonitoring = monitorProviders(service.root);
   const close = () => {
+    stopProviderMonitoring();
     service.close();
     server.closeAllConnections();
     server.close(() => process.exit(0));

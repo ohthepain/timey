@@ -212,7 +212,7 @@ export class FlowGrouping {
     return { id, wording };
   }
 
-  create({ previewId, wording, requestId }) {
+  async create({ previewId, wording, requestId }) {
     requireThat(
       typeof previewId === 'string' && /^[a-f0-9-]{36}$/.test(previewId),
       'Review a current combined request first.'
@@ -222,6 +222,7 @@ export class FlowGrouping {
     requireThat(preview && preview.expires > Date.now(), 'Review a current combined request first.');
     const stores = registeredProjectStores(this.service.root);
     const ids = preview.grouping.children.map((child) => child.id);
+    await stores?.refresh({ issueIds: ids });
     return afterReportWrite(stores?.assertSameStorage(ids), (storage) =>
       this.flows.capture(
         {

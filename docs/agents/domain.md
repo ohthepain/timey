@@ -21,3 +21,9 @@ When code changes affect documented concepts, boundaries, decisions, or workflow
 update the affected docs and repair their pointers in the same change. Remove
 stale guidance. Keep implementation navigation in the codebase map and domain
 definitions in the glossary; link between them instead of repeating content.
+
+Before finishing changes, use the containing project's documented formatter,
+lint, and static-analysis commands at their required scope. Run them after the
+last edit in the checkout being handed back, including after copying changes
+from another worktree. Fix failures introduced by your changes and rerun affected
+checks after further edits. Report any checks that still fail or could not run.

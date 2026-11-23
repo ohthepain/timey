@@ -157,7 +157,7 @@ async function moveSelectedStores(service, issueIds, storage, operationId) {
     artifactStoreId: storage.artifactStoreId,
     operationId: pending?.value.id || operationId,
   });
-  await service.projectStores.refresh();
+  await service.projectStores.refresh({ issueIds });
 }
 
 async function editableIssueViews(flows, issueIds, onlyStore = false) {

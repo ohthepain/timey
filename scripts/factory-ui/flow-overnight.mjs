@@ -186,9 +186,14 @@ export class FlowOvernight {
     return { id, finishLine, issues: roster.map(({ issue }) => publicIssue(issue)) };
   }
 
-  start(planId) {
+  async start(planId) {
     const plan = [...this.plans.values()].find(({ id }) => id === planId);
     requireThat(plan && !this.running.has(plan.folder), 'Preview the current Work All Night selection again.');
+    await this.flows.service.projectStores?.refresh({ issueIds: plan.issueIds });
+    requireThat(
+      this.plans.get(plan.folder) === plan && !this.running.has(plan.folder),
+      'Preview the current Work All Night selection again.'
+    );
     const roster = this.roster(plan.folder, plan.issueIds);
     requireThat(
       roster.every((entry, index) => identity(entry) === plan.basis[index]),
