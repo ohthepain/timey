@@ -4,6 +4,95 @@ import { setTimeout as delay, setImmediate } from 'node:timers/promises';
 import { captureFixture } from './factory-capture-fixture.mjs';
 import { startFactoryHttp } from './factory-http-fixture.mjs';
 import { ensureProjectStores } from './factory-ui/stores/runtime.mjs';
+import { readQueue } from './factory-ui/data.mjs';
+import { decisionBasis } from './factory-ui/recorded-result.mjs';
+
+test('Close and Reopen publish the decision and destination together once', async (t) => {
+  const { service, root } = captureFixture(t);
+  const stores = await ensureProjectStores(service, { fresh: true });
+  const { url, cookie } = await startFactoryHttp(t, service);
+  const id = '20261025-existing';
+  const writes = [];
+  const save = stores.saveIssue.bind(stores);
+  stores.saveIssue = async (input) => {
+    writes.push(input);
+    return save(input);
+  };
+  for (const [kind, from, destination, expectedState] of [
+    ['close', 'open', 'closed', 'closed'],
+    ['reopen', 'closed', 'open', 'to-do'],
+  ]) {
+    const queue = readQueue(root, { location: from, issueId: id });
+    const issue = queue.issues.find((entry) => entry.id === id);
+    const before = await stores.history(id);
+    writes.length = 0;
+    const response = await fetch(url + '/api/issue-decision', {
+      method: 'POST',
+      headers: {
+        cookie,
+        origin: url,
+        'content-type': 'application/json',
+        'x-factory-action': 'manual',
+      },
+      body: JSON.stringify({
+        issueId: id,
+        state: issue.state,
+        kind,
+        basis: decisionBasis(queue, issue),
+        reason: 'Retain history.',
+        resolution: 'wont-do',
+      }),
+    });
+    assert.equal(response.status, 200, await response.clone().text());
+    const result = await response.json();
+    assert.equal(result.state, expectedState);
+    const saved = await stores.readIssue(id);
+    assert.equal(saved.location, destination);
+    assert.match(saved.report, /Preserve original bytes\./);
+    assert.match(saved.report, /Retain history\./);
+    assert.match(saved.report, new RegExp('state: ' + expectedState));
+    assert.equal(writes.length, 1, 'The decision and destination must share one authoritative publication.');
+    assert.equal(writes[0].location, destination);
+    assert.equal((await stores.history(id)).length, before.length + 1);
+  }
+});
+
+test('failed closure publication preserves the open report and its history', async (t) => {
+  const { service, root } = captureFixture(t);
+  const stores = await ensureProjectStores(service, { fresh: true });
+  const { url, cookie } = await startFactoryHttp(t, service);
+  const id = '20261025-existing';
+  const queue = readQueue(root);
+  const issue = queue.issues.find((entry) => entry.id === id);
+  const before = await stores.readIssue(id);
+  const history = await stores.history(id);
+  stores.saveIssue = async () => {
+    throw Error('Closure storage unavailable.');
+  };
+  const response = await fetch(url + '/api/issue-decision', {
+    method: 'POST',
+    headers: {
+      cookie,
+      origin: url,
+      'content-type': 'application/json',
+      'x-factory-action': 'manual',
+    },
+    body: JSON.stringify({
+      issueId: id,
+      state: issue.state,
+      kind: 'close',
+      basis: decisionBasis(queue, issue),
+      resolution: 'wont-do',
+    }),
+  });
+  assert.equal(response.status, 400);
+  assert.match((await response.json()).error, /Closure storage unavailable/);
+  const after = await stores.readIssue(id);
+  assert.equal(after.location, 'open');
+  assert.equal(after.report, before.report);
+  assert.deepEqual(await stores.history(id), history);
+  assert.equal(readQueue(root).issues.find((entry) => entry.id === id).state, 'backlog');
+});
 
 test('opening Close uses saved issue context while confirmation still waits for fresh shared state', async (t) => {
   const { service } = captureFixture(t);
@@ -143,22 +232,38 @@ test('HTTP flow actions reuse transport freshness while direct actions still ref
   service.flows = createIssueFlows(service);
   service.flows.dispatch = async () => ({ inspected: true });
   const refresh = stores.refresh.bind(stores);
-  let refreshes = 0;
+  const scopes = [];
   stores.refresh = async (...args) => {
-    refreshes++;
+    scopes.push(args[0]?.issueIds);
     return refresh(...args);
   };
   const { url, cookie } = await startFactoryHttp(t, service);
-  const input = { action: 'open-block', issueId: '20261025-existing', blockId: 'request', revision: 0 };
+  const input = {
+    action: 'open-block',
+    issueId: '20261025-existing',
+    blockId: 'request',
+    revision: 0,
+  };
   const response = await fetch(url + '/api/flow-action', {
     method: 'POST',
-    headers: { cookie, origin: url, 'content-type': 'application/json', 'x-factory-action': 'manual' },
+    headers: {
+      cookie,
+      origin: url,
+      'content-type': 'application/json',
+      'x-factory-action': 'manual',
+    },
     body: JSON.stringify(input),
   });
   assert.equal(response.status, 200);
   assert.equal((await response.json()).inspected, true);
-  assert.equal(refreshes, 1, 'One HTTP action must not refresh the full queue twice.');
-  refreshes = 0;
+  assert.deepEqual(scopes, [[input.issueId]]);
+  scopes.length = 0;
   await service.flows.action(input);
-  assert.equal(refreshes, 1, 'Direct controller callers still require fresh authoritative state.');
+  assert.deepEqual(scopes, [[input.issueId]]);
+  scopes.length = 0;
+  await service.flows.action({ ...input, action: 'cancel-confirmation' });
+  assert.deepEqual(scopes, []);
+  const queue = await fetch(url + '/api/queue?refresh=true', { headers: { cookie } });
+  assert.equal(queue.status, 200);
+  assert.deepEqual(scopes, [undefined]);
 });

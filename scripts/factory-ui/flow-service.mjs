@@ -172,6 +172,36 @@ const folderActions = new Set([
   ...folderNightActions,
   ...folderOperationActions,
 ]);
+const scopedFolderActions = new Set([
+  'create-folder',
+  'folder-group-create',
+  'folder-group-preview',
+  'folder-detach',
+  'folder-move',
+  'folder-remove',
+  'folder-bulk-preview',
+  'folder-bulk-run',
+  'folder-night-plan',
+  'folder-night-start',
+  'folder-night-stop',
+]);
+const cachedFlowActions = new Set(['agent-answer', 'cancel-confirmation', 'reveal-definition', 'open-block-extension']);
+
+export function prepareFlowActionStores(service, input) {
+  const { action, issueId, subIssueId } = input;
+  const ids = Array.isArray(input.issueIds) ? input.issueIds : [];
+  const issueIds = [...new Set([issueId, subIssueId, ...ids])].filter(
+    (id) => typeof id === 'string' && /^[\w-]+$/.test(id)
+  );
+  const queueWide = folderActions.has(action) && !scopedFolderActions.has(action);
+  const fresh = action !== 'capture' && !cachedFlowActions.has(action) && (queueWide || issueIds.length > 0);
+  return ensureProjectStores(service, {
+    fresh,
+    issueIds: queueWide ? undefined : issueIds,
+    display: !fresh && action !== 'capture',
+  });
+}
+
 const unresolvedAttempt = (attempt) =>
   !attempt.reconciledAt && ['running', 'stopping', 'uncertain'].includes(attempt.status);
 function assignBlockSkills(flow, catalog, settings) {
@@ -902,6 +932,11 @@ class IssueFlows {
   }
   async manualClosureArtifact(id, revision) {
     const issue = this.selected(id);
+    const children = groupChildren(issue);
+    if (children.length)
+      await this.service.projectStores?.refresh({
+        issueIds: children.map(({ id }) => id),
+      });
     const flow = this.read(issue);
     const assertCurrent = () =>
       requireThat(
@@ -1032,6 +1067,12 @@ class IssueFlows {
       this.pause(id, redactValue(error.message));
     }
   }
+  async finishClosureGroup(issue, retry) {
+    const children = groupChildren(issue);
+    if (retry && issue.closure?.reason === 'fixed' && children.length)
+      await this.service.projectStores?.refresh({ issueIds: children.map(({ id }) => id) });
+    await this.groups.finish(issue);
+  }
   async advanceClosure(id, retry = false, resourceId) {
     const issue = this.selected(id);
     const catalog = this.catalog.read().entries;
@@ -1047,7 +1088,7 @@ class IssueFlows {
       );
       return this.advanceClosure(id, false, resourceId);
     }
-    this.groups.finish(issue);
+    await this.finishClosureGroup(issue, retry);
     const { close, retro, cleanup } = closureBlocks(flow, catalog);
     const latestForClosure = (block) => block?.attempts.findLast((attempt) => attempt.closureId === closing.id);
     if (!latestForClosure(close)) {
@@ -1221,18 +1262,11 @@ class IssueFlows {
       !localControl && Boolean(this.service.projectStores || existsSync(join(this.service.root, '.issues/stores.json')))
     );
   }
-  async prepareActionStores(input, storesReady) {
-    if (!storesReady && this.actionNeedsFreshStore(input))
-      await ensureProjectStores(this.service, {
-        fresh: input.action !== 'capture',
-        ...(input.action === 'approve-issue' && { issueIds: [input.issueId] }),
-      });
-  }
   async action(input, { storesReady = false } = {}) {
     return this.withBlockingError(input, () => this.preparedAction(input, storesReady));
   }
   async preparedAction(input, storesReady) {
-    await this.prepareActionStores(input, storesReady);
+    if (!storesReady && this.actionNeedsFreshStore(input)) await prepareFlowActionStores(this.service, input);
     if (
       this.service.projectStores &&
       input.issueId &&

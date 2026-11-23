@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync, mkdirSync, unlinkSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, mkdirSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import YAML from 'yaml';
 import { deliveryFixture } from './factory-workflow-fixture.mjs';
@@ -16,6 +16,7 @@ import { readQueue } from './factory-ui/data.mjs';
 import { decisionBasis } from './factory-ui/recorded-result.mjs';
 import { digest } from './factory-ui/common.mjs';
 import { StrategyProvider } from './factory-ui/strategy-provider.mjs';
+import { gitFixture } from './git-fixture.mjs';
 
 function fixture(t, { sourceChange = true } = {}) {
   const f = deliveryFixture(t, { sourceChange });
@@ -222,6 +223,114 @@ test('Publish offers Cannot Reproduce without pushing when the destination alrea
   assert.ok(!f.calls.includes('push'));
   assert.ok(!f.calls.includes('publish'));
   assert.ok(!readQueue(f.root).issues[0].closed);
+});
+
+function publicationDestination(t, f) {
+  const destination = gitFixture(t, 'publication-destination-');
+  destination.git('fetch', '--no-tags', f.source.root, f.input.base);
+  destination.git('checkout', '-qb', 'dev', 'FETCH_HEAD');
+  writeFileSync(join(destination.root, 'destination-only.txt'), 'Destination advanced independently.\n');
+  destination.git('add', 'destination-only.txt');
+  destination.git('commit', '-qm', 'Advance destination');
+  const target = destination.git('rev-parse', 'HEAD');
+  f.provider.gh = async () => `dev\t${target}`;
+  f.source.git('update-ref', 'refs/heads/dev', f.input.base);
+  f.source.git('update-ref', 'refs/remotes/origin/dev', f.input.base);
+  assert.equal(f.source.git('rev-parse', 'dev'), f.source.git('rev-parse', 'origin/dev'));
+  assert.throws(() => f.source.git('cat-file', '-e', target + '^{commit}'));
+  const transport = join(f.source.root, '.issues', 'destination-transport.sh');
+  writeFileSync(transport, `exec git-upload-pack '${destination.root}'\n`);
+  f.source.git('config', 'core.sshCommand', `sh '${transport}'`);
+  f.source.git('config', 'ssh.variant', 'ssh');
+  return { destination, target };
+}
+
+function rejectPublicationFetch(f) {
+  const marker = join(f.source.root, '.issues', 'publication-fetch-attempted');
+  const transport = join(f.source.root, '.issues', 'failed-destination-transport.sh');
+  writeFileSync(transport, `touch '${marker}'\nexit 1\n`);
+  f.source.git('config', 'core.sshCommand', `sh '${transport}'`);
+  f.source.git('config', 'ssh.variant', 'ssh');
+  return marker;
+}
+
+function unchangedPublicationCandidate(f, before) {
+  assert.equal(f.source.git('rev-parse', 'HEAD', 'HEAD^{tree}'), before);
+  assert.equal(f.source.git('status', '--porcelain', '--untracked-files=all'), '');
+  assert.ok(!f.calls.includes('push'));
+  assert.ok(!f.calls.includes('publish'));
+}
+
+test('Publish fetches the observed destination commit before comparing issue changes', async (t) => {
+  const f = fixture(t);
+  const { target } = publicationDestination(t, f);
+  const before = f.source.git('rev-parse', 'HEAD', 'HEAD^{tree}');
+  const preview = await f.preview();
+  assert.equal(preview.status, 'confirm', preview.message);
+  assert.equal(f.source.git('rev-parse', 'refs/remotes/origin/dev'), target);
+  unchangedPublicationCandidate(f, before);
+});
+
+test('Publish can retry a failed destination fetch without changing the candidate', async (t) => {
+  const f = fixture(t);
+  const { target } = publicationDestination(t, f);
+  const attempted = rejectPublicationFetch(f);
+  const before = f.source.git('rev-parse', 'HEAD', 'HEAD^{tree}');
+  const preview = await f.preview();
+  assert.equal(preview.status, 'blocked');
+  assert.match(preview.message, /fetch/i);
+  assert.match(preview.message, /retry Publish/i);
+  assert.equal(existsSync(attempted), true);
+  unchangedPublicationCandidate(f, before);
+  f.source.git('config', 'core.sshCommand', `sh '${join(f.source.root, '.issues', 'destination-transport.sh')}'`);
+  const retried = await f.preview();
+  assert.equal(retried.status, 'confirm', retried.message);
+  assert.equal(f.source.git('rev-parse', 'refs/remotes/origin/dev'), target);
+  unchangedPublicationCandidate(f, before);
+});
+
+test('Publish does not substitute a different destination commit after fetching', async (t) => {
+  const f = fixture(t);
+  const { destination, target } = publicationDestination(t, f);
+  destination.git('checkout', '-q', '--detach', f.input.base);
+  destination.git('update-ref', 'refs/heads/dev', f.input.base);
+  const before = f.source.git('rev-parse', 'HEAD', 'HEAD^{tree}');
+  const preview = await f.preview();
+  assert.equal(preview.status, 'blocked');
+  assert.match(preview.message, /destination.*changed/i);
+  assert.match(preview.message, /retry Publish/i);
+  assert.throws(() => f.source.git('cat-file', '-e', target + '^{commit}'));
+  assert.equal(f.source.git('rev-parse', 'refs/remotes/origin/dev'), f.input.base);
+  unchangedPublicationCandidate(f, before);
+});
+
+test('Publish explains unrelated destination history without claiming the branch is stale', async (t) => {
+  const f = fixture(t);
+  const destination = gitFixture(t, 'publication-unrelated-');
+  writeFileSync(join(destination.root, 'unrelated.txt'), 'Independent history.\n');
+  destination.git('add', 'unrelated.txt');
+  destination.git('commit', '-qm', 'Independent root');
+  const target = destination.git('rev-parse', 'HEAD');
+  f.source.git('fetch', '--no-tags', destination.root, target);
+  f.provider.gh = async () => `dev\t${target}`;
+  const attempted = rejectPublicationFetch(f);
+  const before = f.source.git('rev-parse', 'HEAD', 'HEAD^{tree}');
+  const preview = await f.preview();
+  assert.equal(preview.status, 'blocked');
+  assert.match(preview.message, /common (ancestor|history)/i);
+  assert.doesNotMatch(preview.message, /Refresh the destination branch locally/);
+  assert.equal(existsSync(attempted), false);
+  unchangedPublicationCandidate(f, before);
+});
+
+test('Publish does not fetch a destination commit already available locally', async (t) => {
+  const f = fixture(t);
+  const attempted = rejectPublicationFetch(f);
+  const before = f.source.git('rev-parse', 'HEAD', 'HEAD^{tree}');
+  const preview = await f.preview();
+  assert.equal(preview.status, 'confirm', preview.message);
+  assert.equal(existsSync(attempted), false);
+  unchangedPublicationCandidate(f, before);
 });
 
 test('Publish detects an empty commit and ignores destination-only changes', async (t) => {

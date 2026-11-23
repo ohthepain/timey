@@ -105,6 +105,22 @@ function numberChange(root, issues) {
   return { path: file, body: JSON.stringify({ version: 1, next, issues: numbers }, null, 2) + '\n' };
 }
 
+function mergeScopedRecords(previous, current, scope, key, toId) {
+  const retained = previous?.[key] ?? [];
+  return [...retained.filter((entry) => !scope.has(toId(entry))), ...current[key]];
+}
+
+function mergeSnapshotMetadata(snapshot, previous, issues) {
+  const { issueIds, ...generation } = snapshot;
+  const saved = { ...generation, authoritative: false, issues };
+  if (!issueIds) return saved;
+  const scope = new Set(issueIds);
+  for (const key of ['claims', 'commands'])
+    saved[key] = mergeScopedRecords(previous, generation, scope, key, (entry) => entry.issueId);
+  saved.deletedIssueIds = mergeScopedRecords(previous, generation, scope, 'deletedIssueIds', (id) => id);
+  return saved;
+}
+
 function prepareSnapshot(root, snapshot) {
   assertStoreState(
     snapshot.version === 1 && Array.isArray(snapshot.issues),
@@ -133,8 +149,11 @@ function prepareSnapshot(root, snapshot) {
     merged.delete(id);
   }
   for (const issue of snapshot.issues) merged.set(issue.id, issue);
-  const saved = { ...snapshot, authoritative: false, issues: [...merged.values()] };
-  changes.push({ path: snapshotPath(root), body: JSON.stringify(saved, null, 2) + '\n' });
+  const saved = mergeSnapshotMetadata(snapshot, previous, [...merged.values()]);
+  changes.push({
+    path: snapshotPath(root),
+    body: JSON.stringify(saved, null, 2) + '\n',
+  });
   return { changes, saved, previous };
 }
 
@@ -176,6 +195,7 @@ function applyGeneration(root, changes) {
 export function installSnapshot(root, snapshot) {
   const prepared = prepareSnapshot(root, snapshot);
   applyGeneration(root, prepared.changes);
-  cleanupDeletedCache(root, prepared.saved, prepared.previous);
+  if (snapshot.deletedIssueIds?.length)
+    cleanupDeletedCache(root, { ...prepared.saved, deletedIssueIds: snapshot.deletedIssueIds }, prepared.previous);
   return prepared.saved;
 }

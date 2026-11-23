@@ -432,7 +432,11 @@ separate read-only app-server connection and retains the latest snapshot in memo
 
 Flow, Classic, and project Home display reads use the last confirmed store
 snapshot. `stores/runtime.mjs` performs initial synchronization when no snapshot
-exists, explicit refresh, and fresh mutation admission. Cached startup uses saved
+exists, explicit refresh, and fresh mutation admission. Single-issue actions and selected bulk actions
+refresh their selected reports, flows, claims, and commands. Scoped snapshots
+retain other issues and their saved coordination state. Queue-wide operations
+and unscoped Refresh still read the complete queue. Local controls and previews
+that use saved context skip snapshot refresh. Cached startup uses saved
 state and does not start a background refresh. Storage status retains its last
 confirmed check time and an explicit null warning after recovery. Failed refreshes
 retain saved data and do not restart from display polling. See
@@ -441,7 +445,10 @@ The Close-menu context is also a display read
 from the saved snapshot; confirming closure still requires fresh state and the
 existing acceptance checks. Confirmed report publications use the existing scoped
 snapshot refresh for the affected issue; snapshot installation preserves other
-saved issues. Flow and Classic creation initialize and validate the configured
+saved issues. Close and Reopen publish the decision and destination together
+through registered stores, avoiding a second publication just to move the report.
+Unregistered local reports retain their filesystem move after saving the decision.
+Flow and Classic creation initialize and validate the configured
 stores without reloading existing reports, then refresh only the newly created
 issues after confirmed publication. Cold startup still builds the initial snapshot.
 Completed Flow capture retries refresh their saved issue before checking whether
@@ -1066,6 +1073,11 @@ It binds deletion to the archived report contents and uses the same local branch
 cleanup for explicitly selected branches associated with the deleted reports.
 `flow-delivery.mjs` reads live destination branches, prepares the publication
 preview, and validates or refreshes independent verification evidence.
+Explicit Publish fetches a destination commit missing from the local object
+database before comparing changes against GitHub's observed commit. It uses
+`flow-update-branch.mjs` to fetch without merging or changing the issue checkout.
+Saved-state display refresh does not fetch Git objects. Publication distinguishes
+fetch failure, an unavailable observed commit, and missing common history.
 `flow-reconciliation.mjs` checks disconnected blocks' original provider
 conversations or retained input rejections before a manual update can release
 their ownership. It starts no model turn and preserves the failed attempts.

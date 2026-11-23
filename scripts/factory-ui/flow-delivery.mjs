@@ -8,14 +8,19 @@ import {
   upstreamBlocks,
 } from './flow-block-data.mjs';
 import { existsSync, readFileSync } from 'node:fs';
+import { execFile } from 'node:child_process';
 import { join } from 'node:path';
-import { digest, git, requireThat, writeJson } from './common.mjs';
+import { promisify } from 'node:util';
+import { cleanEnvironment, digest, git, requireThat, writeJson } from './common.mjs';
 import { validateSummary } from './checks.mjs';
 import { StrategyProvider } from './strategy-provider.mjs';
 import { flowMergeChecks, flowVerificationInput } from './flow-verification.mjs';
 import { queueReportPaths } from './shared-issue-config.mjs';
 import { requireGroupProof } from './flow-group-proof.mjs';
 import { evidencePath } from './stores/evidence.mjs';
+import { fetchIssueTarget } from './flow-update-branch.mjs';
+
+const execute = promisify(execFile);
 
 export function flowDeliveryProvider(service, ctx, workspace, options = {}) {
   requireThat(
@@ -239,15 +244,49 @@ function publicationBlocker(pr, identity, target) {
   return null;
 }
 
-function noChangesPublication(workspace, target, head, pr) {
+function publicationCommitAvailable(workspace, revision) {
+  try {
+    git(workspace.checkout, 'cat-file', '-e', revision + '^{commit}');
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function publicationTargetBlocker(workspace, target, revision, repository) {
+  if (publicationCommitAvailable(workspace, revision)) return null;
+  assertFlowRemote(workspace, target.remote, repository, 'fetch');
+  try {
+    await fetchIssueTarget(workspace.checkout, target, (command, args) =>
+      execute(command, args, {
+        cwd: workspace.checkout,
+        env: cleanEnvironment(),
+        timeout: 30000,
+        maxBuffer: 1024 * 1024,
+      })
+    );
+  } catch {
+    return `Could not fetch ${target.remote}/${target.branch} for comparison. Check Git access to the destination, then retry Publish.`;
+  }
+  return publicationCommitAvailable(workspace, revision)
+    ? null
+    : 'The destination changed while preparing publication. Retry Publish to compare its current commit.';
+}
+
+async function noChangesPublication(workspace, target, head, pr, repository) {
   if (pr) return null;
+  const blocker = await publicationTargetBlocker(workspace, target, target.revision, repository);
+  if (blocker) return { status: 'blocked', message: blocker };
   let base;
   try {
-    base = git(workspace.checkout, 'merge-base', target, head);
-  } catch {
+    base = git(workspace.checkout, 'merge-base', target.revision, head);
+  } catch (error) {
     return {
       status: 'blocked',
-      message: 'Refresh the destination branch locally before comparing the issue changes for publication.',
+      message:
+        error.status === 1
+          ? 'The issue and destination have no common history locally. Choose a destination that shares the issue history or restore the missing Git history before retrying Publish.'
+          : 'Could not compare the issue changes with the destination. Retry Publish after checking the issue checkout.',
     };
   }
   if (git(workspace.checkout, 'diff', '--name-only', base, head)) return null;
@@ -280,7 +319,13 @@ export async function prepareFlowPublication(service, ctx, workspace, options = 
     throw Error('Couldn’t check branches. Retry Publish when GitHub is available.');
   });
   if (!branches.has(target)) return blocked('Branch unavailable. Choose another destination before publishing.');
-  const noChanges = noChangesPublication(workspace, branches.get(target), candidate.head, pr);
+  const noChanges = await noChangesPublication(
+    workspace,
+    { branch: target, remote, revision: branches.get(target) },
+    candidate.head,
+    pr,
+    provider.config.repository
+  );
   if (noChanges) return { preview: noChanges };
   if (service.sharedIssues) {
     const tracking = `refs/remotes/${remote}/${target}`;

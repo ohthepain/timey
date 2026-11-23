@@ -100,6 +100,14 @@ is pending and keeps confirmation disabled if loading fails. These checks never
 close a live issue or launch work.
 The HTTP action regression also requires exactly one shared refresh before
 dispatch and verifies that direct controller calls retain their own fresh read.
+Close and Reopen each publish one authoritative report with its destination,
+retain decision history, and preserve the prior report when publication fails.
+
+`node --test scripts/flow-delivery.check.mjs` checks publication against a
+GitHub-observed destination commit absent locally. A disposable SSH transport
+serves a local Git repository. Publish fetches the missing commit without changing
+the issue commit or files, pushing, or creating a PR. The fixture uses no live
+GitHub credentials or network requests.
 
 `pnpm run test:stores` includes the `storage-profiles-*.check.mjs` fixtures. They
 check metadata-only registry activation, pinned destination pairs, profile edits
