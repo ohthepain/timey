@@ -49,6 +49,7 @@ import { interfaceStateBrowserChecks } from './flow-browser-interface-state.mjs'
 import { localNotesBrowserChecks } from './flow-browser-local-notes.mjs';
 import { actionsMenuBrowserChecks } from './flow-browser-actions-menu.mjs';
 import { mergedIssueBrowserChecks } from './flow-browser-merged-issue.mjs';
+import { manualCloseBrowserChecks } from './flow-browser-manual-close.mjs';
 import { noChangesBrowserChecks } from './flow-browser-no-changes.mjs';
 import { writeBrowserIssue } from './flow-browser-fixture.mjs';
 
@@ -282,6 +283,7 @@ function checkExcluded(name) {
     ['--project-issues', 'Closed issue selections archive together and issue links open the normal view'],
     ['--actions-menu', 'Actions menu lists two running Flow blocks'],
     ['--merged-issue', 'Merged issues preserve history and expose only closure controls'],
+    ['--manual-close', 'Manual Close remains discoverable after Merge and automatic closing needs no prompt'],
     ['--error-recovery', 'Successful refresh clears rejected branch update errors'],
     ['--no-changes', 'Publication with no changes offers Cannot Reproduce closure'],
     [
@@ -486,6 +488,9 @@ try {
           })
       );
   });
+  await check('Manual Close remains discoverable after Merge and automatic closing needs no prompt', () =>
+    manualCloseBrowserChecks({ page, project, service, output, root, poll, screenshot })
+  );
   await check('Successful refresh clears rejected branch update errors', () =>
     errorRecoveryBrowserChecks({ page, service, project, output })
   );

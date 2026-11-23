@@ -557,6 +557,9 @@
       Boolean(state.view?.grouping?.master) ||
       routeAction === 'close';
     $('close-with-reason').disabled = busy;
+    document.querySelectorAll('[data-close-issue]').forEach((button) => {
+      button.disabled = busy || Boolean(state.view?.closureBusy) || state.view?.flow?.blocks.some(isRunning);
+    });
     $('issue-archive-menu').hidden = !closed;
     $('issue-archive-menu').disabled = busy;
     const archived = issue?.location === 'archive';
@@ -1601,6 +1604,27 @@
     return `<button class="block-card${state.blockId === block.id ? ' selected' : ''}${block.suggested ? ' suggested' : ''}" style="--block-color:${style.color}" data-block="${escape(block.id)}"${source} data-node="${escape(block.id)}" aria-pressed="${state.blockId === block.id}">${cardContents(block, style)}</button>`;
   }
 
+  function manualClosePrompt() {
+    const { flow, issue, grouping, closureBusy } = state.view;
+    if (
+      flow.autoClose ||
+      flow.routeType === 'investigation' ||
+      issue.status === 'closed' ||
+      issue.state === 'needs-approval' ||
+      ['closed', 'archive'].includes(issue.location) ||
+      grouping?.master ||
+      closureBusy ||
+      (flow.closing && !flow.closing.complete)
+    )
+      return '';
+    return '<div class="graph-terminal graph-manual-close"><p class="terminal-note">Closing is manual. The issue stays open until you confirm Close.</p><button type="button" class="small-button" data-close-issue>Close issue…</button></div>';
+  }
+
+  function graphRow(row) {
+    const prompt = row.some((block) => block.kind === 'close') ? manualClosePrompt() : '';
+    return `${prompt}<div class="graph-row">${row.map(blockCard).join('')}</div>`;
+  }
+
   function renderGraph() {
     const flow = state.view?.flow;
     $('graph').hidden = !flow;
@@ -1640,7 +1664,7 @@
     );
     view.render(
       $('graph'),
-      `<svg class="graph-lines" aria-hidden="true"></svg>${baseNode}${layers.map((row) => `<div class="graph-row">${row.map(blockCard).join('')}</div>`).join('')}<button class="graph-add" data-open-palette aria-label="Add a step" title="Add a step">＋</button>${destination}`,
+      `<svg class="graph-lines" aria-hidden="true"></svg>${baseNode}${layers.map(graphRow).join('')}<button class="graph-add" data-open-palette aria-label="Add a step" title="Add a step">＋</button>${destination}`,
       'flow-graph:' + state.issueId
     );
     $('graph').dataset.issue = state.issueId;
@@ -3021,6 +3045,7 @@
     if (skillPicker) return void openBlockSkillPicker(skillPicker.dataset.skillPicker);
     const button = event.target.closest('button');
     if (!button || button.disabled) return;
+    if (button.hasAttribute('data-close-issue')) return openClosure();
     if (button.hasAttribute('data-destination-open')) {
       $('destination-heading').textContent = button.dataset.destinationLabel || 'Destination branch';
       $('destination-message').textContent = 'Checking branches…';
