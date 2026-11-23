@@ -517,6 +517,11 @@ function page(service, request, response, token, port) {
       : 'flow.html';
   response.end(readFileSync(join(uiDirectory(service), name)));
 }
+function displayRead(url) {
+  if (['/api/flow', '/api/issue-closure'].includes(url.pathname)) return true;
+  return url.pathname === '/api/queue' && !url.searchParams.has('issue');
+}
+
 async function read(service, request, response, owner) {
   const url = new URL(request.url, 'http://127.0.0.1');
   if (service.reviewMode !== 'preview' && storeReadNeeded(url.pathname, url.searchParams))
@@ -524,7 +529,7 @@ async function read(service, request, response, owner) {
       fresh: url.pathname !== '/api/issue-stores',
       allowPending: url.pathname === '/api/issue-stores',
       allowCached: true,
-      display: url.pathname === '/api/flow' || (url.pathname === '/api/queue' && !url.searchParams.has('issue')),
+      display: displayRead(url),
     });
   const selectedIssue = url.searchParams.get('issue');
   const issue = (value) => resolveIssueNumber(service, value);

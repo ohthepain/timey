@@ -15,6 +15,7 @@ import { sharedIssueQueueConfig, sharedIssueQueueEnabled } from '../shared-issue
 import { collectEvidence, hydrateEvidence, registerEvidenceResolver } from './evidence.mjs';
 import { captureClassicSnapshot } from './classic-snapshot.mjs';
 import { readProgress } from '../../factory-progress.mjs';
+import { activateStorageProfiles, persistStorageProfiles } from './profile-activation.mjs';
 
 const runtimes = new WeakMap();
 const bootstrapKey = 'project/bootstrap';
@@ -258,6 +259,7 @@ async function importLegacy(runtime) {
         flow: source.flow,
         location: source.location,
         storeId: 'files',
+        artifactStoreId: runtime.config.artifacts,
         operationId: 'bootstrap/' + manifest + '/' + source.id,
       });
     source.classic = await captureClassicSnapshot(legacyClassicService(runtime), source.id);
@@ -305,7 +307,7 @@ async function retainLegacyEvidence(runtime, source, manifest) {
         path: join(runtime.service.root, '.issues/factory-ui', run.id + '.jsonl'),
       })),
     },
-    artifacts: runtime.artifacts,
+    artifacts: await runtime.project.issueArtifacts(source.id),
     originId: 'legacy-' + runtime.config.projectId + '-' + source.id,
     allowedRoots: [join(runtime.service.root, '.issues')],
   });
@@ -407,6 +409,8 @@ function activate(runtime) {
 async function synchronize(runtime, fresh, allowPending) {
   await followProjectRoles(runtime);
   await importLegacy(runtime);
+  await activateStorageProfiles(runtime.project, runtime.config);
+  persistStorageProfiles(runtime.service.root);
   if (runtime.registeredProject !== runtime.project) activate(runtime);
   if (fresh || (!runtime.ready && !allowPending)) await runtime.project.refresh();
   runtime.ready = true;
@@ -542,7 +546,9 @@ async function hydrateManifest(runtime, record) {
           'The retained evidence digest is invalid.'
         );
         const path = join(directory, ref.sha256);
-        return existsSync(path) ? readFileSync(path) : runtime.artifacts.get(ref);
+        return existsSync(path)
+          ? readFileSync(path)
+          : runtime.project.issueArtifacts(id).then((artifacts) => artifacts.get(ref));
       },
     },
   });

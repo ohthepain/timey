@@ -161,7 +161,7 @@ export class FlowFollowups {
       const proposal = saved.proposals.find(({ id }) => id === item.id);
       requireThat(proposal, 'Choose a saved follow-up proposal.');
       const draft = validateInvestigationProposal(item);
-      const identity = digest(JSON.stringify([draft, folder, input.issueStore]));
+      const identity = digest(JSON.stringify([draft, folder, input.storageProfile]));
       requireThat(
         !proposal.identity || proposal.identity === identity,
         'A submitted proposal cannot change. Retry its saved wording and folder.'
@@ -185,7 +185,7 @@ export class FlowFollowups {
           requestId: proposal.id,
           type: draft.type,
           folder,
-          issueStore: input.issueStore,
+          storageProfile: input.storageProfile,
           needsApproval: true,
           sourceIssue: source.issueId,
           sourceAttempt: source.attemptId,

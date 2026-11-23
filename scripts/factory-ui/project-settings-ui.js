@@ -84,7 +84,9 @@
       if (data.kind === 'plain')
         return '<p>No project folder.md exists yet.</p><button type="button" data-settings-create>Create project defaults</button>';
       return `<p>Project defaults are inherited by folders and issues unless overridden.</p><form data-settings-form><div class="folder-settings-fields">${data.fields
-        .filter(({ key }) => ['issue_store', 'branch', 'skill', 'model', 'effort', 'selection_strategy'].includes(key))
+        .filter(({ key }) =>
+          ['storage_profile', 'branch', 'skill', 'model', 'effort', 'selection_strategy'].includes(key)
+        )
         .map((field) => window.factorySettingField(field, data.settings[field.key], 'settings'))
         .join('')}</div>${source(data.path || 'folder.md')}${saveButton}</form>`;
     }
@@ -142,20 +144,39 @@
       }[store.kind];
       return `<fieldset><legend>${esc(store.label)} · ${esc(store.kind)}</legend>${storeField(store, 'label', 'Name')}${fields.map(([key, label]) => storeField(store, key, label)).join('')}${store.references ? references(store) : '<p>Connection references are checked after saving.</p>'}<button type="button" class="small-button" data-store-test="${esc(store.id)}"${store.unsaved ? ' disabled' : ''}>Test store connection</button><p data-store-result="${esc(store.id)}" role="status"></p></fieldset>`;
     }
-    function roleChoice(role, label, selected) {
-      const key = role === 'artifact' ? 'artifacts' : role;
-      return `<label class="field">${label}<select name="role:${key}">${data.storeRegistry.stores
-        .filter((store) => store.roles.includes(role))
+    function storeOptions(role, selected) {
+      const registry = data.storeRegistry;
+      return registry.stores
+        .filter(
+          (store) =>
+            store.roles.includes(role) && (registry.mode === 'local' ? store.kind === 'files' : store.kind !== 'files')
+        )
         .map(
           (store) =>
-            `<option value="${esc(store.id)}"${store.id === selected ? ' selected' : ''}>${esc(store.label)} · ${esc(store.kind)}</option>`
+            `<option value="${esc(store.id)}"${store.id === selected ? ' selected' : ''}>${esc(store.label)} · ${esc(store.kind === 'files' ? 'Local files' : store.kind)}</option>`
         )
-        .join('')}</select></label>`;
+        .join('');
+    }
+    function roleChoice(role, label, selected) {
+      const key = role === 'artifact' ? 'artifacts' : role;
+      return `<label class="field">${label}<select name="role:${key}" required><option value="">Choose a store</option>${storeOptions(role, selected)}</select></label>`;
+    }
+    function configuredProfile(profile) {
+      return `<fieldset data-storage-profile="${esc(profile.id)}"><legend>${esc(profile.label)}</legend><label class="field">Profile name<input name="profile:${esc(profile.id)}:label" value="${esc(profile.label)}" required maxlength="100" /></label><label class="field">Issue store<select name="profile:${esc(profile.id)}:issueStore" required><option value="">Choose a store</option>${storeOptions('issue', profile.issueStore)}</select></label><label class="field">Artifact store<select name="profile:${esc(profile.id)}:artifactStore" required><option value="">Choose a store</option>${storeOptions('artifact', profile.artifactStore)}</select></label><label class="field">Available for new selections<select name="profile:${esc(profile.id)}:retired"><option value="false"${profile.retired ? '' : ' selected'}>Available</option><option value="true"${profile.retired ? ' selected' : ''}>Retired</option></select></label></fieldset>`;
     }
     function renderStoreSettings() {
       const registry = data.storeRegistry;
       if (!registry) return '<p>Store configuration is unavailable.</p>';
-      return `<h3>Project stores</h3><p>Issue defaults are configured on the Issues page. Changing Coordination or Artifact storage performs a checked project migration. To change a configured destination, add a store and move to it.</p>${pendingDeletions(registry)}<form data-settings-form data-store-settings>${roleChoice('coordination', 'Coordination store', registry.coordination)}${roleChoice('artifact', 'Artifact store', registry.artifacts)}${registry.stores.map(configuredStore).join('')}<label class="field">Add a configured store<select data-store-kind>${['files', 'git', 'postgres', 'dynamodb', 's3'].map((kind) => `<option value="add-${kind}">${kind}</option>`).join('')}</select></label><button type="button" class="small-button" data-store-add>Add store</button>${saveButton}</form>`;
+      const kinds = registry.mode === 'local' ? ['files'] : ['git', 'postgres', 'dynamodb', 's3'];
+      return `<h3>Project storage</h3><p>Profiles select Issue and Artifact destinations for new issues. Existing issues keep their saved destinations. Changing project Coordination storage performs a checked migration.</p>${pendingDeletions(registry)}<form data-settings-form data-store-settings><p>Project storage mode · ${registry.mode === 'local' ? 'Local' : 'Remote'}</p><p>Changing modes requires preparing a compatible project configuration before startup.</p>${roleChoice('coordination', 'Coordination store', registry.coordination)}${roleChoice('artifact', 'Coordination artifact store', registry.artifacts)}<h3>Issue storage profiles</h3><label class="field">Project profile default<select name="profileDefault" required><option value="">Choose a profile</option>${registry.profiles
+        .filter((profile) => !profile.retired)
+        .map(
+          (profile) =>
+            `<option value="${esc(profile.id)}"${profile.id === registry.profileDefault ? ' selected' : ''}>${esc(profile.label)}</option>`
+        )
+        .join(
+          ''
+        )}</select></label><p>Folders can override the profile default on the Issues page. Editing or retiring a profile never moves existing issues.</p>${registry.profiles.map(configuredProfile).join('')}<button type="button" class="small-button" data-profile-add>Add profile</button><h3>Configured destinations</h3><p>To change an existing connection, add a destination and perform a checked move.</p>${registry.stores.map(configuredStore).join('')}<label class="field">Add a configured store<select data-store-kind>${kinds.map((kind) => `<option value="add-${kind}">${kind === 'files' ? 'Local files' : kind}</option>`).join('')}</select></label><button type="button" class="small-button" data-store-add>Add store</button>${saveButton}</form>`;
     }
     function pendingDeletions(registry) {
       return (registry.pendingDeletions || [])
@@ -192,6 +213,7 @@
     function addStore() {
       const original = baseline;
       retainStoreFields(values());
+      retainProfileFields(values());
       data.storeRegistry.stores.push(addedStore(content.querySelector('[data-store-kind]').value.replace(/^add-/, '')));
       render();
       baseline = original;
@@ -206,28 +228,48 @@
           else delete store[key];
         }
     }
+    function retainProfile(profile, fields) {
+      const prefix = `profile:${profile.id}:`;
+      for (const key of ['label', 'issueStore', 'artifactStore'])
+        if (Object.hasOwn(fields, prefix + key)) profile[key] = fields[prefix + key].trim();
+      if (Object.hasOwn(fields, prefix + 'retired')) profile.retired = fields[prefix + 'retired'] === 'true';
+    }
+    function retainProfileFields(fields) {
+      const registry = data.storeRegistry;
+      registry.profileDefault = fields.profileDefault || registry.profileDefault;
+      for (const profile of registry.profiles) retainProfile(profile, fields);
+    }
+    function addProfile() {
+      const original = baseline;
+      const fields = values();
+      retainStoreFields(fields);
+      retainProfileFields(fields);
+      data.storeRegistry.profiles.push({
+        id: 'profile-' + crypto.randomUUID(),
+        label: 'New profile',
+        issueStore: '',
+        artifactStore: '',
+        retired: false,
+      });
+      render();
+      baseline = original;
+    }
     async function saveStoreSettings(fields) {
       retainStoreFields(fields);
+      retainProfileFields(fields);
       const registry = data.storeRegistry;
-      const next = { ...registry };
-      delete next.selected;
-      delete next.source;
-      delete next.pendingMigrations;
-      delete next.pendingDeletions;
-      delete next.moveGroup;
-      delete next.available;
-      delete next.unavailable;
-      delete next.warning;
+      const next = Object.fromEntries(
+        ['version', 'projectId', 'mode', 'profileDefault', 'coordination', 'artifacts', 'profiles', 'stores'].map(
+          (key) => [key, registry[key]]
+        )
+      );
       next.stores = next.stores.map(({ unsaved: _unsaved, ...store }) => store);
       const saved = await post('/api/issue-store-action', {
         action: 'configure',
         revision: registry.revision,
         config: next,
       });
-      registry.revision = saved.revision;
-      registry.stores = saved.stores;
-      registry.pendingMigrations = saved.pendingMigrations;
-      registry.pendingDeletions = saved.pendingDeletions;
+      Object.assign(registry, saved);
       const changes = Object.fromEntries(
         data.storage.editableFields
           .filter((key) => fields[key] !== String(data.storage.configuration[key]))
@@ -479,6 +521,7 @@
       ['[data-settings-initialize]', initialize],
       ['[data-settings-create]', createDefaults],
       ['[data-store-add]', addStore],
+      ['[data-profile-add]', addProfile],
       ['[data-store-test]', testStore],
       ['[data-store-resume-delete]', (button) => leave(() => void resumeDeletion(button))],
       [

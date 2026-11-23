@@ -49,6 +49,13 @@ function relationships(report, ids) {
     related: references(report.content, 'Related(?: issues)?', ids),
   };
 }
+function issueHome(home = {}, issueNumber) {
+  return {
+    issueNumber: home.number ?? issueNumber,
+    storeId: home.storeId,
+    artifactStoreId: home.artifactStoreId,
+  };
+}
 export function readQueue(project, { location = 'open', issueId } = {}) {
   const root = realpathSync(project);
   const inspection = factory(root).inspect({ location, issueId });
@@ -71,8 +78,7 @@ export function readQueue(project, { location = 'open', issueId } = {}) {
   const issues = inspection.reports.map((report) => ({
     ...report.metadata,
     reportLocation: location === 'open' ? undefined : location,
-    issueNumber: homes.get(report.metadata.id)?.number ?? issueNumbers[report.metadata.id],
-    storeId: homes.get(report.metadata.id)?.storeId,
+    ...issueHome(homes.get(report.metadata.id), issueNumbers[report.metadata.id]),
     ...(projected.aliases[report.metadata.state]
       ? { state: projected.aliases[report.metadata.state], saved_state: report.metadata.state }
       : {}),

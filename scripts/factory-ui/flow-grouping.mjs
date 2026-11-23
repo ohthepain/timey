@@ -181,7 +181,9 @@ export class FlowGrouping {
 
   preview({ folder, issueIds }, reasoning) {
     const stores = registeredProjectStores(this.service.root);
-    return afterReportWrite(stores?.assertSameStore(issueIds), () => this.previewCurrent(folder, issueIds, reasoning));
+    return afterReportWrite(stores?.assertSameStorage(issueIds), () =>
+      this.previewCurrent(folder, issueIds, reasoning)
+    );
   }
 
   previewCurrent(folder, issueIds, reasoning) {
@@ -220,16 +222,16 @@ export class FlowGrouping {
     requireThat(preview && preview.expires > Date.now(), 'Review a current combined request first.');
     const stores = registeredProjectStores(this.service.root);
     const ids = preview.grouping.children.map((child) => child.id);
-    return afterReportWrite(stores?.assertSameStore(ids), (issueStore) =>
+    return afterReportWrite(stores?.assertSameStorage(ids), (storage) =>
       this.flows.capture(
         {
           requestId,
           description: wording,
           folder: preview.grouping.folder,
           type: preview.type,
-          ...(issueStore && { issueStore }),
         },
-        preview.grouping
+        preview.grouping,
+        storage
       )
     );
   }

@@ -6,11 +6,11 @@ import { gitFixture } from './git-fixture.mjs';
 import {
   readStoreConfig,
   writeStoreConfig,
-  issueStoreChoices,
+  storageProfileChoices,
   safeStoreView,
   resolveStoreConnection,
 } from './factory-ui/stores/config.mjs';
-import { resolveIssueStore } from './factory-ui/stores/settings.mjs';
+import { resolveIssueStorage } from './factory-ui/stores/settings.mjs';
 import {
   initializeFolderSettings,
   createIssueFolderSettings,
@@ -24,6 +24,10 @@ function fixture(t) {
   const f = gitFixture(t, 'store-settings-');
   mkdirSync(join(f.root, '.issues'), { recursive: true });
   f.git('remote', 'add', 'origin', 'git@github.com:fixture/shared-project.git');
+  writeFileSync(
+    join(f.root, 'factory.config.json'),
+    JSON.stringify({ sharedIssueQueue: true, sharedIssueQueueBranch: 'issue-queue' })
+  );
   initializeFolderSettings(f.root);
   return f;
 }
@@ -33,6 +37,7 @@ function configured(root) {
     root,
     {
       ...base,
+      profiles: [...base.profiles, { id: 'team', label: 'Team issues', issueStore: 'team', artifactStore: 'files' }],
       stores: [
         ...base.stores,
         { id: 'team', label: 'Team issues', kind: 'postgres', roles: ['issue', 'coordination'] },
@@ -43,18 +48,18 @@ function configured(root) {
   );
 }
 
-test('files/Git remains the default and normalized repository identity survives independent clones', (t) => {
+test('Git remains the remote project default and normalized repository identity survives independent clones', (t) => {
   const a = fixture(t),
     b = fixture(t);
   b.git('remote', 'set-url', 'origin', 'https://github.com/fixture/shared-project.git');
   const first = readStoreConfig(a.root),
     second = readStoreConfig(b.root);
   assert.equal(first.projectId, second.projectId);
-  assert.equal(first.issueDefault, 'files');
+  assert.equal(first.profileDefault, 'files');
   assert.equal(first.coordination, 'files');
   assert.equal(first.artifacts, 'files');
   assert.deepEqual(
-    issueStoreChoices(a.root).map(({ value }) => value),
+    storageProfileChoices(a.root).map(({ value }) => value),
     ['files']
   );
 });
@@ -74,18 +79,18 @@ test('Issue store follows project and folder defaults, while an explicit choice 
   const f = fixture(t);
   configured(f.root);
   const project = readFolderSettings(f.root, f.root);
-  updateFolderSettings(f.root, { directory: f.root, revision: project.revision, changes: { issue_store: 'team' } });
+  updateFolderSettings(f.root, { directory: f.root, revision: project.revision, changes: { storage_profile: 'team' } });
   const child = createIssueFolderSettings(f.root, 'Storage child');
-  assert.equal(resolveIssueStore(f.root, { folder: child.name }).id, 'team');
+  assert.equal(resolveIssueStorage(f.root, { folder: child.name }).storeId, 'team');
   const inherited = readFolderSettings(f.root, child.directory);
   updateFolderSettings(f.root, {
     directory: child.directory,
     revision: inherited.revision,
-    changes: { issue_store: 'files' },
+    changes: { storage_profile: 'files' },
   });
-  assert.equal(resolveIssueStore(f.root, { folder: child.name }).id, 'files');
-  assert.equal(resolveIssueStore(f.root, { folder: child.name, storeId: 'team' }).id, 'team');
-  assert.throws(() => resolveIssueStore(f.root, { storeId: 'missing' }), /configured issue store/);
+  assert.equal(resolveIssueStorage(f.root, { folder: child.name }).storeId, 'files');
+  assert.equal(resolveIssueStorage(f.root, { folder: child.name, profileId: 'team' }).storeId, 'team');
+  assert.throws(() => resolveIssueStorage(f.root, { profileId: 'missing' }), /configured Issue storage profile/);
 });
 
 test('store choices exclude artifact-only providers and never expose secret values', (t) => {
@@ -97,7 +102,7 @@ test('store choices exclude artifact-only providers and never expose secret valu
   );
   const view = safeStoreView(f.root);
   assert.deepEqual(
-    issueStoreChoices(f.root).map(({ value }) => value),
+    storageProfileChoices(f.root).map(({ value }) => value),
     ['files', 'team']
   );
   assert.ok(!JSON.stringify(view).includes('private-value'));
@@ -124,8 +129,8 @@ test('registry rejects role mismatches, secret literals, stale writes, and impli
     /Move project storage explicitly/
   );
   assert.throws(
-    () => writeStoreConfig(f.root, { ...base, issueDefault: 'artifacts' }, { expectedRevision: revision }),
-    /configured issue store/
+    () => writeStoreConfig(f.root, { ...base, profileDefault: 'artifacts' }, { expectedRevision: revision }),
+    /configured Issue storage profile/
   );
   assert.throws(
     () =>
@@ -151,7 +156,7 @@ test('registry rejects role mismatches, secret literals, stale writes, and impli
       ),
     (error) => !error.message.includes('never-print-me')
   );
-  writeStoreConfig(f.root, { ...base, issueDefault: 'team' }, { expectedRevision: revision });
+  writeStoreConfig(f.root, { ...base, profileDefault: 'team' }, { expectedRevision: revision });
   assert.throws(() => writeStoreConfig(f.root, base, { expectedRevision: revision }), /configuration changed/);
 });
 
@@ -181,7 +186,7 @@ function browserStoreUI(options, storage = browserStorage()) {
   return window.createIssueStoreUI(options);
 }
 
-test('creation requires a visible Issue store and excludes artifact-only choices', async () => {
+test('creation requires a visible storage profile and excludes artifact-only destinations', async () => {
   const select = {
     replaceChildren(...options) {
       this.options = options;
@@ -190,6 +195,7 @@ test('creation requires a visible Issue store and excludes artifact-only choices
   const ui = browserStoreUI({
     request: async () => ({
       selected: 'team',
+      profiles: [{ id: 'team', label: 'Team storage', issueStore: 'team', artifactStore: 'evidence' }],
       stores: [
         { id: 'team', label: 'Shared issues', kind: 'postgres', roles: ['issue'] },
         { id: 'evidence', label: 'Evidence', kind: 's3', roles: ['artifact'] },
@@ -214,7 +220,12 @@ test('storage move retries retain their identity and report success only after a
       requests.push({ path, input });
       return selected === 'team' ? { status: 'confirmed' } : { pending: true };
     },
-    request: async () => ({ selected, projectId: 'project-one' }),
+    request: async () => ({
+      selected,
+      projectId: 'project-one',
+      targetStorage: { storeId: 'team', artifactStoreId: 'evidence' },
+      savedStorage: { storeId: selected, artifactStoreId: 'evidence' },
+    }),
   });
   await assert.rejects(ui.move('issue-one', 'team'), /pending reconciliation/);
   selected = 'team';
@@ -227,7 +238,7 @@ test('storage move retries retain their identity and report success only after a
 test('migration identities survive page reloads and prefer matching shared pending receipts', async () => {
   const storage = browserStorage();
   const options = { projectId: 'project-one', pendingMigrations: [] };
-  const command = { issueId: 'issue-one', storeId: 'team' };
+  const command = { issueId: 'issue-one', storeId: 'team', artifactStoreId: 'evidence' };
   const first = browserStoreUI({}, storage).migrationId(options, command);
   const reloaded = browserStoreUI({}, storage);
   assert.equal(reloaded.migrationId(options, command), first);
@@ -235,7 +246,13 @@ test('migration identities survive page reloads and prefer matching shared pendi
   const shared = {
     ...options,
     pendingMigrations: [
-      { operationId: 'remote-pending-operation', kind: 'move-issue', issueIds: ['issue-one'], storeId: 'team' },
+      {
+        operationId: 'remote-pending-operation',
+        kind: 'move-issue',
+        issueIds: ['issue-one'],
+        storeId: 'team',
+        artifactStoreId: 'evidence',
+      },
     ],
   };
   assert.equal(reloaded.migrationId(shared, command), 'remote-pending-operation');
@@ -256,7 +273,7 @@ test('store options expose safe pending receipts while a home is moving and use 
       kind: 'move-issue',
       status: 'pending',
       createdAt: '2026-11-22T00:00:00Z',
-      input: { ids: ['issue-one'], storeId: 'team', privatePayload: 'must-stay-internal' },
+      input: { ids: ['issue-one'], storeId: 'team', artifactStoreId: 'files', privatePayload: 'must-stay-internal' },
     },
   };
   let reads = 0;
@@ -267,7 +284,7 @@ test('store options expose safe pending receipts while a home is moving and use 
         async get(key) {
           reads++;
           return key === 'catalog/issue-one'
-            ? { value: { storeId: 'files', state: 'moving', migrationId: 'remote-move' } }
+            ? { value: { storeId: 'files', artifactStoreId: 'files', state: 'moving', migrationId: 'remote-move' } }
             : key === operation.key
               ? operation
               : null;
@@ -379,7 +396,9 @@ test('a child store move explicitly includes its authoritative master and all at
     projectStores: {
       records: {
         async get(key) {
-          return key === 'catalog/child' ? { value: { id: 'child', storeId: 'files', state: 'active' } } : null;
+          return key === 'catalog/child'
+            ? { value: { id: 'child', storeId: 'files', artifactStoreId: 'files', state: 'active' } }
+            : null;
         },
         async list(prefix) {
           return prefix === 'catalog/' ? reports.map(({ id }) => ({ value: { id, storeId: 'files' } })) : [];
@@ -398,13 +417,13 @@ test('a child store move explicitly includes its authoritative master and all at
       },
     },
   };
-  const view = await issueStoresView(service, { issueId: 'child', migrationStoreId: 'team' });
+  const view = await issueStoresView(service, { issueId: 'child', migrationStorageProfile: 'team' });
   assert.deepEqual(view.moveGroup.issueIds, ['master', 'child']);
   await handleStoreAction(service, {
     action: 'move-issue',
     issueId: 'child',
     issueIds: view.moveGroup.issueIds,
-    storeId: 'team',
+    storageProfile: 'team',
     operationId: 'group-move',
   });
   assert.deepEqual(moved.issueIds, ['master', 'child']);

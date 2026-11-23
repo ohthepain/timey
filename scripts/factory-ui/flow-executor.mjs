@@ -262,7 +262,7 @@ async function sharedSourceWorkspace(service, ctx, record) {
       ? { checkout, branch: git(checkout, 'branch', '--show-current'), base: checkpoint.base }
       : await restoreSourceCheckpoint({
           checkpoint,
-          artifacts: service.artifacts || service.projectStores.artifacts,
+          artifacts: await service.projectStores.issueArtifacts(ctx.issue.id),
           projectId: service.projectStores.projectId,
           checkout,
           repositoryRoot: service.root,

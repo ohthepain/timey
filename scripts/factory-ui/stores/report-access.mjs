@@ -265,7 +265,7 @@ export async function commitStoredReport(
   await matchOriginalReport(stores, previous, payload, intent);
   if (matchConfirmedPublication(previous, payload, intent)) {
     if (intent) retainPublication(path, { ...intent, status: 'confirmed' });
-    await stores.refresh();
+    await stores.refresh({ issueIds: [issue.id] });
     return { status: 'confirmed', ...(await stores.readIssue(issue.id)) };
   }
   requireThat(intent?.status !== 'confirmed', 'The confirmed publication receipt needs reconciliation.');
@@ -274,7 +274,7 @@ export async function commitStoredReport(
   const result = await stores.saveIssue({ ...intent.request, operationId: id });
   requireThat(result.status === 'confirmed', 'The issue report is pending authoritative confirmation.');
   retainPublication(path, { ...intent, status: 'confirmed' });
-  await stores.refresh();
+  await stores.refresh({ issueIds: [issue.id] });
   return result;
 }
 

@@ -40,7 +40,7 @@
     }
     function render() {
       const choices = [...new Set([...folders(), review.folder])];
-      body.innerHTML = `<label class="field">Issue folder<select data-followups-folder>${choices.map((folder) => `<option${folder === review.folder ? ' selected' : ''}>${escape(folder)}</option>`).join('')}</select></label><label class="field">Issue store<select data-followups-store required></select></label>${
+      body.innerHTML = `<label class="field">Issue folder<select data-followups-folder>${choices.map((folder) => `<option${folder === review.folder ? ' selected' : ''}>${escape(folder)}</option>`).join('')}</select></label><label class="field">Issue storage profile<select data-followups-store required></select></label>${
         review.proposals.length
           ? review.proposals
               .map((proposal) => {
@@ -68,7 +68,7 @@
       try {
         await issueStores.fill(body.querySelector('[data-followups-store]'), {
           folder: body.querySelector('[data-followups-folder]').value,
-          selected: review.issueStore,
+          selected: review.storageProfile,
         });
         updateButton();
       } catch (error) {
@@ -94,8 +94,13 @@
       }
     }
     async function create(items, folder) {
-      const issueStore = body.querySelector('[data-followups-store]').value;
-      review = await post('investigation-followups-create', { basis: review.source.basis, folder, issueStore, items });
+      const storageProfile = body.querySelector('[data-followups-store]').value;
+      review = await post('investigation-followups-create', {
+        basis: review.source.basis,
+        folder,
+        storageProfile,
+        items,
+      });
       render();
       const created = review.proposals.filter((item) => item.result && !item.result.deleted).length;
       message.textContent = `${created} follow-up ${created === 1 ? 'issue' : 'issues'} created. Review and approve them before starting work.`;

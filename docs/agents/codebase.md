@@ -413,7 +413,11 @@ Flow and the Classic queue index use the last confirmed store snapshot while
 `stores/runtime.mjs` coalesces shared refreshes in the background, at most once
 per 30 seconds after completion. A runner with cached data stays read-only until
 its first synchronization succeeds. Mutation admission still awaits a fresh
-authoritative synchronization. `FlowService.storageView` consumes that status
+authoritative synchronization. The Close-menu context is also a display read
+from the saved snapshot; confirming closure still requires fresh state and the
+existing acceptance checks. Confirmed report publications use the existing scoped
+snapshot refresh for the affected issue; snapshot installation preserves other
+saved issues. `FlowService.storageView` consumes that status
 without repeating the project refresh and refreshes selected-issue evidence in
 the background. Explicit file reads await evidence hydration. Selected Classic
 queue requests still await their authoritative Classic snapshot. Flow persists
@@ -880,12 +884,25 @@ writes do not load the application's Vite plugins.
 `shared-issue-config.mjs` owns the metadata path allowlist.
 The [Issue, Coordination, and Artifact store specification](../plans/issue-stores.md)
 and [ADR 0022](../adr/0022-separate-issue-coordination-and-artifact-stores.md)
-describe the accepted storage roles and shared-provider contracts.
-`stores/config.mjs` validates named destinations and secret references;
+describe the storage roles and shared-provider contracts.
+[ADR 0023](../adr/0023-select-issue-and-artifact-storage-per-issue.md) defines
+per-issue storage profiles and project storage modes.
+`stores/config.mjs` validates the version-2 registry, named destination pairs,
+project mode, and secret references. Its legacy normalization preserves existing
+destinations without rewriting registry files. `stores/settings.mjs` resolves
+project and folder profile defaults into actual Issue and Artifact store IDs;
 `stores/runtime.mjs` opens providers lazily, imports verified legacy data, follows
-confirmed role migrations, and registers canonical report access.
+confirmed role migrations, backfills saved Artifact destinations through checked
+activation, and registers canonical report access.
 `stores/project-stores.mjs` owns the catalog, numbers, attempts, claims, logs,
-remote Stop requests, and migrations. `stores/providers.mjs` supplies Issue and
+remote Stop requests, and migrations. Catalog entries retain `storeId` and
+`artifactStoreId`; mutable profile names do not route saved issues.
+Issue-bound artifact routers write to those saved destinations. Provider overflow
+and operation receipts use the project's Coordination artifact store, selected
+by the registry's `artifacts` field. `stores/migrations.mjs` verifies issue records
+and owned artifact copies before switching a complete group's catalog destinations.
+Issue moves preserve immutable proof JSON and do not install global digest
+redirects. Historical physical references remain readable. `stores/providers.mjs` supplies Issue and
 record contracts for files/Git, Postgres, and DynamoDB. `stores/artifacts.mjs`
 supplies files/Git, Postgres, and S3 bytes. `stores/snapshots.mjs` installs
 validated local display projections and preserves report drafts; report writers
@@ -898,8 +915,12 @@ before display truncation. `stores/classic-snapshot.mjs` projects shared legacy
 history locally, removes foreign transport pointers, and restores committed
 source checkpoints after admission. A storage barrier keeps downstream Classic
 publication and merge waiting when shared confirmation is unavailable.
-`issue-store-ui.js` shares required creation choices and checked moves across the
-visible controls. See the [setup and migration guide](issue-stores.md).
+`issue-store-ui.js` shares required profile choices, saved-destination readback,
+and checked moves across creation, follow-up, issue settings, destination, and
+bulk controls. `project-settings-ui.js` edits profile names, pairs, retirement,
+and defaults. Project mode is read-only. Retained move operations can resume their
+original pair after a profile edit or retirement. See the
+[setup and migration guide](issue-stores.md).
 The following modules support the legacy Git queue before verified bootstrap.
 `shared-issue-paths.mjs` validates claim documents and their canonical paths.
 `shared-issue-git.mjs` owns private-index commits, App pushes, and claim snapshots. `shared-issue-claims.mjs` stores version 2 claim files

@@ -76,7 +76,7 @@ const storeSchema = z.discriminatedUnion('kind', [
     })
     .strict(),
 ]);
-const registrySchema = z
+const legacyRegistrySchema = z
   .object({
     version: z.literal(1),
     projectId: identity,
@@ -86,17 +86,44 @@ const registrySchema = z
     stores: z.array(storeSchema).min(1).max(64),
   })
   .strict();
-const localStore = { id: 'files', label: 'Files/Git', kind: 'files', roles: rolesByKind.files };
+const profileSchema = z
+  .object({
+    id: identity,
+    label: z.string().trim().min(1).max(100),
+    issueStore: identity,
+    artifactStore: identity,
+    retired: z.boolean().default(false),
+  })
+  .strict();
+const registrySchema = z
+  .object({
+    version: z.literal(2),
+    projectId: identity,
+    mode: z.enum(['local', 'remote']),
+    profileDefault: identity,
+    coordination: identity,
+    artifacts: identity,
+    profiles: z.array(profileSchema).min(1).max(256),
+    stores: z.array(storeSchema).min(1).max(64),
+  })
+  .strict();
+const localStore = { id: 'files', label: 'Local files', kind: 'files', roles: rolesByKind.files };
 const registryPath = (root) => join(root, '.issues/stores.json');
 
 function defaultFileStore(root) {
   if (!sharedIssueQueueEnabled(root)) return localStore;
   try {
     const shared = sharedIssueQueueConfig(root);
-    return { ...localStore, kind: 'git', remote: shared.remote, branch: shared.target };
+    return { ...localStore, label: 'Git', kind: 'git', remote: shared.remote, branch: shared.target };
   } catch {
     const factory = JSON.parse(readFileSync(join(root, 'factory.config.json'), 'utf8'));
-    return { ...localStore, kind: 'git', remote: 'origin', branch: factory.sharedIssueQueueBranch || 'issue-queue' };
+    return {
+      ...localStore,
+      label: 'Git',
+      kind: 'git',
+      remote: 'origin',
+      branch: factory.sharedIssueQueueBranch || 'issue-queue',
+    };
   }
 }
 
@@ -130,8 +157,55 @@ function projectIdentity(root, persist = false) {
   return identity.parse(readFileSync(path, 'utf8').trim());
 }
 
+export function upgradeStoreConfig(value) {
+  if (value?.version !== 1) return value;
+  const parsed = legacyRegistrySchema.safeParse(value);
+  requireThat(parsed.success, 'The legacy store configuration is invalid. Repair it before migrating profiles.');
+  const config = parsed.data;
+  const stores = config.stores.map((store) => ({
+    ...store,
+    roles: store.roles || rolesByKind[store.kind],
+    label: store.label === 'Files/Git' ? (store.kind === 'files' ? 'Local files' : 'Git') : store.label,
+  }));
+  const selected = [config.issueDefault, config.coordination, config.artifacts].map((id) => {
+    const store = stores.find((entry) => entry.id === id);
+    requireThat(store, 'The legacy selected storage destination is missing. Resolve it before migrating profiles.');
+    return store.kind === 'files' ? 'local' : 'remote';
+  });
+  requireThat(
+    new Set(selected).size === 1,
+    'The legacy configuration mixes local and remote storage. Resolve its destinations before activating profiles.'
+  );
+  const mode = selected[0];
+  return {
+    version: 2,
+    projectId: config.projectId,
+    mode,
+    profileDefault: config.issueDefault,
+    coordination: config.coordination,
+    artifacts: config.artifacts,
+    profiles: stores
+      .filter((store) => store.roles.includes('issue'))
+      .map((store) => ({
+        id: store.id,
+        label: store.label,
+        issueStore: store.id,
+        artifactStore: config.artifacts,
+        retired: (store.kind === 'files' ? 'local' : 'remote') !== mode,
+      })),
+    stores,
+  };
+}
+
+function requireMode(config, store) {
+  requireThat(
+    (store.kind === 'files' ? 'local' : 'remote') === config.mode,
+    'Choose storage destinations compatible with the project storage mode.'
+  );
+}
+
 function normalizeRegistry(value) {
-  const parsed = registrySchema.safeParse(value);
+  const parsed = registrySchema.safeParse(upgradeStoreConfig(value));
   requireThat(
     parsed.success,
     'The store configuration is invalid. Review store IDs, roles, and connection references.'
@@ -155,9 +229,14 @@ function normalizeRegistry(value) {
       );
     return { ...store, roles: [...new Set(roles)] };
   });
-  requireStore(config, config.issueDefault, 'issue');
-  requireStore(config, config.coordination, 'coordination');
-  requireStore(config, config.artifacts, 'artifact');
+  requireThat(
+    new Set(config.profiles.map(({ id }) => id)).size === config.profiles.length,
+    'Each storage profile needs a unique ID.'
+  );
+  requireMode(config, requireStore(config, config.coordination, 'coordination'));
+  requireMode(config, requireStore(config, config.artifacts, 'artifact'));
+  for (const profile of config.profiles) requireProfile(config, profile.id, { allowRetired: true });
+  requireProfile(config, config.profileDefault);
   return config;
 }
 
@@ -191,30 +270,79 @@ export function requireStore(config, storeId, selectedRole) {
   return store;
 }
 
-export function issueStoreChoices(root) {
-  return readStoreConfig(root)
-    .stores.filter(({ roles }) => roles.includes('issue'))
-    .map(({ id, label, kind }) => ({ value: id, label, kind }));
+export function requireProfile(config, profileId, { allowRetired = false } = {}) {
+  const profile = config.profiles.find(({ id }) => id === profileId);
+  requireThat(profile, 'Choose a configured Issue storage profile.');
+  requireThat(allowRetired || !profile.retired, 'Choose an active Issue storage profile.');
+  const issue = requireStore(config, profile.issueStore, 'issue');
+  const artifact = requireStore(config, profile.artifactStore, 'artifact');
+  if (!profile.retired) {
+    requireMode(config, issue);
+    requireMode(config, artifact);
+  }
+  return profile;
+}
+
+export function storageProfileChoices(root) {
+  const config = readStoreConfig(root);
+  return config.profiles
+    .filter(({ retired }) => !retired)
+    .map(({ id, label, issueStore, artifactStore }) => ({
+      value: id,
+      label,
+      issueStore,
+      artifactStore,
+    }));
+}
+
+function requireProjectMode(path, current, next) {
+  if (!existsSync(path)) return;
+  if (readRegistryFile(path).version !== 2) return;
+  requireThat(
+    next.mode === current.mode,
+    'Changing project storage mode requires a project-wide migration and is not supported.'
+  );
+}
+
+function requireProjectSelections(current, next, allowRoleChange) {
+  requireThat(next.projectId === current.projectId, 'Keep the existing project identity when changing stores.');
+  requireThat(
+    allowRoleChange || (next.coordination === current.coordination && next.artifacts === current.artifacts),
+    'Move project storage explicitly before changing Coordination or Artifact stores.'
+  );
+}
+
+function connectionIdentity({ label: _label, ...fields }) {
+  return JSON.stringify(fields);
+}
+
+function requireUnchangedDestinations(current, next) {
+  for (const store of current.stores) {
+    const destination = next.stores.find(({ id }) => id === store.id);
+    requireThat(
+      destination && connectionIdentity(store) === connectionIdentity(destination),
+      'Keep existing store destinations and roles unchanged. Add a store and perform a checked move.'
+    );
+  }
+}
+
+function requireRetainedProfiles(current, next) {
+  for (const profile of current.profiles)
+    requireThat(
+      next.profiles.some(({ id }) => id === profile.id),
+      'Retire existing storage profiles instead of removing them.'
+    );
 }
 
 export function writeStoreConfig(root, value, { expectedRevision, allowRoleChange = false } = {}) {
   const current = readStoreConfig(root, { persistIdentity: true });
   requireThat(expectedRevision === current.revision, 'The store configuration changed. Refresh before saving.');
   const next = normalizeRegistry(value);
-  requireThat(next.projectId === current.projectId, 'Keep the existing project identity when changing stores.');
-  requireThat(
-    allowRoleChange || (next.coordination === current.coordination && next.artifacts === current.artifacts),
-    'Move project storage explicitly before changing Coordination or Artifact stores.'
-  );
-  for (const store of current.stores) {
-    const destination = next.stores.find(({ id }) => id === store.id);
-    const connection = ({ label: _label, ...fields }) => JSON.stringify(fields);
-    requireThat(
-      destination && connection(store) === connection(destination),
-      'Keep existing store destinations and roles unchanged. Add a store and perform a checked move.'
-    );
-  }
   const path = registryPath(root);
+  requireProjectMode(path, current, next);
+  requireProjectSelections(current, next, allowRoleChange);
+  requireUnchangedDestinations(current, next);
+  requireRetainedProfiles(current, next);
   mkdirSync(dirname(path), { recursive: true });
   const temporary = path + '.' + randomUUID() + '.tmp';
   writeFileSync(temporary, JSON.stringify(next, null, 2) + '\n', { mode: 0o600 });

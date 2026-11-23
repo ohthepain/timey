@@ -14,7 +14,12 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'nod
 import { parseDocument } from 'yaml';
 import { digest, requireThat } from './common.mjs';
 import { requireAvailableDirectory } from './folder-trash.mjs';
-import { folderSettingsFields, validateSettingValue, validateFieldValue } from './folder-settings-schema.mjs';
+import {
+  folderSettingsFields,
+  validateSettingValue,
+  validateFieldValue,
+  normalizeFolderStorageSettings,
+} from './folder-settings-schema.mjs';
 import { uiDirectory } from './ui-source.mjs';
 
 export { validateSettingValue } from './folder-settings-schema.mjs';
@@ -63,6 +68,15 @@ function descriptor(root, directory, id = null) {
   return { id, name, label: basename(directory), projectPath, directory };
 }
 
+function normalizedStorageDocument(doc) {
+  const data = doc.toJS({ maxAliasCount: 0 });
+  if (!plainObject(data)) return data;
+  if (!Object.hasOwn(data, 'issue_store')) return data;
+  if (!Object.hasOwn(data, 'storage_profile')) doc.set('storage_profile', doc.get('issue_store', true));
+  doc.delete('issue_store');
+  return normalizeFolderStorageSettings(data);
+}
+
 function readDocument(directory) {
   const path = join(directory, settingsName);
   const file = stat(path);
@@ -82,7 +96,7 @@ function readDocument(directory) {
   const errors = doc.errors.map((error) => ({ key: 'file', message: error.message }));
   let data;
   try {
-    data = doc.toJS({ maxAliasCount: 0 });
+    data = normalizedStorageDocument(doc);
   } catch (error) {
     errors.push({ key: 'file', message: error.message });
   }

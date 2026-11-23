@@ -139,7 +139,8 @@ const reportsCheck = 'Investigation reports retain content, reading state and sh
 const investigationFlowsCheck = 'Investigations use ordinary flows and independent retained outputs';
 const discussCheck = 'Project Discuss retains independent conversations, settings and explicit controls';
 const settingsCheck = 'Project Settings addressable pages preserve drafts, sources and explicit saves';
-const storesCheck = 'Issue stores preserve explicit homes and perform checked moves without workspace updates';
+const storesCheck =
+  'Storage profiles preserve explicit destinations and perform checked moves without workspace updates';
 const aiTextCheck = 'AI text offers copy bro and caret-aware hovered dictation';
 const interfaceStateCheck = 'Refresh preserves expanded activity, editor size, drafts and copied selection';
 const issueResultsCheck = 'Issue results appear below the banner without replacing playback status';

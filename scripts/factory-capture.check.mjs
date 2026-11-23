@@ -16,7 +16,7 @@ const input = (description = 'Rename heading to Issues') => ({
   requestId: randomUUID(),
   description,
   folder: 'Inbox',
-  issueStore: 'files',
+  storageProfile: 'files',
 });
 const reports = (root) => readdirSync(join(root, '.issues')).filter((f) => /^\d.*\.md$/.test(f));
 const bytes = (root, file) => readFileSync(join(root, '.issues', file), 'utf8');

@@ -1,16 +1,36 @@
 import { requireThat } from '../common.mjs';
 import { safeStoreView, writeStoreConfig, readStoreConfig, requireStore } from './config.mjs';
-import { resolveIssueStore } from './settings.mjs';
+import { resolveIssueStorage } from './settings.mjs';
 import { readSnapshot } from './snapshots.mjs';
 import { parse } from 'yaml';
 const pendingViews = new WeakMap();
+
+function migrationRequested(input) {
+  return Boolean(input.migrationStoreId || input.migrationStorageProfile);
+}
+
+function sameStorage(left, right) {
+  return left.storeId === right.storeId && left.artifactStoreId === right.artifactStoreId;
+}
+
+function requestedStorageMatches(operation, input) {
+  return !input.targetStorage || sameStorage(operation, input.targetStorage);
+}
+
+function resumableIssueMove(operation, input) {
+  return (
+    operation.kind === 'move-issue' &&
+    operation.issueIds.includes(input.issueId) &&
+    requestedStorageMatches(operation, input)
+  );
+}
 
 async function pendingStoreOperations(service, input, saved) {
   if (service.storeStatus?.unavailable) return pendingViews.get(service) || [];
   if (!service.projectStores?.records?.list) return [];
   const records = service.projectStores.records;
   let operations;
-  if (input.migrationStoreId) operations = await records.list('operations/');
+  if (migrationRequested(input)) operations = await records.list('operations/');
   else {
     const gate = await records.get('project/migration');
     const ids = [...new Set([gate?.value.operationId, saved?.catalog?.migrationId].filter(Boolean))];
@@ -31,6 +51,7 @@ async function pendingStoreOperations(service, input, saved) {
         ? { issueId: value.input.issueId }
         : {
             storeId: value.input.storeId,
+            ...(value.input.artifactStoreId && { artifactStoreId: value.input.artifactStoreId }),
             ...(value.kind === 'move-issue' ? { issueIds: value.input.ids } : { role: value.input.role }),
           }),
       createdAt: value.createdAt,
@@ -67,15 +88,10 @@ async function groupReports(service) {
 
 async function moveGroup(service, input, pending) {
   if (!input.issueId) return undefined;
-  const resumed = pending.find(
-    (operation) =>
-      operation.kind === 'move-issue' &&
-      operation.issueIds.includes(input.issueId) &&
-      (!input.migrationStoreId || operation.storeId === input.migrationStoreId)
-  );
+  const resumed = pending.find((operation) => resumableIssueMove(operation, input));
   if (resumed) return { issueIds: resumed.issueIds, resuming: true };
   const reports =
-    input.migrationStoreId && !service.storeStatus?.unavailable && service.projectStores
+    migrationRequested(input) && !service.storeStatus?.unavailable && service.projectStores
       ? await groupReports(service)
       : readSnapshot(service.root)?.issues || [];
   for (const issue of reports) {
@@ -88,22 +104,61 @@ async function moveGroup(service, input, pending) {
   return { issueIds: [input.issueId] };
 }
 
+function catalogStorage(saved) {
+  if (!saved?.catalog) return null;
+  const { storeId, artifactStoreId } = saved.catalog;
+  requireThat(artifactStoreId, 'The saved Artifact store is unavailable. Complete storage migration first.');
+  return { storeId, artifactStoreId };
+}
+
+function profileMatchesStorage(profile, storage) {
+  return (
+    !profile.retired && sameStorage({ storeId: profile.issueStore, artifactStoreId: profile.artifactStore }, storage)
+  );
+}
+
+function savedProfileSelection(view, savedStorage) {
+  const matching = view.profiles.find((profile) => profileMatchesStorage(profile, savedStorage));
+  return { savedStorage, selected: matching?.id || '', source: 'Saved issue destinations' };
+}
+
+function inheritedProfileSelection(root, folder) {
+  try {
+    const inherited = resolveIssueStorage(root, { folder });
+    return { selected: inherited.profileId, source: inherited.source };
+  } catch (error) {
+    return { selected: '', source: 'Invalid profile default', selectionError: error.message };
+  }
+}
+
+function requestedTarget(root, profileId) {
+  if (!profileId) return undefined;
+  const { storeId, artifactStoreId } = resolveIssueStorage(root, { profileId });
+  return { storeId, artifactStoreId };
+}
+
+function unavailableStatus(service) {
+  return service.storeStatus?.unavailable ? service.storeStatus : {};
+}
+
 export async function issueStoresView(service, input = {}) {
   const view = safeStoreView(service.root);
   const saved = await savedIssueHome(service, input.issueId);
   const pending = await pendingStoreOperations(service, input, saved);
   const migrations = pending.filter(({ kind }) => kind !== 'delete-issue');
-  const inherited = saved?.catalog?.storeId
-    ? { id: saved.catalog.storeId, source: 'Saved issue home' }
-    : resolveIssueStore(service.root, { folder: input.folder });
+  const savedStorage = catalogStorage(saved);
+  const selection = savedStorage
+    ? savedProfileSelection(view, savedStorage)
+    : inheritedProfileSelection(service.root, input.folder);
+  const targetStorage = requestedTarget(service.root, input.migrationStorageProfile);
   return {
     ...view,
+    ...selection,
     pendingMigrations: migrations,
     pendingDeletions: pending.filter(({ kind }) => kind === 'delete-issue'),
-    moveGroup: await moveGroup(service, input, migrations),
-    selected: saved?.catalog?.storeId || inherited.id,
-    source: saved?.catalog?.storeId ? 'Saved issue home' : inherited.source,
-    ...(service.storeStatus?.unavailable ? service.storeStatus : {}),
+    moveGroup: await moveGroup(service, { ...input, targetStorage }, migrations),
+    targetStorage,
+    ...unavailableStatus(service),
   };
 }
 
@@ -113,8 +168,11 @@ function configuredInput(value) {
     pendingMigrations: _pending,
     pendingDeletions: _deletions,
     moveGroup: _group,
+    savedStorage: _savedStorage,
+    targetStorage: _targetStorage,
     selected: _selected,
     source: _source,
+    selectionError: _selectionError,
     available: _available,
     unavailable: _unavailable,
     warning: _warning,
@@ -143,7 +201,11 @@ async function moveRole(service, input, stores) {
   const config = readStoreConfig(service.root);
   const selectedRole = input.role === 'artifacts' ? 'artifact' : input.role;
   requireThat(['coordination', 'artifact'].includes(selectedRole), 'Choose Coordination or Artifact storage.');
-  requireStore(config, input.storeId, selectedRole);
+  const destination = requireStore(config, input.storeId, selectedRole);
+  requireThat(
+    (destination.kind === 'files') === (config.mode === 'local'),
+    'Choose a destination compatible with the project storage mode.'
+  );
   const roleKey = selectedRole === 'artifact' ? 'artifacts' : 'coordination';
   return stores.moveProjectStore({
     role: roleKey,
@@ -161,31 +223,67 @@ async function moveRole(service, input, stores) {
   });
 }
 
+function testConnection(service, input) {
+  requireStore(readStoreConfig(service.root), input.storeId, input.role || 'issue');
+  requireThat(typeof service.testStoreConnection === 'function', 'Store connection testing is not initialized.');
+  return service.testStoreConnection(input.storeId);
+}
+
+async function resumeIssueMove(stores, input) {
+  const record = await stores.records.get('operations/' + encodeURIComponent(input.operationId));
+  const operation = record?.value;
+  requireThat(
+    operation?.kind === 'move-issue' && operation.input.ids.includes(input.issueId),
+    'Choose a retained storage move for this issue.'
+  );
+  requireThat(
+    operation.input.artifactStoreId,
+    'The retained move has no Artifact destination. Reconcile it before continuing.'
+  );
+  return stores.moveIssue({
+    issueId: input.issueId,
+    issueIds: operation.input.ids,
+    storeId: operation.input.storeId,
+    artifactStoreId: operation.input.artifactStoreId,
+    operationId: input.operationId,
+  });
+}
+
+function moveSelectedIssue(service, input, stores) {
+  requireThat(input.storageProfile, 'Choose an Issue storage profile.');
+  const selected = resolveIssueStorage(service.root, { profileId: input.storageProfile });
+  if (input.expectedStorage)
+    requireThat(
+      sameStorage(input.expectedStorage, selected),
+      'The storage profile changed. Review the destinations before moving the issue.'
+    );
+  return stores.moveIssue({
+    issueId: input.issueId,
+    issueIds: input.issueIds,
+    storeId: selected.storeId,
+    artifactStoreId: selected.artifactStoreId,
+    operationId: input.operationId,
+  });
+}
+
 export async function handleStoreAction(service, input) {
   service.ownServer();
   requireThat(input && typeof input.action === 'string', 'Choose a storage action.');
   if (input.action === 'configure') return configure(service, input);
-  if (input.action === 'test') {
-    requireStore(readStoreConfig(service.root), input.storeId, input.role || 'issue');
-    requireThat(typeof service.testStoreConnection === 'function', 'Store connection testing is not initialized.');
-    return service.testStoreConnection(input.storeId);
-  }
+  if (input.action === 'test') return testConnection(service, input);
   const stores = service.projectStores;
   requireThat(stores, 'Project storage is not initialized. Refresh before moving storage.');
   requireThat(
     typeof input.operationId === 'string' && input.operationId.length <= 120 && input.operationId.length > 0,
     'Keep a stable operation ID when changing storage.'
   );
-  if (input.action === 'resume-delete') return stores.resumeDelete({ operationId: input.operationId });
-  if (input.action === 'move-issue') {
-    requireStore(readStoreConfig(service.root), input.storeId, 'issue');
-    return stores.moveIssue({
-      issueId: input.issueId,
-      issueIds: input.issueIds,
-      storeId: input.storeId,
-      operationId: input.operationId,
-    });
-  }
-  if (input.action === 'move-role') return moveRole(service, input, stores);
-  throw Error('Choose a supported storage action.');
+  const actions = new Map([
+    ['resume-delete', () => stores.resumeDelete({ operationId: input.operationId })],
+    ['resume-move', () => resumeIssueMove(stores, input)],
+    ['move-issue', () => moveSelectedIssue(service, input, stores)],
+    ['move-role', () => moveRole(service, input, stores)],
+  ]);
+  const action = actions.get(input.action);
+  requireThat(action, 'Choose a supported storage action.');
+  return action();
 }

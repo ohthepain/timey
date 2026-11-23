@@ -25,7 +25,10 @@
       current = session;
       session.heading.id = 'issue-closure-heading';
       session.heading.textContent = 'Close this issue';
-      panel.replaceChildren(session.heading);
+      const loading = document.createElement('p');
+      loading.setAttribute('role', 'status');
+      loading.textContent = 'Loading issue details…';
+      panel.replaceChildren(session.heading, loading);
       error.textContent = '';
       approve.textContent = 'Close issue';
       approve.disabled = true;
@@ -41,6 +44,8 @@
         initializeFields(session, closureReasons, sharedQueue);
       } catch (failure) {
         showError(session, failure);
+      } finally {
+        loading.remove();
       }
     }
 

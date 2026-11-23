@@ -1,17 +1,32 @@
-import { readStoreConfig, requireStore } from './config.mjs';
+import { readStoreConfig, requireProfile } from './config.mjs';
 import { resolveFolderSettings } from '../issue-folder-settings.mjs';
 
-export function resolveIssueStore(root, { storeId, folder } = {}) {
+function requireValidProfileSetting(settings) {
+  const problem = settings.errors.find(({ key }) => key === 'storage_profile');
+  if (problem) throw Error(problem.message);
+}
+
+function inheritedProfile(root, folder, config) {
+  const settings = resolveFolderSettings(root, folder || null);
+  requireValidProfileSetting(settings);
+  return {
+    profileId: settings.values.storage_profile || config.profileDefault,
+    source: settings.sources.storage_profile || 'Project storage profile default',
+  };
+}
+
+export function resolveIssueStorage(root, { profileId, folder } = {}) {
   const config = readStoreConfig(root);
-  let selected = storeId;
-  let source = 'Explicit issue choice';
-  if (!selected || selected === 'default') {
-    const settings = resolveFolderSettings(root, folder || null);
-    const problem = settings.errors.find(({ key }) => key === 'issue_store');
-    if (problem) throw Error(problem.message);
-    selected = settings.values.issue_store || config.issueDefault;
-    source = settings.sources.issue_store || 'Project store default';
-  }
-  const store = requireStore(config, selected, 'issue');
-  return { id: store.id, label: store.label, kind: store.kind, source };
+  const selected =
+    profileId && profileId !== 'default'
+      ? { profileId, source: 'Explicit issue choice' }
+      : inheritedProfile(root, folder, config);
+  const profile = requireProfile(config, selected.profileId);
+  return {
+    profileId: profile.id,
+    storeId: profile.issueStore,
+    artifactStoreId: profile.artifactStore,
+    label: profile.label,
+    source: selected.source,
+  };
 }

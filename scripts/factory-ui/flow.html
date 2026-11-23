@@ -202,9 +202,10 @@
                 <p id="issue-settings-error" class="inline-error" role="alert" hidden></p>
               </form>
               <form id="issue-store-form" class="folder-settings-fields">
-                <label class="field">Issue store<select id="issue-store" required></select></label>
+                <label class="field">Issue storage profile<select id="issue-store" required></select></label>
                 <button class="small-button" id="move-issue-store" type="submit">Move issue</button>
                 <p class="detail-copy" id="issue-store-source"></p>
+                <button class="small-button" id="resume-issue-store" type="button" hidden>Resume storage move</button>
                 <p id="issue-store-error" class="inline-error" role="alert" hidden></p>
               </form>
               <form id="issue-ownership-form" hidden>
@@ -889,7 +890,9 @@
           </select></label
         >
         <label class="field">Folder<select id="capture-folder" name="folder" required></select></label>
-        <label class="field">Issue store<select id="capture-issue-store" name="issueStore" required></select></label>
+        <label class="field"
+          >Issue storage profile<select id="capture-issue-store" name="storageProfile" required></select
+        ></label>
         <label><input type="checkbox" id="capture-retro" /> Run a retro</label>
         <label><input type="checkbox" id="capture-needs-approval" /> Needs approval</label>
         <p id="capture-error" class="inline-error" role="alert" hidden></p>
@@ -946,8 +949,11 @@
           <span>Branch</span>
           <select id="destination-branch"></select>
         </label>
-        <label class="field">Issue store<select id="destination-issue-store" required></select></label>
-        <p class="detail-copy">Changing the Issue store moves the saved issue after verification.</p>
+        <label class="field">Issue storage profile<select id="destination-issue-store" required></select></label>
+        <p class="detail-copy" id="destination-store-source"></p>
+        <p class="detail-copy">
+          Changing the Issue storage profile moves the saved issue records and artifacts after verification.
+        </p>
         <div class="block-actions">
           <button class="small-button" value="cancel">Cancel</button>
           <button class="small-button" id="retry-branches" type="button" hidden>Retry</button>

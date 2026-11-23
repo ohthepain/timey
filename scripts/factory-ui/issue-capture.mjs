@@ -15,7 +15,7 @@ import { captureRoute, validateCaptureLifecycle, captureLifecycle } from './capt
 import { readQueue } from './data.mjs';
 import { queueIssueNumbers } from './issue-numbers.mjs';
 import { digest, requireThat, writeJson } from './common.mjs';
-import { resolveIssueStore } from './stores/settings.mjs';
+import { resolveIssueStorage } from './stores/settings.mjs';
 import { ensureProjectStores } from './stores/runtime.mjs';
 import { newFlow } from './flow-store.mjs';
 import { flowTarget } from './flow-observer.mjs';
@@ -24,7 +24,7 @@ const requestSchema = z
   .object({
     requestId: z.uuid(),
     folder: z.string().trim().min(1).max(4096).optional(),
-    issueStore: z.string().min(1).max(100).optional(),
+    storageProfile: z.string().min(1).max(100).optional(),
     description: z.string().min(1).max(24000),
     grill: z.boolean().default(false),
     grillSkill: z.string().min(1).max(128).optional(),
@@ -40,6 +40,14 @@ const receiptSchema = z
     hash: z.string().regex(/^[a-f0-9]{64}$/),
     basis: z.string().regex(/^[a-f0-9]{64}$/),
     complete: z.boolean(),
+    storage: z
+      .object({
+        profileId: z.string(),
+        storeId: z.string(),
+        artifactStoreId: z.string(),
+      })
+      .strict()
+      .optional(),
     reports: z
       .array(
         z
@@ -56,6 +64,19 @@ const receiptSchema = z
   })
   .strict();
 const endpoint = '/api/issue-capture';
+async function captureStorage(service, input) {
+  if (service.projectStores) {
+    requireThat(input.storageProfile, 'Choose an Issue storage profile before creating the issue.');
+    await ensureProjectStores(service, { fresh: true });
+  }
+  if (!input.storageProfile) return undefined;
+  const { profileId, storeId, artifactStoreId } = resolveIssueStorage(service.root, {
+    profileId: input.storageProfile,
+    folder: input.folder,
+  });
+  return { profileId, storeId, artifactStoreId };
+}
+
 export function createCaptures(service, options = {}) {
   const tasks = new Map();
   let persistence = Promise.resolve();
@@ -81,12 +102,7 @@ export function createCaptures(service, options = {}) {
     initializeFolderSettings(service.root);
     input.folder ||= defaultIssueFolder(service.root).name;
     requireIssueFolder(service.root, input.folder);
-    if (service.projectStores) {
-      requireThat(input.issueStore, 'Choose an Issue store before creating the issue.');
-      await ensureProjectStores(service, { fresh: true });
-    }
-    if (input.issueStore)
-      input.issueStore = resolveIssueStore(service.root, { storeId: input.issueStore, folder: input.folder }).id;
+    input.storage = await captureStorage(service, input);
     validateModel(service.root, input.model);
     validateGrillingSkill(service.root, input);
     const pending = tasks.get(input.requestId);
@@ -167,7 +183,9 @@ export function createCaptures(service, options = {}) {
         issueId: report.id,
         report: report.content,
         location: 'open',
-        storeId: input.issueStore,
+        storeId: saved.storage.storeId,
+        artifactStoreId: saved.storage.artifactStoreId,
+        profileId: saved.storage.profileId,
         operationId: 'classic-capture/' + input.requestId + '/' + report.id,
         flow,
       });
@@ -274,7 +292,15 @@ function allocate(queue, input, assessment, basis, random) {
       '\n';
     return { id, title: proposal.title, state: route.state, content: formatIssueReport(content) };
   });
-  return { version: 1, requestId: input.requestId, hash: captureHash(input), basis, reports, complete: false };
+  return {
+    version: 1,
+    requestId: input.requestId,
+    hash: captureHash(input),
+    basis,
+    reports,
+    complete: false,
+    ...(input.storage && { storage: input.storage }),
+  };
 }
 function allocateId(root, at, ids, random) {
   for (let attempt = 0; attempt < 20; attempt++) {
@@ -325,7 +351,7 @@ function captureIdentity(input) {
   return JSON.stringify([
     input.description,
     input.folder,
-    ...(input.issueStore ? [{ issueStore: input.issueStore }] : []),
+    ...(input.storageProfile ? [{ storageProfile: input.storageProfile, storage: input.storage }] : []),
     input.grill,
     input.go,
     input.strategy,

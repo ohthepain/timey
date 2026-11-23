@@ -108,6 +108,31 @@ export function createArtifactRouter({ active, stores, records }) {
   };
 }
 
+export function createIssueArtifactRouter({ active, stores, records }) {
+  const reader = createArtifactRouter({ active, stores, records });
+  async function get(ref) {
+    try {
+      return await active.get({ ...ref, storeId: active.id });
+    } catch (error) {
+      if (error.code !== 'ARTIFACT_MISSING') throw error;
+      return reader.get(ref);
+    }
+  }
+  async function inspect(ref) {
+    return (await active.inspect({ ...ref, storeId: active.id })) || reader.inspect(ref);
+  }
+  return {
+    id: active.id,
+    physical: active,
+    stores: reader.stores,
+    put: (input) => active.put(input),
+    list: () => active.list(),
+    get,
+    inspect,
+    remove: (ref) => reader.remove(ref),
+  };
+}
+
 export function createCoordination(records, { runnerId = randomUUID(), now = () => new Date().toISOString() } = {}) {
   const coordination = {};
 

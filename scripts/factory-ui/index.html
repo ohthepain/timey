@@ -3066,7 +3066,7 @@
           });
           if (!branchResult.branchesUnavailable) branches = branchResult.branches || [];
           if (projectIssueBulk.idsKey !== key) return;
-          Object.assign(projectIssueBulk, { views, branches, stores: storeOptions.stores, loading: false });
+          Object.assign(projectIssueBulk, { views, branches, profiles: storeOptions.profiles, loading: false });
         } catch (error) {
           if (projectIssueBulk.idsKey !== key) return;
           Object.assign(projectIssueBulk, { loading: false, error: error.message });
@@ -3109,7 +3109,17 @@
         const priorities = commonProjectIssueValue(issues.map((issue) => issue.priorityInfo?.id));
         const currentBranches = views.map((view) => view.destination.branch || '');
         const branches = commonProjectIssueValue(currentBranches);
-        const issueStores = commonProjectIssueValue(views.map((entry) => entry.issue.storeId || 'files'));
+        const issueStores = commonProjectIssueValue(
+          views.map(
+            (entry) =>
+              (projectIssueBulk.profiles || []).find(
+                (profile) =>
+                  !profile.retired &&
+                  profile.issueStore === entry.issue.storeId &&
+                  profile.artifactStore === entry.issue.artifactStoreId
+              )?.id || ''
+          )
+        );
         const branchOptions = [...new Set([...projectIssueBulk.branches, ...currentBranches.filter(Boolean)])];
         const allBranchEditable = views.every((view) => !view.destination.locked);
         const investigation = views.every(
@@ -3131,14 +3141,14 @@
           priorities,
           data.priorities.map((priority) => [priority.id, priority.name])
         )}${projectIssueBulkField(
-          'issueStore',
-          'Issue store',
+          'storageProfile',
+          'Issue storage profile',
           issueStores,
-          (projectIssueBulk.stores || [])
-            .filter((store) => store.roles.includes('issue'))
-            .map((store) => [store.id, store.label]),
+          (projectIssueBulk.profiles || [])
+            .filter((profile) => !profile.retired)
+            .map((profile) => [profile.id, profile.label]),
           false,
-          'Moves selected issues after verifying their saved data.'
+          'Moves selected issue records and artifacts after verification.'
         )}${projectIssueBulkField('targetBranch', 'Target branch', branches, [['__default__', 'Follow project default'], ...branchOptions.map((branch) => [branch, branch])], !allBranchEditable, allBranchEditable ? 'Sets the pull request destination branch.' : 'Locked because at least one selected issue already has a pull request.')}${
           investigation
             ? projectIssueBulkField('reusable', 'Reusable', reusable === '__mixed__' ? reusable : String(reusable), [

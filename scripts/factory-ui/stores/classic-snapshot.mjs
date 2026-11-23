@@ -146,7 +146,7 @@ async function localWorkspace(service, issueId, saved, checkpoint, restoreSource
     else
       await restoreSourceCheckpoint({
         checkpoint,
-        artifacts: service.projectStores.artifacts,
+        artifacts: await service.projectStores.issueArtifacts(issueId),
         projectId: service.projectStores.projectId,
         repositoryRoot: service.root,
         ...destination,
@@ -181,8 +181,10 @@ async function retainHistory(service, issueId, found) {
       sourceCheckpoint: found.sourceCheckpoint,
     })
   );
-  const artifact = await service.projectStores.artifacts.put({ body, mediaType: 'application/json' });
-  const verified = await service.projectStores.artifacts.get(artifact);
+  const artifact = await (
+    await service.projectStores.issueArtifacts(issueId)
+  ).put({ body, mediaType: 'application/json' });
+  const verified = await (await service.projectStores.issueArtifacts(issueId)).get(artifact);
   const sha256 = createHash('sha256').update(verified).digest('hex');
   assertStoreState(
     sha256 === artifact.sha256 && verified.length === artifact.bytes,
@@ -267,7 +269,7 @@ export async function hydrateClassicSnapshot(service, issueIds, { restoreSource 
   return hydrated;
 }
 
-async function captureWorkspace(service, snapshot) {
+async function captureWorkspace(service, snapshot, issueId) {
   const workspace = snapshot.lifecycle?.work || snapshot.lifecycle?.chatCheckout;
   if (!workspace?.checkout) return;
   if (!managedCheckout(service.root, workspace.checkout)) {
@@ -277,7 +279,7 @@ async function captureWorkspace(service, snapshot) {
   try {
     snapshot.sourceCheckpoint = await createSourceCheckpoint({
       checkout: workspace.checkout,
-      artifacts: service.projectStores.artifacts,
+      artifacts: await service.projectStores.issueArtifacts(issueId),
       projectId: service.projectStores.projectId,
       base: workspace.base,
     });
@@ -310,7 +312,7 @@ export async function captureClassicSnapshot(service, issueId) {
     lifecycle: lifecycle ? cloneRecord(lifecycle) : null,
     runs: cloneRecord(runs),
   };
-  await captureWorkspace(service, snapshot);
+  await captureWorkspace(service, snapshot, issueId);
   await service.projectStores.coordination.commit(
     'classic-import-' + inputDigest({ issueId, snapshot }),
     [{ key, revision: null }],

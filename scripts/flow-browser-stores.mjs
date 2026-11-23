@@ -167,11 +167,14 @@ async function checkSharedMigrationResume({ page, service, issue, storeId, poll,
     return saved;
   };
   try {
-    await assert.rejects(stores.moveIssue({ issueId: issue.id, storeId, operationId }), { code: 'STORE_UNAVAILABLE' });
+    await assert.rejects(
+      stores.moveIssue({ issueId: issue.id, storeId, artifactStoreId: 'browser-artifacts', operationId }),
+      { code: 'STORE_UNAVAILABLE' }
+    );
   } finally {
     records.commit = commit;
   }
-  const pending = await api('issue-stores?issueId=' + issue.id + '&migrationStoreId=' + storeId);
+  const pending = await api('issue-stores?issueId=' + issue.id + '&migrationStorageProfile=' + storeId);
   assert.ok(pending.pendingMigrations.some((item) => item.operationId === operationId));
   await page.evaluate(() => localStorage.clear());
   await page.reload();
@@ -188,7 +191,7 @@ async function checkSharedMigrationResume({ page, service, issue, storeId, poll,
     assert.equal((await posted.promise).operationId, operationId, 'A new browser must resume the shared receipt.');
     await poll(
       () => api('issue-stores?issueId=' + issue.id),
-      ({ selected }) => selected === storeId,
+      ({ selected, savedStorage }) => selected === storeId && savedStorage.artifactStoreId === 'browser-artifacts',
       'The pending shared migration did not resume.'
     );
   } finally {
@@ -201,7 +204,7 @@ async function checkBulkStoreMove({ page, service, issue, folder, api }) {
     const second = await service.flows.capture({
       requestId: randomUUID(),
       description: 'Second issue for a checked bulk storage move.',
-      issueStore: 'files',
+      storageProfile: 'files',
       folder: folder.name,
     });
     const ids = [issue.id, second.issue.id];
@@ -209,12 +212,13 @@ async function checkBulkStoreMove({ page, service, issue, folder, api }) {
     const result = await api('project-issues-bulk-edit', {
       issueIds: ids,
       operationId: 'browser-bulk-store-move',
-      changes: { issueStore: 'files' },
+      changes: { storageProfile: 'files' },
     });
-    assert.ok(result.results.every((entry) => entry.success && entry.applied.includes('issue store')));
+    assert.ok(result.results.every((entry) => entry.success && entry.applied.includes('issue storage profile')));
     for (const [index, id] of ids.entries()) {
       const after = await service.projectStores.readIssue(id);
       assert.equal(after.storeId, 'files');
+      assert.equal(after.artifactStoreId, 'files');
       assert.equal(after.report, before[index].report);
       assert.equal(after.number, before[index].number);
       assert.deepEqual(after.flow, before[index].flow);
@@ -237,11 +241,13 @@ async function checkClassicStoreCapture({ page, service, folder, storeId, poll, 
       await page.goto('/classic');
       await page.getByRole('button', { name: 'Create issue', exact: true }).click();
       const dialog = page.locator('#create-issue-dialog');
-      await dialog.locator('#capture-description').fill('Classic capture persists an explicitly selected Issue store.');
+      await dialog
+        .locator('#capture-description')
+        .fill('Classic capture persists an explicitly selected Issue storage profile.');
       await poll(() => dialog.locator('#capture-folder').isEnabled(), Boolean, 'Classic capture folders did not load.');
       await dialog.locator('#capture-folder').selectOption(folder.name);
       const select = dialog.locator('#capture-issue-store');
-      await poll(() => select.isEnabled(), Boolean, 'Classic capture Issue stores did not load.');
+      await poll(() => select.isEnabled(), Boolean, 'Classic capture storage profiles did not load.');
       await select.selectOption(storeId);
       assert.equal(await select.getAttribute('required'), '');
       const saved = page.waitForResponse(
@@ -255,7 +261,8 @@ async function checkClassicStoreCapture({ page, service, folder, storeId, poll, 
       await page.locator('#capture-toast').getByText('Issue captured.', { exact: true }).waitFor();
       const issue = await service.projectStores.readIssue(result.issues[0].id);
       assert.equal(issue.storeId, storeId);
-      assert.match(issue.report, /Classic capture persists an explicitly selected Issue store/);
+      assert.equal(issue.artifactStoreId, 'browser-artifacts');
+      assert.match(issue.report, /Classic capture persists an explicitly selected Issue storage profile/);
       assert.ok(issue.flow.blocks.every((block) => block.attempts.length === 0));
       await screenshot('classic-issue-store-capture');
     } finally {
@@ -297,13 +304,27 @@ export async function issueStoresBrowserChecks({ page, project, service, poll, s
     directory: '.issues/browser-store',
     roles: ['issue'],
   });
+  config.stores.push({
+    id: 'browser-artifacts',
+    label: 'Browser evidence',
+    kind: 'files',
+    directory: '.issues/browser-artifacts',
+    roles: ['artifact'],
+  });
+  config.profiles.push({
+    id: storeId,
+    label: 'Browser issue storage',
+    issueStore: storeId,
+    artifactStore: 'browser-artifacts',
+    retired: false,
+  });
   await api('issue-store-action', { action: 'configure', revision, config });
   const folder = createIssueFolderSettings(project, 'Store browser fixture');
   const defaults = readFolderSettings(project, folder.directory);
   updateFolderSettings(project, {
     directory: folder.directory,
     revision: defaults.revision,
-    changes: { issue_store: storeId },
+    changes: { storage_profile: storeId },
   });
 
   await page.goto('/?folder=' + encodeURIComponent(folder.name));
@@ -313,7 +334,7 @@ export async function issueStoresBrowserChecks({ page, project, service, poll, s
   await poll(
     () => choice.inputValue(),
     (value) => value === storeId,
-    'Capture did not inherit its folder Issue store.'
+    'Capture did not inherit its folder storage profile.'
   );
   assert.equal(await choice.getAttribute('required'), '');
   assert.equal(await choice.locator('option[value="files"]').count(), 1);
@@ -325,8 +346,8 @@ export async function issueStoresBrowserChecks({ page, project, service, poll, s
   assert.ok(issue, 'Capture creates an issue using the selected store.');
   await poll(
     () => api('issue-stores?issueId=' + issue.id),
-    ({ selected }) => selected === storeId,
-    'New issue did not land in its selected Issue store.'
+    ({ selected, savedStorage }) => selected === storeId && savedStorage.artifactStoreId === 'browser-artifacts',
+    'New issue did not retain its selected storage destinations.'
   );
 
   await expectIssueHome(page, poll, storeId, 'Saved Issue home is not visible.');
@@ -351,7 +372,7 @@ export async function issueStoresBrowserChecks({ page, project, service, poll, s
   await moveFromIssueSettings(page, 'files');
   await poll(
     () => api('issue-stores?issueId=' + issue.id),
-    ({ selected }) => selected === 'files',
+    ({ selected, savedStorage }) => selected === 'files' && savedStorage.artifactStoreId === 'files',
     'Checked move did not switch the saved Issue home.'
   );
   await page.unroute('**/api/issue-store-action', migrationRoute);
@@ -369,7 +390,7 @@ export async function issueStoresBrowserChecks({ page, project, service, poll, s
   await poll(
     () => page.locator('#destination-issue-store').inputValue(),
     (value) => value === 'files',
-    'Destination branch controls do not show the saved Issue store.'
+    'Destination branch controls do not show the saved storage profile.'
   );
   await page.keyboard.press('Escape');
   await page.goto('/?settings=storage');

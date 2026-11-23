@@ -1,10 +1,19 @@
 # Configure and move Factory stores
 
-Factory starts with files/Git for Issue, Coordination, and Artifact storage.
-Adding credentials or a configured destination does not change those defaults.
-Use this guide to prepare a remote destination and move data through checked
-storage operations. The [store specification](../plans/issue-stores.md) defines
+Factory uses one Coordination store for the project. Each issue saves its own
+Issue and Artifact destinations, selected through a named Issue storage profile.
+The project also selects a Coordination artifact store for large coordination
+records and operation receipts. See [the profile decision](../adr/0023-select-issue-and-artifact-storage-per-issue.md)
+for these boundaries and the [store specification](../plans/issue-stores.md) for
 ownership, outage, and retention behavior.
+
+Local mode uses files on your machine. Remote mode uses Git, Postgres, or DynamoDB
+for Issue and Coordination stores, and Git, Postgres, or S3 for artifacts. Local
+file stores are not used for remote issues. The project's mode is fixed after
+its version-2 configuration is saved; changing mode requires a separate project
+migration that is outside the initial profile implementation.
+
+Adding credentials or a configured destination does not move existing data.
 
 ## Prepare Postgres
 
@@ -55,24 +64,31 @@ or profile; no Factory-specific AWS access-key secret is required.
 4. Choose a separate Artifact destination for large histories and file contents.
    DynamoDB stores bounded references to those immutable artifacts.
 
-## Add destinations and choose defaults
+## Add destinations and choose profiles
 
-1. Open **Project settings → Issue Storage**. Add a named Postgres, DynamoDB, S3,
-   files, or Git store. Names identify destinations; the same backend type can
-   appear more than once. Connection secrets remain environment references.
+1. Open **Project settings → Issue Storage**. Add a named destination appropriate
+   for the project's mode. The same backend type can appear more than once.
+   Connection secrets remain environment references.
 2. Save the configured store, then use **Test store connection**. The result
    checks provider access. It does not change an issue's home or start work.
-3. Set the new-issue default on **Project settings → Issues**, or override
-   **Issue store** in a folder's settings. Parent folders inherit their defaults.
-   Creation shows a required store control with the resolved default selected.
-4. Choose Coordination and Artifact destinations independently on **Issue
-   Storage**. Saving a changed project role starts a checked project migration.
-   All affected work must be idle and pending operations reconciled first.
+3. Add an Issue storage profile with a name, an Issue store, and an Artifact
+   store. Both destinations must support their roles and the project's mode.
+4. Select the project profile default, or override **Issue storage profile** in
+   a folder's settings. Parent folders inherit their defaults. Creation shows
+   the resolved profile and requires a valid active choice.
+5. Choose **Coordination** and **Coordination artifacts** independently for the
+   project. Changing either role uses a checked project migration. All affected
+   work must be idle and pending operations reconciled first.
 
 Configured destinations and roles are fixed after saving. To change a database,
-table, directory, or Git branch, add a new named store and move to it. Display
-names remain editable. A later issue-default change affects new issues; it does
-not move existing ones.
+table, directory, or Git branch, add a new named store and perform a checked move.
+Display names remain editable.
+
+Profile edits and defaults affect future selections. Existing issues keep their
+saved Issue and Artifact stores. Retiring a profile removes it from new choices
+without rerouting those issues. A retired profile cannot be the project default.
+Invalid selections block creation instead of falling back to another destination.
+Existing physical stores remain configured so retained references can be read.
 
 On another runner, configure the same named destinations and its private
 credentials. Runners derive a common project identity from the repository remote
@@ -91,16 +107,38 @@ Opening selected Classic details still waits for its authoritative snapshot.
 
 ## Move existing issues
 
-1. Open an idle issue's **Issue settings**, choose its **Issue store**, and click
-   **Move issue**. The destination-branch dialog and bulk editor also show the
-   store choice. Move a master and all attached sub-issues together.
-2. Confirm the move. Factory copies and verifies the report and retained issue
-   history before switching the authoritative catalog entry. IDs, display
-   numbers, and original report bytes remain stable. A merged issue stays
-   read-only throughout storage migration.
+1. Open an idle issue's **Issue settings**, choose its **Issue storage profile**,
+   and click **Move issue**. The destination-branch dialog and bulk editor also
+   show the profile choice. Move a master and all attached sub-issues together.
+2. Confirm the move. Factory copies and verifies issue records and owned artifacts
+   before switching both saved destinations. IDs, display numbers, and original
+   report bytes remain stable. A failed copy preserves the source destinations.
+   A merged issue stays read-only throughout storage migration.
 3. If confirmation fails or the connection is lost, keep the draft and retry the
    same operation. The move retains its operation identity; it does not report
    success until authoritative readback confirms the destination.
+
+A master and all attached sub-issues must use the same Issue and Artifact stores.
+Grouping compares actual destinations, so profiles with different names can still
+be compatible. If either destination differs, move the issues explicitly before
+grouping them. Grouping never moves data automatically.
+
+## Upgrade an existing registry
+
+Stop older Factory runners before activating profiles. Version-1 registry reads
+produce a deterministic version-2 view without rewriting the file. Generated
+profile IDs retain the old Issue store IDs, paired with the previous project
+Artifact store. The previous project Artifact selection becomes the Coordination
+artifact selection. Existing issue catalogs receive concrete Artifact destinations
+through checked activation. This configuration upgrade copies no artifact contents
+and retains existing physical references.
+
+The selected legacy destinations must agree on local or remote mode. Unused
+configured destinations remain available for historical reads; incompatible legacy
+profiles are retired. Resolve incompatible existing issue destinations or master
+groups before the new model activates. Invalid or retired folder defaults block
+new selections until repaired. The upgrade never silently moves data to satisfy
+these rules.
 
 Stop and upgrade older Factory runners on connected machines before activating
 canonical stores. Older binaries cannot honor the new shared ownership records.
@@ -116,7 +154,7 @@ storage refreshes do not update source HEAD, the source index, or workspaces.
 Run the local contract and UI checks before a live cutover:
 
 ```sh
-node --test scripts/store-settings.check.mjs scripts/store-runtime.check.mjs scripts/store-records.check.mjs scripts/store-artifacts.check.mjs
+node --test scripts/storage-profiles-config.check.mjs scripts/storage-profiles-ui.check.mjs scripts/store-settings.check.mjs scripts/store-runtime.check.mjs scripts/store-records.check.mjs scripts/store-artifacts.check.mjs
 node scripts/flow-browser.mjs --stores
 ```
 

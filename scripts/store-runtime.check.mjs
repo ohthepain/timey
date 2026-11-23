@@ -452,15 +452,16 @@ void test('unchanged manifests retry newly unavailable or corrupt artifacts whil
   for (const failure of ['unavailable', 'corrupt'])
     await t.test(failure, async (t) => {
       const f = await retainedEvidenceFixture(t);
-      const get = f.stores.artifacts.get;
-      f.stores.artifacts.get = async () => {
+      const physical = (await f.stores.issueArtifacts('20261122-runtime')).physical;
+      const get = physical.get;
+      physical.get = async () => {
         if (failure === 'unavailable') throw Error('Temporary artifact outage.');
         return Buffer.from('Corrupt transport bytes.');
       };
       const [incomplete] = await hydrateProjectEvidence(f.service, '20261122-runtime');
       assert.equal(incomplete.files.length, 0);
       assert.equal(incomplete.gaps.length, 2);
-      f.stores.artifacts.get = get;
+      physical.get = get;
       const [recovered] = await hydrateProjectEvidence(f.service, '20261122-runtime');
       assert.notEqual(recovered, incomplete);
       assert.equal(recovered.files.length, 1);

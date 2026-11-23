@@ -6,7 +6,9 @@ describes the implemented configuration and checked moves. Verification progress
 is tracked in the [implementation checklist](issue-store-implementation.md).
 
 [ADR 0022](../adr/0022-separate-issue-coordination-and-artifact-stores.md) records
-the agreed architecture. The earlier [storage comparison](issue-storage-adapters.md)
+the store separation. [ADR 0023](../adr/0023-select-issue-and-artifact-storage-per-issue.md)
+revises selection through named profiles and per-issue Artifact destinations.
+The earlier [storage comparison](issue-storage-adapters.md)
 and [provider evidence](issue-storage-provider-evidence.md) remain historical
 context. They do not define the scope of this proposal.
 
@@ -17,14 +19,21 @@ Exercise every implementation through shared behavioral contracts. Separate
 issue data from execution ownership so a future external tracker can hold issues
 without having to implement claims or store execution logs.
 
-| Role               | Selection                        | Owns                                                                                                                               | Initial implementations       |
-| ------------------ | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
-| Issue store        | One configured store per issue   | Report, title, lifecycle status, priority, labels, relationships, and issue revision history                                       | Files/Git, DynamoDB, Postgres |
-| Coordination store | One configured store per project | Claims, full flow graphs, attempts, input and definition snapshots, pending writes, recovery receipts, and remote control requests | Files/Git, DynamoDB, Postgres |
-| Artifact store     | One configured store per project | Full logs, large outputs, screenshots, attachments, evidence, and committed source checkpoints                                     | Files/Git, S3, Postgres       |
+| Role                        | Selection                        | Owns                                                                                                                               | Initial implementations              |
+| --------------------------- | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| Issue store                 | One configured store per issue   | Report, title, lifecycle status, priority, labels, relationships, and issue revision history                                       | Local files, Git, DynamoDB, Postgres |
+| Coordination store          | One configured store per project | Claims, full flow graphs, attempts, input and definition snapshots, pending writes, recovery receipts, and remote control requests | Local files, Git, DynamoDB, Postgres |
+| Artifact store              | One configured store per issue   | Full logs, large outputs, screenshots, attachments, evidence, and committed source checkpoints                                     | Local files, Git, S3, Postgres       |
+| Coordination artifact store | One configured store per project | Retained coordination data, including large project records and operation receipts                                                 | Local files, Git, S3, Postgres       |
 
-All roles default to files/Git. A configured Postgres connection can serve several
-Factory roles using separate records in one dedicated Factory database. Factory
+Each project operates in local or remote mode. Local mode uses files on the
+person's machine. Remote mode supports Git, DynamoDB, and Postgres for Issue and
+Coordination stores, and Git, S3, and Postgres for artifacts. Remote issues never
+use local file stores. The UI displays the saved mode; an in-place conversion
+between modes is outside the initial implementation.
+
+A configured Postgres connection can serve several Factory roles using separate
+records in one dedicated Factory database. Factory
 must never use a database belonging to the installed application, even through a
 different schema. The Factory database can share the application's Postgres
 server or instance. A project can instead combine DynamoDB coordination with S3
@@ -39,25 +48,33 @@ contents. Its item size limit is 400 KB. AWS describes the
 Postgres also supports large text and binary values through
 [TOAST storage](https://www.postgresql.org/docs/current/storage-toast.html).
 
-## Store choice and defaults
+## Profiles and saved destinations
 
-Use the term Issue store in the product. Choices name configured destinations,
-such as "Team issues · Postgres", rather than only database engines. Keep Issue
-store distinct from Code destination, which selects the code delivery branch.
+An Issue storage profile names a configured Issue-store and Artifact-store pair.
+Keep the profile distinct from Code destination, which selects the code delivery
+branch. Configured destinations retain their own names and provider kinds.
 
-Show Issue store wherever an issue's destination branch is selected. This covers
-creation, issue settings, project and folder defaults, bulk operations, and
-follow-up creation. Preserve the separate meaning of Starting point.
+Show Issue storage profile wherever an issue's destination branch is selected.
+This covers creation, issue settings, project and folder defaults, bulk operations,
+and follow-up creation. Preserve the separate meaning of Starting point.
 
-Issue creation requires a visible, valid Issue store choice. Resolve its default
+Issue creation requires a visible, valid active profile choice. Resolve its default
 through the existing project, parent-folder, folder, and explicit-choice rules.
 A valid default preselects the control. Missing or invalid configuration blocks
 creation rather than choosing another backend silently.
 
-Save the resolved store identity on creation. A later default change affects new
-issues and does not move existing reports. An existing issue's store control
-starts an explicit checked move. Coordination and Artifact choices are project
-settings and do not follow per-issue or folder defaults.
+Save both resolved destination identities on creation. Later profile edits and
+default changes affect future choices and never move existing issues. Retiring
+a profile removes it from new choices while preserving those saved destinations.
+An existing issue's profile control starts an explicit checked move. Invalid
+inherited profiles block new selections while storage settings remain accessible
+for repair.
+
+Coordination and Coordination artifact selections belong to the project. They
+do not follow issue profiles or folder defaults. Version-2 registry configuration
+keeps these in `coordination` and `artifacts`; named pairs live in `profiles`, with
+`profileDefault` supplying the creation default. Each catalog entry saves actual
+`storeId` and `artifactStoreId` values.
 
 Each issue has one authoritative Issue store. Preserve stable issue IDs, display
 numbers, Markdown content, unknown metadata, relationships, and decision history
@@ -132,18 +149,31 @@ retain the existing execution authorization and manual recovery rules.
 
 ## Migrations, groups, and archive
 
-Include checked migrations in the first release. Support per-issue Issue store
-moves and project-wide Coordination and Artifact store moves. Require affected
-work to be idle and unresolved ownership or writes to be reconciled first.
+Include checked migrations in the first release. Support per-issue Issue and
+Artifact store moves and project-wide Coordination and Coordination artifact
+store moves. Require affected work to be idle and unresolved ownership or writes
+to be reconciled first.
 
-Migration copies and verifies data before switching authority. Retain resumable
-receipts and the source until cutover is confirmed. A lost response must not
+Issue moves copy and verify report records and owned artifacts before switching
+both catalog destinations. Issue-bound readers prefer the verified copy in the
+selected Artifact store even when immutable nested references name the earlier
+store. Retain those historical references without rewriting proof JSON or global
+digest redirects. Moving an issue does not delete shared or historical artifacts.
+
+Retain resumable receipts and the source until cutover is confirmed. A lost response must not
 leave two writable authorities. Preserve recorded evidence gaps rather than
 inventing missing bytes. Changing settings alone performs no migration.
 
-A master and all attached sub-issues must use the same configured Issue store in
-this release. Reject mixed-store grouping and individual moves that would break
-the group. The reviewed move must cover the affected group. Accepting the master
+The version-1 configuration upgrade preserves current destination IDs. It generates
+profiles from each Issue store and the previous project Artifact store, which also
+remains selected for coordination artifacts. Checked catalog activation saves
+concrete Artifact destinations without copying contents or rewriting historic
+references. Resolve incompatible existing modes or master groups before activation.
+
+A master and all attached sub-issues must use the same configured Issue and
+Artifact stores. Compare actual destination IDs rather than profile names.
+Reject mixed-store grouping and individual moves that would break the group.
+The reviewed move must cover the affected group. Accepting the master
 retains the existing Fixed by closure and evidence requirements.
 
 Archive is shared. Retain the report, flow, attempt history, and artifacts in
@@ -188,7 +218,8 @@ test namespaces and the configured Factory resources.
 
 Store choices and connection references belong in project configuration. Keep
 credential values in the existing secret mechanisms. Connections can be reused
-across roles. Merely adding connection settings does not change files/Git defaults.
+across roles. Merely adding connection settings does not change profile defaults
+or saved destinations.
 
 Prepare a dedicated Factory database. For example, if Timey uses `timey_db`,
 Factory can use `timey_issues_db` on the same Postgres server. A separate schema
@@ -248,8 +279,10 @@ disposable provider fixtures, alongside provider-specific protocol tests.
 
 Required observable cases include the following:
 
-- Valid creation defaults and explicit overrides, with a stored resolved Issue
-  store and unchanged existing homes after default changes.
+- Valid creation defaults and explicit profiles, with saved Issue and Artifact
+  destinations that remain unchanged after profile edits, retirement, or default changes.
+- Local and remote mode validation, metadata-only registry upgrades, and profile
+  repair without a silent creation fallback.
 - The same issue reads, report updates, revision conflicts, and stable numbers
   across files/Git, DynamoDB, and Postgres implementations.
 - Exclusive claims, exact-owner release, duplicate requests, unknown outcomes,
@@ -262,7 +295,7 @@ Required observable cases include the following:
   Work, and blocked downstream operations until synchronization is confirmed.
 - Per-issue and project migrations interrupted before and after cutover,
   preserved references, verified data, and exactly one authority.
-- Same-store group constraints and acceptance, shared archive visibility and
+- Matching Issue and Artifact destinations across each master group, shared archive visibility and
   retained history, and preservation of merged-issue and human acceptance guards.
 - No source HEAD, source-index, or working-file updates caused by issue, claim,
   flow, status, artifact, or archive refresh.

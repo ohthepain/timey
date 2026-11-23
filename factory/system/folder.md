@@ -1,8 +1,8 @@
 ---
 fields:
-  issue_store:
-    label: Issue store
-    kind: issue-store
+  storage_profile:
+    label: Issue storage profile
+    kind: storage-profile
     fallback: files
   branch:
     label: Target branch

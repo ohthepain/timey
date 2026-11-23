@@ -1,12 +1,12 @@
 import { randomUUID } from 'node:crypto';
-import { requireStore, readStoreConfig } from './stores/config.mjs';
+import { resolveIssueStorage } from './stores/settings.mjs';
 import { readQueue } from './data.mjs';
 import { requireThat } from './common.mjs';
 import { setPriority } from './issue-priority.mjs';
 import { assignIssueFolder } from './issue-folders.mjs';
 import { createIssueFlows } from './flow-service.mjs';
 
-const editableFields = new Set(['folderId', 'priorityId', 'targetBranch', 'reusable', 'runRetro', 'issueStore']);
+const editableFields = new Set(['folderId', 'priorityId', 'targetBranch', 'reusable', 'runRetro', 'storageProfile']);
 
 export async function editProjectIssues(service, input, projectHome) {
   service.ownServer();
@@ -43,11 +43,12 @@ export async function editProjectIssues(service, input, projectHome) {
     if (changes[field] !== undefined)
       requireThat(typeof changes[field] === 'boolean', `Choose whether ${field} is on or off.`);
 
-  if (changes.issueStore !== undefined) {
+  let storage;
+  if (changes.storageProfile !== undefined) {
     requireThat(service.projectStores, 'Project storage is unavailable.');
-    requireStore(readStoreConfig(service.root), changes.issueStore, 'issue');
+    storage = resolveIssueStorage(service.root, { profileId: changes.storageProfile });
   }
-  const onlyStore = Object.keys(changes).every((key) => key === 'issueStore');
+  const onlyStore = Object.keys(changes).every((key) => key === 'storageProfile');
   const views = await editableIssueViews(flows, issueIds, onlyStore);
   if (changes.targetBranch !== undefined)
     requireThat(
@@ -65,16 +66,16 @@ export async function editProjectIssues(service, input, projectHome) {
   const results = [];
   const operationId = input.operationId || 'bulk-' + randomUUID();
   let moved = false;
-  if (changes.issueStore !== undefined) {
+  if (storage) {
     try {
-      await moveSelectedStores(service, issueIds, changes.issueStore, operationId);
+      await moveSelectedStores(service, issueIds, storage, operationId);
       moved = true;
     } catch (error) {
       return {
         results: issueIds.map((issueId) => ({
           issueId,
           applied: [],
-          errors: ['Issue store: ' + error.message],
+          errors: ['Issue storage profile: ' + error.message],
           success: false,
         })),
       };
@@ -86,7 +87,7 @@ export async function editProjectIssues(service, input, projectHome) {
 }
 
 async function applyIssueChanges(context) {
-  const result = { issueId: context.issueId, applied: context.moved ? ['issue store'] : [], errors: [] };
+  const result = { issueId: context.issueId, applied: context.moved ? ['issue storage profile'] : [], errors: [] };
   for (const [field, change] of Object.entries(changeActions)) {
     if (context.changes[field] === undefined) continue;
     try {
@@ -139,14 +140,23 @@ const changeActions = {
   },
 };
 
-async function moveSelectedStores(service, issueIds, storeId, operationId) {
+function sameStorage(left, right) {
+  return left.storeId === right.storeId && left.artifactStoreId === right.artifactStoreId;
+}
+
+async function moveSelectedStores(service, issueIds, storage, operationId) {
   const matching = (entry) =>
     entry.value.status === 'pending' &&
     entry.value.kind === 'move-issue' &&
-    entry.value.input.storeId === storeId &&
+    sameStorage(entry.value.input, storage) &&
     JSON.stringify([...entry.value.input.ids].sort()) === JSON.stringify([...issueIds].sort());
   const pending = (await service.projectStores.coordination.list('operations/')).find(matching);
-  await service.projectStores.moveIssue({ issueIds, storeId, operationId: pending?.value.id || operationId });
+  await service.projectStores.moveIssue({
+    issueIds,
+    storeId: storage.storeId,
+    artifactStoreId: storage.artifactStoreId,
+    operationId: pending?.value.id || operationId,
+  });
   await service.projectStores.refresh();
 }
 

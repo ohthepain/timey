@@ -1,4 +1,5 @@
 import { parse } from 'yaml';
+import { prepareIssueArtifactMove } from './issue-artifact-move.mjs';
 import {
   createCoordination,
   sealCoordination,
@@ -39,6 +40,7 @@ async function issueSources(project, operation) {
       return {
         id,
         storeId: state.storeId,
+        artifactStoreId: state.artifactStoreId,
         homeEpoch: state.homeEpoch,
         report: state.report,
         location: state.location,
@@ -157,7 +159,13 @@ async function cutoverIssues(project, operation) {
     expected.push({ key: record.key, revision: record.revision });
     writes.push({
       key: record.key,
-      value: { ...catalog, storeId: operation.value.input.storeId, epoch: operation.value.token, state: 'active' },
+      value: {
+        ...catalog,
+        storeId: operation.value.input.storeId,
+        artifactStoreId: operation.value.input.artifactStoreId,
+        epoch: operation.value.token,
+        state: 'active',
+      },
     });
   }
   const current = await project.coordination.get(operation.key);
@@ -169,22 +177,43 @@ async function cutoverIssues(project, operation) {
   await project.coordination.commit(operation.value.id + '/cutover', expected, writes);
 }
 
+async function selectedArtifactStore(project, input, issueId) {
+  if (input.artifactStoreId) return input.artifactStoreId;
+  const source = await project.records.get('catalog/' + issueId);
+  return source?.value.artifactStoreId || project.artifacts.id;
+}
+async function moveDestinations(project, input, issueId) {
+  return {
+    storeId: input.storeId || input.destinationStoreId,
+    artifactStoreId: await selectedArtifactStore(project, input, issueId),
+  };
+}
+async function copyIssueGroup(project, operation) {
+  operation = await issueSources(project, operation);
+  for (const source of operation.value.sources) await sealIssue(project, operation, source);
+  operation = await captureSealedSources(project, operation);
+  operation = await prepareIssueArtifactMove(project, operation);
+  for (const source of operation.value.sources) await copyIssue(project, operation, source);
+  return operation;
+}
+
 export async function moveIssue(project, input) {
-  const storeId = input.storeId || input.destinationStoreId;
   const ids = [...new Set(input.issueIds || [input.issueId])];
   assertStoreState(
     ids.length > 0 && ids.length <= 48,
     'STORE_INVALID_SELECTION',
     'Select between one and forty-eight issues to move.'
   );
-  let operation = await project.coordination.operation(input.operationId, 'move-issue', { ids, storeId });
+  const { storeId, artifactStoreId } = await moveDestinations(project, input, ids[0]);
+  let operation = await project.coordination.operation(input.operationId, 'move-issue', {
+    ids,
+    storeId,
+    artifactStoreId,
+  });
   if (operation.value.status === 'confirmed')
     return { status: 'confirmed', issues: await Promise.all(ids.map((id) => project.readIssue(id))) };
   try {
-    operation = await issueSources(project, operation);
-    for (const source of operation.value.sources) await sealIssue(project, operation, source);
-    operation = await captureSealedSources(project, operation);
-    for (const source of operation.value.sources) await copyIssue(project, operation, source);
+    operation = await copyIssueGroup(project, operation);
     await releaseMigrationClaims(project, operation);
     await cutoverIssues(project, operation);
     return { status: 'confirmed', issues: await Promise.all(ids.map((id) => project.readIssue(id))) };

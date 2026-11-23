@@ -4,6 +4,7 @@ import { join, dirname } from 'node:path';
 import { parse } from 'yaml';
 import {
   createCoordination,
+  createIssueArtifactRouter,
   cloneRecord,
   inputDigest,
   assertStoreState,
@@ -19,6 +20,7 @@ const asMap = (value) => (value instanceof Map ? value : new Map(Object.entries(
 const reportText = (value) => (typeof value === 'string' ? value : Buffer.from(value).toString('utf8'));
 const flowKey = (id) => 'flows/' + validIdentity(id);
 const catalogKey = (id) => 'catalog/' + validIdentity(id);
+const storagePair = ({ storeId, artifactStoreId }) => JSON.stringify([storeId, artifactStoreId]);
 const now = () => new Date().toISOString();
 
 function localRunner(root) {
@@ -110,6 +112,22 @@ export function createProjectStores({
         assertStoreState(Boolean(store), 'STORE_UNCONFIGURED', 'The selected Issue store is not configured.');
         return store;
       },
+      async issueArtifacts(issueId) {
+        const catalog = await this.coordination.get(catalogKey(issueId));
+        const id = catalog?.value.artifactStoreId;
+        assertStoreState(
+          id,
+          'STORE_PROFILE_MIGRATION_REQUIRED',
+          'Migrate this issue’s saved Artifact destination before writing files.'
+        );
+        const active = this.artifactStores.get(id) || (this.artifacts.id === id && this.artifacts);
+        assertStoreState(active, 'STORE_UNCONFIGURED', 'The saved issue Artifact store is not configured.');
+        return createIssueArtifactRouter({
+          active,
+          stores: new Map(this.artifactStores),
+          records: () => this.records,
+        });
+      },
       async catalog(issueId) {
         const record = await this.coordination.get(catalogKey(issueId));
         assertStoreState(Boolean(record), 'STORE_ISSUE_MISSING', 'The issue is not registered in the shared catalog.');
@@ -132,6 +150,7 @@ export function createProjectStores({
           issue,
           number: catalog.value.number,
           storeId: catalog.value.storeId,
+          artifactStoreId: catalog.value.artifactStoreId,
           homeEpoch: catalog.value.epoch,
           catalog: catalog.value,
           flow: flow?.value ?? null,
@@ -198,10 +217,23 @@ export function createProjectStores({
         }
       },
       async createIssue(input) {
-        await this.assertGroupStore(reportText(input.report), input.storeId);
+        await this.assertGroupStore(
+          reportText(input.report),
+          input.storeId,
+          input.artifactStoreId || this.artifacts.id
+        );
         return this.importIssue({ ...input, id: input.issueId || input.id });
       },
-      async importIssue({ id, number, report, flow = null, location = 'open', storeId, operationId }) {
+      async importIssue({
+        id,
+        number,
+        report,
+        flow = null,
+        location = 'open',
+        storeId,
+        artifactStoreId = this.artifacts.id,
+        operationId,
+      }) {
         validIdentity(id);
         const text = reportText(report);
         validateReport(id, text);
@@ -212,6 +244,7 @@ export function createProjectStores({
           flow,
           location,
           storeId,
+          artifactStoreId,
         });
         if (op.value.status === 'confirmed') return { status: 'confirmed', ...(await this.readIssue(id)) };
         try {
@@ -271,6 +304,7 @@ export function createProjectStores({
           id: input.id,
           number: selected,
           storeId: input.storeId,
+          artifactStoreId: input.artifactStoreId,
           epoch: op.value.token,
           state: 'creating',
           creationOperation: op.value.id,
@@ -341,7 +375,7 @@ export function createProjectStores({
         const current = await this.readIssue(issueId);
         const text = reportText(report);
         validateReport(issueId, text);
-        await this.assertGroupStore(text, current.storeId);
+        await this.assertGroupStore(text, current.storeId, current.artifactStoreId);
         kind = purpose === 'closure' ? 'close' : purpose === 'storage' ? 'storage' : kind;
         await this.preflightIssueClaim(operationId, issueId, owner);
         const op = await this.coordination.operation(
@@ -570,7 +604,9 @@ export function createProjectStores({
         const offset = saved?.value.bytes || 0;
         if (body.length <= offset) return saved?.value ?? null;
         const chunk = body.subarray(offset);
-        const artifact = await this.artifacts.put({ body: chunk, mediaType: 'application/x-ndjson' });
+        const artifact = await (
+          await this.issueArtifacts(owner.issueId)
+        ).put({ body: chunk, mediaType: 'application/x-ndjson' });
         const value = {
           owner,
           bytes: body.length,
@@ -671,26 +707,29 @@ export function createProjectStores({
         );
         return value;
       },
-      async assertGroupStore(report, storeId) {
+      async assertGroupStore(report, storeId, artifactStoreId) {
         const header = report.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/)?.[1];
         const children = parse(header || '')?.issue_group?.children || [];
         for (const child of children.filter((entry) => !entry.detachedAt)) {
           const catalog = await this.catalog(child.id);
           assertStoreState(
-            catalog.value.storeId === storeId,
+            storagePair(catalog.value) === storagePair({ storeId, artifactStoreId }),
             'STORE_GROUP_MISMATCH',
-            'A master and its sub-issues must use the same Issue store.'
+            'A master and its sub-issues must use the same Issue and Artifact stores.'
           );
         }
       },
-      async assertSameStore(issueIds) {
+      async assertSameStorage(issueIds) {
         const states = await Promise.all(issueIds.map((id) => this.catalog(id)));
         assertStoreState(
-          new Set(states.map((record) => record.value.storeId)).size <= 1,
+          new Set(states.map((record) => JSON.stringify([record.value.storeId, record.value.artifactStoreId]))).size <=
+            1,
           'STORE_GROUP_MISMATCH',
-          'A master and its sub-issues must use the same Issue store.'
+          'A master and its sub-issues must use the same Issue and Artifact stores.'
         );
-        return states[0]?.value.storeId;
+        return states.length
+          ? { storeId: states[0].value.storeId, artifactStoreId: states[0].value.artifactStoreId }
+          : undefined;
       },
       async archiveIssue({ issueId, operationId, expectedRevision }) {
         const current = await this.readIssue(issueId);

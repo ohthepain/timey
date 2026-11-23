@@ -15,7 +15,7 @@ async function retainAttemptEvidence(stores, owner, attempt) {
   const incoming = await collectEvidence({
     root: stores.root,
     flow: { evidence: attempt.evidence, result: attempt.result, artifacts: attempt.artifacts },
-    artifacts: stores.artifacts,
+    artifacts: await stores.issueArtifacts(owner.issueId),
     originId: owner.issueId,
     allowedRoots: [join(stores.root, '.issues')],
   });
@@ -99,7 +99,7 @@ async function shareCommittedSource(flows, issue, owner, outcome, block) {
   if (outcome.status !== 'completed') return;
   const checkpoint = await createSourceCheckpoint({
     checkout: workspace.checkout,
-    artifacts: flows.service.artifacts || flows.service.projectStores.artifacts,
+    artifacts: await flows.service.projectStores.issueArtifacts(owner.issueId),
     projectId: flows.service.projectStores.projectId,
     base: workspace.base,
   });

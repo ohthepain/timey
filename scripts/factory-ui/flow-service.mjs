@@ -2,7 +2,7 @@ import { storeUnavailable } from './stores/availability.mjs';
 import { abortOwnedMerge, moveOwnedStartingPoint, updateOwnedWorktree } from './stores/manual-operations.mjs';
 import { prepareAttemptCommit } from './stores/flow-evidence.mjs';
 import { readSnapshot } from './stores/snapshots.mjs';
-import { resolveIssueStore } from './stores/settings.mjs';
+import { resolveIssueStorage } from './stores/settings.mjs';
 import { registeredProjectStores } from './stores/report-access.mjs';
 import { ensureProjectStores, hydrateProjectEvidence } from './stores/runtime.mjs';
 import { evidencePath } from './stores/evidence.mjs';
@@ -270,9 +270,10 @@ export function createIssueFlows(service, options = {}) {
 }
 
 function captureIdentity(
-  { description, type, needsApproval, runRetro, sourceIssue, sourceAttempt, startingRef, reusable, issueStore },
+  { description, type, needsApproval, runRetro, sourceIssue, sourceAttempt, startingRef, reusable, storageProfile },
   folder,
-  grouping
+  grouping,
+  storage
 ) {
   const fields = folder ? [description, type, folder] : [description, type];
   if (needsApproval || runRetro) fields.push({ needsApproval: !!needsApproval, runRetro: !!runRetro });
@@ -281,7 +282,8 @@ function captureIdentity(
   if (sourceAttempt) fields.push({ sourceAttempt });
   if (startingRef !== undefined) fields.push({ startingRef });
   if (reusable !== undefined) fields.push({ reusable });
-  if (issueStore !== undefined) fields.push({ issueStore });
+  if (storageProfile !== undefined) fields.push({ storageProfile });
+  if (storage) fields.push({ storeId: storage.storeId, artifactStoreId: storage.artifactStoreId });
   return digest(JSON.stringify(fields));
 }
 
@@ -2633,13 +2635,16 @@ class IssueFlows {
     createIssueFolderSettings(this.service.root, name);
     return this.view();
   }
-  async capture(input, grouping = null) {
+  async capture(input, grouping = null, storage = null) {
     if (this.service.projectStores) {
-      requireThat(
-        typeof input.issueStore === 'string' && input.issueStore.length > 0,
-        'Choose an Issue store for this issue.'
-      );
-      resolveIssueStore(this.service.root, { storeId: input.issueStore, folder: input.folder });
+      if (!grouping || !storage) {
+        requireThat(
+          typeof input.storageProfile === 'string' && input.storageProfile.length > 0,
+          'Choose an Issue storage profile for this issue.'
+        );
+        storage = resolveIssueStorage(this.service.root, { profileId: input.storageProfile, folder: input.folder });
+      }
+      await this.requireCaptureGroupStorage(storage, grouping);
     }
     validateCaptureId(input.requestId);
     validateCaptureDescription(input.description);
@@ -2658,13 +2663,13 @@ class IssueFlows {
       [input.needsApproval, input.runRetro].every((value) => value === undefined || typeof value === 'boolean'),
       'Choose valid issue settings.'
     );
-    const identity = captureIdentity(input, folder, grouping);
+    const identity = captureIdentity(input, folder, grouping, storage);
     const pending = this.captures.get(input.requestId);
     if (pending) {
       requireThat(identity === pending.identity, 'This request identity already contains different wording.');
       return pending.task;
     }
-    const task = this.captureIssue(input, identity, folder, grouping);
+    const task = this.captureIssue(input, identity, folder, grouping, storage);
     this.captures.set(input.requestId, { identity, task });
     try {
       return await task;
@@ -2680,12 +2685,13 @@ class IssueFlows {
     };
     return captureStartingPoint(this.service.root, target);
   }
-  async captureIssue(input, identity, folder, grouping) {
+  async captureIssue(input, identity, folder, grouping, storage) {
     const directory = join(this.store.directory, 'captures');
     const receiptPath = join(directory, input.requestId + '.json');
     const publish = (id) =>
       this.service.sharedIssues?.capture(id, input.needsApproval ? 'Proposed issue created' : 'Issue created');
-    if (existsSync(receiptPath)) return this.resumeCapture({ input, receiptPath, identity, grouping, publish });
+    if (existsSync(receiptPath))
+      return this.resumeCapture({ input, receiptPath, identity, grouping, publish, storage });
     const startingPoint = await this.startingPointForCapture(input, folder);
     const at = new Date().toISOString();
     const id = at.replace(/[-:.Z]/g, '') + '-' + randomBytes(8).toString('hex');
@@ -2729,10 +2735,21 @@ class IssueFlows {
     if (input.runRetro) setRetroBlock(flow, this.catalog.read().entries);
     flow.folder = folder;
     mkdirSync(directory, { recursive: true });
-    const receipt = { id, identity, content, metadata, startingPoint, folder, storeId: input.issueStore };
+    const receipt = {
+      id,
+      identity,
+      content,
+      metadata,
+      startingPoint,
+      folder,
+      ...(storage && {
+        storeId: storage.storeId,
+        artifactStoreId: storage.artifactStoreId,
+        ...(storage.profileId && { profileId: storage.profileId }),
+      }),
+    };
     if (this.service.projectStores) {
-      await this.requireCaptureGroupStore(input.issueStore, grouping);
-      return this.captureStoredIssue(input, receiptPath, { ...receipt, flow });
+      return this.captureStoredIssue(input, receiptPath, { ...receipt, flow }, storage);
     }
     const path = storedIssuePath(this.service.root, id);
     this.groups.writeCapture(grouping, () => {
@@ -2746,7 +2763,7 @@ class IssueFlows {
     publish(id);
     return this.view(id);
   }
-  async resumeCapture({ input, receiptPath, identity, grouping, publish }) {
+  async resumeCapture({ input, receiptPath, identity, grouping, publish, storage }) {
     const receipt = JSON.parse(readFileSync(receiptPath, 'utf8'));
     requireThat(receipt.identity === identity, 'This request identity already contains different wording.');
     if (receipt.deleted) return { deleted: true, issueId: receipt.id };
@@ -2760,7 +2777,7 @@ class IssueFlows {
       if (existsSync(storedIssuePath(this.service.root, receipt.id))) publish(receipt.id);
       return this.view(receipt.id);
     }
-    if (this.service.projectStores) return this.captureStoredIssue(input, receiptPath, receipt);
+    if (this.service.projectStores) return this.captureStoredIssue(input, receiptPath, receipt, storage);
     const path = storedIssuePath(this.service.root, receipt.id);
     if (!existsSync(path)) {
       this.groups.writeCapture(grouping, () => {
@@ -2779,19 +2796,27 @@ class IssueFlows {
     publish(receipt.id);
     return this.view(receipt.id);
   }
-  async requireCaptureGroupStore(storeId, grouping) {
+  async requireCaptureGroupStorage(storage, grouping) {
     if (!grouping?.children?.length) return;
-    const selected = await this.service.projectStores.assertSameStore(
+    const selected = await this.service.projectStores.assertSameStorage(
       grouping.children.map((child) => (typeof child === 'string' ? child : child.id))
     );
-    requireThat(selected === storeId, 'A master and its sub-issues must use the same Issue store.');
+    requireThat(
+      selected.storeId === storage.storeId && selected.artifactStoreId === storage.artifactStoreId,
+      'A master and its sub-issues must use the same Issue and Artifact stores.'
+    );
   }
-  async captureStoredIssue(input, receiptPath, receipt) {
-    requireThat(receipt.storeId === input.issueStore, 'This creation is assigned to another Issue store.');
+  async captureStoredIssue(input, receiptPath, receipt, storage) {
+    requireThat(
+      receipt.storeId === storage.storeId && receipt.artifactStoreId === storage.artifactStoreId,
+      'This creation is assigned to different storage destinations. Restore the selected profile or submit a new request.'
+    );
     writeJson(receiptPath, { ...receipt, complete: false });
     await this.service.projectStores.createIssue({
       issueId: receipt.id,
       storeId: receipt.storeId,
+      artifactStoreId: receipt.artifactStoreId,
+      ...(receipt.profileId && { profileId: receipt.profileId }),
       report: receipt.content,
       flow: receipt.flow,
       operationId: 'capture-' + input.requestId,

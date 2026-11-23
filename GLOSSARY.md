@@ -211,6 +211,10 @@ storage destinations. Coordination storage belongs to the project.
 Issue records and artifacts retained on the person's local machine.
 It excludes files on a remote Factory server.
 
+**Project storage mode**:
+The project's choice of local or remote storage operation, which determines
+the storage destinations its issues can select.
+
 **Coordination store**:
 The project's shared authority for execution ownership, flows, attempt history,
 and pending operations. Each project selects one Coordination store across its
@@ -220,6 +224,11 @@ Issue stores.
 The home for retained file contents, including logs, evidence,
 attachments, and committed source checkpoints. Shared records identify artifacts
 independently of a runner's local file paths.
+
+**Coordination artifact store**:
+The project's selected Artifact store for retained coordination data, including
+project records and operation receipts. It is separate from each issue's selected
+Artifact store.
 
 **Issue delivery**:
 One issue's contributions retained on a stable branch and published through one

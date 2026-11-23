@@ -33,6 +33,26 @@ rejected first input instead of resuming a thread with no persisted history.
 
 ## Commands and evidence
 
+`node --test scripts/closure-menu.check.mjs` holds a shared-store refresh while
+opening the Close menu through the real HTTP route. The menu must return saved
+issue context without waiting for that refresh. Confirming closure still waits
+for fresh authoritative state. Confirmed report writes and recovered publications
+refresh only the selected issue, without rereading unrelated histories or dropping
+other saved issues. The dialog shows loading feedback when context
+is pending and keeps confirmation disabled if loading fails. These checks never
+close a live issue or launch work.
+
+`pnpm run test:stores` includes the `storage-profiles-*.check.mjs` fixtures. They
+check metadata-only registry activation, pinned destination pairs, profile edits
+and retirement, local and remote mode validation, inherited folder settings,
+issue-owned artifact routing, failed and resumed group moves, nested immutable
+snapshots after source storage becomes unavailable, and bounded catalog cutover
+with long histories. Move receipts retain copied artifact ownership per issue so
+deleting a child can release its exclusive evidence while preserving shared proof.
+`node scripts/flow-browser.mjs --stores` drives the profile selectors, saved
+destination readback, settings, bulk moves, interrupted moves, outages and recovery
+using disposable stores. These checks use no live model or cloud publication.
+
 `node --test scripts/store-runtime.check.mjs scripts/project-stores-flow.check.mjs`
 checks cached display reads during a held shared refresh, coalesced polling,
 read-only cached startup, missing-cache waits, background failure warnings, and

@@ -2167,7 +2167,12 @@ test('a peer checkpoint replaces a stale same-path workspace without changing it
     base: original.workspace.base,
   });
   f.flow.workspaceRunnerId = 'sender';
-  f.service.projectStores = { runnerId: 'receiver', projectId: 'source-fixture', artifacts };
+  f.service.projectStores = {
+    runnerId: 'receiver',
+    projectId: 'source-fixture',
+    artifacts,
+    issueArtifacts: async () => artifacts,
+  };
   const result = await f.run();
   assert.notEqual(result.workspace.checkout, original.workspace.checkout);
   assert.equal(readFileSync(join(result.workspace.checkout, 'source.txt'), 'utf8'), 'New shared checkpoint.\n');
