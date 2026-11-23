@@ -1,3 +1,5 @@
+import { issueTypes } from './flow-definitions.mjs';
+import { mergedDelivery } from './merged-issue.mjs';
 import {
   deliveryTarget,
   latestCurrentAttempt,
@@ -13,6 +15,7 @@ import { StrategyProvider } from './strategy-provider.mjs';
 import { flowMergeChecks, flowVerificationInput } from './flow-verification.mjs';
 import { queueReportPaths } from './shared-issue-config.mjs';
 import { requireGroupProof } from './flow-group-proof.mjs';
+import { evidencePath } from './stores/evidence.mjs';
 
 export function flowDeliveryProvider(service, ctx, workspace, options = {}) {
   requireThat(
@@ -106,6 +109,15 @@ export function flowVerificationHead(block) {
   return verification?.uncommitted ? undefined : verification?.head;
 }
 
+export function retainedBlockVerification(block, attemptId) {
+  const previous = block.attempts?.findLast(
+    (attempt) => attempt.id !== attemptId && (attempt.invalidatedAt || blockVerification(block, attempt))
+  );
+  if (!previous) return undefined;
+  if (previous.invalidatedAt) return undefined;
+  return blockVerification(block, previous);
+}
+
 export function verifiedFlowCandidate(ctx, workspace, options = {}) {
   const candidate = committedCandidate(workspace);
   const base = options.verificationBase;
@@ -113,10 +125,9 @@ export function verifiedFlowCandidate(ctx, workspace, options = {}) {
   const getInput = options.verificationInput || flowVerificationInput;
   const inputs = base ? [getInput(ctx, workspace.checkout, base)] : [];
   if (mergeChecks?.scope === 'default') inputs.push(getInput(ctx, workspace.checkout, base, 'full'));
-  const previous = ctx.block.attempts?.filter((attempt) => attempt.id !== ctx.attempt?.id).at(-1);
   const checks = [
     options.verification,
-    previous?.invalidatedAt ? undefined : blockVerification(ctx.block, previous ?? {}),
+    retainedBlockVerification(ctx.block, ctx.attempt?.id),
     ...upstreamBlocks(ctx.block, ctx.flow.blocks)
       .toReversed()
       .map((block) => blockVerification(block)),
@@ -139,7 +150,11 @@ export function verifiedFlowCandidate(ctx, workspace, options = {}) {
       return {
         ...candidate,
         verification: checked,
-        evidence: verifyEvidence({ ...candidate, base: verificationBase }, checked, { ...options, mergeChecks }),
+        evidence: verifyEvidence({ ...candidate, base: verificationBase }, checked, {
+          ...options,
+          mergeChecks,
+          evidenceRoot: ctx.evidenceRoot,
+        }),
       };
     } catch (error) {
       failure ??= error;
@@ -157,13 +172,13 @@ function verifyEvidence({ tree, base }, checked, options) {
   const evidence = [];
   for (const proof of checked.supportingProof || []) {
     requireThat(
-      digest(readFileSync(proof.path)) === proof.sha256,
+      digest(readFileSync(evidencePath(options.evidenceRoot, proof.path, proof.sha256))) === proof.sha256,
       'Supporting verification evidence changed. Run an explicit Verify block again.'
     );
     evidence.push(proof);
   }
   for (const proof of checked.proof) {
-    const bytes = readFileSync(proof.path);
+    const bytes = readFileSync(evidencePath(options.evidenceRoot, proof.path, proof.sha256));
     requireThat(digest(bytes) === proof.sha256, 'The retained verification evidence changed. Run verification again.');
     const summary = JSON.parse(bytes);
     (options.validateSummary || validateSummary)(summary, base, tree, {
@@ -224,6 +239,26 @@ function publicationBlocker(pr, identity, target) {
   return null;
 }
 
+function noChangesPublication(workspace, target, head, pr) {
+  if (pr) return null;
+  let base;
+  try {
+    base = git(workspace.checkout, 'merge-base', target, head);
+  } catch {
+    return {
+      status: 'blocked',
+      message: 'Refresh the destination branch locally before comparing the issue changes for publication.',
+    };
+  }
+  if (git(workspace.checkout, 'diff', '--name-only', base, head)) return null;
+  return {
+    status: 'blocked',
+    message:
+      'No changes to publish against the destination. You can close this issue as Cannot Reproduce or keep it open for more work.',
+    suggestedResolution: 'cannot-reproduce',
+  };
+}
+
 export async function prepareFlowPublication(service, ctx, workspace, options = {}) {
   const provider = flowDeliveryProvider(service, ctx, workspace, options);
   const { branch: target, remote } = deliveryTarget(ctx.flow);
@@ -245,6 +280,8 @@ export async function prepareFlowPublication(service, ctx, workspace, options = 
     throw Error('Couldn’t check branches. Retry Publish when GitHub is available.');
   });
   if (!branches.has(target)) return blocked('Branch unavailable. Choose another destination before publishing.');
+  const noChanges = noChangesPublication(workspace, branches.get(target), candidate.head, pr);
+  if (noChanges) return { preview: noChanges };
   if (service.sharedIssues) {
     const tracking = `refs/remotes/${remote}/${target}`;
     const base = git(workspace.checkout, 'merge-base', tracking, candidate.head);
@@ -467,7 +504,8 @@ function deliveryWorkProof(ctx, candidate) {
       if (attempt?.status !== 'completed' || !file?.sha256) return { ...record, status: 'missing' };
       if (tree !== candidate.tree) return { ...record, status: 'different-tree' };
       try {
-        if (digest(readFileSync(file.path)) === file.sha256) return { ...record, status: 'retained', file };
+        if (digest(readFileSync(evidencePath(ctx.evidenceRoot, file.path, file.sha256))) === file.sha256)
+          return { ...record, status: 'retained', file };
       } catch {
         // A missing proof file is recorded as a gap.
       }
@@ -476,15 +514,36 @@ function deliveryWorkProof(ctx, candidate) {
   };
 }
 
+function closureCandidate(ctx, workspace, options) {
+  const merged = mergedDelivery(ctx.flow);
+  if (!merged?.verification) return verifiedFlowCandidate(ctx, workspace, options);
+  const checked = merged.verification;
+  const tree = git(workspace.checkout, 'rev-parse', `${merged.head}^{tree}`);
+  const base = checked.destinationBase || workspace.base;
+  requireThat(
+    checked.uncommitted || checked.head === merged.head,
+    'The retained verification does not match the merged issue candidate.'
+  );
+  git(workspace.checkout, 'merge-base', '--is-ancestor', base, merged.head);
+  return {
+    head: merged.head,
+    tree,
+    base,
+    evidence: verifyEvidence({ tree, base }, checked, { ...options, evidenceRoot: ctx.evidenceRoot }),
+  };
+}
+
 export async function flowClosureArtifact(service, ctx, workspace, folder, options = {}) {
+  ctx = { ...ctx, evidenceRoot: service.root };
   requireThat(ctx.input?.confirmed === true, 'Accept the recorded result explicitly before closing this issue.');
-  const type = ctx.details ? ctx.details.type : requestData(ctx.flow).fields?.type;
-  requireThat(type, 'Missing issue type. Refresh Request before closing.');
+  const type = ctx.details?.type ?? requestData(ctx.flow).fields?.type ?? ctx.flow.routeType;
+  requireThat(issueTypes.includes(type), 'Missing issue type. Set the issue type in Request before closing.');
   if (type === 'investigation') return investigationClosureArtifact(ctx, workspace);
-  const candidate = verifiedFlowCandidate(ctx, workspace, options);
-  const groupEvidence = requireGroupProof(ctx.issue, ctx.flow, candidate.tree, ctx.block);
+  const candidate = closureCandidate(ctx, workspace, options);
+  const groupEvidence = requireGroupProof(ctx.issue, ctx.flow, candidate.tree, ctx.block, service.root);
   const provider = flowDeliveryProvider(service, ctx, workspace, options);
-  const pr = await provider.findByBranch(workspace.branch, provider.config.target);
+  const merged = mergedDelivery(ctx.flow);
+  const pr = merged ? { number: merged.pr } : await provider.findByBranch(workspace.branch, provider.config.target);
   requireThat(pr, 'No PR exists for this issue branch. Publish and merge its PR before closing.');
   const delivered = await provider.inspectExternalDelivery(pr.number, { requiredChecksOnly: true });
   requireThat(
@@ -494,12 +553,13 @@ export async function flowClosureArtifact(service, ctx, workspace, folder, optio
       delivered.target === deliveryTarget(ctx.flow).branch &&
       delivered.mergedAt &&
       delivered.mergeCommit &&
+      (!merged?.revision || delivered.mergeCommit === merged.revision) &&
       delivered.targetRevision,
     'The merged PR does not match the verified issue candidate and target. Reconcile its delivery before accepting.'
   );
   ctx.signal.throwIfAborted();
   requireThat(
-    verifiedFlowCandidate(ctx, workspace, options).head === candidate.head,
+    closureCandidate(ctx, workspace, options).head === candidate.head,
     'The issue candidate changed while checking its merged PR. Review the current result before accepting.'
   );
   const path = join(folder, 'merged-delivery.json');
@@ -516,6 +576,15 @@ export async function flowClosureArtifact(service, ctx, workspace, folder, optio
       { path, sha256: digest(readFileSync(path)) },
     ],
   };
+}
+
+function retainedInvestigationProof(root, proof) {
+  try {
+    const path = evidencePath(root, proof.path, proof.sha256);
+    return existsSync(path) && digest(readFileSync(path)) === proof.sha256;
+  } catch {
+    return false;
+  }
 }
 
 function investigationClosureArtifact(ctx, workspace) {
@@ -543,7 +612,7 @@ function investigationClosureArtifact(ctx, workspace) {
     'Reconcile active or uncertain blocks before accepting this investigation.'
   );
   const attempt = upstreamBlocks(ctx.block, ctx.flow.blocks)
-    .filter((block) => ['understand', 'advice', 'playbook'].includes(block.kind))
+    .filter((block) => ['understand', 'investigate', 'advice', 'playbook'].includes(block.kind))
     .map(latestCurrentAttempt)
     .findLast(
       (attempt) =>
@@ -554,25 +623,27 @@ function investigationClosureArtifact(ctx, workspace) {
     );
   requireThat(
     attempt?.output?.trim() && attempt.evidence?.length,
-    'Complete an Understand or advisory block for this exact investigation checkout before closing.'
+    'Complete an Investigate, Understand, or advisory block for this exact investigation checkout before closing.'
   );
   const evidence = attempt.evidence.map((proof) => {
     requireThat(
       typeof proof.path === 'string' && /^[a-f0-9]{64}$/.test(proof.sha256 || ''),
-      'Investigation output has no recorded immutable digest. Run its Understand or advisory block again.'
+      'Investigation output has no recorded immutable digest. Run its inquiry or advisory block again.'
     );
     requireThat(
-      existsSync(proof.path) && digest(readFileSync(proof.path)) === proof.sha256,
-      'Retained investigation evidence changed or is missing. Run its Understand or advisory block again.'
+      retainedInvestigationProof(ctx.evidenceRoot, proof),
+      'Retained investigation evidence changed or is missing. Run its inquiry or advisory block again.'
     );
     return { path: proof.path, sha256: proof.sha256 };
   });
   requireThat(
-    evidence.some((proof) => readFileSync(proof.path, 'utf8') === attempt.output),
+    evidence.some(
+      (proof) => readFileSync(evidencePath(ctx.evidenceRoot, proof.path, proof.sha256), 'utf8') === attempt.output
+    ),
     'The completed investigation output is missing from its retained evidence. Run its block again.'
   );
   ctx.signal.throwIfAborted();
-  const groupEvidence = requireGroupProof(ctx.issue, ctx.flow, tree, ctx.block);
+  const groupEvidence = requireGroupProof(ctx.issue, ctx.flow, tree, ctx.block, ctx.evidenceRoot);
   return {
     revision: head,
     checkout: workspace.checkout,

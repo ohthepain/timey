@@ -46,9 +46,9 @@
       const run = current.runs.find(({ id }) => id === selectedRun) || current.runs[0];
       const panel = $('investigation-result-panel');
       const html = run
-        ? `<h2>Results · ${escape(new Date(run.startedAt).toLocaleString())}</h2><p class="muted">${escape(run.status)} · Revision ${escape(run.revision || 'not recorded')}</p><pre class="home-result">${escape(run.output)}</pre><details><summary>Instructions and settings used</summary><pre class="home-result">${escape(run.prompt)}\n${escape(JSON.stringify(run.settings || {}, null, 2))}</pre></details>${renderEvidence(run)}${legacyFollowups(run)}<h3>Issues from this run</h3>${run.issues.length ? `<ul>${run.issues.map((issue) => `<li><a href="/?issue=${encodeURIComponent(issue.id)}">${escape(issue.title)}</a> · ${issue.relation === 'created' ? 'Created this run' : 'Already tracked'} · ${escape(issue.location === 'archive' ? 'archived' : issue.state)}</li>`).join('')}</ul>` : '<p class="muted">No issues created by this run.</p>'}${run.error ? `<p role="alert">${escape(run.error)}</p>` : ''}`
+        ? `<h2>Results · ${escape(new Date(run.startedAt).toLocaleString())}</h2><p class="muted">${escape(run.status)} · Revision ${escape(run.revision || 'not recorded')}</p><pre class="home-result" data-ai-text data-ai-source="${escape(run.output)}">${escape(run.output)}</pre><details><summary>Instructions and settings used</summary><pre class="home-result">${escape(run.prompt)}\n${escape(JSON.stringify(run.settings || {}, null, 2))}</pre></details>${renderEvidence(run)}${legacyFollowups(run)}<h3>Issues from this run</h3>${run.issues.length ? `<ul>${run.issues.map((issue) => `<li><a href="/?issue=${encodeURIComponent(issue.id)}">${escape(issue.title)}</a> · ${issue.relation === 'created' ? 'Created this run' : 'Already tracked'} · ${escape(issue.location === 'archive' ? 'archived' : issue.state)}</li>`).join('')}</ul>` : '<p class="muted">No issues created by this run.</p>'}${run.error ? `<p role="alert">${escape(run.error)}</p>` : ''}`
         : '<p class="muted">No investigation runs yet. Review the prompt and select Run investigation.</p>';
-      if (panel.innerHTML !== html) panel.innerHTML = html;
+      window.timeyView.render(panel, html, 'investigation-result:' + issueId + ':' + run?.id);
     }
     function renderEvidence(run) {
       return `<details><summary>Evidence (${run.evidence.length})</summary>${run.evidence.map((file) => `<button class="small-button" type="button" data-open-file="${escape(file.path)}">${escape(file.label || 'Inspect evidence')}</button>`).join('')}</details>`;
@@ -92,10 +92,17 @@
             `<button class="home-run" type="button" data-investigation-run="${escape(run.id)}"${run.id === selectedRun ? ' aria-current="true"' : ''}><span>${escape(new Date(run.startedAt).toLocaleString())} · ${escape(run.status)}</span><small>${run.issues.filter(({ relation }) => relation === 'created').length} issues created</small></button>`
         )
         .join('');
-      if ($('investigation-run-list').innerHTML !== list) $('investigation-run-list').innerHTML = list;
-      $('investigation-discussions').innerHTML = current.discussions
-        .map((run) => `<article><pre class="home-result">${escape(run.output)}</pre></article>`)
-        .join('');
+      window.timeyView.render($('investigation-run-list'), list, 'investigation-runs:' + issueId);
+      window.timeyView.render(
+        $('investigation-discussions'),
+        current.discussions
+          .map(
+            (run) =>
+              `<article><pre class="home-result" data-ai-text data-ai-source="${escape(run.output)}">${escape(run.output)}</pre></article>`
+          )
+          .join(''),
+        'investigation-discussion:' + issueId
+      );
       for (const field of $('investigation-discussion-form').elements) field.disabled = locked || current.needsApproval;
     }
     async function refresh() {

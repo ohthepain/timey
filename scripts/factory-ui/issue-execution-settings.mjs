@@ -26,11 +26,11 @@ export function executionStarted(service, flow) {
   );
 }
 
-function inheritedSettings(root, folder) {
+function inheritedSettings(root, folder, resolveFolder = resolveFolderSettings) {
   try {
-    return resolveFolderSettings(root, folder);
+    return resolveFolder(root, folder);
   } catch (error) {
-    const inherited = resolveFolderSettings(root, null);
+    const inherited = resolveFolder(root, null);
     return { ...inherited, errors: [...inherited.errors, { key: 'folder', message: error.message }] };
   }
 }
@@ -51,8 +51,8 @@ function applyOverrides(root, resolved, overrides) {
   resolved.errors = errors;
 }
 
-function retainExistingWork(root, flow, resolved, overrides) {
-  const project = resolveFolderSettings(root, null);
+function retainExistingWork(root, flow, resolved, overrides, resolveFolder = resolveFolderSettings) {
+  const project = resolveFolder(root, null);
   resolved.values.branch = deliveryTarget(flow).branch;
   resolved.sources.branch = 'Existing work';
   resolved.values.skill = 'none';
@@ -71,8 +71,8 @@ function applyDestination(flow, resolved) {
   resolved.sources.branch = flow.destination.pr ? 'Linked pull request' : 'Issue destination';
 }
 
-export function resolveIssueExecutionSettings(root, issue, flow, { started = false } = {}) {
-  const inherited = inheritedSettings(root, flow.folder);
+export function resolveIssueExecutionSettings(root, issue, flow, { started = false, resolveFolder } = {}) {
+  const inherited = inheritedSettings(root, flow.folder, resolveFolder);
   const overrides = { ...localIssueModelOverrides(root, issue.id), ...flow.settings };
   if (flow.destination?.branch) overrides.branch = flow.destination.branch;
   const resolved = {
@@ -85,10 +85,14 @@ export function resolveIssueExecutionSettings(root, issue, flow, { started = fal
     resolved.values = { ...flow.executionSettings.values };
     resolved.sources = { ...flow.executionSettings.sources };
     resolved.errors = [];
-  } else if (started) retainExistingWork(root, flow, resolved, overrides);
+  } else if (started) retainExistingWork(root, flow, resolved, overrides, resolveFolder);
   applyDestination(flow, resolved);
   const basis = digest(JSON.stringify([inherited.basis, overrides, resolved.values, resolved.sources]));
   return { ...resolved, overrides, basis, frozen: Boolean(flow.executionSettings || started) };
+}
+
+function configuredInboxName(folders) {
+  return folders.find(({ name }) => name === 'Inbox')?.name ?? null;
 }
 
 export function savedIssueExecutionSettings(root, id) {
@@ -99,7 +103,10 @@ export function savedIssueExecutionSettings(root, id) {
   const header = parse(report.match(/^---\r?\n([\s\S]*?)\r?\n---/)[1]);
   const folders = readIssueFolderSettings(root);
   flow.folder =
-    folders.find(({ id: folderId }) => folderId === header.folder_id)?.name || flow.folder || header.folder || 'Inbox';
+    folders.find(({ id: folderId }) => folderId === header.folder_id)?.name ||
+    flow.folder ||
+    header.folder ||
+    configuredInboxName(folders);
   return resolveIssueExecutionSettings(root, { id }, flow, { started: executionStarted({}, flow) });
 }
 
@@ -108,6 +115,6 @@ export function executionBlockSkill(block, definition, settings) {
     block.skillExplicit === true || (block.skillExplicit === undefined && block.skill !== definition.defaultSkill);
   if (explicit) return block.skill;
   return ['work', 'tdd', 'edit', 'understand'].includes(block.kind) && settings?.values.skill !== 'none'
-    ? settings?.values.skill || block.skill
-    : block.skill;
+    ? settings?.values.skill || block.skill || definition.defaultSkill
+    : block.skill || definition.defaultSkill;
 }

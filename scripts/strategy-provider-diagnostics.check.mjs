@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { gitFixture } from './git-fixture.mjs';
 import { StrategyProvider } from './factory-ui/strategy-provider.mjs';
+import { safeGitHubFailure } from './factory-ui/github-request-failure.mjs';
 import { infrastructureFailure } from './factory-ui/strategy-repair.mjs';
 
 test('GitHub App 422 retains sanitized validation details and is not a transient retry', async (t) => {
@@ -43,3 +44,24 @@ process.exitCode=1;
   });
   assert.equal(readFileSync(requests, 'utf8'), 'request\n');
 });
+
+for (const failure of [
+  {
+    stderr: 'Post "https://api.github.com/graphql": read tcp: connection reset by peer ghs_secret',
+    code: 'ECONNRESET',
+  },
+  { stderr: '', killed: true, signal: 'SIGTERM', code: null },
+  { stderr: 'gh: still waiting ghs_secret', killed: true, signal: 'SIGTERM', code: null },
+]) {
+  test('GitHub App retains a redacted transport reason: ' + (failure.code || 'timeout'), () => {
+    const error = safeGitHubFailure(
+      Object.assign(Error('Command failed: gh api graphql ghs_secret'), failure),
+      undefined,
+      { token: 'ghs_secret' }
+    );
+    assert.match(error.message, failure.killed ? /timed out/i : /connection reset by peer/);
+    assert.equal(infrastructureFailure(error), true);
+    assert.equal(error.message.includes('ghs_secret'), false);
+    assert.equal(JSON.stringify(error).includes('ghs_secret'), false);
+  });
+}

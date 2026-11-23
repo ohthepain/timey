@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 
 export async function flowIssueFoldersBrowserChecks(page, issueId, folder) {
   const sidebar = page.locator('#issue-list');
-  const member = () => sidebar.locator(`[data-issue="${issueId}"]`);
+  const member = () => sidebar.locator(`#open-issues [data-issue="${issueId}"]`);
   const group = (name) =>
     sidebar
       .locator('.issue-folder')

@@ -1,3 +1,4 @@
+import { requireUnmergedIssue } from './merged-issue.mjs';
 import {
   linkSync,
   lstatSync,
@@ -15,6 +16,12 @@ import { parse, parseDocument } from 'yaml';
 import { git, requireThat } from './common.mjs';
 import { sharedIssueQueueEnabled } from './shared-issue-config.mjs';
 import { formatIssueReport } from './issue-report-format.mjs';
+import {
+  commitStoredReport,
+  deleteRegisteredReport,
+  moveRegisteredReport,
+  registeredProjectStores,
+} from './stores/report-access.mjs';
 
 const directories = { open: '.issues', closed: '.issues/closed', archive: '.issues/archive' };
 
@@ -64,6 +71,7 @@ function sameFile(left, right) {
 
 export function moveStoredIssue(root, id, from, to, { expectedContent } = {}) {
   requireThat(from !== to, 'Choose a different issue location.');
+  if (registeredProjectStores(root)) return moveRegisteredReport(root, id, from, to, expectedContent);
   const source = storedIssuePath(root, id, from);
   const destination = storedIssuePath(root, id, to);
   const lock = join(root, '.issues/factory.lock');
@@ -103,6 +111,7 @@ function assertExpectedReport(path, id, expectedContent) {
 }
 
 export function formatArchivedIssue(root, id, expectedContent) {
+  if (registeredProjectStores(root)) return moveRegisteredReport(root, id, 'archive', 'archive', expectedContent);
   const path = storedIssuePath(root, id, 'archive');
   const lock = join(root, '.issues/factory.lock');
   mkdirSync(lock);
@@ -133,10 +142,26 @@ function replaceReport(path, content, mode) {
 }
 
 export function renameStoredIssue(root, issue, title) {
-  updateStoredIssueMetadata(root, issue, { title });
+  return updateStoredIssueMetadata(root, issue, { title });
+}
+
+function changedMetadata(issue, changes) {
+  const content = issue.content;
+  const header = content.match(/^(---\r?\n)([\s\S]*?)(\r?\n---(?:\r?\n|$))/);
+  requireThat(header, 'The issue report has no valid metadata.');
+  const metadata = parseDocument(header[2]);
+  requireThat(
+    !metadata.errors.length && metadata.get('id') === issue.id,
+    'The report does not belong to the selected issue.'
+  );
+  for (const [key, value] of Object.entries(changes)) metadata.set(key, value);
+  const replacement = metadata.toString().trimEnd().replaceAll('\n', header[1].slice(3));
+  return formatIssueReport(header[1] + replacement + header[3] + content.slice(header[0].length));
 }
 
 export function updateStoredIssueMetadata(root, issue, changes) {
+  requireUnmergedIssue(root, issue.id);
+  if (registeredProjectStores(root)) return commitStoredReport(root, issue, changedMetadata(issue, changes));
   const path = storedIssuePath(root, issue.id, issue.location);
   const lock = join(root, '.issues/factory.lock');
   mkdirSync(lock);
@@ -145,23 +170,15 @@ export function updateStoredIssueMetadata(root, issue, changes) {
     requireThat(details, 'The issue report is missing.');
     const content = readFileSync(path, 'utf8');
     requireThat(content === issue.content, 'The issue report changed. Refresh before saving.');
-    const header = content.match(/^(---\r?\n)([\s\S]*?)(\r?\n---(?:\r?\n|$))/);
-    requireThat(header, 'The issue report has no valid metadata.');
-    const metadata = parseDocument(header[2]);
-    requireThat(
-      !metadata.errors.length && metadata.get('id') === issue.id,
-      'The report does not belong to the selected issue.'
-    );
-    for (const [key, value] of Object.entries(changes)) metadata.set(key, value);
-    const replacement = metadata.toString().trimEnd().replaceAll('\n', header[1].slice(3));
-    const next = header[1] + replacement + header[3] + content.slice(header[0].length);
-    replaceReport(path, formatIssueReport(next), details.mode);
+    replaceReport(path, changedMetadata(issue, changes), details.mode);
   } finally {
     rmdirSync(lock);
   }
 }
 
 export function deletePendingIssueReport(root, issue) {
+  requireThat(issue.state === 'needs-approval', 'Only an issue awaiting approval can be deleted here.');
+  if (registeredProjectStores(root)) return deleteRegisteredReport(root, issue, 'pending');
   const path = storedIssuePath(root, issue.id, 'open');
   const lock = join(root, '.issues/factory.lock');
   mkdirSync(lock);
@@ -176,6 +193,10 @@ export function deletePendingIssueReport(root, issue) {
 }
 
 export function deleteArchivedIssueReport(root, id, expectedContent) {
+  if (registeredProjectStores(root)) {
+    requireThat(typeof expectedContent === 'string', 'The expected archived report is required.');
+    return deleteRegisteredReport(root, { id, content: expectedContent, location: 'archive' }, 'archive');
+  }
   const path = storedIssuePath(root, id, 'archive');
   const lock = join(root, '.issues/factory.lock');
   mkdirSync(lock);
@@ -200,6 +221,7 @@ export function configuredClosedState(root) {
 }
 
 export function migrateClosedIssues(root) {
+  if (registeredProjectStores(root)) return [];
   if (sharedIssueQueueEnabled(root)) return [];
   const closed = configuredClosedState(root);
   requireThat(closed, 'Configure a closed lifecycle state before migrating reports.');

@@ -93,7 +93,7 @@ export function checkReadiness(service, id, state) {
     readinessKey: basis,
     summary: 'Checking the next action without starting work.',
   });
-  service.perform(run, async () => {
+  service.perform(run, async (service) => {
     let result;
     try {
       result = await inspectReadiness(service, queue, issue, runs, run);

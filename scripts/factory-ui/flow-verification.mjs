@@ -1,11 +1,12 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { dependencyPreflight, workspacePackages } from '../verify-preflight.mjs';
 import { digest, git, requireThat } from './common.mjs';
 import { commandSummary, verificationInput } from './checks.mjs';
 import { deliveryTarget, latestCurrentAttempt, requestData, upstreamBlocks } from './flow-block-data.mjs';
 import { mergeCheckPlan } from '../verify-merge-checks.mjs';
+import { evidencePath } from './stores/evidence.mjs';
 
 export const workVerificationScript = fileURLToPath(new URL('../verify.mjs', import.meta.url));
 function upstreamWorkPlans({ flow, block }) {
@@ -242,11 +243,12 @@ export async function runFlowVerification(ctx, workspace, folder, execute) {
   );
   const result = JSON.parse(line.slice('FLOW_RESULT '.length));
   result.base = workspace.base;
-  result.proof = (result.summaries ?? []).map(fileProof);
-  result.supportingProof = (result.summaries ?? [])
-    .flatMap((path) => JSON.parse(readFileSync(path, 'utf8')).checks ?? [])
-    .flatMap((check) => [check.log, ...(check.artifacts ?? []).map((file) => file.path)])
-    .map(fileProof);
+  result.proof = (result.summaries ?? []).map((path) => fileProof(path, ctx.evidenceRoot));
+  result.supportingProof = (result.summaries ?? []).flatMap((path) =>
+    (JSON.parse(readFileSync(evidencePath(ctx.evidenceRoot, path), 'utf8')).checks ?? [])
+      .flatMap((check) => [check.log, ...(check.artifacts ?? []).map((file) => file.path)])
+      .map((file) => fileProof(file, ctx.evidenceRoot, path))
+  );
   return { result, evidence: [commandLog, ...(result.summaries ?? []).map(summaryEvidence)] };
 }
 
@@ -254,6 +256,7 @@ function summaryEvidence(path) {
   return { path, key: 'report', label: 'Verification summary' };
 }
 
-function fileProof(path) {
-  return { path, sha256: digest(readFileSync(path)) };
+function fileProof(path, root, parent) {
+  const original = !isAbsolute(path) && parent ? resolve(dirname(parent), path) : path;
+  return { path: original, sha256: digest(readFileSync(evidencePath(root, path, undefined, parent))) };
 }

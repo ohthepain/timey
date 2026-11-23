@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { formatArgs, formattingFiles } from '../format-files.mjs';
 import { git, requireThat } from './common.mjs';
+import { permissionFailure } from './strategy-repair.mjs';
 
 const gitOperations = ['MERGE_HEAD', 'CHERRY_PICK_HEAD', 'REVERT_HEAD', 'rebase-merge', 'rebase-apply', 'sequencer'];
 const paths = (checkout, ...args) =>
@@ -70,7 +71,10 @@ function mergeIdentity(checkout, allowed) {
 
 function requireStagedResolution(checkout, result) {
   requireThat(result.status !== 'blocked', result.summary);
-  requireThat(conflicts(checkout).length === 0, 'Codex left unresolved conflicts.');
+  requireThat(
+    conflicts(checkout).length === 0,
+    'Codex left unresolved conflicts. ' + (result.summary || 'Inspect the retained worker response.')
+  );
   requireThat(
     !git(checkout, 'ls-files', '-mo', '--exclude-standard', '-z'),
     'The resolution left unstaged or untracked files.'
@@ -84,22 +88,70 @@ function conflictFailure(error, files, evidence = []) {
   return error;
 }
 
-async function resolveConflicts({ checkout, branch: issueBranch }, target, files, invoke, repair, signal) {
-  const allowed = new Set(files);
-  let evidence;
+function conflictRetryMessage(error, attempt) {
+  if (attempt === 3) {
+    error.message = 'Automatic conflict resolution stopped after 3 attempts. ' + error.message;
+    throw error;
+  }
+  return error.message;
+}
+
+async function commitConflictResolution(checkout, result, invoke, signal) {
   try {
-    const identity = mergeIdentity(checkout, allowed);
-    requireThat(identity[0] === target && identity[2] === issueBranch, 'The merge target or issue branch changed.');
-    const result = await repair(files, target);
-    evidence = result.evidence;
+    requireStagedResolution(checkout, result);
+    await invoke('git', ['commit', '--no-edit']);
+    return null;
+  } catch (error) {
+    const terminal = [signal.aborted, permissionFailure(error), result.blocker === 'human-input'];
+    if (terminal.some(Boolean)) throw error;
+    return error;
+  }
+}
+
+async function resolveConflictAttempts({
+  checkout,
+  target,
+  files,
+  invoke,
+  repair,
+  signal,
+  allowed,
+  identity,
+  evidence,
+}) {
+  let previousFailure;
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    signal.throwIfAborted();
+    const result = await repair(files, target, { attempt, previousFailure });
+    evidence.push(...(result.evidence || []));
     signal.throwIfAborted();
     requireThat(
       JSON.stringify(mergeIdentity(checkout, allowed)) === JSON.stringify(identity),
       'The resolution changed the merge or staged changes outside the conflicted files.'
     );
-    requireStagedResolution(checkout, result);
-    await invoke('git', ['commit', '--no-edit']);
-    return evidence;
+    const failure = await commitConflictResolution(checkout, result, invoke, signal);
+    if (!failure) return evidence;
+    previousFailure = conflictRetryMessage(failure, attempt);
+  }
+}
+
+async function resolveConflicts({ checkout, branch: issueBranch }, target, files, invoke, repair, signal) {
+  const allowed = new Set(files);
+  const evidence = [];
+  try {
+    const identity = mergeIdentity(checkout, allowed);
+    requireThat(identity[0] === target && identity[2] === issueBranch, 'The merge target or issue branch changed.');
+    return await resolveConflictAttempts({
+      checkout,
+      target,
+      files,
+      invoke,
+      repair,
+      signal,
+      allowed,
+      identity,
+      evidence,
+    });
   } catch (error) {
     throw conflictFailure(error, files, evidence);
   }
@@ -239,8 +291,21 @@ function reportReplayFailure(replay, error) {
   throw error;
 }
 
+export async function abortPendingMerge(workspace, invoke) {
+  const { checkout, branch: issueBranch } = workspace;
+  requireThat(branch(checkout) === issueBranch, 'The issue branch changed. Open the managed issue branch and retry.');
+  const active = gitOperations.filter((name) =>
+    existsSync(git(checkout, 'rev-parse', '--path-format=absolute', '--git-path', name))
+  );
+  if (!active.includes('MERGE_HEAD')) return;
+  requireThat(active.length === 1, 'Finish the other Git operation before updating the issue branch.');
+  await invoke('git', ['merge', '--abort']);
+}
+
 export async function updateIssueBranch(workspace, upstream, invoke, repair, signal) {
   const { checkout } = workspace;
+  signal.throwIfAborted();
+  await abortPendingMerge(workspace, invoke);
   requireIdleCheckout(workspace);
   const target = await fetchIssueTarget(checkout, upstream, invoke);
   signal.throwIfAborted();

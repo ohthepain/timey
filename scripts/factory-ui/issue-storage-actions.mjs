@@ -64,8 +64,8 @@ function isActive(service, id) {
   );
 }
 
-function finishLocalMove(root, action, id, content) {
-  if (action === 'archive') formatArchivedIssue(root, id, content);
+async function finishLocalMove(root, action, id, content) {
+  if (action === 'archive') await formatArchivedIssue(root, id, content);
   return { id, status: action === 'archive' ? 'archived' : 'restored' };
 }
 
@@ -84,7 +84,7 @@ function investigationMove(service, action, id) {
   return { direct, restoreOpen };
 }
 
-function moveOne(service, action, id) {
+async function moveOne(service, action, id) {
   requireThat(!isActive(service, id), 'Wait for the current issue operation to finish.');
   const { direct, restoreOpen } = investigationMove(service, action, id);
   if (direct || restoreOpen)
@@ -96,7 +96,10 @@ function moveOne(service, action, id) {
     action === 'archive' ? [direct ? 'open' : 'closed', 'archive'] : ['archive', restoreOpen ? 'open' : 'closed'];
   const path = storedIssuePath(service.root, id, from);
   if (!existsSync(path) && existsSync(storedIssuePath(service.root, id, to)))
-    return { ...finishLocalMove(service.root, action, id), ...(action === 'archive' ? { alreadyArchived: true } : {}) };
+    return {
+      ...(await finishLocalMove(service.root, action, id)),
+      ...(action === 'archive' ? { alreadyArchived: true } : {}),
+    };
   const { content } = readSavedReport(service.root, id, from);
   requireThat(
     direct || restoreOpen || reportHeader(content).state === configuredClosedState(service.root),
@@ -104,7 +107,7 @@ function moveOne(service, action, id) {
   );
   const result = service.sharedIssues?.moveStorage(id, action, content);
   if (result) return { id, ...result };
-  moveStoredIssue(service.root, id, from, to, { expectedContent: content });
+  await moveStoredIssue(service.root, id, from, to, { expectedContent: content });
   return finishLocalMove(service.root, action, id, content);
 }
 
@@ -136,7 +139,10 @@ export async function moveIssueStorage(service, input) {
   try {
     for (const id of ids) {
       try {
-        results.push({ ...moveOne(service, input.action, id), ...(byNumber ? { issueNumber: numbers[id] } : {}) });
+        results.push({
+          ...(await moveOne(service, input.action, id)),
+          ...(byNumber ? { issueNumber: numbers[id] } : {}),
+        });
       } catch (error) {
         results.push({ id, ...(byNumber ? { issueNumber: numbers[id] } : {}), status: 'failed', error: error.message });
       }

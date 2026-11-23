@@ -25,8 +25,8 @@ export const captureAssessment = z
   })
   .strict();
 
-export async function assessCapture(description, lifecycle) {
-  const runtime = createDiscussionRuntime();
+export async function assessCapture(description, lifecycle, root) {
+  const runtime = createDiscussionRuntime(undefined, { root });
   try {
     await runtime.begin({ purpose: 'Capture assessment only; never start work.', lifecycle });
     const combined = lifecycle.some((s) => s.combinedClarify === true);

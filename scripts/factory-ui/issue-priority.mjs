@@ -1,8 +1,10 @@
+import { requireUnmergedIssue } from './merged-issue.mjs';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { readQueue } from './data.mjs';
 import { appendCompletion } from '../factory-completion.mjs';
 import { digest, requireThat } from './common.mjs';
+import { afterReportWrite } from './stores/report-access.mjs';
 
 export function changePriority(service, input) {
   service.ownServer();
@@ -19,6 +21,7 @@ export function changePriority(service, input) {
 }
 
 export function setPriority(service, input) {
+  requireUnmergedIssue(service.root, input.issueId);
   service.ownServer();
   const queue = readQueue(service.root);
   const issue = queue.issues.find((entry) => entry.id === input.issueId);
@@ -43,13 +46,15 @@ export function setPriority(service, input) {
     stage_records: [],
     priority_update: choice.id,
   };
-  appendCompletion(
-    service.root,
-    issue,
-    result,
-    run,
-    [{ path: join(service.root, '.issues', issue.id + '.md'), sha256: digest(issue.content) }],
-    null
+  return afterReportWrite(
+    appendCompletion(
+      service.root,
+      issue,
+      result,
+      run,
+      [{ path: join(service.root, '.issues', issue.id + '.md'), sha256: digest(issue.content) }],
+      null
+    ),
+    () => ({ priority: choice.id })
   );
-  return { priority: choice.id };
 }

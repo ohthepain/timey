@@ -59,6 +59,25 @@ Use recorded times and saved attempt order to place events across threads.
 Report missing history and uncertain ordering in the retro. Save the result
 outside the worktree so it remains available after Cleanup.
 
+Retro retains the complete redacted report, timeline, attempts, and linked turns
+as separate JSON files with a small index, byte/character lengths and SHA-256
+digests. Its initial message contains only that index. The index is linked from
+the saved result outside the issue worktree, so Cleanup does not remove it.
+No section is truncated. Missing provider history remains explicitly marked.
+
+Retro and project-owned temporary discussions use an isolated Codex process
+with the project checkout as the working directory, native file/search/Git
+inspection enabled, a read-only sandbox and no approval escalation. They can
+inspect relevant source, linked evidence and recent Git history/diffs. Writes
+and workflow actions remain unavailable. The issue checkout path is supplied
+when available; the runner must distinguish revisions and uncommitted state.
+Temporary discussion context is supplied through a complete JSON file, and
+inputs/instructions over 16,000 characters are supplied through file references.
+Those temporary files are removed when the session ends. Model instructions
+require bounded searches/reads, citations and disclosure of uninspected evidence;
+access to the full history does not claim every record was read. This bounds
+initial input rather than history collection memory or cumulative model context.
+
 In shared queue mode, the report can travel with the queue. Local transcripts,
 worktrees, and runtime records stay on their runner.
 [Shared queue design](shared-issue-queue.md)

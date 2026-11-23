@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { mergedDelivery } from './merged-issue.mjs';
 import { redactValue } from './activity.mjs';
 import { digest, requireThat } from './common.mjs';
 import { issueDependencies } from './data.mjs';
@@ -20,8 +21,14 @@ function candidateData({ issue, flow }, knownIds) {
   };
 }
 
-async function suggest(prompt, candidates, members) {
-  const runtime = createDiscussionRuntime();
+function hasBlockHistory(flow) {
+  return [...flow.blocks, ...(flow.retiredBlocks ?? [])].some(
+    (block) => block.kind !== 'request' && block.attempts.length
+  );
+}
+
+async function suggest(root, prompt, candidates, members) {
+  const runtime = createDiscussionRuntime(undefined, { root });
   let timer;
   try {
     const response = await Promise.race([
@@ -65,7 +72,7 @@ export class FlowFolderSelection {
     this.recommend =
       recommend ||
       ((strategy, candidates, members) =>
-        suggest(folderStrategy(flows.service.root, strategy).prompt, candidates, members));
+        suggest(flows.service.root, folderStrategy(flows.service.root, strategy).prompt, candidates, members));
     this.previews = new Map();
   }
 
@@ -82,15 +89,14 @@ export class FlowFolderSelection {
     const service = this.flows.service;
     return (
       !issue.closed &&
+      !mergedDelivery(flow) &&
       !['in-progress', 'in-review', 'ready-for-commit', 'resolved'].includes(issue.state) &&
       !flowWorkspace(service, flow) &&
       !flow.closing &&
       !['playing', 'waiting'].includes(this.flows.autoplay.get(issue.id)?.mode) &&
       !service.issueChats?.active?.has(issue.id) &&
       !issueHasActiveWork(service, issue.id) &&
-      ![...flow.blocks, ...(flow.retiredBlocks ?? [])].some(
-        (block) => block.kind !== 'request' && block.attempts.length
-      ) &&
+      !hasBlockHistory(flow) &&
       !service.store.runs.some((run) => run.issueId === issue.id && run.kind === 'issue-work')
     );
   }
@@ -133,7 +139,7 @@ export class FlowFolderSelection {
     return this.savePreview(input, scanning, candidates, results);
   }
 
-  savePreview(input, scanning, candidates, results) {
+  async savePreview(input, scanning, candidates, results) {
     const allowed = new Map(candidates.map((row) => [row.issue.id, this.basis(row)]));
     requireThat(Array.isArray(results), 'The strategy did not return an issue selection.');
     const reasons = new Map();
@@ -150,7 +156,7 @@ export class FlowFolderSelection {
     while (this.previews.size > 100) this.previews.delete(this.previews.keys().next().value);
     const response = { id, candidates: recommended };
     if (scanning && input.autoApprove === true && recommended.length)
-      Object.assign(response, this.applyScan(input.folder, id, [...reasons.keys()]));
+      Object.assign(response, await this.applyScan(input.folder, id, [...reasons.keys()]));
     return response;
   }
 
@@ -183,7 +189,7 @@ export class FlowFolderSelection {
     });
   }
 
-  applyScan(folder, id, issueIds) {
+  async applyScan(folder, id, issueIds) {
     const preview = this.previews.get(id);
     requireThat(preview?.scanning && preview.folder === folder, 'Run a fresh scan before moving issues.');
     const rows = this.pick(this.entries(), issueIds);
@@ -196,7 +202,7 @@ export class FlowFolderSelection {
         'A recommended issue is no longer eligible. Run a fresh scan before moving issues.'
       );
     }
-    const result = this.move(rows, folder);
+    const result = await this.move(rows, folder);
     this.previews.delete(id);
     return result;
   }
@@ -205,8 +211,8 @@ export class FlowFolderSelection {
     throw Error('Every issue needs a folder. Move selected issues to another folder.');
   }
 
-  move(rows, folder) {
-    for (const { issue, flow } of rows) this.flows.moveIssueToFolder(issue, flow, folder);
+  async move(rows, folder) {
+    for (const { issue, flow } of rows) await this.flows.moveIssueToFolder(issue, flow, folder);
     return { moved: rows.length };
   }
 }

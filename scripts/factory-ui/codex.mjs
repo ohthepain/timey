@@ -1,5 +1,7 @@
+import { createChatToolMcp } from './chat-tool-mcp.mjs';
 import { approvalReply } from './approval-options.mjs';
 import { turnFailure } from './turn-failure.mjs';
+import { validateTextInput } from './codex-input.mjs';
 import { redactValue } from './activity.mjs';
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
@@ -13,11 +15,13 @@ export class CodexConnection {
     args = ['app-server', '--listen', 'stdio://'],
     onEvent = () => {},
     experimentalApi = false,
+    mcpTools,
   } = {}) {
     this.command = command;
     this.args = args;
     this.onEvent = onEvent;
     this.experimentalApi = experimentalApi;
+    this.mcpTools = mcpTools;
     this.pending = new Map();
     this.requests = new Map();
     this.turns = new Map();
@@ -37,10 +41,15 @@ export class CodexConnection {
   }
   async connect() {
     this.phase('connecting', 'initialize');
-    this.child = spawn(this.command, this.args, { env: cleanEnvironment(), stdio: ['pipe', 'pipe', 'pipe'] });
-    this.child.on('error', (error) => this.fail(error));
+    const toolArgs = await this.prepareChatTools();
+    requireThat(!this.closing, 'This Codex connection closed before startup completed.');
+    this.child = spawn(this.command, [...toolArgs, ...this.args], {
+      env: cleanEnvironment(),
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    this.child.on('error', (error) => this.disconnected(error));
     this.child.on('exit', () =>
-      this.fail(Error('Codex disconnected. Reconcile the saved conversation before resuming.'))
+      this.disconnected(Error('Codex disconnected. Reconcile the saved conversation before resuming.'))
     );
     createInterface({ input: this.child.stdout }).on('line', (line) => this.receive(line));
     this.child.stderr.on('data', () => {}); // Do not forward local configuration or credential diagnostics to the browser.
@@ -51,6 +60,22 @@ export class CodexConnection {
     this.send({ method: 'initialized' });
     this.phase('connected', 'initialize');
     return initialized;
+  }
+  async prepareChatTools() {
+    if (!this.mcpTools) return [];
+    const adapter = await createChatToolMcp({ tools: this.mcpTools, active: () => this.turns.size > 0 });
+    this.toolMcp = adapter;
+    if (this.closing) await this.closeChatTools();
+    return adapter.args;
+  }
+  closeChatTools() {
+    const adapter = this.toolMcp;
+    this.toolMcp = null;
+    return adapter?.close();
+  }
+  disconnected(error) {
+    void this.closeChatTools();
+    this.fail(error);
   }
   send(value) {
     this.child.stdin.write(JSON.stringify(value) + '\n');
@@ -174,7 +199,8 @@ export class CodexConnection {
     onStartup = () => {},
     issueId = null,
     settingsRoot = cwd,
-    instructions
+    instructions,
+    dynamicTools
   ) {
     await this.ready();
     onStartup({ status: 'starting' });
@@ -189,6 +215,7 @@ export class CodexConnection {
         ...permissionToolConfig(sandbox),
         serviceName: 'timey-factory-ui',
         ...(instructions === undefined ? {} : { developerInstructions: instructions }),
+        dynamicTools,
         model: settings.model,
       },
       () =>
@@ -221,6 +248,7 @@ export class CodexConnection {
     await this.call('thread/unarchive', { threadId });
   }
   async turn(threadId, cwd, prompt, outputSchema, extraInput = [], settings = null, receipt = null) {
+    validateTextInput(prompt);
     requireThat(!this.turns.has(threadId), 'This conversation already has running work.');
     let resolve, reject;
     const completion = new Promise((yes, no) => {
@@ -273,7 +301,9 @@ export class CodexConnection {
     this.starting = null;
   }
   close() {
+    this.closing = true;
     this.child?.kill('SIGTERM');
+    void this.closeChatTools();
   }
 }
 

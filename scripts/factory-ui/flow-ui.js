@@ -2,6 +2,7 @@
   'use strict';
 
   const $ = (id) => document.getElementById(id);
+  const view = window.timeyView;
   const initialSelection = new URL(location.href).searchParams;
   const state = {
     index: { issues: [], folders: [], catalog: [] },
@@ -25,11 +26,11 @@
     tab: 'details',
     search: '',
     draggedIssueId: null,
-    collapsedFolders: new Set(),
-    collapsedCollections: new Set(['closed-issues', 'archived-issues']),
+    collapsedFolders: new Set(view.read('flow-collapsed-folders', [])),
+    collapsedCollections: new Set(view.read('flow-collapsed-collections', ['closed-issues', 'archived-issues'])),
     archivedIssues: null,
     collapsedSearchFolders: new Set(),
-    drafts: new Map(),
+    drafts: new Map(Object.entries(view.read('flow-drafts', {}))),
     repoFiles: new Map(),
     loading: false,
     pending: false,
@@ -42,7 +43,10 @@
     captureId: null,
     checkedBlock: null,
     toastTimer: null,
+    storeSelection: null,
   };
+  const issueStoreUI = window.createIssueStoreUI({ request: json, post, changed: () => load(true) });
+  const issueOwnershipUI = window.createIssueOwnershipUI({ request: json, post, changed: () => load(true) });
   const kinds = {
     request: { icon: '💬', color: '#aaa49b', description: 'The goal and the evidence that will show it is done.' },
     sharpen: { icon: '◇', color: '#c6b66b', description: 'Refine the request and agree on what to do.' },
@@ -84,7 +88,6 @@
     };
   }
   let folderSelection = emptyFolderSelection();
-  let projectSettings = null;
   let inspectedFile = null;
   let inspectorRender;
   let folderConfig = null;
@@ -103,65 +106,10 @@
       void load(true);
     },
   });
-  const projectFolderSettingsUI = window.createFolderSettingsUI({
-    container: $('project-folder-settings'),
-    request: json,
-    notify: toast,
-    prefix: 'project-setting',
-    changed: () => {
-      void load(true);
-    },
-  });
+  const projectSettingsUI = window.createProjectSettingsUI({ request: json, changed: () => void load(true) });
 
   function folderLocation() {
     return state.fileFolder ? { root: state.fileFolder.root, path: state.fileFolder.path } : { folder: state.folder };
-  }
-
-  function renderProjectSettings(settings) {
-    projectSettings = settings;
-    const lifecycle = settings.lifecycle;
-    const policy = settings.humanInputPolicy;
-    $('project-settings-content').innerHTML =
-      `<p class="muted">${escape(settings.project)}</p><h3>Human input</h3><p>The factory checks required human input before dependent work.${policy.require_explicit_acceptance ? ' Closing a fixed issue requires your explicit acceptance.' : ''}${!policy.manual_checks_before_commit ? ' Local progress commits can keep outstanding human checks recorded.' : ''}</p><p class="muted">These rules come from the project adapter. There is no policy preset to select here. Each issue keeps its own requests and approvals.</p><h3>Lifecycle configuration</h3><p>${lifecycle.present ? 'Lifecycle configuration is present.' : 'Lifecycle configuration is missing.'}</p><p>${lifecycle.present ? 'The saved configuration is shown below. Each operation still checks its required human input.' : 'Editable work and verification need this configuration. Initialize the standard lifecycle below. If this project previously used custom states, restore its original configuration instead.'}</p><details><summary>${lifecycle.present ? 'View configuration' : 'Preview standard configuration'}</summary><pre>${escape(lifecycle.content)}</pre></details><p class="muted">${escape(lifecycle.path)}</p>`;
-    $('initialize-lifecycle').hidden = lifecycle.present;
-  }
-
-  async function openProjectSettings() {
-    projectSettings = null;
-    projectFolderSettingsUI.setLocation({ project: true });
-    if (projectFolderSettingsUI.value())
-      void projectFolderSettingsUI.refresh().catch((failure) => showError(failure.message));
-    $('project-settings-error').hidden = true;
-    $('project-settings-content').textContent = 'Loading project settings…';
-    $('initialize-lifecycle').hidden = true;
-    $('project-settings-dialog').showModal();
-    try {
-      renderProjectSettings(await json('/api/project-settings'));
-    } catch (error) {
-      $('project-settings-error').textContent = error.message;
-      $('project-settings-error').hidden = false;
-    }
-  }
-
-  async function initializeLifecycle() {
-    if (!projectSettings || $('initialize-lifecycle').disabled) return;
-    $('initialize-lifecycle').disabled = true;
-    $('project-settings-error').hidden = true;
-    try {
-      renderProjectSettings(
-        await json('/api/project-settings-initialize', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Factory-Action': 'manual' },
-          body: JSON.stringify({ digest: projectSettings.lifecycle.digest }),
-        })
-      );
-      toast('Lifecycle configuration saved. Retry the blocked step when ready.');
-    } catch (error) {
-      $('project-settings-error').textContent = error.message;
-      $('project-settings-error').hidden = false;
-    } finally {
-      $('initialize-lifecycle').disabled = false;
-    }
   }
 
   function escape(value) {
@@ -199,7 +147,34 @@
     const attempt = latest(block);
     if (attempt?.invalidatedAt && !runningStatuses.has(attempt.status) && attempt.status !== 'uncertain')
       return 'invalidated';
-    return attempt?.status || (block?.suggested ? 'suggested' : 'ready');
+    return attempt?.status || blockDefaultStatus(block);
+  }
+
+  function blockDefaultStatus(block) {
+    if (block?.historicallyCompleted) return 'completed';
+    return block?.suggested ? 'suggested' : 'ready';
+  }
+
+  function routeComplete(blocks) {
+    if (!blocks.length) return false;
+    const closureStart = blocks.findIndex((block) => ['close', 'retro', 'cleanup'].includes(block.kind));
+    const routeBlocks = closureStart < 0 ? blocks : blocks.slice(0, closureStart);
+    return routeBlocks.every(
+      (block) =>
+        status(block) === 'completed' || (block.kind === 'request' && Boolean(block.data?.fields) && !latest(block))
+    );
+  }
+
+  function playbackAction(blocks) {
+    const issue = state.view?.issue;
+    const location = issue?.location;
+    const closed = location === 'closed' || issue?.status === 'closed';
+    const playing = ['playing', 'waiting'].includes(state.view?.autoplay?.mode);
+    if (playing) return 'pause';
+    if (!issue || location === 'archive' || state.view?.grouping?.master) return 'hidden';
+    if (routeComplete(blocks)) return closed || state.view.flow.routeType === 'investigation' ? 'archive' : 'close';
+    if (closed || issue.readOnly) return 'hidden';
+    return blocks.some((block) => block.attempts?.length) ? 'resume' : 'start';
   }
 
   function isRunning(block) {
@@ -264,8 +239,13 @@
     return state.drafts.get(draftKey()) || {};
   }
 
+  function persistDrafts() {
+    view.write('flow-drafts', Object.fromEntries(state.drafts));
+  }
+
   function setDraft(name, value) {
     state.drafts.set(draftKey(), { ...draft(), [name]: value });
+    persistDrafts();
     const note = $('draft-note');
     if (note) {
       note.textContent = 'Unsaved changes';
@@ -280,15 +260,53 @@
 
   function renderErrors() {
     const waiting = serverControlUI.isWaitingForServer();
-    const message = waiting ? 'Waiting for server…' : state.error || state.connectionError;
+    const message = waiting
+      ? 'Waiting for server…'
+      : state.error ||
+        state.connectionError ||
+        (storeUnavailable()
+          ? 'Shared storage is unavailable. Browse cached history and keep local drafts; shared changes and new runs are paused.'
+          : '');
     if (document.documentElement.dataset.projectIssueRequestEmbed === 'true') {
       $('request-embed-error').hidden = !message;
-      $('request-embed-error-message').textContent = message;
+      view.text($('request-embed-error-message'), message);
       return;
     }
     $('error-banner').hidden = !message;
-    $('error-message').textContent = message;
-    $('dismiss-error').hidden = waiting;
+    view.text($('error-message'), message);
+    $('dismiss-error').hidden = waiting || storeUnavailable();
+  }
+
+  function storeUnavailable() {
+    return Boolean((state.index?.storeStatus || state.view?.storeStatus)?.unavailable);
+  }
+
+  function localStoreControl(action) {
+    return state.view?.issue?.localOwner && ['stop', 'pause'].includes(action);
+  }
+
+  function applyStoreAvailability() {
+    if (!storeUnavailable()) return;
+    document
+      .querySelectorAll(
+        '[data-action], [data-add-kind], #capture-submit, #export-flow-submit, #folder-form button[type="submit"], #rename-issue, #move-starting-branch, #starting-branch, #target-update-menu, #merge-state-menu, #issue-input-continue, #run-block, #inspector-body button[type="submit"]'
+      )
+      .forEach((button) => {
+        if (!localStoreControl(button.dataset.action)) button.disabled = true;
+      });
+    document
+      .querySelectorAll(
+        '#issue-flow-picker, #issue-settings-form, #issue-store-form, #rename-issue-form, #issue-grouping, [data-skill-picker]'
+      )
+      .forEach((element) => {
+        element.inert = true;
+      });
+    document.querySelectorAll('#inspector-body input, #inspector-body select').forEach((field) => {
+      field.disabled = true;
+    });
+    $('issue-playback').disabled ||= !localStoreControl(playbackAction(state.view?.flow?.blocks || []));
+    $('worktree-menu').querySelector('option[value="update"]').disabled = true;
+    updateIssueDecisionControls(true);
   }
 
   function toast(message) {
@@ -333,6 +351,12 @@
     changed: () => load(true),
   });
   const investigationUI = window.createInvestigationIssueUI({ request: json, post, changed: () => load(true) });
+  const investigationControls = window.createInvestigationFlowControls({
+    request: json,
+    post,
+    changed: () => load(true),
+    archive: archiveIssueWithUiState,
+  });
 
   function investigationActions(block) {
     if (block?.kind !== 'understand' || status(block) !== 'completed') return '';
@@ -355,7 +379,12 @@
               String(latest(a).endedAt || latest(a).startedAt || '')
             )
           );
+        const savedSelection = view.read('flow-selection:' + state.issueId, {});
+        const savedBlock = result.flow.blocks.find((block) => block.id === savedSelection.blockId);
+        if (savedBlock && ['details', 'conversation', 'artifacts'].includes(savedSelection.tab))
+          state.tab = savedSelection.tab;
         state.blockId =
+          savedBlock?.id ||
           result.flow.blocks.find((block) => isRunning(block))?.id ||
           attempted[0]?.id ||
           result.flow.blocks.find((block) => block.kind === 'request')?.id ||
@@ -375,7 +404,7 @@
 
   async function load(force = false, announce = false) {
     if (serverControlUI.isWaitingForServer()) return;
-    if (state.pending || (state.loading && !force)) {
+    if (!force && (state.pending || state.loading)) {
       if (announce) toast('Wait for the current action before refreshing.');
       return;
     }
@@ -397,7 +426,9 @@
       state.connectionError = '';
       $('connection-status').className = 'connection';
       $('connection-status').innerHTML = '<span class="connection-dot"></span> Live · 2s';
+      if (announce) state.error = '';
       applyView(result);
+      void refreshIssueStore();
       if (announce) toast('Saved flow refreshed.');
     } catch (error) {
       if (error.name === 'AbortError' || sequence !== state.sequence || serverControlUI.isWaitingForServer()) return;
@@ -433,6 +464,14 @@
 
   async function action(name, fields = {}, options = {}) {
     if (state.pending) return null;
+    if (storeUnavailable() && !localStoreControl(name)) {
+      renderErrors();
+      return null;
+    }
+    if (!options.global && state.view?.issue?.readOnly && !state.view.issue.readOnlyActions.includes(name)) {
+      showError(state.view.issue.readOnlyReason);
+      return null;
+    }
     const selected = state.issueId;
     const revision = state.view?.flow?.revision;
     if (!options.global && (!selected || revision == null)) {
@@ -469,9 +508,22 @@
   }
 
   function setBusy(busy) {
+    branchRepairUI.update(state.view);
     $('folder-workspace').inert = busy;
+    const frozenIssue = Boolean(state.view?.issue?.readOnly);
+    document.querySelectorAll('[data-open-palette]').forEach((button) => {
+      button.disabled = busy || frozenIssue;
+    });
+    document.querySelectorAll('[data-skill-picker]').forEach((picker) => {
+      picker.inert = frozenIssue;
+    });
+    $('issue-flow-picker').inert = frozenIssue;
+    $('issue-settings-form').inert = frozenIssue;
+    $('rename-issue-form').inert = frozenIssue;
+    $('rename-issue').disabled = busy || frozenIssue;
     $('issue-grouping').inert = busy;
     const attached = Boolean(state.view?.grouping?.master);
+    const frozen = Boolean(state.view?.issue?.readOnly);
     document
       .querySelectorAll(
         '[data-action], [data-add-kind], #capture-submit, #export-flow-submit, #folder-form button[type="submit"]'
@@ -480,6 +532,9 @@
         const runsBlock = ['start', 'continue'].includes(button.dataset.action);
         button.disabled =
           busy ||
+          (frozen &&
+            (button.dataset.addKind ||
+              (button.dataset.action && !state.view.issue.readOnlyActions.includes(button.dataset.action)))) ||
           (attached && Boolean(button.dataset.action) && !['comment', 'folder'].includes(button.dataset.action)) ||
           (runsBlock && operationPaused(activeBlock())) ||
           (button.id === 'delete-block' && Boolean(blockDeletionReason(activeBlock())));
@@ -495,9 +550,13 @@
         ].includes(field.id);
         field.disabled =
           busy ||
+          frozen ||
           (attached && Boolean(field.closest('#request-form, #block-form'))) ||
           (closureSetting && state.view?.issue?.status === 'closed');
       });
+    document.querySelectorAll('#inspector-body button[type="submit"]').forEach((button) => {
+      button.disabled = busy || frozen;
+    });
     const runBlock = $('run-block');
     runBlock.disabled =
       busy ||
@@ -514,13 +573,18 @@
       state.view.flow.blocks.some(isRunning);
     updatePlaybackAvailability(busy);
     $('close-publish').disabled = busy;
-    $('move-starting-branch').disabled = busy;
+    $('move-starting-branch').disabled = busy || frozen;
     const startingBranch = $('starting-branch');
     if (startingBranch)
       startingBranch.disabled = busy || !state.view?.startingPointEditable || !state.view.branches?.length;
-    $('target-update-menu').disabled = busy;
+    const branchBusy = busy || frozen || Boolean(state.view?.flow?.blocks.some(isRunning));
+    $('target-update-menu').disabled = branchBusy;
+    $('worktree-menu').querySelector('option[value="update"]').disabled = branchBusy;
     $('worktree-menu').disabled = busy || state.view?.environment?.worktreeExists !== true;
+    $('merge-state-menu').disabled = busy || frozen || Boolean(state.view?.flow?.blocks.some(isRunning));
     updateIssueDecisionControls(busy);
+    $('issue-store-form').inert = busy;
+    applyStoreAvailability();
   }
 
   function updateIssueDecisionControls(busy) {
@@ -532,13 +596,21 @@
       $(id).hidden = !pending;
       $(id).disabled = busy;
     }
-    $('close-with-reason').hidden = !issue || closed || pending || Boolean(state.view?.grouping?.master);
+    const routeAction = playbackAction(state.view?.flow?.blocks || []);
+    $('close-with-reason').hidden =
+      !issue ||
+      state.view?.flow?.routeType === 'investigation' ||
+      closed ||
+      pending ||
+      Boolean(state.view?.grouping?.master) ||
+      routeAction === 'close';
     $('close-with-reason').disabled = busy;
     $('issue-archive-menu').hidden = !closed;
     $('issue-archive-menu').disabled = busy;
     const archived = issue?.location === 'archive';
     for (const option of $('issue-archive-menu').options)
-      if (['archive', 'reveal', 'reopen'].includes(option.value)) option.hidden = archived;
+      if (['archive', 'reveal', 'reopen'].includes(option.value))
+        option.hidden = archived || (option.value === 'reopen' && issue?.readOnly);
     $('issue-archive-menu').options[0].textContent = archived ? 'Archived issue' : 'Archive';
     const closing = state.view?.flow?.closing;
     const awaiting = closed && closing && !closing.complete && !state.view.closureBusy;
@@ -551,16 +623,24 @@
   function updatePlaybackAvailability(busy) {
     const button = $('issue-playback');
     const playback = state.view?.autoplay;
-    const paused = playback?.mode === 'paused';
-    const closed = state.view?.issue?.status === 'closed';
+    const mode = playbackAction(state.view?.flow?.blocks || []);
+    const issue = state.view?.issue;
+    const routeAction = ['start', 'resume', 'pause'].includes(mode);
+    const closed = issue?.location === 'closed' || issue?.status === 'closed';
+    const showArchive = mode === 'archive';
     const pending = state.view?.issue?.state === 'needs-approval';
-    button.hidden = closed || Boolean(state.view?.grouping?.master);
-    $('closed-issue-indicator').hidden = !closed;
-    button.disabled = busy || !playback || pending || (paused && (state.newActionsPaused || closed));
+    button.hidden = mode === 'hidden';
+    $('closed-issue-indicator').hidden = !closed || showArchive;
+    button.disabled =
+      busy ||
+      !playback ||
+      (routeAction && pending) ||
+      (['start', 'resume'].includes(mode) && (state.newActionsPaused || closed || issue?.readOnly));
+    const unavailableAction = mode === 'close' ? 'close' : mode === 'archive' ? 'archive' : 'start or resume';
     button.title = !playback
-      ? 'Restart the Timey server to use Play'
-      : paused && state.newActionsPaused
-        ? 'Turn off No new actions to play'
+      ? `Restart the Timey server to ${unavailableAction} this issue`
+      : ['start', 'resume'].includes(mode) && state.newActionsPaused
+        ? 'Turn off No new actions to start or resume this issue'
         : '';
   }
 
@@ -629,7 +709,7 @@
       ...new Set([...(state.index.folders || []), ...issues.map((issue) => issue.folder).filter(Boolean)]),
     ];
     const row = (issue) =>
-      `<button class="issue-row${issue.id === state.issueId ? ' selected' : ''}" data-issue="${escape(issue.id)}" draggable="${issue.status !== 'closed' && !issue.activeBlock}" title="${escape(issue.title)}"${issue.id === state.issueId ? ' aria-current="page"' : ''}>${issue.activeBlock ? activeSpinner(issue.activeBlock) : statusIcon(issue.humanInput ? 'needs-input' : issue.status)}<span class="issue-name">${issue.issueNumber ? `#${escape(issue.issueNumber)} - ` : ''}${escape(issue.title)}${issue.humanInput ? '<span class="issue-input-label">Needs your input</span>' : ''}</span></button>`;
+      `<button class="issue-row${issue.id === state.issueId ? ' selected' : ''}" data-issue="${escape(issue.id)}" draggable="${issue.status !== 'closed' && !issue.readOnly && !issue.activeBlock}" title="${escape(issue.title)}"${issue.id === state.issueId ? ' aria-current="page"' : ''}>${issue.activeBlock ? activeSpinner(issue.activeBlock) : statusIcon(issue.humanInput ? 'needs-input' : issue.status)}<span class="issue-name">${issue.issueNumber ? `#${escape(issue.issueNumber)} - ` : ''}${escape(issue.title)}${issue.humanInput ? '<span class="issue-input-label">Needs your input</span>' : ''}</span></button>`;
     const groups = folders
       .map((folder) => {
         const children = issues.filter((issue) => issue.folder === folder && issue.status !== 'closed');
@@ -647,18 +727,40 @@
       `${issue.title} ${issue.issueNumber || ''}`.toLowerCase().includes(state.search.toLowerCase())
     );
     const collection = (id, name, content) =>
-      `<details id="${id}" class="issue-folder" data-collection${state.search || !state.collapsedCollections.has(id) ? ' open' : ''}><summary class="folder-toggle">${name}</summary><div class="folder-items">${content}</div></details>`;
+      `<details id="${id}" class="issue-folder" data-collection data-view-controlled-open${state.search || !state.collapsedCollections.has(id) ? ' open' : ''}><summary class="folder-toggle folder-disclosure">${name}</summary><div class="folder-items">${content}</div></details>`;
     const empty = '<p class="sidebar-empty">No matching issues.</p>';
-    $('issue-list').innerHTML =
-      `<div id="open-issues">${groups || empty}</div>` +
-      collection('closed-issues', 'Closed', closed.map(row).join('') || empty) +
-      collection(
-        'archived-issues',
-        'Archived',
-        state.archivedIssues
-          ? archive.map(row).join('') || empty
-          : '<p class="sidebar-empty">Open Archived to load its reports.</p>'
+    const statusCollections = [
+      { id: 'in-progress-issues', name: 'In progress', matches: (issue) => issue.status === 'running' },
+      {
+        id: 'blocked-status-issues',
+        name: 'Blocked',
+        matches: (issue) =>
+          issue.state !== 'needs-approval' &&
+          issue.status !== 'running' &&
+          (['blocked', 'need-input'].includes(issue.status) || issue.waitingForApproval),
+      },
+    ].map(({ id, name, matches }) => {
+      const members = issues.filter((issue) => !issue.paused && issue.status !== 'closed' && matches(issue));
+      return collection(
+        id,
+        `${name}<span class="folder-count">${members.length}</span>`,
+        members.map(row).join('') || empty
       );
+    });
+    view.render(
+      $('issue-list'),
+      statusCollections.join('') +
+        `<div id="open-issues">${groups || empty}</div>` +
+        collection('closed-issues', 'Closed', closed.map(row).join('') || empty) +
+        collection(
+          'archived-issues',
+          'Archived',
+          state.archivedIssues
+            ? archive.map(row).join('') || empty
+            : '<p class="sidebar-empty">Open Archived to load its reports.</p>'
+        ),
+      'flow-sidebar:' + state.index.project
+    );
   }
 
   function canMoveSidebarIssue(id, folder) {
@@ -730,6 +832,7 @@
       state.collapsedCollections.delete(collection.id);
       if (collection.id === 'archived-issues') void loadArchive();
     }
+    view.write('flow-collapsed-collections', [...state.collapsedCollections]);
   });
 
   function issueLabel(issue) {
@@ -745,7 +848,7 @@
   function updateFolderMarkup(element, html) {
     if (folderMarkup.get(element) === html) return;
     const field = element.contains(document.activeElement) ? document.activeElement : null;
-    element.innerHTML = html;
+    view.render(element, html, 'folder:' + state.folder + ':' + element.id);
     folderMarkup.set(element, html);
     if (field?.id) $(field.id)?.focus({ preventScroll: true });
   }
@@ -960,6 +1063,7 @@
       return;
     }
     $('issue-settings').hidden = false;
+    issueOwnershipUI.render(view.issue, view.storeStatus?.unavailable).catch((error) => showError(error.message));
     const fields = settings.fields || [];
     const values = settings.values || {};
     $('issue-settings-form').querySelector('button[type="submit"]').disabled = Boolean(settings.frozen);
@@ -1227,11 +1331,21 @@
     );
   }
 
+  const branchRepairUI = window.createBranchRepairUI({
+    button: $('fix-branch'),
+    action,
+    isBusy: () => state.pending,
+  });
+
   function renderEnvironment() {
+    branchRepairUI.update(state.view);
     const environment = state.view?.environment;
     $('environment').hidden = !environment;
     if (!environment) return;
     renderWorktreeHint(environment.worktreeExists);
+    const mergeMenu = $('merge-state-menu');
+    mergeMenu.hidden = !environment.merge;
+    mergeMenu.title = environment.merge?.conflicts.join(', ') || 'A local merge is awaiting completion.';
     const chips = [];
     if (environment.branch)
       chips.push(`<span class="environment-chip" title="Current issue branch">⑂ ${escape(environment.branch)}</span>`);
@@ -1345,6 +1459,10 @@
   async function loadDestinationBranches() {
     const dialog = $('destination-dialog');
     const result = await action('destination-branches');
+    const store = await issueStoreUI.fill($('destination-issue-store'), {
+      issueId: state.issueId,
+    });
+    $('destination-issue-store').dataset.saved = store.selected;
     if (!dialog.open) return;
     if (result) destinationChecks.set(state.issueId, result);
     renderGraph();
@@ -1459,11 +1577,74 @@
       status: `<span class="block-topline"><span class="block-icon" aria-hidden="true">${style.icon}</span>${escape(words(block.kind))}<span class="block-status${isRunning(block) && !attempt?.inputRequestedAt ? ' running' : ''}">${timing || escape(statusText(currentStatus, attempt))}</span></span>`,
       title: `<span class="block-label">${escape(block.label || words(block.kind))}</span>`,
       description: `<span class="block-description">${escape(description)}</span>`,
-      footer: `<span class="block-bottomline"><span>${escape(block.effectiveSkill || block.skill || (block.suggested ? 'Suggested next step' : 'Choose a skill'))}</span><span>${hasEvidence ? `${hasEvidence} evidence` : attempt ? `Attempt ${block.attempts.length}` : block.lane > 0 ? `Lane ${block.lane + 1}` : 'View details ↗'}</span></span>`,
+      footer: `<span class="block-bottomline"><span data-skill-picker="${escape(block.id)}" title="Choose this block’s skill">${escape(block.effectiveSkill || block.skill || 'Choose a skill')} ▾</span><span>${hasEvidence ? `${hasEvidence} evidence` : attempt ? `Attempt ${block.attempts.length}` : block.lane > 0 ? `Lane ${block.lane + 1}` : 'View details ↗'}</span></span>`,
     };
     return (
       '<span class="block-port top"></span>' + Object.values(parts).join('') + '<span class="block-port bottom"></span>'
     );
+  }
+
+  async function openBlockSkillPicker(blockId) {
+    const block = state.view?.flow.blocks.find((item) => item.id === blockId);
+    if (!block || block.readOnly || isRunning(block)) return;
+    const definition = state.index.catalog.find((item) => item.id === (block.definition ?? block.kind));
+    const issueId = state.issueId;
+    const dialog = document.createElement('dialog');
+    dialog.innerHTML =
+      '<h2>Block skill</h2><label class="field">Skill<select aria-label="Block skill"></select></label><p>Available choices and defaults come from this block type. Use Add skill… to edit this block’s user Markdown skill list.</p><form method="dialog"><button>Close</button></form>';
+    document.body.append(dialog);
+    dialog.addEventListener('close', () => dialog.remove(), { once: true });
+    const picker = window.createSkillSelect(dialog.querySelector('select'), {
+      onAdd: async () => {
+        if (state.issueId !== issueId) return dialog.close();
+        await action('open-block-extension', { blockId });
+        dialog.close();
+      },
+      onChange: async (skill) => {
+        if (state.issueId !== issueId) return dialog.close();
+        if (await action('update', { blockId, changes: { skill: skill === 'none' ? null : skill } })) dialog.close();
+      },
+      onSetup: async (names) => {
+        try {
+          const missing = names.filter((name) => !available.skills.some((skill) => skill.name === name));
+          const result = await post('project-discuss-action', { action: 'create', requestId: crypto.randomUUID() });
+          await post('project-discuss-action', {
+            action: 'send',
+            conversationId: result.selected.id,
+            clientId: crypto.randomUUID(),
+            text:
+              'Install these missing block skills for this project: ' +
+              missing.join(', ') +
+              '. Declared skill sources: ' +
+              JSON.stringify(definition?.skillSources || {}) +
+              '. Read user/skills/requirements.json for additional sources. Preserve existing custom skills and verify discovery.',
+            settings: { clarificationSkill: 'none', skills: ['skill-installer'] },
+            attachments: [],
+          });
+          toast('Skill installation requested in Project Discuss.');
+          dialog.close();
+        } catch (error) {
+          showError(error.message);
+        }
+      },
+    });
+    picker.update(
+      [
+        ...(definition?.skills || []).map((name) => ({ kind: 'skill', name, label: name, skill: name })),
+        { kind: 'value', name: 'none', label: 'No skill' },
+      ],
+      block.effectiveSkill || block.skill || 'none'
+    );
+    dialog.querySelector('select').disabled = true;
+    dialog.showModal();
+    let available;
+    try {
+      available = await json('/api/project-discuss-skills');
+      picker.discovered(available.skills);
+      dialog.querySelector('select').disabled = false;
+    } catch (error) {
+      showError(error.message);
+    }
   }
 
   function blockCard(block) {
@@ -1510,8 +1691,11 @@
       'closed',
       state.view.issue.location === 'closed' || state.view.issue.state === 'closed'
     );
-    $('graph').innerHTML =
-      `<svg class="graph-lines" aria-hidden="true"></svg>${baseNode}${layers.map((row) => `<div class="graph-row">${row.map(blockCard).join('')}</div>`).join('')}<button class="graph-add" data-open-palette aria-label="Add a step" title="Add a step">＋</button>${destination}`;
+    view.render(
+      $('graph'),
+      `<svg class="graph-lines" aria-hidden="true"></svg>${baseNode}${layers.map((row) => `<div class="graph-row">${row.map(blockCard).join('')}</div>`).join('')}<button class="graph-add" data-open-palette aria-label="Add a step" title="Add a step">＋</button>${destination}`,
+      'flow-graph:' + state.issueId
+    );
     $('graph').dataset.issue = state.issueId;
     requestAnimationFrame(() => {
       drawConnections();
@@ -1710,11 +1894,33 @@
         ? outputs
             .map(
               (output) =>
-                `<label class="field"><span>${escape(output.label)}</span>${readonlyInput(output.key, output, output.value)}</label>`
+                `<label class="field"><span>${escape(output.label)}</span><div data-ai-text data-ai-key="output-${escape(state.issueId)}-${escape(block.id)}-${escape(output.key)}" data-ai-source="${escape(displayValue(output.value))}">${readonlyInput(output.key, output, output.value)}</div></label>`
             )
             .join('')
         : '<p class="inline-empty">This block declares no outputs.</p>'
     }</section>`;
+  }
+
+  const investigationRunSelection = new Map();
+  const investigationRunKey = (block) => state.issueId + '/' + block.id;
+  function inquiryRunOptions(block) {
+    if (!['understand', 'investigate'].includes(block.kind)) return [];
+    return block.attempts.filter(
+      (attempt) => attempt.status === 'completed' && attempt.investigation?.mode !== 'discussion'
+    );
+  }
+  function investigationSourcePicker(block) {
+    if (!['generate-report', 'create-issues'].includes(block.kind)) return '';
+    const selected = investigationRunSelection.get(investigationRunKey(block));
+    const runs = state.view.flow.blocks.concat(state.view.flow.retiredBlocks || []).flatMap(inquiryRunOptions);
+    return `<label class="field">Source investigation run<select data-investigation-source="${escape(block.id)}"><option value="">Latest current completed run</option>${runs.map((attempt, index) => `<option value="${escape(attempt.id)}"${selected === attempt.id ? ' selected' : ''}>Run ${index + 1} · ${escape(date(attempt.startedAt))}</option>`).join('')}</select><small>Choose retained findings for the next output run.</small></label>`;
+  }
+  document.addEventListener('change', (event) => {
+    if (!event.target.hasAttribute('data-investigation-source')) return;
+    investigationRunSelection.set(state.issueId + '/' + event.target.dataset.investigationSource, event.target.value);
+  });
+  function investigationRunInput(block) {
+    return { investigationRunId: investigationRunSelection.get(investigationRunKey(block)) || undefined };
   }
 
   function declaredDetails(block, editable = false) {
@@ -1848,7 +2054,7 @@
     let result = '';
     if (attempt.result)
       result = typeof attempt.result === 'string' ? attempt.result : JSON.stringify(attempt.result, null, 2);
-    return `<div class="block-progress"><div class="progress-heading"><span>${statusIcon(attempt.status)} ${escape(statusText(attempt.status, attempt))}${attempt.invalidatedAt ? ' · Invalidated' : ''}</span><span class="progress-meta">Attempt ${index + 1}</span></div><p class="detail-copy">${escape(summary)}</p>${attempt.result?.pr ? prLink({ number: attempt.result.pr, url: attempt.result.url }) : ''}<p class="progress-meta" style="margin-top:9px">${escape(date(attempt.startedAt))}${attempt.endedAt ? ` · ended ${escape(date(attempt.endedAt))}` : ''}</p>${attempt.output ? `<pre class="attempt-output">${escape(attempt.output)}</pre>` : ''}${result && result !== summary ? `<pre class="attempt-output">${escape(result)}</pre>` : ''}${attempt.details?.length ? `<details data-preserve="details-${escape(attempt.id)}"><summary>Details used</summary><pre class="attempt-output">${escape(JSON.stringify(attempt.details, null, 2))}</pre></details>` : ''}${attempt.systemPrompt ? `<details data-preserve="prompt-${escape(attempt.id)}"><summary>System prompt used</summary><pre class="attempt-output">${escape(attempt.systemPrompt)}</pre></details>` : ''}${evidenceLinks(attempt)}</div>`;
+    return `<div class="block-progress" data-attempt-id="${escape(attempt.id)}"><div class="progress-heading"><span>${statusIcon(attempt.status)} ${escape(statusText(attempt.status, attempt))}${attempt.invalidatedAt ? ' · Invalidated' : ''}</span><span class="progress-meta">Attempt ${index + 1}</span></div><p class="detail-copy" data-ai-text data-ai-key="summary-${escape(attempt.id)}" data-ai-source="${escape(summary)}">${escape(summary)}</p>${attempt.result?.pr ? prLink({ number: attempt.result.pr, url: attempt.result.url }) : ''}<p class="progress-meta" style="margin-top:9px">${escape(date(attempt.startedAt))}${attempt.endedAt ? ` · ended ${escape(date(attempt.endedAt))}` : ''}</p>${attempt.output ? `<pre class="attempt-output" data-ai-text data-ai-key="live-${escape(attempt.id)}" data-ai-source="${escape(attempt.output)}">${escape(attempt.output)}</pre>` : ''}${result && result !== summary ? `<pre class="attempt-output" data-ai-text data-ai-key="result-${escape(attempt.id)}" data-ai-source="${escape(result)}">${escape(result)}</pre>` : ''}${attempt.details?.length ? `<details data-preserve="details-${escape(attempt.id)}"><summary>Details used</summary><pre class="attempt-output">${escape(JSON.stringify(attempt.details, null, 2))}</pre></details>` : ''}${attempt.systemPrompt ? `<details data-preserve="prompt-${escape(attempt.id)}"><summary>System prompt used</summary><pre class="attempt-output">${escape(attempt.systemPrompt)}</pre></details>` : ''}${evidenceLinks(attempt)}</div>`;
   }
 
   function comments(block) {
@@ -1893,9 +2099,9 @@
     if (prose && !entry) prose.remove();
     else if (prose && entry && prose.innerHTML !== entry.inspectorHtml) {
       prose.dataset.uiSource = entry.id;
-      preserveDisclosures(prose, () => {
-        prose.innerHTML = entry.inspectorHtml;
-      });
+      const scope = JSON.stringify([state.issueId, block.id, 'content']);
+      view.track(prose, scope);
+      view.render(prose, entry.inspectorHtml, scope);
     } else if (state.tab === 'details' && block && !block.readOnly && !prose && entry) {
       renderInspector();
     }
@@ -1920,6 +2126,20 @@
       .join('');
   }
 
+  function historicalIssueLink(id) {
+    const issue = state.index.issues.find((entry) => entry.id === id);
+    return `<li><a href="/?issue=${encodeURIComponent(id)}">${escape(issue?.title || 'Open saved issue')}</a></li>`;
+  }
+  function historicalOutputProgress(block) {
+    const ids = block.historicalCompletion.issueIds || [];
+    return `<p class="detail-copy">Completed by an earlier investigation run.</p><ul>${ids.map(historicalIssueLink).join('')}</ul>`;
+  }
+  function blockProgress(block, last, attempts, published) {
+    if (last) return attemptCard(last, attempts.length - 1);
+    if (block.historicallyCompleted) return historicalOutputProgress(block);
+    return `<p class="inline-empty">${published ? `PR #${escape(published)} has been published. Run Merge to check it.` : 'This block has not run yet. Review its inputs before starting.'}</p>`;
+  }
+
   function blockDetails(block) {
     if (state.view.flow.request)
       return '<section class="detail-section"><p class="detail-copy">Restart the Factory server to edit this flow. Your saved issue is available.</p></section>';
@@ -1932,15 +2152,13 @@
     const last = latest(block);
     const previousAttempts = last ? attempts.slice(0, -1) : attempts;
     const published = attempts.at(-1)?.supersededByPR;
-    const progress = last
-      ? attemptCard(last, attempts.length - 1)
-      : `<p class="inline-empty">${published ? `PR #${escape(published)} has been published. Run Merge to check it.` : 'This block has not run yet. Review its inputs before starting.'}</p>`;
+    const progress = blockProgress(block, last, attempts, published);
     const running = isRunning(block);
     if (['retro', 'cleanup'].includes(block.kind))
       return `<section class="detail-section">${last ? attemptCard(last, attempts.length - 1) : '<p>This block runs during Close.</p>'}${block.kind === 'cleanup' ? cleanupResults(last) : ''}${attempts.length > 1 ? `<details><summary>Earlier attempts</summary>${attempts.slice(0, -1).map(attemptCard).join('')}</details>` : ''}</section>`;
     const locked = state.pending ? ' disabled' : '';
     const sections = {
-      settings: `<form id="block-form">${declaredDetails(block, true)}${outputsSection(block)}${systemPromptEditor(block, values, locked)}${editChecklist(block, changes)}<section class="detail-section"><div class="section-label">Block settings</div><label class="field">Name<input name="label" data-field="label" value="${escape(values.label || '')}" /></label><div class="field-row"><label class="field">Parallel lane<select name="lane" data-field="lane">${[0, 1, 2, 3].map((lane) => `<option value="${lane}"${Number(values.lane || 0) === lane ? ' selected' : ''}>${lane === 0 ? 'Main lane' : `Parallel lane ${lane + 1}`}</option>`).join('')}</select></label>${block.kind === 'sol' ? `<label class="field">Iterations<input type="number" name="iterations" data-field="iterations" min="1" max="20" value="${escape(values.iterations || 1)}" /></label>` : ''}</div></section>${saveRow()}</form>`,
+      settings: `<form id="block-form">${investigationSourcePicker(block)}${declaredDetails(block, true)}${outputsSection(block)}${systemPromptEditor(block, values, locked)}${editChecklist(block, changes)}<section class="detail-section"><div class="section-label">Block settings</div><label class="field">Name<input name="label" data-field="label" value="${escape(values.label || '')}" /></label><div class="field-row"><label class="field">Parallel lane<select name="lane" data-field="lane">${[0, 1, 2, 3].map((lane) => `<option value="${lane}"${Number(values.lane || 0) === lane ? ' selected' : ''}>${lane === 0 ? 'Main lane' : `Parallel lane ${lane + 1}`}</option>`).join('')}</select></label>${block.kind === 'sol' ? `<label class="field">Iterations<input type="number" name="iterations" data-field="iterations" min="1" max="20" value="${escape(values.iterations || 1)}" /></label>` : ''}</div></section>${saveRow()}</form>`,
       progress: `<section class="detail-section"><div class="section-label">${running ? 'Current progress' : 'Progress'}<span data-ui-value="Status comes from the saved block.">${escape(statusText(status(block), last))}</span></div>${progress}${previousAttempts.length ? `<details class="attempt-history" data-preserve="attempt-history"><summary>${previousAttempts.length} earlier ${previousAttempts.length === 1 ? 'attempt' : 'attempts'}</summary>${previousAttempts.map(attemptCard).join('')}</details>` : ''}</section>`,
       sequence: `<section class="detail-section"><div class="section-label">Sequence</div><p class="detail-copy">Move this step toward the destination or toward the starting point.</p><div class="block-actions"><button class="small-button" data-action="move" data-direction="down"${locked}>↑ Earlier</button><button class="small-button" data-action="move" data-direction="up"${locked}>↓ Later</button></div></section>`,
       notes: comments(block),
@@ -1950,9 +2168,22 @@
     );
   }
 
+  function conversationMessage(message) {
+    const producer = state.view.flow.blocks.find((entry) => entry.id === message.blockId);
+    return window.chatMessageMarkup({
+      id: message.id,
+      user: message.actor === 'human',
+      label: message.role || message.actor,
+      meta: [producer?.label, date(message.at)].filter(Boolean).join(' · '),
+      content: `<p class="message-body">${escape(message.body)}</p>`,
+      aiSource: message.body,
+      aiKey: 'flow-conversation-' + message.id,
+    });
+  }
+
   function renderConversation(block) {
     const messages = state.view?.conversation || [];
-    return `<p class="conversation-context">This issue’s conversation shows notes and responses from its blocks.</p>${messages.length ? `<div class="timeline">${messages.map((message) => `<article class="message"><div class="message-meta"><span class="message-author">${escape(message.actor || message.role || 'Factory')}${message.blockId ? ` · ${escape(state.view.flow.blocks.find((entry) => entry.id === message.blockId)?.label || 'Block')}` : ''}</span><time>${escape(date(message.at))}</time></div><p class="message-body">${escape(message.body)}</p></article>`).join('')}</div>` : '<p class="inline-empty">No conversation entries yet. Starting a block will retain its activity here.</p>'}${block ? commentForm(block) : ''}`;
+    return `<p class="conversation-context">This issue's conversation shows notes and responses from its blocks.</p>${messages.length ? `<div class="timeline">${messages.map(conversationMessage).join('')}</div>` : '<p class="inline-empty">No conversation entries yet. Starting a block will retain its activity here.</p>'}${block ? commentForm(block) : ''}`;
   }
 
   function renderArtifacts(block, artifacts) {
@@ -1990,41 +2221,6 @@
     );
   }
 
-  function preserveDisclosures(container, replace) {
-    const key = (element) =>
-      element.dataset.preserve ?? element.dataset.artifactRun ?? element.querySelector('summary')?.textContent.trim();
-    const saved = new Map([...container.querySelectorAll('details')].map((element) => [key(element), element.open]));
-    replace();
-    for (const element of container.querySelectorAll('details')) {
-      const open = saved.get(key(element));
-      if (open !== undefined) element.open = open;
-    }
-  }
-
-  function preserveEditor(renderBody) {
-    const body = $('inspector-body');
-    const current = document.activeElement;
-    const focused = body.contains(current) && current instanceof HTMLElement;
-    const key = focused ? current.dataset.field || current.id || current.dataset.edit : null;
-    const selection =
-      focused && typeof current.selectionStart === 'number' ? [current.selectionStart, current.selectionEnd] : null;
-    const scroll = body.scrollTop;
-    const outputScroll = body.querySelector('.attempt-output')?.scrollTop;
-    preserveDisclosures(body, renderBody);
-    if (key) {
-      const replacement = [...body.querySelectorAll('[data-field], [id], [data-edit]')].find(
-        (element) => (element.dataset.field || element.id || element.dataset.edit) === key
-      );
-      if (replacement) {
-        replacement.focus({ preventScroll: true });
-        if (selection && replacement.setSelectionRange) replacement.setSelectionRange(...selection);
-      }
-    }
-    body.scrollTop = scroll;
-    if (outputScroll != null && body.querySelector('.attempt-output'))
-      body.querySelector('.attempt-output').scrollTop = outputScroll;
-  }
-
   function renderBlockRunControl(block) {
     const runButton = $('run-block');
     const running = isRunning(block);
@@ -2036,6 +2232,7 @@
     runButton.hidden =
       !block ||
       block.readOnly ||
+      Boolean(state.view.issue.readOnly && !running) ||
       Boolean(state.view.grouping?.master) ||
       Boolean(state.view.flow.request) ||
       state.view.issue.state === 'needs-approval' ||
@@ -2058,6 +2255,7 @@
 
   function blockDeletionReason(block) {
     if (!block) return 'Select a block.';
+    if (state.view?.issue?.readOnly) return 'This merged issue is read-only.';
     if (block.kind === 'request') return 'Request is required for the issue flow.';
     if (block.readOnly) return 'Manage this operation from its original controls.';
     const closing = state.view?.flow.closing;
@@ -2098,24 +2296,20 @@
           : block
             ? blockDetails(block)
             : '<p class="inline-empty">Add a block to begin this issue.</p>';
-    if (inspectorRender?.scope === scope) {
-      if (inspectorRender.html === html) return;
-      preserveEditor(() => {
-        body.innerHTML = html;
-      });
-    } else {
-      body.innerHTML = html;
-      body.scrollTop = 0;
-    }
+    if (inspectorRender?.scope === scope && inspectorRender.html === html) return;
+    view.render(body, html, scope);
+    view.write('flow-selection:' + state.issueId, { blockId: state.blockId, tab: state.tab });
     inspectorRender = { scope, html };
   }
 
   function renderPlayback(blocks) {
     const playback = state.view?.autoplay;
     const playing = playback?.mode === 'playing' || playback?.mode === 'waiting';
+    const mode = playbackAction(blocks);
     const waiting = blocks.find((block) => playback?.mode === 'waiting' && playback.blockId === block.id);
-    $('issue-playback').textContent = playing ? 'Ⅱ Pause' : '▷ Play';
-    $('issue-playback').setAttribute('aria-label', playing ? 'Pause issue' : 'Play issue');
+    const labels = { start: 'Start', resume: 'Resume', pause: 'Pause', close: 'Close', archive: 'Archive' };
+    $('issue-playback').textContent = labels[mode] || 'Start';
+    $('issue-playback').setAttribute('aria-label', labels[mode] ? labels[mode] + ' issue' : 'Start issue');
     const waitingButton = $('waiting-block');
     waitingButton.hidden = !waiting;
     waitingButton.textContent = waiting ? waiting.label + ' needs confirmation' : '';
@@ -2126,7 +2320,7 @@
       : waiting
         ? 'Waiting for confirmation'
         : playing
-          ? 'Playing'
+          ? 'Running'
           : 'Paused';
     const result = state.view?.flow?.closing?.error || input?.message || playback?.reason || '';
     $('issue-results').hidden = !state.view?.issue || !result;
@@ -2157,6 +2351,7 @@
     issueNumber.hidden = issue?.issueNumber == null;
     issueNumber.textContent = issueNumber.hidden ? '' : `#${issue.issueNumber}`;
     $('issue-title').textContent = issue?.title || '';
+    renderMergedIssueNotice(issue);
     if ($('rename-issue-form').dataset.issue !== issue?.id) closeRename();
     renderFlowPicker();
     renderIssueSettings();
@@ -2192,25 +2387,22 @@
     renderInvestigationPage();
   }
 
+  function renderMergedIssueNotice(issue) {
+    $('merged-issue-notice').hidden = !issue?.readOnly;
+    $('merged-issue-notice').textContent = issue?.readOnly
+      ? 'Merged. This issue is read-only. Close it when ready.'
+      : '';
+  }
+
   function renderInvestigationPage() {
     if (document.documentElement.dataset.projectIssueRequestEmbed === 'true') return;
+    investigationControls.render(state.view);
     const investigation = state.view?.flow?.routeType === 'investigation';
-    investigationUI.show(investigation ? state.issueId : null);
-    $('app').dataset.investigation = investigation ? 'open' : 'closed';
+    investigationUI.show(null);
+    $('app').dataset.investigation = 'closed';
     if (investigation) {
       $('issue-type-label').textContent = 'Investigation ·';
       $('issue-subtitle').textContent = state.view.issue.reusable ? 'Reusable' : 'One-time';
-      for (const id of [
-        'graph-scroll',
-        'environment',
-        'issue-playback',
-        'issue-flow-picker',
-        'rebuild-flow',
-        'issue-grouping',
-      ]) {
-        if ($(id)) $(id).hidden = true;
-      }
-      document.querySelector('.inspector').hidden = true;
       $('flow-view-title').textContent = 'Investigation';
     }
   }
@@ -2318,7 +2510,9 @@
     path.textContent = path.dataset.directory + '/' + ($('export-flow-id').value || 'flow-name') + '.md';
   }
 
-  function openCapture(folder) {
+  async function openCapture(folder) {
+    state.captureNote = null;
+    if (!state.index.folders.length) await load(true);
     const selected =
       typeof folder === 'string'
         ? folder
@@ -2335,8 +2529,54 @@
     $('capture-error').textContent = !selected ? state.index.defaultFolderError || '' : '';
     $('capture-error').hidden = !$('capture-error').textContent;
     $('capture-dialog').showModal();
+    void loadCaptureStore();
     if (!$('capture-folder').value) $('capture-folder').focus();
     else $('capture-description').focus();
+  }
+
+  async function loadCaptureStore() {
+    const submit = $('capture-submit');
+    submit.disabled = true;
+    try {
+      await issueStoreUI.fill($('capture-issue-store'), { folder: $('capture-folder').value });
+      submit.disabled = !$('capture-issue-store').value;
+    } catch (error) {
+      $('capture-error').textContent = error.message;
+      $('capture-error').hidden = false;
+    }
+  }
+
+  async function refreshIssueStore(force = false) {
+    const id = state.issueId;
+    if (!id || (!force && state.storeSelection === id)) return;
+    state.storeSelection = id;
+    try {
+      const data = await issueStoreUI.fill($('issue-store'), { issueId: id });
+      if (id !== state.issueId) return;
+      $('issue-store').dataset.saved = data.selected;
+      $('issue-store-source').textContent = 'Saved home · ' + data.selected;
+      $('move-issue-store').disabled = true;
+    } catch (error) {
+      state.storeSelection = null;
+      $('issue-store-error').textContent = error.message;
+      $('issue-store-error').hidden = false;
+    }
+  }
+
+  async function moveIssueStore(storeId) {
+    const options = await issueStoreUI.read({ issueId: state.issueId, migrationStoreId: storeId });
+    const issueIds = options.moveGroup?.issueIds || [state.issueId];
+    const subject =
+      issueIds.length > 1
+        ? options.moveGroup?.masterId
+          ? `the master issue and its ${issueIds.length - 1} attached sub-issues (${issueIds.length} issues)`
+          : `${issueIds.length} issues in the pending storage move`
+        : 'this issue';
+    if (!confirm(`Move ${subject} to the selected store? Existing history and references are retained.`)) return false;
+    await issueStoreUI.move(state.issueId, storeId, { issueIds });
+    await refreshIssueStore(true);
+    toast('Issue store move confirmed.');
+    return true;
   }
 
   function openPalette() {
@@ -2377,6 +2617,7 @@
     const result = await action('request', { wording });
     if (!result) return;
     state.drafts.delete(key);
+    persistDrafts();
     renderInspector();
   }
 
@@ -2424,6 +2665,7 @@
     const comment = state.drafts.get(key)?.comment;
     state.drafts.delete(key);
     if (comment) state.drafts.set(key, { comment });
+    persistDrafts();
     toast('Block settings saved.');
     await load(true);
   }
@@ -2507,6 +2749,7 @@
     let contents;
     if (preview.status === 'blocked') {
       contents = `<p>${escape(preview.message)}</p>`;
+      contents += noChangesCloseOffer(preview);
     } else if (preview.status === 'current') {
       contents = '<p>PR is up to date.</p>';
     } else {
@@ -2529,6 +2772,18 @@
       preview.status === 'current' ? 'Confirm current PR' : preview.pr ? 'Update PR' : 'Publish PR';
     $('close-publish').textContent = canConfirm ? 'Cancel' : 'Close';
   }
+
+  function noChangesCloseOffer(preview) {
+    return preview.suggestedResolution === 'cannot-reproduce'
+      ? '<button class="small-button" type="button" data-close-no-changes>Close as Cannot Reproduce…</button>'
+      : '';
+  }
+
+  $('publish-preview').addEventListener('click', (event) => {
+    if (!event.target.closest('[data-close-no-changes]')) return;
+    $('publish-dialog').close();
+    openClosure('cannot-reproduce');
+  });
 
   function closeRename() {
     $('rename-issue-form').hidden = true;
@@ -2563,6 +2818,7 @@
     }
     const result = await action(block.kind === 'request' ? 'run-request' : name, {
       blockId: block.id,
+      ...investigationRunInput(block),
       ...(confirmed ? { confirmed: true } : {}),
       ...(approval ? { mergeToken: approval.token } : {}),
     });
@@ -2576,7 +2832,13 @@
   async function deleteWorktree() {
     const issueId = state.issueId;
     const expected = await action('delete-worktree');
-    if (!expected || state.issueId !== issueId || !confirm(worktreeDeletionPrompt(expected.path))) return;
+    if (!expected || state.issueId !== issueId) return;
+    if (
+      !confirm(
+        `Delete this worktree and discard its uncommitted changes?\n\n${expected.path}\n\nThe issue branch will be kept.`
+      )
+    )
+      return;
     if (await action('delete-worktree', { expected })) toast('Worktree deleted.');
   }
 
@@ -2614,6 +2876,7 @@
     const saved = state.drafts.get(key) || {};
     delete saved.comment;
     state.drafts.set(key, saved);
+    persistDrafts();
     toast('Comment saved.');
     await load(true);
   }
@@ -2823,6 +3086,7 @@
     const collapsedFolders = sidebarCollapsedFolders();
     const expanded = collapsedFolders.delete(folder);
     if (!expanded) collapsedFolders.add(folder);
+    if (!state.search) view.write('flow-collapsed-folders', [...collapsedFolders]);
     button.setAttribute('aria-expanded', String(expanded));
     button.setAttribute('aria-label', `${expanded ? 'Collapse' : 'Expand'} ${folder}`);
     button.closest('.issue-folder').querySelector('.folder-items').hidden = !expanded;
@@ -2853,6 +3117,8 @@
   );
 
   document.addEventListener('click', (event) => {
+    const skillPicker = event.target.closest('[data-skill-picker]');
+    if (skillPicker) return void openBlockSkillPicker(skillPicker.dataset.skillPicker);
     const button = event.target.closest('button');
     if (!button || button.disabled) return;
     if (button.hasAttribute('data-destination-open')) {
@@ -2873,7 +3139,6 @@
       state.blockId = button.dataset.block;
       if ($('graph').contains(button)) state.deleteBlockId = state.blockId;
       state.graphScrollIntent = { nodeId: state.blockId, mode: 'reveal' };
-      $('inspector-body').scrollTop = 0;
       renderGraph();
       renderInspector();
       setBusy(state.pending);
@@ -2882,7 +3147,6 @@
     }
     if (button.dataset.tab) {
       state.tab = button.dataset.tab;
-      $('inspector-body').scrollTop = 0;
       renderInspector();
       void checkOpenBlock(true);
       return;
@@ -2953,6 +3217,14 @@
       void load(true);
     }
   }
+
+  $('merge-state-menu').addEventListener('change', async (event) => {
+    const operation = event.target.value;
+    event.target.value = '';
+    if (operation === 'abort' && (await action('abort-merge', { merge: state.view.environment.merge }))) {
+      toast('Merge aborted. Saved issue commits are preserved.');
+    }
+  });
 
   $('target-update-menu').addEventListener('change', async (event) => {
     const menu = event.target;
@@ -3025,6 +3297,7 @@
         const saved = state.drafts.get(key) || {};
         delete saved.folder;
         state.drafts.set(key, saved);
+        persistDrafts();
         return load(true);
       });
     }
@@ -3102,6 +3375,12 @@
   });
 
   window.openFlowCapture = openCapture;
+  window.openFlowCaptureFromNote = (note) => {
+    openCapture();
+    state.captureNote = note;
+    state.captureId = null;
+    $('capture-description').value = note.text;
+  };
   $('new-issue').addEventListener('click', openCapture);
   $('rename-issue').addEventListener('click', () => {
     const form = $('rename-issue-form');
@@ -3146,6 +3425,16 @@
       if (event.submitter?.id !== 'save-destination') return;
       event.preventDefault();
       const branch = $('destination-branch').value || null;
+      const storeId = $('destination-issue-store').value;
+      if (!storeId) return;
+      if (storeId !== $('destination-issue-store').dataset.saved) {
+        try {
+          if (!(await moveIssueStore(storeId))) return;
+        } catch (error) {
+          $('destination-message').textContent = error.message;
+          return;
+        }
+      }
       if (await action('destination', { branch })) $('destination-dialog').close();
       else await loadDestinationBranches();
     });
@@ -3164,8 +3453,7 @@
     )
       void action('cancel-confirmation', { blockId: review.blockId });
   });
-  $('project-settings').addEventListener('click', openProjectSettings);
-  $('initialize-lifecycle').addEventListener('click', initializeLifecycle);
+  $('project-settings').addEventListener('click', () => projectSettingsUI.open());
   $('empty-new-issue').addEventListener('click', openCapture);
   const closureModal = $('issue-closure-dialog');
   const closureFields = $('issue-closure-fields');
@@ -3198,6 +3486,21 @@
     }
   }
 
+  async function archiveIssueWithUiState(issueId) {
+    if (!issueId || state.pending) return;
+    state.pending = true;
+    setBusy(true);
+    try {
+      await archiveIssue(issueId);
+    } catch (error) {
+      showError(error.message);
+    } finally {
+      state.pending = false;
+      setBusy(false);
+      void load(true);
+    }
+  }
+
   async function reopenIssue(issueId) {
     if (!confirm('Reopen this issue and return it to investigation?')) return;
     const context = await json('/api/issue-closure?kind=reopen&issue=' + encodeURIComponent(issueId));
@@ -3223,10 +3526,10 @@
         ],
       }));
     }
+    if (operation === 'archive') return void archiveIssueWithUiState(issueId);
     state.pending = true;
     setBusy(true);
     try {
-      if (operation === 'archive') await archiveIssue(issueId);
       if (operation === 'reveal') await post('issue-report-reveal', { issueId });
       if (operation === 'reopen') await reopenIssue(issueId);
     } catch (error) {
@@ -3238,15 +3541,17 @@
     }
   });
 
-  function openClosure() {
+  function openClosure(suggestedResolution) {
     const { issue, flow } = state.view;
     void closureDialog.open(async () => ({
       ...(await json('/api/issue-closure?issue=' + encodeURIComponent(issue.id))),
       kind: 'close',
       flowRevision: flow.revision,
+      offerClosureRetro: flow.blocks.some((block) => block.kind === 'retro'),
+      suggestedResolution,
     }));
   }
-  $('close-with-reason').addEventListener('click', openClosure);
+  $('close-with-reason').addEventListener('click', () => openClosure());
   $('issue-pr-menu').addEventListener('click', (event) => {
     if (event.target.closest('a')) $('issue-pr-menu').open = false;
   });
@@ -3314,13 +3619,17 @@
     }
   });
   $('issue-playback').addEventListener('click', () => {
-    if (state.view?.autoplay?.mode !== 'paused') return void action('pause');
+    const mode = playbackAction(state.view?.flow?.blocks || []);
+    if (mode === 'pause') return void action('pause');
+    if (mode === 'close') return openClosure();
+    if (mode === 'archive') return void archiveIssueWithUiState(state.view.issue.id);
+    if (!['start', 'resume'].includes(mode)) return;
     const hasDraft = [...state.drafts].some(
       ([key, values]) =>
         key.startsWith(state.issueId + '/') &&
         Object.keys(values).some((field) => !['comment', 'newEdit'].includes(field))
     );
-    if (hasDraft) return showError('Save your block settings before playing. Your drafts are still here.');
+    if (hasDraft) return showError('Save your block settings before starting or resuming. Your drafts are still here.');
     void action('play');
   });
   document.addEventListener('factory-actions-paused', ({ detail }) => {
@@ -3359,10 +3668,30 @@
     $('folder-name').focus();
   });
 
+  $('capture-folder').addEventListener('change', () => void loadCaptureStore());
+  $('issue-store').addEventListener('change', () => {
+    $('move-issue-store').disabled =
+      !$('issue-store').value || $('issue-store').value === $('issue-store').dataset.saved;
+  });
+  $('issue-store-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (state.pending || !$('issue-store').value) return;
+    $('issue-store-error').hidden = true;
+    try {
+      $('issue-store-form').inert = true;
+      await moveIssueStore($('issue-store').value);
+    } catch (error) {
+      $('issue-store-error').textContent = error.message;
+      $('issue-store-error').hidden = false;
+    } finally {
+      $('issue-store-form').inert = false;
+    }
+  });
+
   $('capture-form').addEventListener('submit', async (event) => {
     event.preventDefault();
     const description = $('capture-description').value.trim();
-    if (!description || !$('capture-folder').value || state.pending) return;
+    if (!description || !$('capture-folder').value || !$('capture-issue-store').value || state.pending) return;
     state.captureId ||= crypto.randomUUID();
     $('capture-error').hidden = true;
     const result = await action(
@@ -3372,6 +3701,7 @@
         description,
         type: $('capture-type').value,
         folder: $('capture-folder').value,
+        issueStore: $('capture-issue-store').value,
         needsApproval: $('capture-needs-approval').checked,
         runRetro: $('capture-retro').checked,
       },
@@ -3385,6 +3715,16 @@
     $('capture-dialog').close();
     toast('Issue created. Its blocks are ready for you to choose.');
     const id = result.issue?.id || result.issueId;
+    if (id && state.captureNote) {
+      const note = state.captureNote;
+      state.captureNote = null;
+      try {
+        await window.localNotesUI.issueCreated(note, id);
+      } catch (error) {
+        toast('Issue created. Open it from Local notes. Discussion could not be prepared: ' + error.message);
+      }
+      return;
+    }
     if (id) selectIssue(id);
     else await load(true);
   });
@@ -3446,10 +3786,7 @@
       return;
     }
     if (
-      event.key.toLowerCase() !== 'n' ||
-      event.metaKey ||
-      event.ctrlKey ||
-      event.altKey ||
+      !window.FactoryHotkeys.matches(event, 'newIssue') ||
       event.target.closest('input, textarea, select, [contenteditable="true"]') ||
       document.querySelector('dialog[open]')
     )
@@ -3458,6 +3795,16 @@
     openCapture();
   });
   window.addEventListener('resize', resizeColumns);
+  let graphScrollIdleTimer;
+  $('graph-scroll').addEventListener(
+    'scroll',
+    () => {
+      $('graph-scroll').dataset.scrolling = '';
+      clearTimeout(graphScrollIdleTimer);
+      graphScrollIdleTimer = setTimeout(() => delete $('graph-scroll').dataset.scrolling, 700);
+    },
+    { passive: true }
+  );
   new ResizeObserver(drawConnections).observe($('graph-scroll'));
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) void load();

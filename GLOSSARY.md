@@ -4,6 +4,17 @@ Language used to coordinate work and review changes.
 
 ## Language
 
+**Spoken send command**:
+The person's explicit choice to send a dictated prompt by saying “go” as its
+final word. Every chat excludes the command word from the submitted prompt.
+An empty or whitespace-only prompt sends nothing. A "go" in the middle of the
+dictation is ordinary prompt text.
+
+**Local note**:
+A quick project-owned thought or todo saved outside version control. It can be
+discussed in the project conversation or used to prefill an issue. Capture starts
+no work, and issue creation retains the note until the person deletes it.
+
 **Clarify**:
 The issue stage that brings human intent and available technical evidence together
 to establish enough understanding to begin useful work. Remaining technical
@@ -185,7 +196,30 @@ and report and cannot start work independently while attached.
 
 **Issue claim**:
 Exclusive permission for one factory run to start or continue work on an issue.
-A claim can remain held while the run's outcome is being published.
+A claim can remain held while its outcome is being published or reconciled.
+
+**Issue store**:
+The authoritative home of an issue's report, lifecycle status, metadata, and
+issue history. Each issue belongs to one configured Issue store.
+_Avoid_: Adaptor, adapter as a user-facing storage destination
+
+**Issue storage profile**:
+A named pairing of an Issue store and an Artifact store used to select an issue's
+storage destinations. Coordination storage belongs to the project.
+
+**Local issue storage**:
+Issue records and artifacts retained on the person's local machine.
+It excludes files on a remote Factory server.
+
+**Coordination store**:
+The project's shared authority for execution ownership, flows, attempt history,
+and pending operations. Each project selects one Coordination store across its
+Issue stores.
+
+**Artifact store**:
+The home for retained file contents, including logs, evidence,
+attachments, and committed source checkpoints. Shared records identify artifacts
+independently of a runner's local file paths.
 
 **Issue delivery**:
 One issue's contributions retained on a stable branch and published through one
@@ -241,6 +275,10 @@ master issue as Fixed.
 Removal of a closed issue's worktree and any selected local or remote issue
 branches. Incomplete cleanup can be retried while the issue stays closed.
 
+**Worktree deletion**:
+Removal of an issue's local checkout, independent of its status or closure sequence.
+It discards uncommitted files and preserves the issue, branches, conversations, and retained evidence.
+
 **Issue archive**:
 A retained collection of issues outside the active views. Archiving preserves
 identity and history. Investigations can be archived without being closed.
@@ -272,8 +310,21 @@ An investigation that remains available for additional runs after a completed
 inquiry, with each run retaining its own findings and resulting issues.
 
 **Investigation run**:
-One execution of an investigation against a chosen revision, retaining the
-instructions, settings, findings, evidence, and related issues for that execution.
+One full inquiry and its output-block attempts, retaining the instructions,
+settings, findings, evidence, related issues, and inspected code revisions.
+An output-only rerun remains part of that investigation run.
+
+**Investigation report**:
+A published presentation of one investigation run's findings, evidence, and
+recommendations. It retains its identity and content when the investigation runs
+again or is archived. Each deliberate generation is a dated publication. Retry
+recovers the same publication identity. Timey retains its own content and evidence
+copies after a skill saves the originals.
+
+**Output attempt**:
+One execution of Generate report or Create Issues, attached to its original
+investigation run. It records saved results and any additional inspected revisions.
+Retry retains its publication and finding identities.
 
 **Retro item**:
 A follow-up issue proposed by a retro that retains its originating issue for
@@ -293,8 +344,8 @@ can use it.
 
 **Issue flow**:
 An explicitly controlled graph of blocks for one issue. The graph records the
-planned route. Run starts the selected block. Play starts the route and waits
-for any confirmations along the way.
+planned route. Run starts the selected block. Start or Resume runs the route
+and waits for any confirmations along the way.
 
 **Flow block**:
 One visible request, advisory, work, verification, delivery, or cleanup operation.
@@ -304,6 +355,13 @@ from its own Details, the issue and upstream blocks. An edit invalidates the
 edited block and its connected successors. Details types each input and Artifacts
 types each output. An input uses either a manual value or a linked upstream
 output; the inspector shows inputs before read-only latest outputs.
+
+**Merged issue**:
+An issue whose PR has a successful Merge receipt or a retained GitHub merge
+observation. Its issue settings and work flow are read-only, including historical
+attempts and block definitions. Close and its Retro/Cleanup sequence remain
+available. Restarting work requires a future reopen operation; merged-issue
+reopening is deferred. See [ADR 0020](docs/adr/0020-freeze-merged-issues.md).
 
 **Request block**:
 The required first block and owner of Your words and the derived request fields. Saving the wording
@@ -328,9 +386,12 @@ It defaults to the delivery target branch. An idle, unpublished issue can change
 its starting point by moving its saved work onto the new base.
 
 **Flow candidate identity**:
-The base commit, source tree, current commit and uncommitted state captured for a
-flow result. Publication requires a clean committed candidate. Verification of an
-uncommitted tree remains valid after that exact tree is committed, and expires when
+The comparison base, original workspace base, source tree, current commit and
+uncommitted state captured for a flow result. Work records the supplied comparison
+base as `candidateBase` and the checkout creation base as `candidateWorkspaceBase`.
+Update Branch can advance the comparison base while preserving the workspace base.
+Publish PR receives both values with distinct labels. Publication requires a clean
+committed candidate. Verification of an uncommitted tree remains valid after that exact tree is committed, and expires when
 its content changes.
 
 **Flow destination**:

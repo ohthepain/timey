@@ -1,5 +1,7 @@
+import { mergedDelivery } from './merged-issue.mjs';
 import { readFileSync } from 'node:fs';
 import { digest } from './common.mjs';
+import { successfulInvestigationSource, successfulReportFindings } from './investigation-flow.mjs';
 
 export const blockDefinitionId = (block) => block.definition ?? block.kind;
 export const requestBlock = (flow) => flow.blocks?.find((block) => block.kind === 'request');
@@ -37,6 +39,7 @@ export function latestCurrentAttempt(block) {
 }
 
 export function invalidateBlocks(flow, seeds, cascade = true) {
+  if (mergedDelivery(flow)) return new Set();
   const affected = new Set(seeds);
   const at = new Date().toISOString();
   for (const block of flow.blocks) {
@@ -84,7 +87,20 @@ function artifactValue(block, key) {
 }
 
 const startBranch = (flow) => startingPoint(flow)?.name ?? deliveryTarget(flow)?.branch;
+function investigationSource(flow, issue) {
+  try {
+    return successfulInvestigationSource(flow, issue.id);
+  } catch {
+    return undefined;
+  }
+}
+function reportSupplement(flow, issue) {
+  const source = investigationSource(flow, issue);
+  return source ? successfulReportFindings(flow, source) : [];
+}
 const issueFlowSources = new Map([
+  ['Investigation.source', investigationSource],
+  ['Investigation.supplementalFindings', reportSupplement],
   ['issue.title', (_flow, issue) => issue.title],
   ['issue.content', (_flow, issue) => issue.content],
   ['Starting point.branch', startBranch],

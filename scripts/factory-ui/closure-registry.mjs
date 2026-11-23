@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { readQueue } from './data.mjs';
 import { digest, writeJson } from './common.mjs';
 import { appendCompletion } from '../factory-completion.mjs';
+import { afterReportWrite } from './stores/report-access.mjs';
 
 function currentRegistryEvidence(queue, entry) {
   return entry.path === join(queue.root, '.issues/factory.json');
@@ -29,27 +30,34 @@ export function retainClosingRegistry(service, queue, issue) {
         criterion.evidence = criterion.evidence.map((p) => (p === source ? path : p));
       });
     record.run_id = run.id;
-    appendCompletion(
-      service.root,
-      issue,
-      {
-        summary: 'Current task status retained for final acceptance.',
-        notes:
-          'The live task log changed as review finished. Its current administrative state is retained separately; the earlier hash is preserved. Test results and manual skips are unchanged.',
-        remaining: [],
-        plan_verification: record,
+    return afterReportWrite(
+      appendCompletion(
+        service.root,
+        issue,
+        {
+          summary: 'Current task status retained for final acceptance.',
+          notes:
+            'The live task log changed as review finished. Its current administrative state is retained separately; the earlier hash is preserved. Test results and manual skips are unchanged.',
+          remaining: [],
+          plan_verification: record,
+        },
+        run,
+        [entry],
+        null,
+        { purpose: 'closure' }
+      ),
+      () => {
+        service.store.update(run, {
+          issueId: issue.id,
+          status: 'completed',
+          summary: 'Administrative task status retained.',
+        });
+        return readQueue(service.root);
       },
-      run,
-      [entry],
-      null
+      { onSettled: () => service.store.connected.delete(run.id) }
     );
-    service.store.update(run, {
-      issueId: issue.id,
-      status: 'completed',
-      summary: 'Administrative task status retained.',
-    });
-  } finally {
+  } catch (error) {
     service.store.connected.delete(run.id);
+    throw error;
   }
-  return readQueue(service.root);
 }

@@ -90,7 +90,7 @@ function approvedRows(preview, selected) {
   });
 }
 
-function deleteArchiveRow(service, row) {
+async function deleteArchiveRow(service, row) {
   const { id, selectedBranches } = row;
   try {
     const reason = archiveBlocker(service, id);
@@ -98,7 +98,7 @@ function deleteArchiveRow(service, row) {
     const report = readSavedReport(service.root, id, 'archive');
     requireThat(digest(report.content) === row.basis, 'The archived report changed after preview.');
     const owned = selectedBranches.length ? archivedIssueBranches(service, [row]).get(id) : new Set();
-    deleteArchivedIssueReport(service.root, id, report.content);
+    await deleteArchivedIssueReport(service.root, id, report.content);
     return {
       id,
       status: 'deleted',
@@ -171,7 +171,7 @@ export class ProjectArchiveDeletion {
     try {
       const reports = [];
       for (const row of rows) {
-        reports.push(deleteArchiveRow(service, row));
+        reports.push(await deleteArchiveRow(service, row));
         await new Promise((resolve) => setImmediate(resolve));
       }
       const branchResults = await removeApprovedBranches(service, this.branchCleanup, preview, reports);

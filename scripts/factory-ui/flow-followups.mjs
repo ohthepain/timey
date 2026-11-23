@@ -48,7 +48,7 @@ function sourceSnapshot(flows, { issueId, blockId }) {
   };
 }
 
-function proposalDescription(item, source) {
+export function investigationProposalDescription(item, source) {
   return [
     item.title,
     item.description,
@@ -89,7 +89,7 @@ function declinedProposals(flows) {
 export class FlowFollowups {
   constructor(flows, propose = proposeInvestigationFollowups) {
     this.flows = flows;
-    this.propose = propose;
+    this.propose = (context) => propose(context, flows.service.root);
     this.busy = new Set();
     this.directory = join(flows.store.directory, 'investigation-followups');
   }
@@ -161,7 +161,7 @@ export class FlowFollowups {
       const proposal = saved.proposals.find(({ id }) => id === item.id);
       requireThat(proposal, 'Choose a saved follow-up proposal.');
       const draft = validateInvestigationProposal(item);
-      const identity = digest(JSON.stringify([draft, folder]));
+      const identity = digest(JSON.stringify([draft, folder, input.issueStore]));
       requireThat(
         !proposal.identity || proposal.identity === identity,
         'A submitted proposal cannot change. Retry its saved wording and folder.'
@@ -185,10 +185,11 @@ export class FlowFollowups {
           requestId: proposal.id,
           type: draft.type,
           folder,
+          issueStore: input.issueStore,
           needsApproval: true,
           sourceIssue: source.issueId,
           sourceAttempt: source.attemptId,
-          description: proposalDescription(draft, source),
+          description: investigationProposalDescription(draft, source),
         });
         proposal.result = { issueId: result.issue?.id ?? result.issueId, deleted: result.deleted === true };
         delete proposal.error;

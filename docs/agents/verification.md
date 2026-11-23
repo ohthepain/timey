@@ -1,18 +1,201 @@
 # Verification
 
+`node --test scripts/discussion-evidence.check.mjs` checks temporary discussion
+protocol configuration, complete context/input references above the provider
+limit, small follow-up messages, and cleanup that preserves the project. It uses
+a disposable provider process; it establishes read-only/never-approve settings,
+not actual OS sandbox enforcement or live model availability.
+`node --test --test-name-pattern="Retro reads|Retro links" scripts/flow.check.mjs`
+checks linked-thread ordering, unavailable history and complete oversized retro
+evidence. The initial message stays below 16,000 characters; the referenced files
+retain beginning, middle and end, matching digests and survive session closure.
+These fixtures start no live model or production retro.
+`node scripts/discussion-evidence-provider.mjs` separately checks the configured
+live provider against a disposable Git repository and a linked input above the
+provider text limit. It verifies actual native file/history reads and retrieval
+of a middle marker, retaining command observations under its printed temporary
+path. It does not test OS write denial or run a production retro.
+
+`node --test --test-name-pattern='manual branch update|oversized input' scripts/flow.check.mjs scripts/flow-executor.check.mjs`
+reproduces Update Branch being blocked by an uncertain Work attempt. It checks
+that an active provider blocks the update and a confirmed idle provider permits
+it while retaining the failed attempt and recording reconciliation. It also
+checks recovery of retained oversized rejections, refusal when a receipt exists
+or the request cannot be confirmed, and rejection of new oversized input before
+provider dispatch.
+
+`node --test --test-name-pattern='large source issue history|retained source publication|Retry replaces' scripts/flow-executor.check.mjs`
+checks small inline source context and large source history supplied by file
+reference. The large-history fixture exceeds the provider limit before the fix;
+the bounded request retains the full report in a file with a matching digest.
+The Retry scenario verifies a new conversation is created for a confirmed
+rejected first input instead of resuming a thread with no persisted history.
+
 ## Commands and evidence
+
+`node --test scripts/store-runtime.check.mjs scripts/project-stores-flow.check.mjs`
+checks cached display reads during a held shared refresh, coalesced polling,
+read-only cached startup, missing-cache waits, background failure warnings, and
+fresh mutation admission after an earlier nonfresh request. The Flow checks hold
+evidence and observed-PR saves while the selected issue remains readable. Explicit
+file reads await hydration, and failed authoritative saves still block editing.
+These fixtures use disposable stores and start no live issue work.
+`node --test scripts/store-records.check.mjs` also traces Git process launches
+while reading several prefixes from one pinned snapshot. It checks one tree
+listing and bounded content batches, Unicode values, sorted results and caller isolation.
+`node --test scripts/factory-refresh.check.mjs` holds an open-block request while
+clicking another issue. The new issue must render before the earlier action
+finishes, and its view must survive the earlier action's response.
+
+`node --test scripts/flow-progress.check.mjs` checks interleaved issue output,
+workspace updates, timing, terminal results and concurrent-edit protection.
+`node scripts/flow-progress-benchmark.mjs PATH` compares the previous and current
+progress-save and group-eligibility paths over five alternating runs. Its
+disposable project contains 27 issues and two output streams. The JSON at `PATH`
+retains HTTP index latency, callback time, exact persisted output bytes and errors.
+This isolates local server work and does not measure model or GitHub latency.
+`node --test scripts/flow-view-settings.check.mjs` checks that each view uses its
+own folder settings snapshot, issue overrides stay separate, edits appear in the
+next view, and started work retains its frozen settings. The folder-settings
+checks also reject grouping after its preview's settings change.
+
+`node --test scripts/factory-server-control.check.mjs` checks that No new actions
+allows chat requests across issue, project, report, temporary, and coordinator
+conversations while work dispatch stays paused. Its HTTP Discuss regression
+sends and drains queued prompts through an injected provider with the switch on
+and another action running. It starts no live model work.
+
+`node scripts/flow-browser.mjs --investigation-reports` checks retained report
+reading and discussion. Its draft-restoration regression holds the discussion
+response and dispatches a reader scroll before releasing it. The reopened draft
+must retain its text; `report-draft-restore.json` records the observed value.
+
+`node --test scripts/ai-text-bro.check.mjs` checks bro skill loading, a separate
+read-only rewrite, invalid input and provider failure.
+`node scripts/flow-browser.mjs --ai-text` checks top-right hover controls, real
+clipboard contents, the persistent
+blue bro toggle, restoring original text, caret/end insertion and hovered-field
+hotkey routing. It also checks that short Automate me messages contain their
+hover toolbar so the conversation scroller cannot clip its buttons or interrupt Copy.
+It saves `ai-text-controls.png` and `ai-text-controls.json` in its
+evidence directory. The fixture injects model output and speech recognition.
+Live model quality and physical microphone recognition are not measured by it.
+The Factory refresh browser scenario checks that incoming AI text still follows
+the reader at the bottom. View rendering mounts text controls before restoring
+scroll, focus and selection so their layout is included in that restoration.
+The AI-controls scenario recreates its Discuss service before installing its
+provider so earlier browser scenarios cannot supply its response text.
+
+`node --test scripts/flow-delivery.check.mjs` checks that no-change publication
+stops before pushing or creating a PR, including already delivered candidates and
+empty commits. `node scripts/flow-browser.mjs --no-changes` drives the no-change
+Publish preview, Cannot Reproduce suggestion, cancellation and explicit closure
+in a disposable project. It saves `no-changes-close-offer.png`; no live issue is
+closed and no GitHub publication occurs.
+The no-change and folder-settings scenarios use `withBrowserScenarioFixture`.
+It snapshots executor and provider state, Git configuration, and lifecycle files.
+It waits for execution and cleanup tasks, including tasks spawned by completion,
+before restoring the snapshot after success or failure.
+Run `node --test scripts/flow-browser-scenario-fixture.check.mjs` for injected
+failure and chained-cleanup coverage with both existing and absent configuration.
+Run the scenarios individually with `--no-changes` and `--folder-settings`.
+Run `node scripts/flow-browser.mjs --no-changes --folder-settings` together.
+Add `--reverse-fixture-scenarios` to run folder settings before no-change publication.
+The main browser workflow intentionally shares state between checks and does not
+use this boundary. Independent scenarios opt in at their exported entry point.
+The missing-lifecycle browser scenario removes the disposable project's lifecycle
+file before opening settings, even when earlier scenarios initialized it.
+
+`node --test scripts/flow.check.mjs scripts/flow-delivery.check.mjs` checks the
+merged-issue lock, preserved definitions and attempts, external merge observation,
+restart persistence, editable unmerged/local issues, and historical Fixed acceptance.
+`node scripts/flow-browser.mjs --merged-issue` drives the disabled controls and
+direct HTTP guards, bulk preflight, history after reload, Close, Cleanup and the
+deferred reopen guard in a disposable project. It saves a screenshot and
+`merged-issue-readonly.json` under its reported evidence directory and starts no
+live model work.
+
+`node --test scripts/shared-issue-claims.check.mjs scripts/shared-issue-queue.check.mjs scripts/shared-issue-atomic-archive.check.mjs scripts/source-issue-separation.check.mjs`
+uses independent clones and a disposable remote. It checks same-issue exclusion,
+unrelated claim races, exact-owner release, unknown push outcomes, atomic report
+checkpoints, local file preservation, and legacy cutover guards. The direct status
+case refreshes another runner while preserving source HEAD, source tracking refs,
+staged index, source status, and unstaged files in both checkouts. The source
+cutover command is repeatable and refuses unpublished report bytes. The commit
+guard preserves alternate-index semantics. These tests start no production work.
+
+`node scripts/flow-browser.mjs --actions-menu` holds two FlowService executions
+with an injected executor, opens the actions menu, and checks both running rows
+and their Flow output links. It also checks that the open menu removes completed
+work. The disposable fixture saves screenshots and `actions-menu-proof.json`
+under its reported evidence directory. It starts no live model work.
+
+`node --test scripts/fallow-css-reset.check.mjs` runs the pinned Fallow CLI and
+the unchanged strict audit policy on a CSS reset. It also adds an actually unused
+selector and confirms that the same policy blocks it.
+
+`node --test scripts/branch-repair.check.mjs` checks isolated repair candidates,
+retained progress, approval, stale source and environment files, tampered patches
+and check evidence, Stop, restart visibility, and bounded provider repair with
+injected model and check responses. It preserves staged and uncommitted edits.
+`node scripts/flow-browser.mjs --branch-repair` drives the real issue-page button,
+red check-failure state, progress after reload, candidate diff, and explicit
+approval in a disposable checkout. It holds the initial inspector request and
+checks that repair controls wait for it before accepting a command. It injects
+the repair worker and does not run
+a live model or repair a production issue.
+
+`node --test scripts/block-skills.check.mjs scripts/flow-folder-settings.check.mjs`
+checks per-block defaults, personal/project extensions and explicit skill choices.
+`node scripts/flow-browser.mjs --block-skills` drives the graph skill picker,
+missing-skill setup option, and saved No skill/skill selections in a disposable project.
+
+`pnpm run test:factory:env` checks project `.env` credential loading, exported
+environment precedence, and idempotent setup that preserves unrelated values and
+rejects invalid PEM input before writing. It uses disposable directories and keys.
+Each test clears and restores the inherited GitHub App environment so the runner's
+credentials cannot replace the fixture values.
 
 `pnpm run test:project-discuss` checks saved project conversations, immutable
 message settings and attachment copies, explicit queue/Stop/Retry behavior,
 native tool and permission ownership, skill invocation policy, and guarded
 Home/issue dispatch in disposable projects. `pnpm run test:project-discuss:browser`
+checks that Home opens without a selected issue or a Branch Fix control, then
 drives Home/Discuss navigation, retained drafts, Markdown, model/effort and skill
-selection, Tab acceptance, downloading retained attachment copies, queued edits and Stop. Dictation
-uses an injected speech recognizer in this scenario. Real dictation requires
+selection, Tab acceptance, downloading retained attachment copies, queued edits and Stop.
+It also checks opening a long conversation after delayed history and image loading,
+reloads, returning to Discuss, and preserving manual scrolling through a polling
+rerender. It retains those observations in `project-discuss-scroll.json`. Dictation
+uses an injected speech recognizer in this scenario. The spoken send checks
+verify automatic submission without the final "go", no submission for "go" alone,
+and no automatic submission for "go" in the middle. They retain the observed
+provider submissions in `project-discuss-dictation.json`. Real dictation requires
 browser speech-recognition support and microphone permission; audio is not saved
 by Timey. Native provider availability is a separate smoke check.
+The Discuss scenario also opens enough conversations to overflow at desktop and
+narrow widths. It checks container bounds, hidden scrollbar styles, and scrolling
+to every tab, saving the observed styles, widths and visibility in
+`project-discuss-tabs.json`.
+The Discuss scenario saves `project-discuss-styles.json` beside its screenshot.
+It records the source commit and each rendered message's top and bottom border
+styles and widths, so divider checks can use observed computed styles.
 The production closed issues are reserved for the user's own archive test and
 must not be used by these checks.
+
+`node scripts/flow-browser.mjs --interface-state` checks expanded tool activity,
+editor size, drafts, caret and scroll preservation through polling, same-tab
+navigation, and reload. It drags a real selection across an issue poll and checks
+the copied clipboard text. Different requests and new tabs retain independent
+state. The fixture uses disposable conversations and issues and starts no model
+work. `node --test scripts/interface-state.check.mjs` reproduces the original
+Discuss collapse and checks selection through growing and replaced activity.
+
+`node scripts/flow-browser.mjs --project-navigation` checks the ordered Home,
+Issues, Discuss, Reports, and Investigate sidebar links, Home tab reset, Issues navigation, and
+the Automate me tab, dialog, reload persistence, and narrow layout. It saves
+`project-navigation.png` and `project-navigation-automate.png` in its evidence directory.
+The navigation fixture temporarily initializes queue configuration, waits for a
+successful Issues queue response, and unloads the page before restoring configuration.
 
 `pnpm run test:project-home` checks project investigation capture, selected-branch
 execution, automatic follow-up approval and retry, historical closure statistics,
@@ -37,16 +220,24 @@ logs, screenshots, and fixture stay under `.issues/evidence/flow-browser-*`. The
 checks establish UI and protocol behavior, not live model or GitHub execution.
 Use `pnpm run test:flow:browser --block-deletion` for the isolated click-selection,
 confirmation, keyboard safety and persisted block-removal scenario.
+Its fixture identifies added blocks by their new IDs so it deletes the intended
+Advice blocks regardless of their insertion position.
 Use `pnpm run test:flow:browser --issue-results` to check result placement below
 the issue banner, independent playback status, and hiding empty results.
 Use `pnpm run test:flow:browser --human-input` for required-review instructions,
 PR links, sidebar and block indicators, persisted requests, explicit Continue,
 and the distinction between human input and technical failure. The fixture
-injects review readiness; it performs no live GitHub review or merge.
+injects review readiness and an open PR response for the merged-issue guard; it
+performs no live GitHub review or merge.
 Use `pnpm run test:folder-settings:browser` for the isolated folder settings,
 repair, search, grouping eligibility, and selected Open or Closed bulk actions.
 The fixture injects AI responses and execution, and uses disposable reports.
 The aggregate factory and browser scripts include these checks.
+Run `node scripts/flow-browser.mjs --sidebar-scroll` to check wheel scrolling over
+the project menu, Notes, Files and Issues with overflowing content at desktop and
+narrow widths. The fixture adds rows to the real page and checks that each wheel
+moves content outside the hovered section. It retains screenshots and
+`sidebar-scroll.json`, and checks that resizing remains available after scrolling.
 For the isolated investigation follow-up review, run
 `node scripts/flow-browser.mjs --investigation-followups`.
 `node --test scripts/flow-followups.check.mjs` checks reviewed creation, lineage,
@@ -55,12 +246,27 @@ These checks inject proposal responses and create no issues in the live queue.
 For an installed Chrome when the Playwright Chromium cache is unavailable, run
 `TIMEY_BROWSER_CHANNEL=chrome pnpm run test:browser`.
 
+`node scripts/flow-browser.mjs --connection-recovery` checks expired sessions and
+recovery after a lost action response in Flow and Classic with a disposable issue.
+It waits for initialized controls and the pause request before dropping health
+responses, then checks the selected issue, saved pause state and single dispatch
+after recovery. The action uses a click because its deliberately lost response
+can reset the checkbox before reconnection restores the saved state.
+
 For default [draft PR handoff](issue-delivery.md#default-draft-pr-handoff), attempt
 relevant checks once per changed candidate and retain failures or unavailable
 checks as such. They do not block the handoff or trigger a repair loop. Passing
 verification, fixed closure and the explicitly selected verified-delivery route
 retain the gates below. A handed-off assignment may contain incomplete code;
 never describe that result as verified implementation.
+
+Factory protocol fixtures use `factoryGitFixture` to stage project and Inbox settings
+before their initial commit, so later queue reads preserve the clean source tree.
+Deployment and restart fixtures copy `factory/system` with the server scripts.
+The legacy UI rendering fixture loads all inline scripts in document order,
+including both the embed setup and the application script.
+Chat startup tests use disposable project settings and wait for actual request
+dispatch before advancing their mocked timeout.
 
 Use pnpm and the checked-in `pnpm-lock.yaml`. `.nvmrc` pins the local runtime;
 `package.json` declares supported Node versions and the pnpm version in
@@ -95,8 +301,10 @@ or root CSV files. Existing root CSVs are never test cleanup targets.
 
 `verify` exports source into a disposable local clone, shares installed dependencies
 only when lockfiles match, and deletes the clone afterward. Each command prints
-START, streams output while it runs, and emits a periodic running message during
-silence. Failed commands print their complete diagnostic output in a CI log group; Node test failures print the full final failure section, including assertions and source locations. Retained artifacts keep the complete command log.
+START, streams child stdout and stderr into the console while also retaining
+them in the evidence log, and emits a periodic running message during
+silence. Every verification command, including CI, has a 15-minute deadline;
+a heartbeat never extends it. Failed commands print their complete diagnostic output in a CI log group; Node test failures print the full final failure section, including assertions and source locations. Retained artifacts keep the complete command log.
 Per-command logs are readable before completion; summaries retain the
 original pass/fail and separate audit-channel assessment. Evidence stays under
 `.issues/evidence/` with a JSON summary and per-command logs. Preserve relevant
@@ -109,7 +317,18 @@ aggregate result while the other required checks still run and report separately
 The Flow **Verify** block can check saved, uncommitted source changes. Its
 verification and step audit must report the same snapshot tree. The source
 check records symlinks by their link targets and accounts for deleted files.
-Update Branch checks that the issue branch contains the fetched starting commit. Publish PR requires a clean commit.
+Update Branch aborts a pending merge before fetching the starting branch, then
+checks that the issue branch contains the fetched commit. Its focused executor
+checks cover restarting a conflicted merge against the latest upstream while
+preserving committed issue work and an untracked draft. If conflict resolution
+returns without resolving the files, the error includes the worker’s explanation
+or decision request. Other Git operations
+remain blocked. The issue header shows a red Merge in progress menu while Git
+has a pending local merge. Its Abort merge action checks the observed merge and
+requires an idle issue. A new Merge run also aborts a pending local merge once
+before synchronization; subsequent repair steps preserve their own merge state.
+`node scripts/flow-browser.mjs --merge-recovery` checks the control through reload
+and abort using a disposable real conflict. Publish PR requires a clean commit.
 Merge verifies the committed candidate against the fetched destination. Request
 sets the local scope for each new attempt. The default runs the Factory smoke
 suite, both browser suites, Vitest and Work's recorded focused tests, along with
@@ -118,6 +337,33 @@ the full Factory suite in place of the smoke suite. Both scopes end a local
 verification command after 15 minutes. Evidence reuse requires matching inputs,
 including focused commands and the required scope. GitHub CI retains its full
 suite and existing branch protection.
+
+Drag-and-drop browser scenarios are excluded from ordinary verification and
+full regression, including Merge and CI. They run only when explicitly requested
+with `pnpm run test:browser:drag-and-drop`. This covers legacy queue reordering,
+issue-folder assignment and Flow folder dragging. These fragile browser
+interactions must not gate unrelated delivery. Deterministic folder and ordering
+tests remain in their existing suites. `browser-scenario-policy.mjs` applies this
+selection in both browser runners; its focused check verifies ordinary, full and
+explicit selection.
+
+Before Merge invokes its repair worker, it copies the verification summaries,
+command output and each failed check log into the issue checkout. The prompt
+identifies failed checks separately from successful checks and references the
+local copies. Original records remain unchanged. The regression in
+`scripts/flow-executor.check.mjs` covers a passing build followed by a browser
+failure whose original logs are outside the worker checkout.
+
+The Notes browser scenario leaves a pending Discuss draft, unloads the preceding
+page, and closes its Discuss service before installing its own injected provider.
+Its console assertion catches draft saves that cross that fixture boundary. Run
+`node scripts/flow-browser.mjs --project-discuss --local-notes` to verify the
+Discuss-to-Notes transition; combining focused flags runs those scenarios together.
+
+The capture-start browser scenario waits for active route handlers before removing
+its mocks. Issue refreshes can still be fetching the fixture queue when capture
+finishes; removing those routes immediately can release a request before its
+handler fulfills it.
 
 When closing a delivered flow, the delivery manifest records the verified
 candidate tree and the upstream Work blocks' requested proof. It retains proof
@@ -131,6 +377,18 @@ when an aggregate command would include unrelated tests. Work leaves aggregate
 suites such as `pnpm run test:factory` to full candidate verification, which
 Merge requires. Add a focused test when needed. Factory rechecks formatting and
 Fallow after Work's response.
+
+A standalone focused browser check can be recorded as `node scripts/<name>-browser.mjs`
+without extra arguments. The main Flow browser runner still requires a scenario
+flag, and the aggregate Factory browser runner belongs to full verification.
+
+Fallow 3.35.0 can miss CSS consumers in plain JavaScript HTML strings, and its
+source-location attribution can mark unchanged findings as introduced when an
+earlier line is deleted. Reproduce suspected inherited findings on the saved base.
+When the intent is to remove a visible style, an explicit reset such as
+`border-bottom: none` can preserve that intent without shifting existing findings.
+Do not add meaningless padding or suppress diagnostics. The project extension at
+`user/flow/extensions/blocks/fix-the-branch.md` gives repair runs this guidance.
 
 When a Work check cannot install dependencies, the issue checkout retains
 `.issues/evidence/dependency-recovery.json` and per-attempt install logs. A
@@ -489,6 +747,20 @@ suite, so a sandbox refusal is an immediate environment failure with no claimed
 checks. Audit-only checkpoints do not require networking. Preflight never grants
 permissions or installs dependencies automatically.
 
+For model-run checks, a `listen EPERM` or `listen EACCES` refusal requires a native
+permission request for that exact command. Work retains the same conversation and
+checkout when the model reports unfinished work, including uncollected proof.
+It allows up to three continuation turns, separately from the three check-repair
+attempts. A concrete human input requirement, denied or unavailable permission,
+or unavailable external dependency stops the run with its reason. Factory never
+grants permission itself. `node --test scripts/flow-executor.check.mjs` checks
+continuation, its limit, and actual blocker handling.
+
+Fallow already skips hidden agent tooling. `.fallowrc.json` explicitly excludes
+`.agents/**` so this intentional scope does not emit `skipped-source-dotdir`.
+Application code remains checked, including new unused exports; the real CLI
+regression is in `scripts/fallow-css-reset.check.mjs`.
+
 Summaries retain execution phase timestamps and owned command PIDs. Cancellation
 stops the runner's own child process group, retains a failed summary and starts no
 remaining checks. Concurrent checks for the same checkout and candidate share the
@@ -562,3 +834,107 @@ of failure lines. Full stdout/stderr remains in per-command logs. The outer
 verification log updates while commands run, and factory activity receives the
 same concise progress. Protocol fixtures inject both legacy and coordinator
 connections and reject accidental access to the installed model provider.
+
+GitHub Actions receives verification stdout/stderr as each child emits it. A
+`RUNNING` line is a process heartbeat, not a completed test. The final failure
+summary and retained evidence logs remain available after the command exits.
+An already-running GitHub job keeps the verifier from its checked-out revision;
+new streaming behavior requires a run containing the updated verifier.
+
+`node scripts/capture-grilling-browser.mjs` opens the actual Create issue dialog in
+a disposable browser fixture and checks skill selection in the submitted request,
+failed-save retry and retained draft. It saves a screenshot and request JSON under
+`.issues/evidence/`. Provider execution is covered separately from this UI fixture.
+
+Flow browser verification writes under `TIMEY_BROWSER_OUTPUT/flow` when run by
+the aggregate verifier. An explicit `TIMEY_FLOW_BROWSER_OUTPUT` still overrides
+that location. This keeps its logs, response diagnostics and screenshots inside
+the retained verification artifacts after the exported checkout is removed.
+HTTP error records include the response body and originating request; unexpected
+browser errors continue to fail verification.
+
+Work All Night fixtures create the folders they assign, so execution reaches the
+injected worker through the same settings validation as a real issue. Start/stop
+checks have a 30-second test deadline and retain per-issue failure explanations.
+The dependency-failure scenario also checks that an independent issue adopts its
+clarified route and reaches the Merge confirmation within the owning run.
+Shared-chat DOM fixtures load the production template. Browser discussion
+scenarios close the preceding provider before installing their own fixture.
+Pending publication joins all preceding unfinished lanes even when the standard
+flow has no suggested Verify block. New blocks default to insertion before
+publication; existing attempted publication dependencies remain unchanged.
+
+Queue and settings snapshots must not create tracked Inbox or project settings
+files. Startup and explicit setup own initialization. The source-cleanliness
+regression in `factory-ui.check.mjs` checks repeated snapshots and a stable review
+basis. Deployment and restart fixtures include the installed `factory/system`
+assets alongside scripts, matching the real runtime’s schema dependencies.
+Browser fixture helpers identify the block created by an add action by its ID;
+they do not assume additions occupy the last position in a flow.
+
+Flow-card reveal checks wait for the whole card to be visible in the current
+scroll viewport. Card bounds and viewport bounds are measured together; partial
+scroll movement alone does not mean the reveal has finished. Failures retain
+relative card bounds and viewport height in the polling diagnostic.
+
+`node scripts/flow-browser.mjs --error-recovery` triggers a rejected branch update
+and verifies that a successful explicit Refresh clears its old error banner.
+Background polling retains action errors. The running-Work browser scenario also
+checks that both Update Branch entry points are disabled while a block is active;
+opening the worktree remains available.
+
+Update Branch automatically makes up to three conflict-resolution attempts in the
+same conversation. Each attempt receives the previous failure, retains separate
+evidence, and preserves the target, HEAD, and unrelated staged files. An explicit
+`flow-result` blocker of `human-input` or a permission denial stops the loop early.
+Only a fully staged resolution is committed. Failed attempts retain the merge.
+Unresolved conflicts turn Fix Branch red after the operation stops, including
+when an older repair record is stale or passed. The dialog offers Retry Update
+Branch after automatic recovery has failed; it reuses the guarded update path.
+`flow-executor.check.mjs` checks recovery on a later attempt, exhaustion, and human
+input. `--branch-repair` checks the red fallback and retry through the real UI.
+
+Merge budgets repair attempts per distinct blocker within an explicit run. Each
+blocker receives up to the configured `repairAttempts`; a new failure does not
+inherit an unrelated check's exhausted budget. Repeated failing source trees and
+unchanged repair candidates stop without another worker turn. GitHub failures
+retain the exact failed run's uploaded verification summaries and command logs in
+the issue checkout. Missing artifacts fall back to failed job output. Run metadata
+must match the candidate commit before evidence is used. The repair worker gets
+those local files, then Factory verifies, pushes, and waits for fresh checks.
+`flow-executor.check.mjs` drives this sequence through CI-only failure, changed
+candidates, multiple blockers, repeated failures, and cycles.
+
+`node scripts/flow-browser.mjs --project-issues` selects disposable closed issues
+in the real Issues iframe, verifies that the editor and resize handle are absent,
+archives only the checked reports, and opens an issue in the normal Flow view.
+It also checks that open selections retain the bulk editor. All archive fixtures
+are isolated; the user's production closed reports are never moved by this test.
+
+The project Issues browser check switches through the visible Open and Closed
+buttons in both directions, verifies that switching clears selection and the
+editor, and archives a closed selection with Archive selected. It also verifies that
+the disabled direction caret is hidden for fixed status ordering and reappears
+for an order whose direction can change.
+
+`node scripts/flow-browser.mjs --issue-status-folders` checks the rendered In progress
+and Blocked sidebar collections with disposable reports in multiple folders. Saved
+attempts and an injected active registry entry cover running, blocked, human input,
+approval, interrupted and stopped states. It checks live polling after status
+changes and explicit Pause, collection order, foreign-project exclusion, unchanged
+report bytes and folder assignments. It saves `issue-status-folders-proof.json` and
+`issue-status-folders.png` in the reported evidence directory. It starts no model.
+
+`node scripts/flow-browser.mjs --local-notes` checks that collapsed and expanded
+Notes each retain their state after refresh and saves `local-notes-disclosure.json`.
+`node scripts/flow-browser.mjs --project-issues` checks the closed selection action
+reads Archive selected and saves `closed-issues-action.json` beside its screenshot.
+`node scripts/flow-browser.mjs --issue-status-folders` compares the rendered Blocked
+and In progress carets with a regular sidebar folder in both states. It saves
+`issue-status-carets.json` and screenshots of each expanded and collapsed section.
+
+`node scripts/flow-browser.mjs --issue-scrollbar` checks the center issue flow's
+scrollbar. It verifies that wheel scrolling moves the flow and shows its thumb,
+then the thumb hides after scrolling stops. The flow width and scroll position
+remain stable. It saves `issue-scrollbar.json` and screenshots of the idle,
+scrolling and stopped states in the reported evidence directory.

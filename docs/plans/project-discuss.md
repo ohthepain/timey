@@ -22,13 +22,20 @@ authorizes this documentation update; it does not authorize implementation.
 - Discuss controls issues through their existing operations. It does not change
   issue handling, participate in issue execution, or receive ongoing issue input.
   The earlier proposal to report issue progress back into Discuss was rejected.
+- Issues created from Discuss describe the agreed future work and its acceptance
+  criteria. Instructions to create only and leave the issue idle apply to the
+  creation operation and stay in the conversation and receipt. Saved descriptions
+  retain product constraints, prerequisites and required human approvals.
 - Support multiple saved project conversations with New chat and a conversation
   selector. Retain each conversation's history, drafts, model, effort, and selected
   skills.
 - Model, effort, and skill changes apply to subsequent messages. Running and
   already-queued messages retain the settings submitted with them.
-- Voice input is dictation into editable composer text. The person chooses when
-  to send it. Live spoken conversation is outside the initial scope.
+- Voice input is dictation into editable composer text. A final spoken word "go"
+  is an explicit send command. Remove it and submit the remaining prompt
+  automatically, unless that prompt is empty or whitespace only. A "go" in the
+  middle of the dictation does not send. Otherwise the person chooses when to
+  send. Live spoken conversation is outside the initial scope.
 - Retain the transcribed text and discard the dictation recording after
   transcription. On dictation failure, preserve the existing draft and offer
   retry or typing.
@@ -74,6 +81,11 @@ These ordinary query results do not import issue conversations or establish
 ongoing updates.
 
 Chat message editing and retries are independent of issue execution.
+A failed response pauses queued work and preserves its error. Sending a new
+message explicitly continues the chat with that message's current settings,
+ahead of the older queue. Reading or refreshing never resumes failed work.
+Explicit Stop and uncertain interrupted turns retain their existing Resume/Retry
+requirements.
 
 ## Message editing and retries
 
@@ -109,6 +121,8 @@ sessions are deliberately limited to drafting reviewed skill changes.
   whenever a request remains ambiguous after checking available facts. This is
   an ordinary skill invocation, with no special looping mechanism or autonomous
   extra turns. The skill asks questions and waits for the person's answers.
+- **No Grilling** is the default for new conversations and invokes no clarification
+  skill. Existing conversations retain their saved choice.
 - Available choices include **Grill Me** (`grill-me`), **Grill with Docs**
   (`grill-with-docs`), and **Grilling** (`grilling`). Retain the selected choice
   for the conversation until changed. Clear requests proceed directly.
@@ -126,6 +140,12 @@ sessions are deliberately limited to drafting reviewed skill changes.
   or as enforcement of operation rules.
 
 ## Implementation shape
+
+On 2026-11-21, the user requested the same chat UI and spoken send behavior
+throughout the app while reviewing report discussion. The planned
+[shared chat UI](investigation-reports.md#shared-chat-ui-and-behavior) reuses the
+message view, composer, and send behavior while preserving each conversation's
+history and ownership. This is a design requirement, not a completed refactor.
 
 ProjectDiscuss owns project conversation records, queued messages, attachment
 copies, and explicit turn controls. It shares the low-level Codex transport,
@@ -167,3 +187,56 @@ Actual dictation uses browser speech recognition and requires browser support an
 microphone permission. Unsupported browsers retain normal text input and explain
 why dictation is unavailable. Real closed issues have not been archived; the
 user's live Discuss archive test remains a separate acceptance step.
+
+## Skill setup
+
+The shared `createSkillSelect` control in `scripts/factory-ui/skill-select.js`
+checks every listed skill against discovery and inserts **Set up skills** into
+the dropdown when any are absent. Missing skill choices are disabled. Entries
+with `kind: skill` declare their skill name; entries with `kind: value` are
+ordinary choices with no skill dependency. **No Grilling** uses `kind: value`
+and appears last, after any setup action.
+
+Each project declares its own required skill sets in `user/skills/requirements.json`.
+Each entry contains `name`, optional `source` (the installation URL), and `skills`
+(the required skill names). This project registers pstack and Matt Pocock's
+collection. Other projects can use different sources or declare project-owned
+skills without a source URL. No configuration means no required collections. Setup
+readiness is scoped to the skill options in this control, rather than unrelated
+skills elsewhere in those collections.
+
+Selecting Set up skills restores the saved selection and sends a visible
+installation request in the selected chat (or creates a chat if needed), using
+No Grilling and no selected skills. It preserves the composer draft and uses
+normal queue and permission controls. Opening Discuss starts no installation.
+Use Refresh skills afterward to update the control.
+
+Factory supplies its own `skill-installer` in
+`factory/system/skills/skill-installer/SKILL.md`. It installs complete skill
+folders into the active project's `user/skills`, using the current project’s configured installation sources. Factory-owned skills take precedence over host
+Codex skills with the same name, so setup does not depend on a personal Codex
+installation or install into its private directory.
+
+Selected Factory and Project skill instructions are included as text in the
+actual turn, with their source path for resolving supporting resources. Native
+Codex skill discovery does not know about the factory's custom directories;
+passing only a native skill reference can silently omit these instructions.
+Host-owned skills retain native skill inputs.
+
+Required skill names are minimum readiness checks, not a filter on installing a
+requested collection. Copy the full requested collection, including named skill
+dependencies. Discuss translates vendor Skill-tool calls into reading the named
+project skill file; it exposes those dependency paths separately from the
+implicitly invocable catalogue.
+
+The live Discuss installation test installed all 39 Matt Pocock skill folders
+from revision `abeeaf95660ba9e8b7c753eb38f441ca707a8823`. An independent
+comparison found no missing or changed upstream files. The first attempt copied
+only two wrapper skills; the retained chat records that failure and the explicit
+request that completed the collection.
+
+Chat grilling options now come from `factory/system/chat/grilling.md`, with
+additive project `user/chat/grilling.md` and personal Markdown extensions. The
+shared selector keeps No Grilling last and offers Add skill to open the project
+extension. Block selectors use their existing Markdown Skill lists and user
+extensions; the separate block-skills JSON configuration has been removed.

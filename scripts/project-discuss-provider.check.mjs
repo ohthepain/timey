@@ -97,6 +97,17 @@ test('project provider uses current folder, writable permission guards, conditio
   assert.equal(skills.find(({ name }) => name === 'grill-with-docs').allowImplicitInvocation, false);
 });
 
+test('a prepared local note reaches the provider only with the later explicit prompt', async (t) => {
+  const f = fixture(t);
+  f.session.noteContext = { id: 'note', text: 'Keep this thought', issueId: '20261120-note' };
+  assert.deepEqual(f.calls, []);
+  await f.provider.turn(f.session, f.message, f.context);
+  const prompt = f.calls.find(({ method }) => method === 'provider/turn').params.prompt;
+  assert.match(prompt, /Keep this thought/);
+  assert.match(prompt, /20261120-note/);
+  assert.match(prompt, /Current request:\nRead this project\./);
+});
+
 test('explicit-only selections and retained images/files are actual native turn input', async (t) => {
   const f = fixture(t);
   const path = join(f.root, 'retained.txt');
@@ -187,4 +198,24 @@ test('concurrent Stop signals interrupt the exact native turn only once', async 
   f.connection.turns.set('thread', { started: Promise.resolve({ turn: { id: 'turn' } }) });
   await Promise.all([f.provider.stop(f.session), f.provider.stop(f.session)]);
   assert.equal(f.calls.filter(({ method }) => method === 'turn/interrupt').length, 1);
+});
+
+test('No Grilling reaches the model without any installed clarification skills', async (t) => {
+  const f = fixture(t);
+  const call = f.connection.call.bind(f.connection);
+  f.connection.call = (method, params) => (method === 'skills/list' ? { data: [] } : call(method, params));
+  f.message.settings.clarificationSkill = 'none';
+  await f.provider.turn(f.session, f.message, f.context);
+  assert.ok(f.calls.some(({ method }) => method === 'provider/turn'));
+  const start = f.calls.find(({ method }) => method === 'thread/start');
+  assert.match(start.params.developerInstructions, /No Grilling: do not invoke/);
+  assert.match(start.params.developerInstructions, /Factory does not provide a native Skill tool/);
+  assert.doesNotMatch(start.params.developerInstructions, /Explicitly chosen clarification skill/);
+});
+
+test('missing selected clarification skill fails before starting a model turn', async (t) => {
+  const f = fixture(t);
+  f.message.settings.clarificationSkill = 'grill-me';
+  await assert.rejects(f.provider.turn(f.session, f.message, f.context), /Choose No Grilling or set up skills/);
+  assert.ok(!f.calls.some(({ method }) => method === 'thread/start'));
 });

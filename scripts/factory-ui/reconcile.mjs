@@ -58,7 +58,7 @@ export function beginReconciliation(service, queue, issue) {
     checkout: service.root,
   });
   writeJson(join(lock, 'owner.json'), { runId: run.id, pid: process.pid });
-  service.perform(run, async () => {
+  service.perform(run, async (service) => {
     try {
       await reconcile(service, queue, issue, run);
     } finally {
@@ -81,7 +81,7 @@ async function reconcile(service, queue, issue, run) {
     progressBasis(readQueue(service.root), issue.id) === progressBasis(queue, issue.id),
     'The project or issue changed during review. No updates recorded.'
   );
-  appendReview(service.root, issue, result, run, evidence, result.next_state);
+  await appendReview(service.root, issue, result, run, evidence, result.next_state);
   service.store.update(run, { status: 'completed', summary: result.summary, evidence });
 }
 

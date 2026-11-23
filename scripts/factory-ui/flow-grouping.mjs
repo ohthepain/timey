@@ -8,6 +8,7 @@ import { groupProofRows } from './flow-group-proof.mjs';
 import { issueHasActiveWork } from './issue-cleanup.mjs';
 import { groupChildren, groupMaster, storedGroups } from './issue-group.mjs';
 import { issueStorageDirectory, moveStoredIssue, updateStoredIssueMetadata } from './issue-report-storage.mjs';
+import { afterReportWrite, registeredProjectStores } from './stores/report-access.mjs';
 import { resolveFolderSettings } from './issue-folder-settings.mjs';
 import { deliveryTarget } from './flow-block-data.mjs';
 
@@ -179,6 +180,11 @@ export class FlowGrouping {
   }
 
   preview({ folder, issueIds }, reasoning) {
+    const stores = registeredProjectStores(this.service.root);
+    return afterReportWrite(stores?.assertSameStore(issueIds), () => this.previewCurrent(folder, issueIds, reasoning));
+  }
+
+  previewCurrent(folder, issueIds, reasoning) {
     requireThat(typeof folder === 'string' && folder.trim(), 'Choose an issue folder.');
     const candidates = this.snapshot(folder, issueIds);
     const wording = combinedWording(folder, candidates);
@@ -212,13 +218,23 @@ export class FlowGrouping {
     const path = join(this.previews, `${previewId}.json`);
     const preview = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : null;
     requireThat(preview && preview.expires > Date.now(), 'Review a current combined request first.');
-    return this.flows.capture(
-      { requestId, description: wording, folder: preview.grouping.folder, type: preview.type },
-      preview.grouping
+    const stores = registeredProjectStores(this.service.root);
+    const ids = preview.grouping.children.map((child) => child.id);
+    return afterReportWrite(stores?.assertSameStore(ids), (issueStore) =>
+      this.flows.capture(
+        {
+          requestId,
+          description: wording,
+          folder: preview.grouping.folder,
+          type: preview.type,
+          ...(issueStore && { issueStore }),
+        },
+        preview.grouping
+      )
     );
   }
 
-  detach({ issueId, subIssueId, revision }) {
+  async detach({ issueId, subIssueId, revision }) {
     const master = this.flows.selected(issueId);
     const flow = this.flows.read(master);
     requireThat(
@@ -228,10 +244,10 @@ export class FlowGrouping {
     requireThat(revision === flow.revision, 'The master changed. Review its sub-issues again.');
     const target = groupChildren(master).find(({ id }) => id === subIssueId);
     requireThat(target, 'Choose an attached sub-issue.');
-    this.flows.pause(issueId, 'A sub-issue was detached.');
+    await this.flows.pause(issueId, 'A sub-issue was detached.');
     const shared = this.service.sharedIssues?.acquire(master, true);
-    this.flows.store.save(flow, revision);
-    updateStoredIssueMetadata(this.service.root, master, detachedGroupMetadata(master, target));
+    await this.flows.store.save(flow, revision);
+    await updateStoredIssueMetadata(this.service.root, master, detachedGroupMetadata(master, target));
     if (shared) this.service.sharedIssues.checkpoint(issueId, 'Sub-issue detached', shared);
     return this.flows.view(issueId);
   }
@@ -244,7 +260,7 @@ export class FlowGrouping {
     );
     const children = groupChildren(issue);
     if (!masterId && !formerMasters.length && !children.length && !issue.issue_group) return undefined;
-    const proofRows = groupProofRows(flow);
+    const proofRows = groupProofRows(flow, undefined, {}, this.service.root);
     const canDetach =
       !issue.closed && !issueHasActiveWork(this.service, issue.id) && !this.flows.overnight?.owns(issue.id);
     return {
@@ -278,7 +294,12 @@ export class FlowGrouping {
 
   finish(master) {
     if (!master.closed || master.closure?.reason !== 'fixed') return;
-    for (const child of groupChildren(master)) this.closeChild(master, child);
+    const children = groupChildren(master);
+    const next = (index) =>
+      index < children.length
+        ? afterReportWrite(this.closeChild(master, children[index]), () => next(index + 1))
+        : undefined;
+    return next(0);
   }
 
   closeChild(master, child) {
@@ -290,7 +311,7 @@ export class FlowGrouping {
         issue.closure?.reason === 'fixed-by' && issue.closure?.fixed_by === master.id,
         `${issue.title} was closed separately. Reconcile the sub-issue report.`
       );
-      if (issue.location === 'open') this.finishChildPublication(issue);
+      if (issue.location === 'open') return this.finishChildPublication(issue);
       return;
     }
     requireThat(!issueHasActiveWork(this.service, id), `Wait for ${issue.title} to be idle before closing the group.`);
@@ -298,17 +319,19 @@ export class FlowGrouping {
     const at = master.closure.at;
     const reason = `Fixed by ${master.issueNumber ? '#' + master.issueNumber : master.id}. See the master’s accepted result for proof.`;
     const state = closedIssueState(root);
-    updateStoredIssueMetadata(root, issue, {
-      state,
-      updated: at,
-      closure: { reason: 'fixed-by', label: 'Fixed by', details: reason, at, actor: 'human', fixed_by: master.id },
-      ...(issue.human_checks && { human_checks: acceptedChildChecks(master, child, issue) }),
-      lifecycle_history: [
-        ...(issue.lifecycle_history ?? []),
-        { state, outcome: 'completed', actor: 'human', reason, at },
-      ],
-    });
-    this.finishChildPublication(issue, shared);
+    return afterReportWrite(
+      updateStoredIssueMetadata(root, issue, {
+        state,
+        updated: at,
+        closure: { reason: 'fixed-by', label: 'Fixed by', details: reason, at, actor: 'human', fixed_by: master.id },
+        ...(issue.human_checks && { human_checks: acceptedChildChecks(master, child, issue) }),
+        lifecycle_history: [
+          ...(issue.lifecycle_history ?? []),
+          { state, outcome: 'completed', actor: 'human', reason, at },
+        ],
+      }),
+      () => this.finishChildPublication(issue, shared)
+    );
   }
 
   finishChildPublication(issue, context) {

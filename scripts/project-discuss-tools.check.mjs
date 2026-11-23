@@ -4,7 +4,7 @@ import { mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { createProjectDiscussTools } from './factory-ui/project-discuss-tools.mjs';
 import { gitFixture } from './git-fixture.mjs';
-import { listAvailableSkills } from './factory-ui/skills.mjs';
+import { listAvailableSkills, skillInputs } from './factory-ui/skills.mjs';
 
 function fixture(t) {
   const { root } = gitFixture(t, 'project-tool-');
@@ -233,4 +233,80 @@ test('archive batch lets the server handle other events before the whole selecti
   assert.equal(f.service.issueStorageTasks.size, 1, 'Restart must still see the running archive');
   await operation;
   assert.equal(f.service.issueStorageTasks.size, 0);
+});
+
+test('factory skill-installer takes precedence over the host Codex installer', async (t) => {
+  const f = fixture(t);
+  const host = join(f.root, 'host-installer.md');
+  writeFileSync(host, '---\nname: skill-installer\ndescription: Host-only installer\n---\nInstall into Codex home.\n');
+  const connection = {
+    ready: async () => {},
+    call: async () => ({ data: [{ skills: [{ name: 'skill-installer', path: host, enabled: true }] }] }),
+  };
+  const skills = await listAvailableSkills(connection, f.root);
+  const matches = skills.filter((skill) => skill.name === 'skill-installer');
+  assert.equal(matches.length, 1);
+  assert.equal(matches[0].source, 'Factory');
+  const instructions = readFileSync(matches[0].path, 'utf8');
+  assert.match(instructions, /user\/skills/);
+  assert.match(instructions, /user\/skills\/requirements.json/);
+  assert.doesNotMatch(instructions, /\.codex\/skills|CODEX_HOME/);
+});
+
+test('factory skill contents reach the turn without relying on native skill discovery', async (t) => {
+  const f = fixture(t);
+  const skills = await listAvailableSkills({ ready: async () => {}, call: async () => ({ data: [] }) }, f.root);
+  const installer = skills.find((skill) => skill.name === 'skill-installer');
+  const input = skillInputs([installer]);
+  assert.equal(input[0].type, 'text');
+  assert.ok(input[0].text.includes(readFileSync(installer.path, 'utf8')));
+  assert.ok(input[0].text.includes(installer.path));
+});
+
+test('project-owned skills override host skills with the same name', async (t) => {
+  const f = fixture(t);
+  const host = join(f.root, 'host.md');
+  writeFileSync(host, '---\nname: custom\ndescription: Host skill\n---\nHost instructions.');
+  mkdirSync(join(f.root, 'user/skills/custom'), { recursive: true });
+  writeFileSync(
+    join(f.root, 'user/skills/custom/SKILL.md'),
+    '---\nname: custom\ndescription: Project skill\n---\nProject instructions.'
+  );
+  const skills = await listAvailableSkills(
+    {
+      ready: async () => {},
+      call: async () => ({ data: [{ skills: [{ name: 'custom', path: host, enabled: true }] }] }),
+    },
+    f.root
+  );
+  const selected = skills.filter((skill) => skill.name === 'custom');
+  assert.equal(selected.length, 1);
+  assert.equal(selected[0].source, 'Project');
+  assert.match(skillInputs(selected)[0].text, /Project instructions/);
+});
+
+test('report discussion follow-ups retain source provenance and require approval without starting the source', async (t) => {
+  const f = fixture(t);
+  const report = {
+    reportId: 'retained-report',
+    source: { issueId: 'archived-investigation', attemptId: 'original-inquiry' },
+    outputAttemptId: 'original-output',
+  };
+  const tools = createProjectDiscussTools(f.service, { flows: () => f.flows, reportContext: () => report });
+  const result = await tools.invoke('issue_create', {
+    description: 'Fix the uncovered parser error',
+    requestId: 'report-followup',
+    needsApproval: false,
+  });
+  assert.equal(result.issueId, '20261118-test');
+  const captured = f.calls.find((call) => call?.requestId === 'report-followup');
+  assert.equal(captured.needsApproval, true);
+  assert.equal(captured.sourceIssue, 'archived-investigation');
+  assert.equal(captured.sourceAttempt, 'original-inquiry');
+  assert.match(captured.description, /retained-report/);
+  assert.equal(
+    f.calls.filter((call) => call?.action).length,
+    0,
+    'Creation neither restores nor runs the investigation.'
+  );
 });

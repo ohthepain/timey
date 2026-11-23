@@ -6,11 +6,21 @@
     <meta name="color-scheme" content="dark" />
     <title>Factory · Flow workspace</title>
     <link rel="stylesheet" href="/flow.css" />
+    <link rel="stylesheet" href="/ai-text.css" />
+    <script src="/hotkeys-ui.js" defer></script>
+    <script src="/ai-text-ui.js" defer></script>
     <link rel="stylesheet" href="/project-home.css" />
+    <link rel="stylesheet" href="/project-settings.css" />
+    <script src="/project-settings-ui.js" defer></script>
     <link rel="stylesheet" href="/project-discuss.css" />
+    <link rel="stylesheet" href="/project-reports.css" />
+    <link rel="stylesheet" href="/local-notes.css" />
+    <script src="/view-state.js" defer></script>
     <script src="/issue-chat-ui.js" defer></script>
-    <script src="/discuss-markdown.js" defer></script>
+    <script src="../../node_modules/markdown-it/dist/markdown-it.min.js" defer></script>
+    <script src="/skill-select.js" defer></script>
     <script src="/project-discuss-ui.js" defer></script>
+    <script src="/project-reports-ui.js" defer></script>
     <script src="/server-control-ui.js" defer></script>
     <script src="/issue-closure-ui.js" defer></script>
     <script src="/issue-folder-drag-ui.js" defer></script>
@@ -19,7 +29,12 @@
     <script src="/project-admin-ui.js" defer></script>
     <script src="/project-home-ui.js" defer></script>
     <script src="/investigation-issue-ui.js" defer></script>
+    <script src="/investigation-flow-controls-ui.js" defer></script>
+    <script src="/branch-repair-ui.js" defer></script>
+    <script src="/issue-store-ui.js" defer></script>
+    <script src="/issue-ownership-ui.js" defer></script>
     <script src="/flow-ui.js" defer></script>
+    <script src="/local-notes-ui.js" defer></script>
     <script src="/sidebar-files-ui.js" defer></script>
     <script src="/view-inspection.js" defer></script>
   </head>
@@ -30,75 +45,108 @@
     </script>
     <div id="app" class="workspace">
       <aside class="sidebar" aria-label="Factory sidebar">
-        <div class="project-header">
-          <a class="brand" href="/" aria-label="Project home"
-            ><span class="brand-mark" aria-hidden="true">⌘</span> <span id="project-name">Factory</span
-            ><span class="brand-tag">FLOW</span></a
-          >
-          <button class="icon-button" id="project-settings" aria-label="Project settings" title="Project settings">
-            <svg
-              width="18"
-              height="18"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="1.5"
-              aria-hidden="true"
+        <div class="sidebar-content">
+          <div class="project-header">
+            <a class="brand" href="/" aria-label="Project home"
+              ><span class="brand-mark" aria-hidden="true">⌘</span> <span id="project-name">Factory</span
+              ><span class="brand-tag">FLOW</span></a
             >
-              <path
-                d="m9 3-.6 2.4-2.1 1.2L4 6l-2 3.5 1.7 1.8v2.4L2 15.5 4 19l2.3-.6 2.1 1.2L9 22h4l.6-2.4 2.1-1.2 2.3.6 2-3.5-1.7-1.8v-2.4L20 9l-2-3.5-2.3.6-2.1-1.2L13 3Z"
-              />
-              <circle cx="11" cy="12.5" r="3.5" />
-            </svg>
+            <button class="icon-button" id="project-settings" aria-label="Project settings" title="Project settings">
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.5"
+                aria-hidden="true"
+              >
+                <path
+                  d="m9 3-.6 2.4-2.1 1.2L4 6l-2 3.5 1.7 1.8v2.4L2 15.5 4 19l2.3-.6 2.1 1.2L9 22h4l.6-2.4 2.1-1.2 2.3.6 2-3.5-1.7-1.8v-2.4L20 9l-2-3.5-2.3.6-2.1-1.2L13 3Z"
+                />
+                <circle cx="11" cy="12.5" r="3.5" />
+              </svg>
+            </button>
+          </div>
+          <nav class="project-home-menu" aria-label="Project menu">
+            <button type="button" data-project-home="home">Home</button>
+            <button type="button" data-project-home="issues">Issues</button>
+            <button type="button" data-project-home="discuss">Discuss</button>
+            <button type="button" data-project-home="reports">Reports</button>
+            <button type="button" data-project-home="investigate">Investigate</button>
+          </nav>
+          <div class="project-actions-row">
+            <button
+              class="project-actions"
+              id="project-actions"
+              type="button"
+              aria-haspopup="dialog"
+              aria-expanded="false"
+            >
+              0 actions running
+            </button>
+            <label class="actions-switch" id="flow-actions-switch"
+              ><input type="checkbox" role="switch" data-server-toggle /> <span>No new actions</span></label
+            >
+            <button class="small-button" id="flow-server-restart" type="button" data-server-restart>
+              Restart server
+            </button>
+          </div>
+          <small class="project-actions-message" data-server-message role="status"></small>
+          <button class="new-issue" id="new-issue"><span aria-hidden="true">＋</span> New issue <kbd>N</kbd></button>
+          <label class="search-box"
+            ><span aria-hidden="true">⌕</span
+            ><input id="issue-search" type="search" placeholder="Find an issue…" aria-label="Find an issue"
+          /></label>
+          <section id="local-notes" class="local-notes" aria-label="Local notes">
+            <header class="sidebar-folder-row">
+              <button
+                id="local-notes-toggle"
+                class="icon-button folder-disclosure"
+                type="button"
+                aria-label="Collapse Local notes"
+                aria-expanded="true"
+                aria-controls="local-notes-body"
+              ></button>
+              <h2 class="sidebar-folder-name">Local notes</h2>
+              <button id="local-note-quick" type="button" class="small-button" title="Quick note (Alt+N)">
+                ＋ Note
+              </button>
+            </header>
+            <div id="local-notes-body">
+              <form id="local-note-form">
+                <textarea
+                  id="local-note-text"
+                  aria-label="Quick local note"
+                  placeholder="A thought to keep…"
+                  maxlength="24000"
+                  rows="2"
+                ></textarea
+                ><button type="submit" class="small-button">Save note</button>
+              </form>
+              <ul id="local-note-list" class="local-note-list"></ul>
+              <p id="local-note-status" role="status" aria-live="polite"></p>
+            </div>
+          </section>
+          <section class="sidebar-files" aria-label="Files">
+            <div id="sidebar-file-tree"></div>
+            <p id="sidebar-file-status" class="sidebar-empty" aria-live="polite" hidden></p>
+          </section>
+          <div class="sidebar-heading">
+            <button class="sidebar-issues-link" type="button" data-open-project-issues>Issues</button
+            ><button class="icon-button" id="new-folder" aria-label="New folder" title="New folder">＋</button>
+          </div>
+          <button type="button" class="small-button" id="migrate-issue-folders" hidden>
+            Move existing issue folders
           </button>
+          <nav id="issue-list" class="issue-list" aria-label="Issue list">
+            <p class="sidebar-empty">Loading issues…</p>
+          </nav>
+          <footer class="sidebar-footer">
+            <span class="connection" id="connection-status"><span class="connection-dot"></span> Connecting</span
+            ><a href="/classic" title="Open the original factory controls">Classic ↗</a>
+          </footer>
         </div>
-        <nav class="project-home-menu" aria-label="Project menu">
-          <button type="button" data-project-home="home">Home</button>
-          <button type="button" data-project-home="discuss">Discuss</button>
-          <button type="button" data-project-home="investigate">Investigate</button>
-          <button type="button" data-project-home="automate">Automate me</button>
-        </nav>
-        <div class="project-actions-row">
-          <button
-            class="project-actions"
-            id="project-actions"
-            type="button"
-            aria-haspopup="dialog"
-            aria-expanded="false"
-          >
-            0 actions running
-          </button>
-          <label class="actions-switch" id="flow-actions-switch"
-            ><input type="checkbox" role="switch" data-server-toggle /> <span>No new actions</span></label
-          >
-          <button class="small-button" id="flow-server-restart" type="button" data-server-restart>
-            Restart server
-          </button>
-        </div>
-        <small class="project-actions-message" data-server-message role="status"></small>
-        <button class="new-issue" id="new-issue"><span aria-hidden="true">＋</span> New issue <kbd>N</kbd></button>
-        <label class="search-box"
-          ><span aria-hidden="true">⌕</span
-          ><input id="issue-search" type="search" placeholder="Find an issue…" aria-label="Find an issue"
-        /></label>
-        <section class="sidebar-files" aria-label="Files">
-          <div id="sidebar-file-tree"></div>
-          <p id="sidebar-file-status" class="sidebar-empty" aria-live="polite" hidden></p>
-        </section>
-        <div class="sidebar-heading">
-          <button class="sidebar-issues-link" type="button" data-open-project-issues>Issues</button
-          ><button class="icon-button" id="new-folder" aria-label="New folder" title="New folder">＋</button>
-        </div>
-        <button type="button" class="small-button" id="migrate-issue-folders" hidden>
-          Move existing issue folders
-        </button>
-        <nav id="issue-list" class="issue-list" aria-label="Issue list">
-          <p class="sidebar-empty">Loading issues…</p>
-        </nav>
-        <footer class="sidebar-footer">
-          <span class="connection" id="connection-status"><span class="connection-dot"></span> Connecting</span
-          ><a href="/classic" title="Open the original factory controls">Classic ↗</a>
-        </footer>
         <div
           id="sidebar-resizer"
           class="sidebar-resizer"
@@ -153,7 +201,34 @@
                 <button class="small-button" type="submit">Save issue settings</button>
                 <p id="issue-settings-error" class="inline-error" role="alert" hidden></p>
               </form>
+              <form id="issue-store-form" class="folder-settings-fields">
+                <label class="field">Issue store<select id="issue-store" required></select></label>
+                <button class="small-button" id="move-issue-store" type="submit">Move issue</button>
+                <p class="detail-copy" id="issue-store-source"></p>
+                <p id="issue-store-error" class="inline-error" role="alert" hidden></p>
+              </form>
+              <form id="issue-ownership-form" hidden>
+                <p id="issue-ownership-description" class="detail-copy"></p>
+                <fieldset id="issue-ownership-controls">
+                  <label class="field"
+                    >Recovery reason<textarea
+                      id="issue-ownership-reason"
+                      minlength="8"
+                      maxlength="2000"
+                      required
+                    ></textarea>
+                  </label>
+                  <label
+                    ><input id="issue-ownership-confirmed" type="checkbox" required /><span
+                      id="issue-ownership-confirmation"
+                    ></span
+                  ></label>
+                  <button class="small-button" type="submit">Recover ownership</button>
+                </fieldset>
+                <p id="issue-ownership-error" class="inline-error" role="alert" hidden></p>
+              </form>
             </details>
+            <p id="merged-issue-notice" class="detail-copy" role="status" hidden></p>
             <div class="issue-flow-meta">
               <span id="issue-type-label"></span>
               <span id="issue-subtitle"></span>
@@ -169,7 +244,7 @@
             </div>
           </div>
           <div class="issue-playback">
-            <button class="primary-button" id="issue-playback" type="button">▷ Play</button>
+            <button class="primary-button" id="issue-playback" type="button">Start</button>
             <span
               class="closed-issue-indicator"
               id="closed-issue-indicator"
@@ -186,7 +261,7 @@
         </section>
         <section id="issue-results" class="issue-results" aria-labelledby="issue-results-title" hidden>
           <h2 id="issue-results-title">Results</h2>
-          <p id="issue-results-message" role="status"></p>
+          <p id="issue-results-message" data-ai-text data-ai-key="issue-results" role="status"></p>
           <div id="issue-input-actions" class="folder-controls" hidden>
             <a id="issue-input-link" class="small-button" target="_blank" rel="noopener noreferrer">Review PR</a>
             <button id="issue-input-continue" class="primary-button" type="button">Continue</button>
@@ -208,6 +283,18 @@
             <span class="status-icon active-spinner" style="--spinner-color: currentColor" aria-hidden="true"></span>
             Updating branch…
           </span>
+          <button id="fix-branch" class="environment-chip branch-repair-control" type="button" aria-haspopup="dialog">
+            Fix Branch
+          </button>
+          <select
+            id="merge-state-menu"
+            class="environment-chip merge-in-progress"
+            aria-label="Merge in progress"
+            hidden
+          >
+            <option value="" disabled selected>Merge in progress</option>
+            <option value="abort">Abort merge</option>
+          </select>
           <span id="worktree-hint">
             <select class="environment-chip worktree-menu" id="worktree-menu" aria-label="Worktree" disabled>
               <option value="" disabled selected>Worktree</option>
@@ -398,6 +485,7 @@
           </details>
         </section>
         <section id="project-home" class="project-home" aria-label="Project home" hidden>
+          <p id="home-error" class="home-error" role="alert"></p>
           <div class="project-workspace-tabs" role="tablist" aria-label="Project workspace">
             <button
               id="project-tab-home"
@@ -420,6 +508,16 @@
               Issues
             </button>
             <button
+              id="project-tab-reports"
+              type="button"
+              role="tab"
+              aria-selected="false"
+              aria-controls="project-reports"
+              data-project-tab="reports"
+            >
+              Reports
+            </button>
+            <button
               id="project-tab-discuss"
               type="button"
               role="tab"
@@ -428,6 +526,16 @@
               data-project-tab="discuss"
             >
               Discuss
+            </button>
+            <button
+              id="project-tab-automate"
+              type="button"
+              role="tab"
+              aria-selected="false"
+              aria-controls="project-automate"
+              data-project-tab="automate"
+            >
+              Automate me
             </button>
             <button
               id="project-tab-admin"
@@ -458,12 +566,6 @@
                 <p>Explore your project, ask questions, and turn evidence into actionable issues.</p>
                 <button class="primary-button" data-project-home="investigate">Start an investigation</button>
               </article>
-              <article class="home-operation">
-                <span class="home-operation-icon" aria-hidden="true">✦</span>
-                <h2>Automate me</h2>
-                <p>Learn from your project conversations and refine a skill for how you work.</p>
-                <button class="small-button" data-project-home="automate">Run Automate me</button>
-              </article>
             </div>
             <section class="home-activity" aria-label="Project activity">
               <div class="home-section-title">
@@ -482,11 +584,6 @@
                 <p class="muted">Loading saved investigations…</p>
               </div>
             </section>
-            <section class="home-history">
-              <h2>Automate me sessions</h2>
-              <div id="home-automate-sessions" class="home-run-list"></div>
-            </section>
-            <p id="home-error" class="home-error" role="alert"></p>
           </div>
           <section
             id="project-issues"
@@ -498,12 +595,39 @@
             <iframe title="Project issues" data-src="/classic?embed=project-issues#queue"></iframe>
           </section>
           <section
+            id="project-reports"
+            class="project-reports"
+            role="tabpanel"
+            aria-labelledby="project-tab-reports"
+            hidden
+          ></section>
+          <section
             id="project-discuss"
             class="project-discuss"
             role="tabpanel"
             aria-labelledby="project-tab-discuss"
             hidden
           ></section>
+          <section
+            id="project-automate"
+            class="project-home-content"
+            role="tabpanel"
+            aria-labelledby="project-tab-automate"
+            hidden
+          >
+            <div class="home-operations">
+              <article class="home-operation">
+                <span class="home-operation-icon" aria-hidden="true">✦</span>
+                <h2>Automate me</h2>
+                <p>Learn from your project conversations and refine a skill for how you work.</p>
+                <button class="small-button" data-project-home="automate">Run Automate me</button>
+              </article>
+            </div>
+            <section class="home-history">
+              <h2>Automate me sessions</h2>
+              <div id="home-automate-sessions" class="home-run-list"></div>
+            </section>
+          </section>
           <section
             id="project-admin"
             class="project-home-content"
@@ -726,6 +850,17 @@
         <button class="primary-button" type="button" data-followups-create disabled>Create selected issues</button>
       </div>
     </dialog>
+    <dialog id="local-note-editor" class="modal local-note-modal" aria-labelledby="local-note-editor-heading">
+      <form id="local-note-edit-form">
+        <h2 id="local-note-editor-heading">Quick note</h2>
+        <textarea id="local-note-edit-text" aria-label="Note text" maxlength="24000" required></textarea>
+        <p id="local-note-edit-error" role="alert"></p>
+        <footer>
+          <button id="local-note-edit-cancel" type="button" class="small-button">Cancel</button
+          ><button type="submit" class="small-button">Save note</button>
+        </footer>
+      </form>
+    </dialog>
     <dialog id="capture-dialog" class="modal capture-modal">
       <form id="capture-form">
         <div class="modal-heading">
@@ -754,6 +889,7 @@
           </select></label
         >
         <label class="field">Folder<select id="capture-folder" name="folder" required></select></label>
+        <label class="field">Issue store<select id="capture-issue-store" name="issueStore" required></select></label>
         <label><input type="checkbox" id="capture-retro" /> Run a retro</label>
         <label><input type="checkbox" id="capture-needs-approval" /> Needs approval</label>
         <p id="capture-error" class="inline-error" role="alert" hidden></p>
@@ -810,6 +946,8 @@
           <span>Branch</span>
           <select id="destination-branch"></select>
         </label>
+        <label class="field">Issue store<select id="destination-issue-store" required></select></label>
+        <p class="detail-copy">Changing the Issue store moves the saved issue after verification.</p>
         <div class="block-actions">
           <button class="small-button" value="cancel">Cancel</button>
           <button class="small-button" id="retry-branches" type="button" hidden>Retry</button>
@@ -892,16 +1030,24 @@
     <dialog id="project-settings-dialog" class="modal" aria-labelledby="project-settings-title">
       <div class="modal-heading">
         <h2 id="project-settings-title">Project settings</h2>
-        <button class="icon-button" data-close-dialog="project-settings-dialog" aria-label="Close project settings">
-          ×
-        </button>
+        <button class="icon-button" type="button" data-settings-close aria-label="Close project settings">×</button>
       </div>
-      <section id="project-folder-settings" class="folder-settings-panel" aria-label="Project defaults"></section>
-      <div id="project-settings-content" class="settings-content" aria-live="polite"></div>
-      <p id="project-settings-error" class="inline-error" role="alert" hidden></p>
+      <div class="settings-layout">
+        <nav id="settings-navigation" aria-label="Settings categories"></nav>
+        <section class="settings-body">
+          <h2 id="settings-page-title"></h2>
+          <p id="project-settings-error" class="inline-error" role="alert" hidden></p>
+          <div id="project-settings-content" aria-live="polite"></div>
+        </section>
+      </div>
+    </dialog>
+    <dialog id="settings-unsaved-dialog" class="modal" aria-labelledby="settings-unsaved-title">
+      <h2 id="settings-unsaved-title">Unsaved changes</h2>
+      <p>Save your changes before leaving this page?</p>
       <div class="modal-footer">
-        <button class="small-button" data-close-dialog="project-settings-dialog">Done</button>
-        <button class="primary-button" id="initialize-lifecycle" hidden>Initialize lifecycle configuration</button>
+        <button type="button" class="primary-button" data-unsaved-choice="save">Save</button>
+        <button type="button" class="small-button" data-unsaved-choice="discard">Discard</button>
+        <button type="button" class="small-button" data-unsaved-choice="cancel">Cancel</button>
       </div>
     </dialog>
     <div id="toast" class="toast" role="status" hidden></div>
@@ -1024,7 +1170,13 @@
         <p id="home-automate-coverage" class="muted"></p>
         <button class="primary-button home-submit" type="submit" id="home-automate-start">Start conversation</button>
       </form>
-      <div id="home-automate-messages" class="home-messages" aria-live="polite"></div>
+      <div
+        id="home-automate-messages"
+        class="home-messages"
+        role="log"
+        aria-label="Automate me conversation"
+        aria-live="polite"
+      ></div>
       <form id="home-automate-reply" hidden>
         <label
           >Your reply<textarea
@@ -1038,7 +1190,7 @@
       <section id="home-automate-review" hidden>
         <h3>Review skill changes</h3>
         <label
-          >Skill name<input class="home-field-control" id="home-automate-name" pattern="[a-z0-9][a-z0-9-]*-mode"
+          >Skill name<input class="home-field-control" id="home-automate-name" pattern="[a-z0-9][a-z0-9\-]*-mode"
         /></label>
         <p id="home-automate-path" class="home-path"></p>
         <div class="home-review-columns">
@@ -1072,5 +1224,163 @@
         ><button class="small-button" type="button" data-home-command="automate-retry" hidden>Retry</button>
       </footer>
     </dialog>
+    <dialog class="modal branch-repair-dialog" id="branch-repair-dialog" aria-labelledby="branch-repair-heading">
+      <h2 id="branch-repair-heading">Fix Branch</h2>
+      <p data-repair-status role="status"></p>
+      <p class="muted" data-repair-timing></p>
+      <p data-repair-error role="alert"></p>
+      <h3>Progress and check output</h3>
+      <pre data-repair-output></pre>
+      <section data-repair-review>
+        <h3>Candidate diff</h3>
+        <pre data-repair-diff></pre>
+        <p class="muted" data-repair-checks></p>
+        <p>
+          Approval applies these repairs to this issue checkout as uncommitted changes. Review and commit them with your
+          issue work.
+        </p>
+      </section>
+      <footer>
+        <button class="primary-button" type="button" data-repair-command></button
+        ><button class="small-button" type="button" data-repair-stop>Stop</button
+        ><button class="small-button" type="button" data-repair-reconcile>Retain interrupted run and allow retry</button
+        ><button class="small-button" type="button" data-repair-close>Close</button>
+      </footer>
+    </dialog>
+    <template id="shared-discuss-template"
+      ><div class="discuss-conversations">
+        <div id="discuss-conversation-tabs" role="tablist" aria-label="Project conversations"></div>
+        <button id="discuss-new" class="small-button" type="button">New chat</button>
+      </div>
+      <p id="discuss-error" class="inline-error" role="alert" hidden></p>
+      <div id="discuss-messages" class="discuss-messages" role="log" aria-label="Project conversation messages"></div>
+      <div id="discuss-approvals" class="discuss-approvals"></div>
+      <div id="discuss-queue" class="discuss-queue" aria-label="Queued messages"></div>
+      <form id="discuss-form" class="discuss-composer">
+        <p id="discuss-editing" class="muted" hidden></p>
+        <div id="discuss-draft-attachments" class="discuss-attachments"></div>
+        <div class="discuss-draft-wrap">
+          <textarea
+            id="discuss-draft"
+            aria-label="Message project"
+            rows="3"
+            maxlength="64000"
+            placeholder="Ask about your project, or type / to choose a skill…"
+          ></textarea
+          ><span id="discuss-suggestion" class="discuss-suggestion" aria-hidden="true"></span>
+        </div>
+        <div class="discuss-composer-actions">
+          <div>
+            <div class="discuss-toolbar">
+              <label
+                ><span class="visually-hidden">Clarification skill</span
+                ><select id="discuss-clarification" aria-label="Clarification skill"></select></label
+              ><label
+                ><span class="visually-hidden">Model</span
+                ><select id="discuss-model" aria-label="Discuss model"></select></label
+              ><label
+                ><span class="visually-hidden">Effort</span
+                ><select id="discuss-effort" aria-label="Discuss effort"></select></label
+              ><button id="discuss-refresh-skills" class="small-button" type="button">Refresh skills</button
+              ><label class="discuss-icon-control" title="Attach files"
+                ><svg viewBox="0 0 16 16" aria-hidden="true">
+                  <path d="m6 8.5 4.1-4.1a2.1 2.1 0 0 1 3 3l-5.7 5.7a3.3 3.3 0 0 1-4.7-4.7l5.5-5.5" /></svg
+                ><span class="visually-hidden">Attach files</span
+                ><input id="discuss-files" type="file" multiple hidden /></label
+              ><button
+                id="discuss-mic"
+                class="discuss-icon-control"
+                type="button"
+                aria-label="Start dictation"
+                title="Dictate"
+              >
+                <svg viewBox="0 0 16 16" aria-hidden="true">
+                  <rect x="6" y="2" width="4" height="8" rx="2" />
+                  <path d="M3.5 7.5a4.5 4.5 0 0 0 9 0M8 12v2m-2 0h4" />
+                </svg>
+              </button>
+            </div>
+            <span id="discuss-voice-status" class="muted" role="status"></span>
+          </div>
+          <div>
+            <button id="discuss-cancel-edit" class="small-button" type="button" hidden>Cancel edit</button
+            ><button id="discuss-resume" class="small-button" type="button" hidden>Resume</button
+            ><button
+              id="discuss-send"
+              class="discuss-send-button"
+              type="submit"
+              aria-label="Send message"
+              title="Send message"
+            >
+              <svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 16V4M5 9l5-5 5 5" /></svg>
+            </button>
+          </div>
+        </div>
+      </form>
+      <p id="discuss-status" class="visually-hidden" role="status"></p
+    ></template>
+    <template id="report-reader-template">
+      <header class="report-toolbar">
+        <button type="button" class="small-button" data-report-all>All reports</button
+        ><a class="small-button" href="{{investigationHref}}">Open investigation</a
+        ><label
+          >Run<select data-report-run aria-label="Investigation run">
+            {{runs}}
+          </select></label
+        ><button type="button" class="small-button" data-report-discuss>{{discussLabel}}</button>
+      </header>
+      <p data-report-error role="alert"></p>
+      <div class="report-workspace">
+        <article class="report-reading" aria-label="Investigation report">
+          <header>
+            <p class="muted">{{publishedAt}} · Run {{runNumber}}</p>
+            <h1>{{title}}</h1>
+            <p class="report-source">Source revision <code>{{revision}}</code></p>
+          </header>
+          <div class="report-content">{{content}}</div>
+          <section class="report-evidence" aria-label="Retained evidence">
+            <h2>Evidence</h2>
+            {{evidence}}
+          </section>
+        </article>
+        <div
+          class="report-divider"
+          role="separator"
+          tabindex="0"
+          aria-label="Resize report and discussion"
+          aria-orientation="horizontal"
+          aria-valuemin="20"
+          aria-valuemax="80"
+        ></div>
+        <section class="report-discussion-panel" aria-label="Report discussion">
+          <div class="report-prompts">
+            <button type="button" data-report-prompt="Explain the most important finding in this report.">
+              Explain the findings</button
+            ><button type="button" data-report-prompt="Which recommendations should we act on first?">
+              Prioritize recommendations</button
+            ><button
+              type="button"
+              data-report-prompt="Create approval-needed follow-up issues for uncovered work in this report, linking matching existing issues."
+            >
+              Create follow-up issues
+            </button>
+          </div>
+          <div id="report-discussion" class="project-discuss"></div>
+        </section>
+      </div>
+    </template>
+    <template id="report-library-template"
+      ><header class="reports-heading">
+        <h1>Reports</h1>
+        <p>Retained findings and recommendations from your investigations.</p>
+      </header>
+      <p data-report-error role="alert"></p>
+      <div class="report-library">{{items}}</div></template
+    >
+    <template id="report-library-item-template"
+      ><button type="button" class="report-library-item" data-report-open="{{id}}">
+        <strong>{{title}}</strong><time>{{publishedAt}}</time>
+      </button></template
+    >
   </body>
 </html>

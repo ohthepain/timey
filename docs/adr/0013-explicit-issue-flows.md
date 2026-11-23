@@ -1,7 +1,7 @@
 # Explicit issue flows
 
 The `number_2` design makes each operation a visible block. The graph is the
-planned route. A person can run one block or press Play to run the route.
+planned route. A person can run one block or use Start and Resume to run the route.
 This addresses the strategy runner's coupling of work, target synchronization,
 verification, publication, and readiness.
 
@@ -29,7 +29,7 @@ chosen Destination remains selected.
 Update Branch fetches the upstream of Starting point and
 keeps the checkout's original base. The **Starting branch ahead** menu can run **Update
 Branch** immediately with a progress indicator, or add an **Update Branch**
-block that must succeed before **Work** can run. With Play active, **Work**
+block that must succeed before **Work** can run. While the route is running, **Work**
 starts when the update succeeds. The immediate action leaves
 the flow graph intact. A suggested starting branch update also precedes Work and
 becomes its prerequisite when run. The route's
@@ -87,6 +87,19 @@ Time waiting for human input is excluded. If a runner disappears, its last saved
 the attempt for timing.
 
 The controller owns flow writes. The executor owns one bounded block.
+Before creating a PR, Publish compares the committed candidate with the current
+GitHub destination. When there are no source changes to publish, it stops before
+pushing and offers the existing close dialog with Cannot Reproduce selected.
+The person can confirm closure or keep the issue open for more work. This does
+not imply acceptance or automatically close an issue. Existing PR updates retain
+their normal publication behavior. If the current destination commit is not
+available locally, Update Branch is required before comparison.
+
+Work receives the current implementation task on every invocation, including Retry.
+An earlier instruction to capture an idle issue is satisfied by creation;
+Work implements the underlying change and checks its implementation acceptance
+criteria while preserving product constraints and human decision boundaries.
+Historical wording and clarified fields remain available unchanged.
 Work formats issue changes and checks Fallow before running focused tests. It
 selects relevant tests from the changed behavior and Requested Proof, and adds a
 focused test when existing tests cannot demonstrate the behavior. A failure that
@@ -109,6 +122,11 @@ The issue timeline groups notes and results from its blocks. Model blocks use
 their own Codex conversations so each receives its declared inputs independently.
 Explicit continuation can reuse a block conversation with the same inputs and
 definition. Before the checkout exists, the timeline uses its project fallback. Classic and flow writers cannot own the same issue concurrently.
+Without an explicit insertion point, added blocks go before Publish PR. An
+unattempted Publish PR waits for every preceding lane, including in flows without
+a suggested Verify block. Existing attempted publication dependencies remain
+unchanged.
+
 Parallel graph lanes describe independent branches. The owning Arena or Swarm
 skill can coordinate isolated parallel workers inside its block; ordinary blocks
 serialize through the one conversation.
@@ -128,10 +146,32 @@ rechecks an exact preview before writing to GitHub. New PR descriptions include
 Requested proof when present. Repeat publication updates the title and commit as
 needed and preserves the original PR description.
 
+Work commits its checked issue changes through normal Git hooks before completing.
+Factory rechecks formatting and Fallow, then requires a clean committed checkout.
+Uncommitted changes continue in the same Work conversation within the existing
+three-continuation limit; an exhausted limit blocks completion and preserves work.
 Work records candidate base, tree, commit and uncommitted state from the actual
 checkout snapshot. Publish requires a committed candidate. Verification for an
 uncommitted tree can be reused after that same tree is committed; a different tree
 requires verification again.
+
+Merge first checks the existing PR and GitHub readiness. Already merged PRs are
+reconciled without local tests; pending checks wait before tests or repair.
+Temporary GitHub request failures get at most three retries per operation with
+1, 2 and 4 second backoff, retaining the redacted error reason. Permission,
+authentication and validation failures stop immediately. An uncertain merge
+request is reconciled against GitHub before another guarded request. Retry
+preserves the checkout and retained verification, including across another
+network failure; matching candidate, target, inputs and proof are still required
+for reuse. A shared issue claim release failure retains the block outcome,
+original summary and verification, and records its cleanup error separately.
+Ownership remains uncertain until the claim is reconciled. Explicit block recovery
+checks the retained claim against the remote queue. If its release already
+landed, it reconciles the stale local receipt and reacquires through the normal
+claim and report checks. A competing claim or failed remote read still blocks
+execution. Recovery can reuse matching verification from before an intervening
+claim-acquisition failure; explicit invalidation still prevents reuse. Changed
+candidates or inputs require verification again.
 
 Merge fetches Destination and merges its current revision into the issue branch.
 It verifies the issue commit against that destination revision using the local
@@ -165,9 +205,17 @@ Worktree and Close with **Approve** and **Delete**.
 
 See [Close and Cleanup](../plans/flow-close-cleanup.md) and
 [Issue retros](../plans/issue-retros.md).
-On closed issues, a red square replaces Play.
-Once the issue is closed, **Archive** replaces **Close**. The menu can archive the
+The route is complete when every block before its first Close, Retro, or Cleanup
+block has completed. Then the center-column control says **Close** for an open issue
+and opens the existing close dialog. For a closed issue that is not archived,
+it says **Archive** and runs the existing archive operation. An archived issue has
+no route control. A closed issue with unfinished route work keeps its closed marker.
+The menu can archive the
 saved report, reveal it in Finder, or reopen the issue for investigation.
+For merged issues, [ADR 0020](0020-freeze-merged-issues.md) supersedes editing and
+reopening: the issue and work flow are read-only, while Close, its existing
+closure sequence, history and archival remain available. Reopening merged issues
+is deferred.
 
 Use **×** in the inspector’s top-right corner to remove a block after
 confirmation. You can also click a block in the center column and press
@@ -187,10 +235,27 @@ the **Delete worktree** block use the same protected cleanup and retain its back
 ## Update Branch
 
 Choosing **Update Branch** from the **Branch** button, running the **Update
-Branch** block, or reaching the block through **Play** authorizes a local commit
+Branch** block, or reaching the block through **Start** or **Resume** authorizes a local commit
 when needed. Factory runs the branch update without a second prompt. The Branch
 button runs the action directly and shows a spinner. The action leaves the flow
 graph intact.
+
+If a disconnected block still owns the issue, the manual Branch button checks
+its original provider conversation before updating. A confirmed idle
+conversation releases that ownership. An older oversized-input rejection can
+also release ownership when the retained request exceeds the input limit, the
+failure matches that rejection, and there is no accepted turn receipt or model
+output. The failed attempt and its output remain
+in history with a reconciliation timestamp. Active, missing or uncheckable
+conversations still block the update. This check starts no model turn.
+New oversized inputs fail before dispatch and leave a blocked attempt rather
+than uncertain ownership.
+
+An explicit Update Branch run aborts an existing merge in the managed issue
+checkout before fetching. This discards that merge’s partial resolutions;
+committed issue work remains. Other unfinished Git operations still stop the
+update. A new conflict receives the existing bounded resolution attempt and
+remains available for review if it cannot be resolved.
 
 Factory fetches the exact remote branch selected in Starting point, or the
 configured remote upstream of a local starting branch. A local branch without
@@ -219,33 +284,35 @@ may edit and stage only the conflicted files. It must preserve both sides and st
 when resolution requires a decision. Factory commits the resolved merge through
 normal Git hooks. If the attempt cannot finish the merge, Factory keeps the local
 commit and the in-progress merge, lists the files that need attention, and pauses
-Play. Resolve or abort the merge in the issue worktree before another update.
+route. Resolve or abort the merge in the issue worktree before another update.
 
-## Issue Play and Pause
+## Issue Start, Resume, and Pause
 
-The server holds Play state for each issue. Issues start paused, including after a
-server restart. Tabs can switch issues, refresh, or close while Play is active.
-Play waits for any current block, then starts the next incomplete block in route
-order. Dotted blocks on the saved route are included. A dependency must be
-complete before its successor starts.
+Issues with no saved block attempts show **Start**. Any saved attempt, including a
+failed or stopped attempt, means the issue has started. The control shows **Resume**
+while paused, including after a server restart. It shows
+**Pause** while running or waiting for confirmation. Tabs can switch issues,
+refresh, or close while the route is running. Start or Resume waits for any current
+block, then starts the next incomplete block in route order. Dotted blocks on the
+saved route are included. A dependency must be complete before its successor starts.
 
 Pause lets the active block finish. Stop interrupts it and pauses the issue.
-Failure, blockers, invalidating edits, and route edits pause autoplay. Pressing
-Play again can retry an eligible failed or stopped block once. A disconnected
+Failure, blockers, invalidating edits, and route edits pause the route. Pressing
+Resume can retry an eligible failed or stopped block once. A disconnected
 attempt requires the block's explicit Recover action. Finishing the route
 returns the issue to Paused with a Flow complete message.
 
-No new actions disables Play. A running block can finish, and autoplay pauses
-if the switch is still on when it would start another block. Turn off No new
-actions and press Play to continue that route.
+No new actions disables Start and Resume. A running block can finish, and the
+route pauses if the switch is still on when it would start another block. Turn off No new
+actions and press Resume to continue that route.
 
-Play authorizes Publish PR to push the checked candidate and create or update its
-pull request. Factory checks the candidate and GitHub destination before writing.
+Using Start or Resume lets the route publish a checked candidate and create or
+update its pull request. Factory checks the candidate and GitHub destination before writing.
 Autoplay starts Merge preparation and waits for any human-first approval once
 the PR is ready. At other protected blocks, autoplay waits before the operation.
 While autoplay is waiting, the issue header links to the block's
 inspector. The link lets the person select the waiting block to open its existing
-confirmation. Successful completion of that confirmed block resumes Play.
+confirmation. Successful completion of that confirmed block resumes the route.
 Cancelling the confirmation or manually starting a different block pauses the
 issue. The inspector keeps Run, Retry, Recover, Approve merge, or Stop beside the block name
 across tabs. Retry can reuse the block's conversation when its inputs,
@@ -259,3 +326,15 @@ Their single issue page owns creation-independent execution and run history.
 They archive directly, without a Close block or button, and execute in temporary
 committed snapshots. Reusable enables additional completed runs under the same
 issue identity. Other issue delivery and closure semantics are unchanged.
+
+## Pending local merges
+
+The issue header shows a red **Merge in progress** dropdown beside Worktree when
+Git has a pending local merge. **Abort merge** applies only to the observed merge
+on an idle issue. It keeps committed issue work and discards partial merge
+resolutions. The control follows Git state on refresh; it is distinct from a
+Merge block waiting for GitHub checks.
+
+An explicitly started Merge run also aborts a leftover local merge before its
+first synchronization. It does this once per run, after checking the PR and
+branch authority. Conflict repair within that run retains the merge it owns.

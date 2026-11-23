@@ -5,7 +5,7 @@ import { JSDOM } from 'jsdom';
 
 function refreshFixture(t) {
   const html = readFileSync('scripts/factory-ui/index.html', 'utf8');
-  const start = html.indexOf('      async function refresh()');
+  const start = html.indexOf('      function issueQueueEndpoint(');
   const end = html.indexOf('      function showRuntime(', start);
   const dom = new JSDOM(
     '<div id="coordinator-strip" hidden></div><div id="connection-banner" hidden></div><input id="draft"><dialog id="confirm"></dialog><dialog id="model-settings"></dialog><dialog id="plan"></dialog><div id="connection"></div><div id="error"></div><main id="app"></main>',
@@ -13,7 +13,8 @@ function refreshFixture(t) {
   );
   t.after(() => dom.window.close());
   dom.window.eval(
-    readFileSync('scripts/factory-ui/coordinator-ui.js', 'utf8') +
+    readFileSync('scripts/factory-ui/view-state.js', 'utf8') +
+      readFileSync('scripts/factory-ui/coordinator-ui.js', 'utf8') +
       '\nwindow.coordinatorUI = coordinatorUI;\n' +
       readFileSync('scripts/factory-ui/server-control-ui.js', 'utf8') +
       '\nwindow.serverControlUI = serverControlUI;\n' +
@@ -162,4 +163,106 @@ test('a successful refresh clears its earlier error text without clearing an act
   error.textContent = 'Action failed';
   await f.refresh();
   assert.equal(error.textContent, 'Action failed');
+});
+
+test('Flow navigation loads another issue while an earlier block check is pending and rejects stale results', async (t) => {
+  const dom = new JSDOM(readFileSync('scripts/factory-ui/flow.html', 'utf8'), {
+    url: 'http://127.0.0.1/?issue=one',
+    runScripts: 'outside-only',
+  });
+  const { window } = dom;
+  const document = window.document;
+  const $ = (id) => document.getElementById(id);
+  const snapshot = (id) => ({
+    issue: { id, title: `Issue ${id}` },
+    flow: { revision: 1, blocks: [] },
+    branches: [],
+  });
+  const state = { issueId: 'one', view: snapshot('one'), sequence: 0, pending: false, loading: false };
+  const release = Promise.withResolvers();
+  let action;
+  t.after(async () => {
+    release.resolve({ ...snapshot('one'), flow: { revision: 99, blocks: [] } });
+    await action;
+    dom.window.close();
+  });
+  const requests = [];
+  let posts = 0;
+  let api;
+  const render = () => {
+    $('issue-title').textContent = state.view?.issue.title || '';
+    api?.setBusy(state.pending);
+  };
+  const source = readFileSync('scripts/factory-ui/flow-ui.js', 'utf8');
+  const section = (start, end) => source.slice(source.indexOf(start), source.indexOf(end, source.indexOf(start)));
+  const scope = {
+    state,
+    document,
+    window,
+    location: window.location,
+    history: window.history,
+    URL: window.URL,
+    CustomEvent: window.CustomEvent,
+    AbortController: window.AbortController,
+    $,
+    serverControlUI: { isWaitingForServer: () => false },
+    json: async (path) => {
+      requests.push(path);
+      return snapshot(new URL(path, window.location).searchParams.get('issue'));
+    },
+    post: async () => {
+      posts++;
+      return release.promise;
+    },
+    applyView: (view) => {
+      state.view = view;
+      render();
+    },
+    render,
+    renderErrors() {},
+    refreshIssueStore() {},
+    checkOpenBlock() {},
+    toast() {},
+    storeUnavailable: () => false,
+    localStoreControl: () => false,
+    showError: (message) => assert.fail(message),
+    branchRepairUI: { update() {} },
+    activeBlock: () => null,
+    operationPaused: () => false,
+    blockDeletionReason: () => null,
+    isRunning: () => false,
+    status: () => 'ready',
+    updatePlaybackAvailability() {},
+    updateIssueDecisionControls() {},
+    applyStoreAvailability() {},
+    emptyFolderSelection: () => ({}),
+    folderSettingsUI: { setLocation() {} },
+  };
+  api = new Function(
+    ...Object.keys(scope),
+    'let folderSelection, folderConfig, strategyFolder;\n' +
+      section('  async function load(', '  async function loadRepoFiles(') +
+      section('  async function action(', '  function updateIssueDecisionControls(') +
+      section('  function selectWorkspace(', '  function renderSidebar(') +
+      '; return { load, action, setBusy, selectWorkspace };'
+  )(...Object.values(scope));
+  render();
+  action = api.action('open-block', { blockId: 'request' });
+  assert.equal(posts, 1);
+  assert.equal($('run-block').disabled, true);
+  const next = document.createElement('button');
+  next.textContent = 'Issue two';
+  next.addEventListener('click', () => api.selectWorkspace({ issue: 'two' }));
+  document.body.append(next);
+  next.click();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(requests, ['/api/flow?issue=two']);
+  assert.equal($('issue-title').textContent, 'Issue two');
+  assert.equal($('run-block').disabled, true, 'The earlier action still guards mutation controls.');
+  assert.equal(await api.action('start', { blockId: 'work' }), null);
+  assert.equal(posts, 1, 'Navigation does not permit another mutation while the earlier action is pending.');
+  release.resolve({ ...snapshot('one'), flow: { revision: 99, blocks: [] } });
+  await action;
+  assert.equal($('issue-title').textContent, 'Issue two');
+  assert.equal(state.view.flow.revision, 1, 'The earlier issue result cannot replace the new selection.');
 });

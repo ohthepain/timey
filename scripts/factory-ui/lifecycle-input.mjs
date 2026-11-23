@@ -24,7 +24,7 @@ export async function respondLifecycle(service, record, input) {
   requireThat(handlers[record.input.type], 'This response type is not supported.');
   await handlers[record.input.type]();
 }
-function approveLifecyclePlan(service, record, input) {
+async function approveLifecyclePlan(service, record, input) {
   if (input.decision !== 'approve') return requestPlanChange(service, record, input);
   const current = currentPlan(service, record);
   if (digest(current.content) !== record.plan.sha256) {
@@ -50,7 +50,7 @@ function approveLifecyclePlan(service, record, input) {
     actor: 'human',
     at: new Date().toISOString(),
   };
-  appendAnswer(
+  await appendAnswer(
     service,
     record,
     `Implementation plan approved\n\nPlan: ${record.plan.path || 'Saved proposed plan'}\nContent hash: ${record.plan.sha256}\nApproval record: ${receipt}\n\nProgress may complete this plan. Required human decisions and final acceptance remain separate.`
@@ -67,10 +67,10 @@ function approveLifecyclePlan(service, record, input) {
   });
   lifecycleEvent(service, record, 'You approved the implementation plan. Continuing.');
 }
-function requestPlanChange(service, record, input) {
+async function requestPlanChange(service, record, input) {
   const text = answerText(input);
   retainAnswer(service, record, { type: 'requested-plan-change', answer: text });
-  appendAnswer(service, record, 'Requested plan changes\n\n' + text);
+  await appendAnswer(service, record, 'Requested plan changes\n\n' + text);
   saveLifecycle(service, record, {
     assessed: false,
     approval: null,
@@ -79,10 +79,10 @@ function requestPlanChange(service, record, input) {
     attempts: [],
   });
 }
-function recordScopeAnswer(service, record, input) {
+async function recordScopeAnswer(service, record, input) {
   const text = answerText(input);
   retainAnswer(service, record, { type: 'scope-answer', answer: text });
-  appendAnswer(service, record, 'Assignment scope answer\n\n' + text);
+  await appendAnswer(service, record, 'Assignment scope answer\n\n' + text);
   saveLifecycle(service, record, {
     input: null,
     replan: false,
@@ -95,7 +95,7 @@ function recordScopeAnswer(service, record, input) {
       : null,
   });
 }
-function recordLifecycleAnswers(service, record, input) {
+async function recordLifecycleAnswers(service, record, input) {
   const text = answerText(input);
   const issue = readQueue(service.root).issues.find((i) => i.id === record.issueId);
   requireThat(
@@ -103,7 +103,7 @@ function recordLifecycleAnswers(service, record, input) {
     'The issue changed since these questions were asked. Resume to read the current discussion.'
   );
   retainAnswer(service, record, { type: 'clarification', questions: record.input.questions, answer: text });
-  appendAnswer(
+  await appendAnswer(
     service,
     record,
     'Answers\n\n' + record.input.questions.map((q) => q.question).join('\n\n') + '\n\n' + text
@@ -143,7 +143,7 @@ function appendAnswer(service, record, text) {
     evidence: [receipt],
     next_state: null,
   };
-  appendReview(
+  return appendReview(
     service.root,
     issue,
     result,

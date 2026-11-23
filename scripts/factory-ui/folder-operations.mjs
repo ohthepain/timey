@@ -23,8 +23,8 @@ const searchSchema = {
   additionalProperties: false,
 };
 
-async function searchPrompt(query, issues) {
-  const runtime = createDiscussionRuntime();
+async function searchPrompt(query, issues, root) {
+  const runtime = createDiscussionRuntime(undefined, { root });
   let timer;
   try {
     await runtime.begin({ task: 'Find issues matching a natural-language search. Do not change any issues.' });
@@ -91,7 +91,7 @@ function searchBatches(rows) {
 export class FolderOperations {
   constructor(flows, search = searchPrompt) {
     this.flows = flows;
-    this.search = search;
+    this.search = (query, issues) => search(query, issues, flows.service.root);
     this.previews = new Map();
   }
 

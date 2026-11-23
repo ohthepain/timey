@@ -43,10 +43,27 @@ test('Merge uses the Request setting and records only completed upstream focused
   assert.deepEqual(flowMergeChecks(ctx), { scope: 'full', focusedRecorded: false, focused: [] });
   assert.equal(flowMergeChecks({ ...ctx, block: { kind: 'verify' } }), undefined);
   assert.deepEqual(normalizeFocusedTests([command, command]), [command]);
+  const browser = ['node', 'scripts/capture-grilling-browser.mjs'];
+  assert.deepEqual(normalizeFocusedTests([browser]), [browser]);
+  const scenarios = [
+    'node',
+    'scripts/flow-browser.mjs',
+    '--project-discuss',
+    '--project-issues',
+    '--local-notes',
+    '--issue-status-folders',
+  ];
+  assert.deepEqual(normalizeFocusedTests([scenarios]), [scenarios]);
   for (const invalid of [
     ['sh', '-c', 'test'],
     ['pnpm', 'run', 'test:factory'],
     ['node', '--test', 'scripts/a.check.mjs', '--import', 'other.mjs'],
+    ['node', 'scripts/other-browser.mjs', '--all'],
+    ['node', 'scripts/factory-browser.mjs'],
+    ['node', 'scripts/flow-browser.mjs'],
+    ['node', 'scripts/flow-browser.mjs', '--project-discuss', 'scripts/other.mjs'],
+    ['node', 'scripts/flow-browser.mjs', '--project-discuss', '--import=other.mjs'],
+    ['node', 'scripts/../other-browser.mjs'],
   ])
     assert.throws(() => normalizeFocusedTests([invalid]), /Record focused test commands/);
 });
@@ -124,12 +141,19 @@ test('staged audit sees the index even when unstaged changes hide an unused file
   assert.equal(git('diff', '--binary', 'HEAD'), before, 'audit must not modify the original index or worktree');
 });
 
+function copySourceSeparation(root) {
+  mkdirSync(join(root, 'scripts/factory-ui'), { recursive: true });
+  for (const name of ['source-issue-separation.mjs', 'shared-issue-config.mjs', 'common.mjs'])
+    writeFileSync(join(root, 'scripts/factory-ui', name), readFileSync(join('scripts/factory-ui', name)));
+}
+
 test('staged formatter checks issue reports from an in-repository snapshot', (t) => {
   const { root, git } = gitFixture(t, 'format-staged-');
   mkdirSync(join(root, 'scripts'));
   mkdirSync(join(root, '.issues'));
   writeFileSync(join(root, 'package.json'), JSON.stringify({ name: 'format-staged-fixture', private: true }));
   writeFileSync(join(root, 'scripts/format-staged.mjs'), readFileSync(resolve('scripts/format-staged.mjs')));
+  copySourceSeparation(root);
   writeFileSync(join(root, '.prettierignore'), '');
   writeFileSync(join(root, '.issues/report.md'), '# A staged report  \n');
   symlinkSync(resolve('node_modules'), join(root, 'node_modules'), 'dir');
@@ -177,7 +201,7 @@ function auditFixture(t, extraFiles = {}) {
     })
   );
   writeFileSync(join(root, 'pnpm-lock.yaml'), readFileSync('pnpm-lock.yaml'));
-  writeFileSync(join(root, '.fallowrc.json'), '{"entry":["index.js","scripts/*.mjs"]}\n');
+  writeFileSync(join(root, '.fallowrc.json'), '{"entry":["index.js","scripts/**/*.mjs"]}\n');
   mkdirSync(join(root, 'scripts'));
   for (const name of [
     'format-staged.mjs',
@@ -190,6 +214,7 @@ function auditFixture(t, extraFiles = {}) {
     'audit-result.mjs',
   ])
     writeFileSync(join(root, 'scripts', name), readFileSync(join('scripts', name)));
+  copySourceSeparation(root);
   writeFileSync(join(root, 'index.js'), 'console.log("baseline");\n');
   for (const [name, content] of Object.entries(extraFiles)) writeFileSync(join(root, name), content);
   git('add', '.');
@@ -662,4 +687,49 @@ test('failed checks print assertion details for every failed test in the CI cons
   lines.length = 0;
   record('build', ['build'], { stderr: 'Error: Cannot resolve dependency\n  at build.mjs:12:4', status: 1 });
   assert.match(lines.join('\n'), /Cannot resolve dependency\n  at build.mjs:12:4/);
+});
+
+test('verification forwards stdout and stderr before the child finishes and retains its log', async (t) => {
+  const { spawn } = await import('node:child_process');
+  const { root } = gitFixture(t, 'verify-live-output-');
+  const release = join(root, 'release');
+  const log = join(root, 'command.log');
+  const runner = join(root, 'runner.mjs');
+  const modulePath = new URL('./verify-process.mjs', import.meta.url).href;
+  writeFileSync(
+    runner,
+    `
+    import { runVerificationProcess } from ${JSON.stringify(modulePath)};
+    const result = await runVerificationProcess(process.execPath, ['-e', ${JSON.stringify(`
+      const fs = require('node:fs');
+      process.stdout.write('live stdout marker\\n');
+      process.stderr.write('live stderr marker\\n');
+      const timer = setInterval(() => { if (fs.existsSync(${JSON.stringify(release)})) { clearInterval(timer); } }, 10);
+    `)}], { cwd: ${JSON.stringify(root)}, streamOutput: true }, ${JSON.stringify(log)});
+    process.exitCode = result.status ?? 1;
+  `
+  );
+  const child = spawn(process.execPath, [runner], { stdio: ['ignore', 'pipe', 'pipe'] });
+  const closed = new Promise((resolve) => child.once('close', resolve));
+  const output = { stdout: '', stderr: '' };
+  let timer;
+  try {
+    await new Promise((resolve, reject) => {
+      timer = setTimeout(() => reject(Error('No live output arrived before child completion')), 3000);
+      for (const channel of ['stdout', 'stderr'])
+        child[channel].on('data', (chunk) => {
+          output[channel] += chunk;
+          if (output.stdout.includes('live stdout marker') && output.stderr.includes('live stderr marker')) resolve();
+        });
+      child.once('error', reject);
+    });
+    assert.equal(child.exitCode, null, 'output must be visible while the command is still running');
+    assert.match(readFileSync(log, 'utf8'), /live stdout marker/);
+    assert.match(readFileSync(log, 'utf8'), /live stderr marker/);
+  } finally {
+    clearTimeout(timer);
+    writeFileSync(release, 'finish');
+    await closed;
+  }
+  assert.equal(child.exitCode, 0);
 });

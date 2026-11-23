@@ -1,3 +1,4 @@
+import { githubAppEnvironment } from './project-env.mjs';
 import { readFileSync, existsSync } from 'node:fs';
 import { join, isAbsolute } from 'node:path';
 import { sign } from 'node:crypto';
@@ -83,7 +84,7 @@ export class GitHubAppCredentials {
       typeof token.token === 'string' && token.token && expires > this.now() + 60000,
       'Invalid GitHub App token expiry.'
     );
-    this.cached = { token: token.token, expires, appId: app.id, slug: app.slug, installationId: installation.id };
+    this.cached = installationSession(token, installation, app, expires);
     return this.cached;
   }
   async session() {
@@ -94,6 +95,17 @@ export class GitHubAppCredentials {
       });
     return this.pending;
   }
+}
+
+function installationSession(token, installation, app, expires) {
+  return {
+    token: token.token,
+    expires,
+    appId: app.id,
+    slug: app.slug,
+    installationId: installation.id,
+    permissions: token.permissions ?? installation.permissions ?? {},
+  };
 }
 
 function authenticationTransportFailure(error, path) {
@@ -160,9 +172,10 @@ function assertAuthenticationResponse(response) {
 }
 
 export function githubAppCredentials(root, repository) {
-  const appId = process.env.TIMEY_SOFTWARE_FACTORY_GITHUB_APP_ID;
-  const privateKey = process.env.TIMEY_SOFTWARE_FACTORY_GITHUB_PRIVATE_KEY;
-  const installationId = process.env.TIMEY_SOFTWARE_FACTORY_GITHUB_INSTALL_ID;
+  const env = githubAppEnvironment(root);
+  const appId = env.TIMEY_SOFTWARE_FACTORY_GITHUB_APP_ID;
+  const privateKey = env.TIMEY_SOFTWARE_FACTORY_GITHUB_PRIVATE_KEY;
+  const installationId = env.TIMEY_SOFTWARE_FACTORY_GITHUB_INSTALL_ID;
   if (appId || privateKey || installationId) {
     const parsedAppId = Number(appId);
     const parsedInstallationId = Number(installationId);

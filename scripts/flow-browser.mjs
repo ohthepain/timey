@@ -1,3 +1,11 @@
+import { investigationReportsBrowserChecks } from './flow-browser-investigation-reports.mjs';
+import { issueStatusFoldersBrowserChecks } from './flow-browser-issue-status-folders.mjs';
+import { projectIssuesBrowserChecks } from './flow-browser-project-issues.mjs';
+import { errorRecoveryBrowserChecks } from './flow-browser-error-recovery.mjs';
+import { mergeStateBrowserChecks } from './flow-browser-merge-state.mjs';
+import { browserScenarioSelected } from './browser-scenario-policy.mjs';
+import { branchRepairBrowserChecks } from './flow-browser-branch-repair.mjs';
+import { blockSkillsBrowserChecks } from './flow-browser-block-skills.mjs';
 import assert from 'node:assert/strict';
 import {
   copyFileSync,
@@ -31,12 +39,25 @@ import { flowBlockDeletionBrowserChecks } from './flow-browser-block-deletion.mj
 import { flowFolderSettingsBrowserChecks } from './flow-browser-folder-settings.mjs';
 import { flowFollowupsBrowserChecks } from './flow-browser-followups.mjs';
 import { investigationProposals } from './investigation-followups-fixture.mjs';
-import { projectHomeBrowserChecks } from './flow-browser-project-home.mjs';
+import { withQueueConfiguration } from './flow-browser-queue-configuration.mjs';
+import { projectNavigationBrowserChecks } from './flow-browser-project-navigation.mjs';
+import { projectHomeBrowserChecks, investigationFlowsBrowserChecks } from './flow-browser-project-home.mjs';
 import { projectDiscussBrowserChecks } from './flow-browser-project-discuss.mjs';
+import { projectSettingsBrowserChecks } from './flow-browser-project-settings.mjs';
+import { aiTextBrowserChecks } from './flow-browser-ai-text.mjs';
+import { interfaceStateBrowserChecks } from './flow-browser-interface-state.mjs';
+import { localNotesBrowserChecks } from './flow-browser-local-notes.mjs';
+import { actionsMenuBrowserChecks } from './flow-browser-actions-menu.mjs';
+import { mergedIssueBrowserChecks } from './flow-browser-merged-issue.mjs';
+import { noChangesBrowserChecks } from './flow-browser-no-changes.mjs';
+import { writeBrowserIssue } from './flow-browser-fixture.mjs';
+import { issueStoresBrowserChecks } from './flow-browser-stores.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const output = resolve(
-  process.env.TIMEY_FLOW_BROWSER_OUTPUT || join(root, '.issues/evidence/flow-browser-' + randomUUID())
+  process.env.TIMEY_FLOW_BROWSER_OUTPUT ||
+    (process.env.TIMEY_BROWSER_OUTPUT && join(process.env.TIMEY_BROWSER_OUTPUT, 'flow')) ||
+    join(root, '.issues/evidence/flow-browser-' + randomUUID())
 );
 const project = join(output, 'project');
 mkdirSync(output, { recursive: true });
@@ -50,6 +71,7 @@ writeFileSync(join(project, '.gitignore'), '/.issues/\n');
 git(project, 'add', 'source.txt', '.gitignore');
 git(project, 'commit', '-qm', 'Browser fixture base');
 const branchTree = git(project, 'rev-parse', 'HEAD^{tree}');
+const publicationTarget = git(project, 'rev-parse', 'HEAD');
 const datedBranch = (date) =>
   execFileSync('git', ['-C', project, 'commit-tree', branchTree, '-m', 'Branch selector fixture'], {
     env: { ...process.env, GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date },
@@ -63,18 +85,32 @@ git(project, 'update-ref', 'refs/remotes/origin/recent', recentBranchCommit);
 git(project, 'symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/recent');
 
 const assets = [
+  'ai-text-ui.js',
+  'ai-text.css',
+  'ai-text-bro.mjs',
+  'view-state.js',
   'flow.html',
   'flow.css',
   'flow-ui.js',
+  'issue-store-ui.js',
+  'issue-ownership-ui.js',
   'issue-folder-drag-ui.js',
   'sidebar-files-ui.js',
   'folder-settings-ui.js',
+  'project-settings-ui.js',
+  'project-settings.css',
+  'hotkeys-ui.js',
   'investigation-followups-ui.js',
   'project-home-ui.js',
   'project-discuss-ui.js',
+  'project-reports-ui.js',
+  'project-reports.css',
   'project-discuss.css',
+  'local-notes-ui.js',
+  'local-notes.css',
   'issue-chat-ui.js',
   'investigation-issue-ui.js',
+  'investigation-flow-controls-ui.js',
   'project-home.css',
   'issue-closure-ui.js',
   'server-control-ui.js',
@@ -97,11 +133,19 @@ const results = [];
 const folderSettingsCheck = 'Folder settings inherit, repair, search and act on selected open or closed issues';
 const blockDeletionCheck = 'Click-selected blocks support safe, confirmed Delete and Backspace removal';
 const followupsCheck = 'Completed investigations create reviewed follow-ups without another Retro';
+const navigationCheck = 'Project navigation exposes Home Issues Investigate and an Automate me tab';
 const homeCheck = 'Project home investigates selected branches and reviews Automate me skills';
+const reportsCheck = 'Investigation reports retain content, reading state and shared discussion';
+const investigationFlowsCheck = 'Investigations use ordinary flows and independent retained outputs';
 const discussCheck = 'Project Discuss retains independent conversations, settings and explicit controls';
+const settingsCheck = 'Project Settings addressable pages preserve drafts, sources and explicit saves';
+const storesCheck = 'Issue stores preserve explicit homes and perform checked moves without workspace updates';
+const aiTextCheck = 'AI text offers copy bro and caret-aware hovered dictation';
+const interfaceStateCheck = 'Refresh preserves expanded activity, editor size, drafts and copied selection';
 const issueResultsCheck = 'Issue results appear below the banner without replacing playback status';
 const humanInputCheck = 'Required PR review is visible and continues only after an explicit action';
 const mergeSettingsCheck = 'Request saves the regression choice and the block palette hides Verify';
+const pendingResponses = [];
 const logs = {
   console: [],
   pageErrors: [],
@@ -115,6 +159,7 @@ const logs = {
 };
 const playbackIssueId = '20261116-playback-fixture';
 const playbackWork = Promise.withResolvers();
+const holdFirstWork = (number, block) => number === 1 && block.kind !== 'cleanup';
 let firstWorkProgress;
 const service = new FactoryUI(project);
 const deliveryConfig = { provider: 'github', repository: 'test/fixture', remote: 'origin', target: 'dev' };
@@ -134,7 +179,7 @@ const executor = {
     onStep('pnpm test');
     onProgress('Fixture output for explicit attempt ' + number + '.\n');
     if (issue.id === playbackIssueId && block.kind === 'work') await playbackWork.promise;
-    if (number === 1) {
+    if (holdFirstWork(number, block)) {
       firstWorkProgress = { onProgress, onStep };
       await new Promise((_, reject) => {
         if (signal.aborted) return reject(Error('Stopped by the user.'));
@@ -179,7 +224,7 @@ service.flows = createIssueFlows(service, {
         return null;
       },
       async gh() {
-        return 'dev\nolder\nrecent';
+        return `dev\t${publicationTarget}\nolder\t${publicationTarget}\nrecent\t${recentBranchCommit}`;
       },
     },
   },
@@ -222,18 +267,56 @@ function unexpectedConsoleErrors(entries) {
     );
   });
 }
+function connectionRecoveryIssue() {
+  const id = '20261120-connection-recovery-fixture';
+  if (!existsSync(join(project, '.issues/triage-labels.md')))
+    copyFileSync(join(root, '.issues/triage-labels.md'), join(project, '.issues/triage-labels.md'));
+  writeBrowserIssue(project, {
+    id,
+    title: 'Reconnect the selected issue',
+    body: 'Keep the selected issue after reconnecting.',
+  });
+  return id;
+}
 function checkExcluded(name) {
+  if (!browserScenarioSelected(name)) return true;
   const selections = [
+    ['--issue-scrollbar', 'Issue flow scrollbar appears only while scrolling'],
+    ['--issue-status-folders', 'Status pseudo-folders track project issues without moving them'],
+    ['--project-issues', 'Closed issue selections archive together and issue links open the normal view'],
+    ['--actions-menu', 'Actions menu lists two running Flow blocks'],
+    ['--merged-issue', 'Merged issues preserve history and expose only closure controls'],
+    ['--error-recovery', 'Successful refresh clears rejected branch update errors'],
+    ['--no-changes', 'Publication with no changes offers Cannot Reproduce closure'],
+    [
+      '--connection-recovery',
+      'Flow and Classic reload the selected issue after a lost connection without replaying the click',
+    ],
+    ['--merge-recovery', 'Pending local merges are visible and can be aborted'],
+    ['--drag-and-drop', 'Issue folders retain every issue and accept drags between folders'],
+    ['--local-notes', 'Local notes capture and handoff preserve flow'],
+    ['--sidebar-labels', 'Issues and Local notes use matching text styles'],
+    ['--sidebar-scroll', 'The whole sidebar scrolls over every section'],
     ['--project-home', homeCheck],
+    ['--project-navigation', navigationCheck],
     ['--project-discuss', discussCheck],
+    ['--project-settings', settingsCheck],
+    ['--stores', storesCheck],
+    ['--ai-text', aiTextCheck],
+    ['--investigation-reports', reportsCheck],
+    ['--investigation-flows', investigationFlowsCheck],
+    ['--interface-state', interfaceStateCheck],
     ['--investigation-followups', followupsCheck],
+    ['--branch-repair', 'Branch repair progress survives reload and requires candidate approval'],
+    ['--block-skills', 'Block skill choices preserve defaults and offer missing-skill setup'],
     ['--block-deletion', blockDeletionCheck],
     ['--folder-settings', folderSettingsCheck],
     ['--issue-results', issueResultsCheck],
     ['--human-input', humanInputCheck],
     ['--merge-settings', mergeSettingsCheck],
   ];
-  return selections.some(([flag, selected]) => process.argv.includes(flag) && name !== selected);
+  const selected = selections.filter(([flag]) => process.argv.includes(flag));
+  return selected.length > 0 && !selected.some(([, scenario]) => name === scenario);
 }
 
 async function check(name, run) {
@@ -279,11 +362,11 @@ async function clickAction(locator) {
   return value;
 }
 async function selectBlock(id) {
-  const locator = page.locator('[data-block="' + id + '"]');
+  const locator = page.locator('.block-card[data-block="' + id + '"]');
   if ((await locator.getAttribute('aria-pressed')) === 'true') return;
   await page.evaluate((blockId) => {
     const scroll = document.getElementById('graph-scroll');
-    const card = document.querySelector('[data-block="' + blockId + '"]');
+    const card = document.querySelector('.block-card[data-block="' + blockId + '"]');
     if (scroll && card) {
       const bounds = scroll.getBoundingClientRect();
       const rect = card.getBoundingClientRect();
@@ -293,9 +376,9 @@ async function selectBlock(id) {
   try {
     await locator.click({ timeout: 2500 });
   } catch {
-    await page.evaluate((blockId) => document.querySelector('[data-block="' + blockId + '"]')?.click(), id);
+    await page.evaluate((blockId) => document.querySelector('.block-card[data-block="' + blockId + '"]')?.click(), id);
   }
-  await page.locator('[data-block="' + id + '"][aria-pressed="true"]').waitFor();
+  await page.locator('.block-card[data-block="' + id + '"][aria-pressed="true"]').waitFor();
 }
 async function block(id) {
   await selectBlock(id);
@@ -303,6 +386,35 @@ async function block(id) {
 }
 async function screenshot(name) {
   await page.screenshot({ path: join(output, name + '.png'), fullPage: true });
+  if (name === 'project-discuss') {
+    const entries = await page.locator('.discuss-message').evaluateAll((nodes) =>
+      nodes.map((node) => {
+        const style = getComputedStyle(node);
+        return {
+          id: node.dataset.discussMessage,
+          classes: node.className,
+          borderTopStyle: style.borderTopStyle,
+          borderTopWidth: style.borderTopWidth,
+          borderBottomStyle: style.borderBottomStyle,
+          borderBottomWidth: style.borderBottomWidth,
+        };
+      })
+    );
+    writeFileSync(
+      join(output, name + '-styles.json'),
+      JSON.stringify(
+        {
+          sourceCommit: git(root, 'rev-parse', 'HEAD'),
+          sourceStatus: git(root, 'status', '--porcelain'),
+          observedAt: new Date().toISOString(),
+          selector: '.discuss-message',
+          entries,
+        },
+        null,
+        2
+      ) + '\n'
+    );
+  }
 }
 async function selectedGeometry() {
   return page.evaluate(() => {
@@ -313,6 +425,9 @@ async function selectedGeometry() {
     const centered = scroll.scrollTop + rect.top + rect.height / 2 - bounds.top - scroll.clientHeight / 2;
     return {
       blockId: card.dataset.block,
+      top: rect.top - bounds.top,
+      bottom: rect.bottom - bounds.top,
+      viewportHeight: scroll.clientHeight,
       scrollTop: scroll.scrollTop,
       centerOffset: rect.top + rect.height / 2 - bounds.top - scroll.clientHeight / 2,
       expectedCenter: Math.max(0, Math.min(scroll.scrollHeight - scroll.clientHeight, centered)),
@@ -341,9 +456,10 @@ try {
   server.listen(0, '127.0.0.1');
   await once(server, 'listening');
   const baseURL = 'http://127.0.0.1:' + server.address().port;
-  browser = await chromium.launch({ headless: true, channel: 'chrome' });
+  browser = await chromium.launch({ headless: true, channel: 'chrome', ignoreDefaultArgs: ['--hide-scrollbars'] });
   const context = await browser.newContext({ baseURL, viewport: { width: 1440, height: 960 } });
   page = await context.newPage();
+  if (process.env.NODE_V8_COVERAGE) await page.coverage.startJSCoverage({ resetOnNavigation: false });
   page.setDefaultTimeout(15000);
   page.on('console', (message) =>
     logs.console.push({ type: message.type(), text: message.text(), location: message.location() })
@@ -360,13 +476,233 @@ try {
       failure.error?.errorText === 'net::ERR_ABORTED';
     logs[cancelledRead ? 'cancelledReads' : 'failedRequests'].push(failure);
   });
-  page.on('response', (response) =>
-    logs.responses.push({ path: new URL(response.url()).pathname, status: response.status() })
+  page.on('response', (response) => {
+    const entry = { path: new URL(response.url()).pathname, status: response.status() };
+    logs.responses.push(entry);
+    if (response.status() >= 400)
+      pendingResponses.push(
+        response
+          .text()
+          .then((body) => {
+            entry.body = body.slice(0, 4000);
+            entry.request = response.request().postData();
+          })
+          .catch((error) => {
+            entry.body = error.message;
+          })
+      );
+  });
+  await check('Successful refresh clears rejected branch update errors', () =>
+    errorRecoveryBrowserChecks({ page, service, project, output })
+  );
+  const noChangesCheck = () =>
+    check('Publication with no changes offers Cannot Reproduce closure', () =>
+      noChangesBrowserChecks({ page, service, project, output, root, poll })
+    );
+  if (!process.argv.includes('--reverse-fixture-scenarios')) await noChangesCheck();
+  await check('The whole sidebar scrolls over every section', async () => {
+    const issuePaths = Array.from({ length: 24 }, (_, index) =>
+      join(project, '.issues', '20261120-sidebar-overflow-' + index + '.md')
+    );
+    issuePaths.forEach((path, index) =>
+      writeFileSync(
+        path,
+        `---\nid: 20261120-sidebar-overflow-${index}\ntitle: Overflowing issue ${index}\nstate: backlog\n---\n\nSidebar scrolling fixture.\n`
+      )
+    );
+    await page.goto('/');
+    await page.locator('#sidebar-file-tree details').first().waitFor();
+    await page.evaluate(() => {
+      const notes = document.getElementById('local-note-list');
+      const files = document.getElementById('sidebar-file-tree');
+      for (let index = 0; index < 24; index++) {
+        const note = document.createElement('li');
+        note.className = 'local-note';
+        note.textContent = 'Overflowing local note ' + index;
+        notes.append(note);
+        const file = document.createElement('button');
+        file.className = 'sidebar-file-link';
+        file.textContent = 'Overflowing file ' + index + '.md';
+        files.append(file);
+      }
+    });
+    await page.locator('#open-issues [data-issue="20261120-sidebar-overflow-0"]').waitFor();
+    const observations = [];
+    for (const viewport of [
+      { width: 1440, height: 720 },
+      { width: 760, height: 600 },
+    ]) {
+      await page.setViewportSize(viewport);
+      for (const section of ['.project-home-menu', '#local-note-list', '#sidebar-file-tree', '#issue-list']) {
+        const target = page.locator(section);
+        await target.scrollIntoViewIfNeeded();
+        const bounds = await target.boundingBox();
+        const sidebar = await page.locator('.sidebar').boundingBox();
+        const y = Math.max(sidebar.y + 5, Math.min(bounds.y + 12, sidebar.y + sidebar.height - 20));
+        const x = bounds.x + Math.min(bounds.width / 2, 70);
+        assert.ok(
+          await target.evaluate((node, point) => node.contains(document.elementFromPoint(point.x, point.y)), { x, y }),
+          'Wheel pointer must be over ' + section
+        );
+        await page.mouse.move(x, y);
+        await screenshot('sidebar-scroll-' + viewport.width + '-' + section.replace(/[^a-z]/g, ''));
+        const before = await page.locator('.sidebar-footer').evaluate((node) => node.getBoundingClientRect().top);
+        await page.mouse.wheel(0, 160);
+        await poll(
+          () => page.locator('.sidebar-footer').evaluate((node) => node.getBoundingClientRect().top),
+          (top) => top < before - 20,
+          'Wheel over ' + section + ' must move content outside that section'
+        );
+        observations.push({
+          viewport,
+          section,
+          before,
+          after: await page.locator('.sidebar-footer').evaluate((node) => node.getBoundingClientRect().top),
+        });
+      }
+      const footer = page.locator('.sidebar-footer');
+      await footer.scrollIntoViewIfNeeded();
+      assert.ok(await footer.isVisible());
+      const resizer = await page.locator('#sidebar-resizer').boundingBox();
+      assert.ok(resizer.y <= 1 && resizer.height >= 590, 'Sidebar resize handle must remain at the column edge');
+      await page.locator('#sidebar-resizer').focus();
+      const widthBefore = (await page.locator('.sidebar').boundingBox()).width;
+      await page.keyboard.press('ArrowRight');
+      assert.ok(
+        (await page.locator('.sidebar').boundingBox()).width > widthBefore,
+        'Sidebar remains resizable after scrolling'
+      );
+      await screenshot('sidebar-scroll-' + viewport.width);
+    }
+    writeFileSync(join(output, 'sidebar-scroll.json'), JSON.stringify({ candidate, observations }, null, 2));
+    issuePaths.forEach((path) => rmSync(path));
+    await page.setViewportSize({ width: 1440, height: 960 });
+    await page.reload();
+  });
+  await check('Status pseudo-folders track project issues without moving them', () =>
+    issueStatusFoldersBrowserChecks({ page, project, service, poll, screenshot, output, root })
+  );
+  await check('Closed issue selections archive together and issue links open the normal view', () =>
+    projectIssuesBrowserChecks({ page, project, root, output })
+  );
+  await check(navigationCheck, () =>
+    withQueueConfiguration({ page, project, root }, () => projectNavigationBrowserChecks({ page, screenshot }))
+  );
+  await check(reportsCheck, () =>
+    investigationReportsBrowserChecks({ page, project, service, poll, screenshot, output })
+  );
+  await check(investigationFlowsCheck, () =>
+    withQueueConfiguration({ page, project, root }, () =>
+      investigationFlowsBrowserChecks({ page, service, poll, screenshot })
+    )
   );
   await check(discussCheck, () => projectDiscussBrowserChecks({ page, project, service, poll, screenshot }));
+  await check(settingsCheck, () =>
+    withQueueConfiguration({ page, project, root }, () =>
+      projectSettingsBrowserChecks({ page, project, service, logs, poll, screenshot, output, candidate })
+    )
+  );
+  await check(storesCheck, () => issueStoresBrowserChecks({ page, project, service, logs, poll, screenshot }));
+  await check(aiTextCheck, () => aiTextBrowserChecks({ page, project, service, poll, screenshot }));
+  await check(interfaceStateCheck, () => interfaceStateBrowserChecks({ page, project, service, poll, screenshot }));
+  await check('Issues and Local notes use matching text styles', () =>
+    withQueueConfiguration({ page, project, root }, async () => {
+      await page.goto('/');
+      const issues = page.locator('.sidebar-issues-link');
+      const notes = page.locator('#local-notes > header > h2');
+      await issues.waitFor();
+      await notes.waitFor();
+      const textStyle = (node) => {
+        const style = getComputedStyle(node);
+        return Object.fromEntries(
+          [
+            'fontFamily',
+            'fontSize',
+            'fontWeight',
+            'fontStyle',
+            'lineHeight',
+            'letterSpacing',
+            'textTransform',
+            'color',
+          ].map((property) => [property, style[property]])
+        );
+      };
+      const styles = { issues: await issues.evaluate(textStyle), notes: await notes.evaluate(textStyle) };
+      await screenshot('sidebar-labels');
+      writeFileSync(
+        join(output, 'sidebar-labels-styles.json'),
+        JSON.stringify({ candidate, styles, screenshot: join(output, 'sidebar-labels.png') }, null, 2) + '\n'
+      );
+      assert.deepEqual(styles.issues, styles.notes, 'Issues text styling matches Local notes');
+      await issues.click();
+      await page.locator('#project-issues').waitFor();
+      const frame = page.frameLocator('#project-issues iframe');
+      await frame.getByRole('button', { name: 'Open', exact: true }).waitFor();
+      assert.deepEqual(unexpectedConsoleErrors(logs.console), []);
+    })
+  );
+  await check('Local notes capture and handoff preserve flow', async () => {
+    await localNotesBrowserChecks({ page, project, service, poll, screenshot, output, candidate });
+    assert.deepEqual(unexpectedConsoleErrors(logs.console), []);
+  });
+  await check('Issue flow scrollbar appears only while scrolling', async () => {
+    const id = '20261122-issue-scrollbar-fixture';
+    writeBrowserIssue(project, {
+      id,
+      title: 'Scroll the issue flow',
+      body: 'Show the scrollbar only during scrolling.',
+    });
+    try {
+      await page.setViewportSize({ width: 1440, height: 640 });
+      await page.goto('/?issue=' + id);
+      await page.locator('[data-node="__destination"]').waitFor();
+      const scroll = page.locator('#graph-scroll');
+      const observe = () =>
+        scroll.evaluate((node) => ({
+          scrollbarColor: getComputedStyle(node).scrollbarColor,
+          scrollTop: node.scrollTop,
+          clientWidth: node.clientWidth,
+          scrollHeight: node.scrollHeight,
+          clientHeight: node.clientHeight,
+        }));
+      const transparent = 'rgba(0, 0, 0, 0) rgba(0, 0, 0, 0)';
+      await page.waitForTimeout(900);
+      const idle = await observe();
+      writeFileSync(join(output, 'issue-scrollbar.json'), JSON.stringify({ candidate, idle }, null, 2) + '\n');
+      assert.ok(idle.scrollHeight > idle.clientHeight, 'The issue flow must overflow vertically.');
+      assert.equal(idle.scrollbarColor, transparent, 'The issue scrollbar must be hidden while idle.');
+      await screenshot('issue-scrollbar-idle');
+      await scroll.hover();
+      await page.mouse.wheel(0, idle.scrollTop > 0 ? -180 : 180);
+      const scrolling = await poll(
+        observe,
+        (value) => value.scrollTop !== idle.scrollTop && value.scrollbarColor !== transparent,
+        'The issue scrollbar appears during wheel scrolling.'
+      );
+      await screenshot('issue-scrollbar-active');
+      const stopped = await poll(
+        observe,
+        (value) => value.scrollbarColor === transparent,
+        'The issue scrollbar hides after scrolling stops.'
+      );
+      assert.equal(scrolling.clientWidth, idle.clientWidth, 'Showing the scrollbar must not shift the flow.');
+      assert.equal(stopped.clientWidth, idle.clientWidth, 'Hiding the scrollbar must not shift the flow.');
+      assert.equal(stopped.scrollTop, scrolling.scrollTop, 'Hiding the scrollbar must preserve the scroll position.');
+      await screenshot('issue-scrollbar-stopped');
+      writeFileSync(
+        join(output, 'issue-scrollbar.json'),
+        JSON.stringify({ candidate, idle, scrolling, stopped }, null, 2) + '\n'
+      );
+    } finally {
+      await page.goto('about:blank');
+      rmSync(join(project, '.issues', id + '.md'), { force: true });
+      await page.setViewportSize({ width: 1440, height: 960 });
+    }
+  });
   await check(folderSettingsCheck, () =>
     flowFolderSettingsBrowserChecks({ page, project, service, logs, screenshot, poll })
   );
+  if (process.argv.includes('--reverse-fixture-scenarios')) await noChangesCheck();
   await check(followupsCheck, () => flowFollowupsBrowserChecks({ page, service, logs, screenshot }));
   await check(mergeSettingsCheck, async () => {
     const id = '20261119-merge-settings-fixture';
@@ -476,16 +812,24 @@ try {
   });
   await check('Project settings explain missing configuration and initialize it only on request', async () => {
     const labels = join(project, '.issues/triage-labels.md');
+    rmSync(labels, { force: true });
     await page.getByRole('button', { name: 'Project settings', exact: true }).click();
-    await page.getByText('Lifecycle configuration is missing.', { exact: true }).waitFor();
+    const settings = page.locator('#project-settings-dialog');
+    await settings.locator('[data-settings-page="lifecycle"]').click();
+    const initialize = settings.getByRole('button', { name: 'Initialize lifecycle configuration', exact: true });
+    const openFile = settings.getByRole('button', { name: 'Open file', exact: true });
+    await initialize.waitFor();
+    assert.equal(await openFile.isDisabled(), true);
     await screenshot('project-settings-missing');
     assert.equal(logs.execution.length, 0);
     assert.equal(logs.modelCalls.length, 0);
     await page.keyboard.press('Escape');
     assert.throws(() => readFileSync(labels), /ENOENT/);
     await page.getByRole('button', { name: 'Project settings', exact: true }).click();
-    await page.getByRole('button', { name: 'Initialize lifecycle configuration', exact: true }).click();
-    await page.getByText('Lifecycle configuration is present.', { exact: true }).waitFor();
+    await settings.locator('[data-settings-page="lifecycle"]').click();
+    await initialize.click();
+    await poll(() => openFile.isEnabled(), Boolean, 'Initialized lifecycle file did not become available.');
+    assert.equal(await initialize.count(), 0);
     const saved = readFileSync(labels, 'utf8');
     assert.match(saved, /ready-to-close/);
     assert.equal(logs.execution.length, 0);
@@ -493,7 +837,9 @@ try {
     await page.keyboard.press('Escape');
     await page.reload();
     await page.getByRole('button', { name: 'Project settings', exact: true }).click();
-    await page.getByText('Lifecycle configuration is present.', { exact: true }).waitFor();
+    await settings.locator('[data-settings-page="lifecycle"]').click();
+    await poll(() => openFile.isEnabled(), Boolean, 'Saved lifecycle file did not remain available.');
+    assert.equal(await initialize.count(), 0);
     assert.equal(readFileSync(labels, 'utf8'), saved);
     await screenshot('project-settings-configured');
     await page.keyboard.press('Escape');
@@ -542,6 +888,19 @@ try {
     assert.equal(logs.execution.length, 0);
   });
   await check('Issue folders retain every issue and accept drags between folders', async () => {
+    if (!issueId) {
+      await service.flows.action({ action: 'create-folder', name: 'Browser folder' });
+      const captured = await service.flows.action({
+        action: 'capture',
+        requestId: randomUUID(),
+        description,
+        folder: 'Browser folder',
+      });
+      issueId = captured.issue.id;
+      worktreeIssueId = issueId;
+      await page.goto('/?issue=' + issueId);
+      await page.locator('#request-form').waitFor();
+    }
     await flowIssueFoldersBrowserChecks(page, issueId, 'Browser folder');
     await screenshot('issue-folder-drag');
     await page.goto('/?issue=' + issueId);
@@ -559,7 +918,7 @@ try {
       await page.getByLabel('Search', { exact: true }).selectOption('Scan source');
       return clickAction(page.getByRole('button', { name: 'Find issues', exact: true }));
     };
-    const sidebarIssue = (id) => page.locator(`#issue-list [data-issue="${id}"]`);
+    const sidebarIssue = (id) => page.locator(`#open-issues [data-issue="${id}"]`);
     const disclosure = page.locator('#issue-list [data-toggle-folder="Browser folder"]');
     await disclosure.click();
     assert.equal(await sidebarIssue(issueId).isVisible(), false);
@@ -608,7 +967,7 @@ try {
     assert.equal(await grouping.getByText('The fixture requests share save behavior.').count(), 2);
     await grouping.getByRole('link', { name: /Understand why/ }).click();
     await grouping.getByText('Work belongs to').waitFor();
-    assert.equal(await page.getByRole('button', { name: 'Play issue' }).isVisible(), false);
+    assert.equal(await page.locator('#issue-playback').isVisible(), false);
     await grouping.getByRole('link', { name: /Keep both save behaviors/ }).click();
     await clickAction(page.locator(`[data-detach-sub-issue="${second.issue.id}"]`));
     await page.goto('/?issue=' + master.issue.id);
@@ -818,7 +1177,7 @@ try {
   });
   await check('Numbered full issue names wrap and sidebar resizing survives reload', async () => {
     const data = await view();
-    const name = page.locator('[data-issue="' + issueId + '"] .issue-name');
+    const name = page.locator('#open-issues [data-issue="' + issueId + '"] .issue-name');
     assert.equal(await name.textContent(), '#' + data.issue.issueNumber + ' - ' + data.issue.title);
     const separator = page.locator('#sidebar-resizer');
     const before = await page.locator('.sidebar').boundingBox();
@@ -1093,15 +1452,17 @@ try {
     const viewport = await page.locator('#graph-scroll').boundingBox();
     assert.ok(bounds.y < viewport.y - 20, 'The test card must be clipped before selection.');
     await page.mouse.click(bounds.x + bounds.width / 2, viewport.y + 20);
-    await poll(
+    const after = await poll(
       selectedGeometry,
-      (value) => value.scrollTop < clipped.scrollTop - 20,
-      'The clipped card was not revealed.'
+      (value) =>
+        value.blockId === workId &&
+        value.scrollTop < clipped.scrollTop - 20 &&
+        value.top >= -1 &&
+        value.bottom <= value.viewportHeight + 1,
+      'The clipped card was not fully revealed.'
     );
-    const revealed = await target.evaluate((node) => node.getBoundingClientRect().toJSON());
-    const after = await selectedGeometry();
-    assert.ok(revealed.y >= viewport.y - 1);
-    assert.ok(revealed.y + revealed.height <= viewport.y + viewport.height + 1);
+    assert.ok(after.top >= -1);
+    assert.ok(after.bottom <= after.viewportHeight + 1);
     assert.ok(clipped.scrollTop - after.scrollTop <= 55, 'The card moved further than necessary.');
     await page.setViewportSize({ width: 1440, height: 960 });
   });
@@ -1228,6 +1589,8 @@ try {
       (value) => Math.abs(value.scrollTop - value.expectedCenter) < 2,
       'The running block was not centered within its content bounds on reload.'
     );
+    assert.equal(await page.locator('#target-update-menu').isDisabled(), true);
+    assert.equal(await page.locator('#worktree-menu option[value="update"]').isDisabled(), true);
     await screenshot('work-running-desktop');
     await clickAction(page.locator('[data-action="stop"]'));
     const stopped = await poll(
@@ -1467,7 +1830,10 @@ try {
     await targetMenu.selectOption('update');
     await page.locator('#target-update-progress').waitFor();
     release.resolve();
-    await page.getByText('Updated the issue branch from the starting branch.', { exact: true }).waitFor();
+    await page
+      .locator('#toast')
+      .getByText('Updated the issue branch from the starting branch.', { exact: true })
+      .waitFor();
     await page.unroute('**/api/flow-action');
     await targetMenu.waitFor({ state: 'hidden' });
     const finished = (await view()).flow.blocks;
@@ -1537,7 +1903,7 @@ try {
     saved.destination = destination;
     service.flows.store.save(saved, saved.revision);
   });
-  await check('Issue Play respects No new actions and runs Update Branch without confirmation', async () => {
+  await check('Issue Start and Resume respect No new actions and run Update Branch without confirmation', async () => {
     service.flows.executor.close();
     service.flows.executor = executor;
     const previousIssueId = issueId;
@@ -1570,20 +1936,20 @@ try {
     saved = service.flows.read(issue);
     const sync = saved.blocks.find(({ kind }) => kind === 'update-branch');
     await page.goto(new URL('/?issue=' + issueId, page.url()).href);
-    await page.getByRole('button', { name: 'Play issue' }).click();
+    await page.getByRole('button', { name: 'Start issue' }).click();
     await poll(
       view,
       (data) => data.flow.blocks.find(({ id }) => id === 'work').attempts.at(-1)?.status === 'running',
       'Work did not start.'
     );
-    await page.locator(`[data-issue="${previousIssueId}"]`).click();
+    await page.locator(`#open-issues [data-issue="${previousIssueId}"]`).click();
     await page.locator('#issue-title').filter({ hasText: 'A renamed issue' }).waitFor();
     assert.equal((await view()).autoplay.mode, 'playing');
-    await page.locator(`[data-issue="${issueId}"]`).click();
+    await page.locator(`#open-issues [data-issue="${issueId}"]`).click();
     await page.getByRole('button', { name: 'Pause issue' }).click();
     await poll(view, (data) => data.autoplay.mode === 'paused', 'Pause was not applied.');
-    await page.getByRole('button', { name: 'Play issue' }).click();
-    await poll(view, (data) => data.autoplay.mode === 'playing', 'Play did not resume during Work.');
+    await page.getByRole('button', { name: 'Resume issue' }).click();
+    await poll(view, (data) => data.autoplay.mode === 'playing', 'Resume did not continue during Work.');
     const noNewActions = page.locator('#flow-actions-switch [data-server-toggle]');
     await noNewActions.check();
     await poll(
@@ -1602,9 +1968,16 @@ try {
     assert.equal(paused.autoplay.mode, 'paused');
     await page.waitForFunction(() => document.getElementById('issue-playback').disabled);
     await noNewActions.uncheck();
+    assert.equal((await view()).autoplay.mode, 'paused');
+    assert.equal((await view()).flow.blocks.find(({ id }) => id === verify.id).attempts.length, 0);
+    await clickAction(page.getByRole('button', { name: 'Resume issue' }));
     await block('request');
-    await page.getByRole('button', { name: 'Play issue' }).click();
     await page.locator('#issue-results-message').filter({ hasText: 'Flow complete' }).waitFor();
+    assert.equal(await page.getByRole('button', { name: 'Close issue' }).textContent(), 'Close');
+    await page.getByRole('button', { name: 'Close issue' }).click();
+    const closeDialog = page.getByRole('dialog', { name: 'Close this issue' });
+    await closeDialog.waitFor();
+    await closeDialog.getByRole('button', { name: 'Cancel', exact: true }).click();
     assert.equal(await page.locator('#issue-results').isVisible(), true);
     assert.equal(await page.locator('#issue-heading + #issue-results').count(), 1);
     assert.equal(await page.locator('#playback-status').textContent(), 'Paused');
@@ -1615,7 +1988,7 @@ try {
     assert.deepEqual(logs.pageErrors, []);
   });
   await check('The issue header closes with a reason and runs only Cleanup by default', async () => {
-    const close = page.getByRole('button', { name: 'Close', exact: true });
+    const close = page.getByRole('button', { name: 'Close issue', exact: true });
     assert.equal(await page.locator('#worktree-hint + #close-with-reason').count(), 1);
     const dialog = page.getByRole('dialog', { name: 'Close this issue' });
     const executionCount = logs.execution.length;
@@ -1656,12 +2029,12 @@ try {
     flow.workspace = { checkout: checkoutRoot, branch, base };
     flow.startingPoint = { ref: 'refs/heads/dev', name: 'dev', commit: base };
     flow.blocks[0].data.fields = { type: 'investigation' };
-    const understand = flow.blocks.find(({ kind }) => kind === 'understand');
+    const inquiry = flow.blocks.find(({ kind }) => kind === 'investigate');
     const path = join(project, '.issues', 'manual-fixed-evidence.txt');
     const output = 'The project serves the saved issue flow.';
     writeFileSync(path, output);
-    understand.attempts.push({
-      id: 'fixture-understand',
+    inquiry.attempts.push({
+      id: 'fixture-investigate',
       status: 'completed',
       startedAt: '2026-11-16T12:00:00Z',
       output,
@@ -1672,7 +2045,8 @@ try {
     const executionCount = logs.execution.length;
     await page.goto(new URL('/?issue=' + issueId, page.url()).href);
     await page.locator('#connection-status').filter({ hasText: 'Live' }).waitFor();
-    assert.equal(await page.locator('#investigation-run').count(), 1);
+    await page.locator('#graph [data-block="' + inquiry.id + '"]').waitFor({ state: 'visible' });
+    assert.equal(await page.locator('#investigation-page').isVisible(), false);
     const flowView = await view();
     const closure = await page.request.get('/api/issue-closure?issue=' + encodeURIComponent(issueId));
     assert.equal(closure.status(), 200);
@@ -1750,7 +2124,7 @@ try {
     assert.equal(service.flows.read(service.flows.selected(proposal.id)).folder, 'Retro items');
     const reportPath = join(project, '.issues', proposal.id + '.md');
     assert.equal(existsSync(reportPath), true);
-    const row = page.locator(`#issue-list [data-issue="${proposal.id}"]`);
+    const row = page.locator(`#open-issues [data-issue="${proposal.id}"]`);
     await page.goto(new URL('/?issue=' + proposal.id, page.url()).href);
     await row.waitFor();
     await clickAction(remove);
@@ -1769,6 +2143,7 @@ try {
     const flow = service.flows.read(service.flows.selected(issueId));
     assert.ok(flow.workspace?.checkout);
     const { checkout, branch } = flow.workspace;
+    const previewBranchRevision = git(project, 'rev-parse', branch);
     if (!service.lifecycleRuns[issueId]?.work) {
       saveLifecycle(
         service,
@@ -1783,7 +2158,7 @@ try {
     const previewPromise = page.waitForEvent('dialog');
     await menu.selectOption('delete');
     const preview = await previewPromise;
-    assert.match(preview.message(), /Delete this issue worktree/);
+    assert.match(preview.message(), /Delete this worktree and discard its uncommitted changes/);
     assert.ok(preview.message().includes(realpathSync(checkout)));
     await preview.dismiss();
     assert.ok(readFileSync(join(checkout, 'source.txt'), 'utf8'));
@@ -1792,17 +2167,12 @@ try {
     writeFileSync(uncommitted, 'Uncommitted work.');
     page.once('dialog', (dialog) => void dialog.accept());
     await menu.selectOption('delete');
-    await page.locator('#error-message').filter({ hasText: 'Unsaved workspace changes' }).waitFor();
-    assert.equal(readFileSync(uncommitted, 'utf8'), 'Uncommitted work.');
-    rmSync(uncommitted);
-
-    page.once('dialog', (dialog) => void dialog.accept());
-    await menu.selectOption('delete');
     await page.getByText('Worktree deleted.', { exact: true }).waitFor();
     assert.equal(await menu.isDisabled(), true);
     assert.equal(await menu.getAttribute('title'), 'This issue’s worktree has been deleted.');
     assert.throws(() => readFileSync(join(checkout, 'source.txt')), /ENOENT/);
-    assert.equal(git(project, 'branch', '--list', branch), '');
+    assert.equal(existsSync(uncommitted), false);
+    assert.equal(git(project, 'rev-parse', branch), previewBranchRevision);
     assert.equal(service.flows.selected(closedIssueId).closure.reason, 'fixed');
     issueId = closedId;
     await page.goto(new URL('/flow?issue=' + issueId, page.url()).href);
@@ -1814,13 +2184,13 @@ try {
     await archive.waitFor();
     const closedIndicator = page.getByRole('img', { name: 'Issue closed' });
     await closedIndicator.waitFor();
-    assert.equal(await page.getByRole('button', { name: 'Play issue' }).isVisible(), false);
+    assert.equal(await page.locator('#issue-playback').isVisible(), false);
     assert.equal(await close.isVisible(), false);
     assert.equal(await archive.locator('option[value="reveal"]').textContent(), 'Reveal in Finder');
     page.once('dialog', (dialog) => void dialog.accept());
     await archive.selectOption('reopen');
     await close.waitFor();
-    await page.getByRole('button', { name: 'Play issue' }).waitFor();
+    await page.getByRole('button', { name: 'Start issue' }).waitFor();
     assert.equal(await closedIndicator.isVisible(), false);
     assert.equal(service.flows.selected(issueId).location, 'open');
     assert.equal(await archive.isVisible(), false);
@@ -1907,11 +2277,25 @@ try {
       },
     ];
     flow.autoClose = false;
-    flow.destination = { ...flow.destination, pr: 17, url: 'https://github.com/test/fixture/pull/17' };
+    flow.destination = { ...flow.destination, branch: 'dev', pr: 17, url: 'https://github.com/test/fixture/pull/17' };
     service.flows.store.save(flow, flow.revision);
     let approved = false;
     let calls = 0;
     const run = executor.run;
+    const provider = service.flows.deliveryOptions.provider;
+    const inspect = provider.inspect;
+    provider.inspect = async (number) => {
+      assert.equal(number, 17);
+      const repo = { full_name: deliveryConfig.repository };
+      return {
+        number,
+        html_url: flow.destination.url,
+        state: 'open',
+        merged_at: null,
+        head: { ref: 'fixture-review', sha: 'fixture-head', repo },
+        base: { ref: 'dev', repo },
+      };
+    };
     executor.run = async (ctx) => {
       if (ctx.issue.id !== id) return run(ctx);
       calls++;
@@ -1927,7 +2311,7 @@ try {
       await page.locator('#issue-results-title').filter({ hasText: 'Needs your input' }).waitFor();
       assert.match(await page.locator('#issue-results-message').textContent(), /eligible reviewer.*Continue/);
       assert.equal(await page.locator('#issue-input-link').getAttribute('href'), flow.destination.url);
-      await page.locator(`[data-issue="${id}"] .issue-input-label`).waitFor();
+      await page.locator(`#open-issues [data-issue="${id}"] .issue-input-label`).waitFor();
       await page
         .locator(`#graph [data-block="${merge.id}"] .block-status`)
         .filter({ hasText: 'Needs your input' })
@@ -1973,7 +2357,7 @@ try {
       await page.reload();
       await page.locator('#issue-title').filter({ hasText: 'Review before merging' }).waitFor();
       assert.equal(await page.locator('#issue-input-actions').isVisible(), false);
-      assert.equal(await page.locator(`[data-issue="${id}"] .issue-input-label`).count(), 0);
+      assert.equal(await page.locator(`#open-issues [data-issue="${id}"] .issue-input-label`).count(), 0);
       assert.equal(calls, 2);
       flow = service.flows.read(issue);
       flow.blocks
@@ -1992,8 +2376,16 @@ try {
       assert.equal(await page.locator('#issue-input-actions').isVisible(), false);
     } finally {
       executor.run = run;
+      if (inspect) provider.inspect = inspect;
+      else delete provider.inspect;
     }
     if (issueId) await page.goto('/?issue=' + issueId);
+  });
+  await check('Branch repair progress survives reload and requires candidate approval', async () => {
+    await branchRepairBrowserChecks({ page, service, project, poll, screenshot });
+  });
+  await check('Block skill choices preserve defaults and offer missing-skill setup', async () => {
+    await blockSkillsBrowserChecks({ page, service, project, poll });
   });
   await check(blockDeletionCheck, async () => {
     const deletionIssueId = '20261117-block-deletion-fixture';
@@ -2042,6 +2434,7 @@ try {
   await check(
     'Flow and Classic reload the selected issue after a lost connection without replaying the click',
     async () => {
+      issueId = connectionRecoveryIssue();
       const helperDir = '.agents/skills/issues/scripts';
       mkdirSync(join(project, helperDir), { recursive: true });
       for (const file of ['human-input.mjs', 'human-input-version.json']) {
@@ -2067,11 +2460,14 @@ try {
         assert.equal(await waiting.isVisible(), false);
         assert.equal(page.url(), url);
         await page.reload();
-        await toggle.waitFor();
+        await page.locator('#server-actions-dialog').waitFor({ state: 'attached' });
         if (await toggle.isChecked()) await toggle.uncheck();
+        await page.locator(screen.toggle + ':not(:checked):not(:disabled)').waitFor();
 
         const release = Promise.withResolvers();
+        const pauseReceived = Promise.withResolvers();
         await page.route('**/api/health', async (route) => {
+          await pauseReceived.promise;
           if (screen.path.startsWith('/classic')) await release.promise;
           await route.abort().catch(() => {});
         });
@@ -2081,8 +2477,11 @@ try {
           const response = await route.fetch();
           assert.equal(response.status(), 200);
           await route.abort();
+          pauseReceived.resolve();
         });
-        await toggle.check();
+        const pauseRequest = page.waitForRequest('**/api/server-pause');
+        await toggle.click();
+        await pauseRequest;
         await waiting.waitFor();
         assert.equal(page.url(), url);
         assert.equal(clicks, 1);
@@ -2130,7 +2529,16 @@ try {
     assert.equal(git(checkout, 'show', 'HEAD:saved-edit.txt'), 'Keep this local edit.');
     await screenshot('starting-branch-moved');
   });
-  await check(homeCheck, () => projectHomeBrowserChecks({ page, service, screenshot }));
+  await check(homeCheck, () => projectHomeBrowserChecks({ page, service, poll, screenshot }));
+  await check('Pending local merges are visible and can be aborted', () =>
+    mergeStateBrowserChecks({ page, project, service, screenshot })
+  );
+  await check('Actions menu lists two running Flow blocks', () =>
+    actionsMenuBrowserChecks({ page, project, service, poll, screenshot, output })
+  );
+  await check('Merged issues preserve history and expose only closure controls', () =>
+    mergedIssueBrowserChecks({ page, project, service, screenshot, output, poll })
+  );
   passed = true;
 } catch (error) {
   failure = error.stack;
@@ -2138,6 +2546,19 @@ try {
   if (page) await screenshot('failure').catch(() => {});
   process.exitCode = 1;
 } finally {
+  await Promise.all(pendingResponses);
+  if (page && process.env.NODE_V8_COVERAGE) {
+    const scripts = await page.coverage.stopJSCoverage().catch(() => []);
+    const result = scripts.flatMap((script) => {
+      const filename = new URL(script.url).pathname;
+      if (!/^\/[\w-]+\.js$/.test(filename)) return [];
+      const path = join(dirname(fileURLToPath(import.meta.url)), 'factory-ui', filename.slice(1));
+      if (!existsSync(path) || readFileSync(path, 'utf8') !== script.source) return [];
+      return [{ ...script, url: pathToFileURL(path).href }];
+    });
+    mkdirSync(process.env.NODE_V8_COVERAGE, { recursive: true });
+    writeFileSync(join(process.env.NODE_V8_COVERAGE, 'browser-' + randomUUID() + '.json'), JSON.stringify({ result }));
+  }
   await browser?.close();
   server.closeAllConnections();
   if (server.listening) await new Promise((done) => server.close(done));

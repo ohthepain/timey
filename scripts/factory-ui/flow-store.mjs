@@ -1,10 +1,12 @@
+import { registeredProjectStores } from './stores/report-access.mjs';
 import { blockDefinitionId, missingMergePR, requestBlock, withoutTarget } from './flow-block-data.mjs';
 import { BlockCatalog } from './block-catalog.mjs';
+import { inquiryKinds, investigationOutputKinds } from './investigation-flow.mjs';
 import { bundledFlow } from './flow-definitions.mjs';
-import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { requireThat, writeJson } from './common.mjs';
+import { requireThat, writeJson, digest } from './common.mjs';
 
 export function requireIssueId(id) {
   requireThat(typeof id === 'string' && /^[\w-]{1,100}$/.test(id), 'Choose a valid saved issue.');
@@ -148,6 +150,26 @@ function migrateUpdateBranch(flow) {
   }
 }
 
+function canRetainBlock(before, node) {
+  if (!before) return false;
+  return blockDefinitionId(before) === node.block || (inquiryKinds.has(before.kind) && node.block === 'investigate');
+}
+function routeBlock(before, node, catalog) {
+  const block = canRetainBlock(before, node) ? { ...before } : makeBlock(node.block, [], node.suggested, catalog);
+  if (block.kind === 'understand' && node.block === 'investigate') {
+    const entry = catalog.find(({ id }) => id === 'investigate');
+    Object.assign(block, {
+      legacyKind: block.kind,
+      kind: 'investigate',
+      label: entry.label,
+      definitionChecksum: entry.checksum,
+      declaredDetails: entry.details,
+      declaredArtifacts: entry.artifacts,
+    });
+    delete block.definition;
+  }
+  return block;
+}
 export function rebuildRoute(flow, type, definition, nodes, catalog) {
   const current = new Map(flow.blocks.filter((block) => block.flowKey).map((block) => [block.flowKey, block]));
   const taken = new Set([...flow.blocks, ...(flow.retiredBlocks ?? [])].map((block) => block.id));
@@ -155,10 +177,7 @@ export function rebuildRoute(flow, type, definition, nodes, catalog) {
   const retained = new Set();
   const blocks = nodes.map((node) => {
     const before = current.get(node.id);
-    const block =
-      before && blockDefinitionId(before) === node.block
-        ? { ...before }
-        : makeBlock(node.block, [], node.suggested, catalog);
+    const block = routeBlock(before, node, catalog);
     if (before?.id === block.id) retained.add(block.id);
     else if (!taken.has(node.id)) block.id = node.id;
     taken.add(block.id);
@@ -179,7 +198,11 @@ export function rebuildRoute(flow, type, definition, nodes, catalog) {
 }
 
 export class FlowStore {
-  constructor(root) {
+  constructor(root, { ownerForIssue } = {}) {
+    this.root = root;
+    this.ownerForIssue = ownerForIssue;
+    this.staged = new Map();
+    this.flushes = new Map();
     this.directory = join(root, '.issues/flows');
   }
   path(id) {
@@ -187,6 +210,8 @@ export class FlowStore {
     return join(this.directory, id, 'flow.json');
   }
   read(issue, target, catalog) {
+    const pending = this.pendingFlow(issue.id);
+    if (pending) return structuredClone(pending.flow);
     const path = this.path(issue.id);
     if (!existsSync(path)) return newFlow(issue, target, catalog);
     const record = JSON.parse(readFileSync(path, 'utf8'));
@@ -197,6 +222,99 @@ export class FlowStore {
     return migrateFlow(record, target);
   }
   save(flow, expectedRevision) {
+    const stores = registeredProjectStores(this.root);
+    if (stores) return this.saveAuthoritative(stores, flow, expectedRevision);
+    return this.saveLocal(flow, expectedRevision);
+  }
+  async saveAuthoritative(stores, flow, expectedRevision, owner = this.ownerForIssue?.(flow.issueId)) {
+    validateGraph(flow.blocks);
+    reconcileMergeAttempts(flow);
+    const saved = await stores.saveFlow({
+      issueId: flow.issueId,
+      flow,
+      expectedRevision,
+      operationId: 'flow-' + digest(JSON.stringify([flow, expectedRevision])),
+      owner,
+      purpose: flow.closing ? 'closure' : 'edit',
+    });
+    mkdirSync(join(this.directory, flow.issueId), { recursive: true });
+    writeJson(this.path(flow.issueId), saved);
+    return saved;
+  }
+  stage(flow, expectedRevision) {
+    if (!registeredProjectStores(this.root)) return this.saveLocal(flow, expectedRevision);
+    validateGraph(flow.blocks);
+    const previous = this.staged.get(flow.issueId);
+    const pending = {
+      flow: structuredClone(flow),
+      generation: (previous?.generation || 0) + 1,
+      owner: this.ownerForIssue?.(flow.issueId),
+    };
+    this.staged.set(flow.issueId, pending);
+    this.writePending(flow.issueId, pending);
+    return flow;
+  }
+  async flush(issueId, { drain = true } = {}) {
+    let saved;
+    do {
+      let task = this.flushes.get(issueId);
+      if (!task) {
+        task = this.flushStaged(issueId).finally(() => this.flushes.delete(issueId));
+        this.flushes.set(issueId, task);
+      }
+      saved = await task;
+    } while (drain && this.staged.has(issueId));
+    return saved;
+  }
+  async flushStaged(issueId) {
+    const publication = this.flowPublication(issueId);
+    if (!publication) return;
+    const saved = await this.saveAuthoritative(
+      registeredProjectStores(this.root),
+      publication.flow,
+      publication.flow.revision,
+      publication.owner
+    );
+    const current = this.staged.get(issueId);
+    if (current?.generation === publication.generation) {
+      this.staged.delete(issueId);
+      const path = join(this.root, '.issues/store-runtime/pending-flows', issueId + '.json');
+      if (existsSync(path)) unlinkSync(path);
+    } else if (current) {
+      current.flow.revision = saved.revision;
+      this.writePending(issueId, current);
+    }
+    unlinkSync(this.publicationPath(issueId));
+    return saved;
+  }
+  publicationPath(issueId) {
+    return join(this.root, '.issues/store-runtime/flow-publications', issueId + '.json');
+  }
+  flowPublication(issueId) {
+    this.pendingFlow(issueId);
+    const path = this.publicationPath(issueId);
+    if (existsSync(path)) return JSON.parse(readFileSync(path, 'utf8'));
+    const pending = this.staged.get(issueId);
+    if (!pending) return null;
+    mkdirSync(join(this.root, '.issues/store-runtime/flow-publications'), { recursive: true });
+    writeJson(path, pending);
+    return JSON.parse(readFileSync(path, 'utf8'));
+  }
+  pendingFlow(issueId) {
+    const path = join(this.root, '.issues/store-runtime/pending-flows', issueId + '.json');
+    if (!this.staged.has(issueId) && existsSync(path)) {
+      const pending = JSON.parse(readFileSync(path, 'utf8'));
+      requireThat(pending.flow?.issueId === issueId, 'The pending flow needs reconciliation.');
+      this.staged.set(issueId, pending);
+    }
+    return this.staged.get(issueId);
+  }
+  writePending(issueId, pending) {
+    const directory = join(this.root, '.issues/store-runtime/pending-flows');
+    mkdirSync(directory, { recursive: true });
+    writeJson(join(directory, issueId + '.json'), pending);
+  }
+  saveLocal(flow, expectedRevision) {
     const path = this.path(flow.issueId);
     const current = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')).revision : 0;
     requireThat(current === expectedRevision, 'This flow changed. Refresh before saving this edit.');
@@ -259,11 +377,17 @@ export function editFlow(flow, input, catalog) {
       );
       const added = makeBlock(input.kind, at ? [next.blocks[at - 1].id] : [], false, catalog);
       added.lane = validLane(input.lane ?? (input.kind === 'update-branch' ? next.blocks[at]?.lane : 0) ?? 0);
-      added.after = laneDependencies(next.blocks, at, added.lane);
+      added.after = blockDependencies(next, added, at);
       next.blocks.splice(at, 0, added);
       const following = next.blocks[at + 1];
       if (input.kind === 'update-branch') linkPreWorkUpdate(next.blocks);
-      else if (following && !following.attempts.length && following.lane === added.lane) following.after = [added.id];
+      else if (
+        following &&
+        !following.attempts.length &&
+        following.lane === added.lane &&
+        !independentOutput(next, following)
+      )
+        following.after = [added.id];
     },
     update() {
       requireEditable(block);
@@ -313,7 +437,7 @@ export function editFlow(flow, input, catalog) {
           'Supply a valid edit checklist.'
         );
       Object.assign(block, values);
-      if ('lane' in values) block.after = laneDependencies(next.blocks, next.blocks.indexOf(block), block.lane);
+      if ('lane' in values) block.after = blockDependencies(next, block, next.blocks.indexOf(block));
     },
     move() {
       requireEditable(block);
@@ -327,7 +451,7 @@ export function editFlow(flow, input, catalog) {
       requireEditable(next.blocks[to]);
       [next.blocks[at], next.blocks[to]] = [next.blocks[to], next.blocks[at]];
       next.blocks.forEach((item, index) => {
-        item.after = laneDependencies(next.blocks, index, item.lane);
+        item.after = blockDependencies(next, item, index);
       });
     },
     remove() {
@@ -356,7 +480,7 @@ export function editFlow(flow, input, catalog) {
   };
   requireThat(Object.hasOwn(actions, input.action), 'Choose a supported flow edit.');
   actions[input.action]();
-  joinSuggestions(next.blocks);
+  joinPendingLanes(next.blocks);
   return next;
 }
 export function folderName(value) {
@@ -383,20 +507,32 @@ export function isWorkBlock(block) {
 }
 
 function defaultInsertionIndex(blocks, kind) {
-  return kind === 'update-branch' ? updateBranchIndex(blocks) : blocks.findIndex((item) => item.suggested);
+  return kind === 'update-branch'
+    ? updateBranchIndex(blocks)
+    : blocks.findIndex((item) => item.suggested || item.kind === 'publish');
 }
 
 function requireEditable(block) {
   requireThat(block, 'Choose a saved block.');
 }
 
+function independentOutput(flow, block) {
+  return flow.routeType === 'investigation' && investigationOutputKinds.has(block.kind);
+}
+function blockDependencies(flow, block, index) {
+  if (independentOutput(flow, block)) {
+    const inquiry = flow.blocks.slice(0, index).findLast(({ kind }) => inquiryKinds.has(kind)) ?? flow.blocks[0];
+    return [inquiry.id];
+  }
+  return laneDependencies(flow.blocks, index, block.lane);
+}
 function laneDependencies(blocks, index, lane) {
   const previous = blocks.slice(0, index).findLast((item) => item.lane === lane && !item.suggested) || blocks[0];
   return previous && index > 0 ? [previous.id] : [];
 }
-function joinSuggestions(blocks) {
+function joinPendingLanes(blocks) {
   blocks.forEach((block, index) => {
-    if (!block.suggested || block.attempts.length) return;
+    if ((!block.suggested && block.kind !== 'publish') || block.attempts.length) return;
     const prefix = blocks.slice(0, index);
     const parents = new Set(prefix.flatMap((item) => item.after));
     block.after = prefix.filter((item) => !parents.has(item.id)).map((item) => item.id);

@@ -27,7 +27,7 @@ import { assessAudit } from './audit-result.mjs';
 const args = process.argv.slice(2);
 const mergeIndex = args.indexOf('--merge-checks');
 const mergeChecks = mergeIndex < 0 ? null : mergeCheckPlan(JSON.parse(args[mergeIndex + 1]));
-const timeoutMs = mergeChecks ? mergeCheckTimeoutMs : undefined;
+const timeoutMs = mergeCheckTimeoutMs;
 const staged = args.includes('--staged');
 const auditOnly = args.includes('--audit-only');
 const workChecks = args.includes('--work-checks');
@@ -158,6 +158,7 @@ async function run(name, command, commandArgs) {
     {
       cwd: snapshot,
       signal: cancellation.signal,
+      streamOutput: true,
       timeoutMs,
       encoding: 'utf8',
       env:

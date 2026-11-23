@@ -5,6 +5,7 @@ import { readQueue } from './data.mjs';
 import { digest, git, requireThat, writeJson } from './common.mjs';
 import { validateSummary } from './checks.mjs';
 import { appendCompletion } from '../factory-completion.mjs';
+import { afterReportWrite } from './stores/report-access.mjs';
 import { humanGuard } from './guard.mjs';
 
 // A delivery is evidence for completed work, never acceptance or permission to merge.
@@ -101,9 +102,12 @@ export function finalizeDelivery(root, input, guard = humanGuard) {
   mkdirSync(lock);
   try {
     requireDeliveryLock(root, input);
-    return applyDelivery(root, input, path, guard);
-  } finally {
+    return afterReportWrite(applyDelivery(root, input, path, guard), (value) => value, {
+      onSettled: () => rmSync(lock, { recursive: true }),
+    });
+  } catch (error) {
     rmSync(lock, { recursive: true });
+    throw error;
   }
 }
 function applyDelivery(root, input, path, guard) {
@@ -126,32 +130,34 @@ function applyDelivery(root, input, path, guard) {
   guard(root, { issues: [issue.id] }, 'commit', queue.head);
   guard(root, { issues: [issue.id] }, 'advance', queue.head, { target_state: target });
   writeJson(path, receipt); // Retained before mutation; identical retries preserve the receipt bytes.
-  appendCompletion(
-    root,
-    issue,
-    {
-      summary: 'Checked delivery recorded. Ready for final review.',
-      notes:
-        'Delivered ' +
-        receipt.revision +
-        ' from ' +
-        receipt.checkout +
-        '. Integration and final acceptance are separate; this operation records existing delivered work.',
-      remaining: ['Explicit user acceptance is required before closing.'],
-      stage_records: steps,
-      delivery: {
-        operationId: input.operationId,
-        receipt: path,
-        sha256: digest(readFileSync(path)),
-        revision: receipt.revision,
-        checkout: receipt.checkout,
+  return afterReportWrite(
+    appendCompletion(
+      root,
+      issue,
+      {
+        summary: 'Checked delivery recorded. Ready for final review.',
+        notes:
+          'Delivered ' +
+          receipt.revision +
+          ' from ' +
+          receipt.checkout +
+          '. Integration and final acceptance are separate; this operation records existing delivered work.',
+        remaining: ['Explicit user acceptance is required before closing.'],
+        stage_records: steps,
+        delivery: {
+          operationId: input.operationId,
+          receipt: path,
+          sha256: digest(readFileSync(path)),
+          revision: receipt.revision,
+          checkout: receipt.checkout,
+        },
       },
-    },
-    { base: receipt.revision, authorization: { kind: 'direct-user', operation: 'finalize-delivery' } },
-    [{ path, sha256: digest(readFileSync(path)) }],
-    target
+      { base: receipt.revision, authorization: { kind: 'direct-user', operation: 'finalize-delivery' } },
+      [{ path, sha256: digest(readFileSync(path)) }],
+      target
+    ),
+    () => ({ state: target, revision: receipt.revision, recorded: true, repeated: false })
   );
-  return { state: target, revision: receipt.revision, recorded: true, repeated: false };
 }
 
 function retainDelivery(root, input, fingerprint, issue) {

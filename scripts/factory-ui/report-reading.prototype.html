@@ -1,0 +1,1046 @@
+<!doctype html>
+<!-- Throwaway: compare report reading and discussion layouts with ?variant=A, B, C.
+     Run: python3 -m http.server 4318 --bind 127.0.0.1 --directory scripts/factory-ui
+     Fixture content and simulated chat only. No production API calls or persistence. -->
+<html lang="en">
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Prototype · Reading and discussing a report</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+    :root {
+      color-scheme: dark;
+      font-family:
+        system-ui,
+        -apple-system,
+        sans-serif;
+      color: #e7e6e2;
+      background: #171717;
+      font-size: 14px;
+    }
+    body {
+      margin: 0;
+    }
+    button,
+    select,
+    textarea,
+    input {
+      font: inherit;
+      color: inherit;
+      background: #252525;
+      border: 1px solid #414141;
+      border-radius: 6px;
+    }
+    button {
+      padding: 9px 12px;
+      cursor: pointer;
+    }
+    button:hover {
+      background: #333;
+    }
+    button:focus-visible,
+    a:focus-visible {
+      outline: 2px solid #b5cfc0;
+      outline-offset: 3px;
+    }
+    button.primary {
+      background: #d8e6df;
+      color: #17261e;
+      border-color: #d8e6df;
+    }
+    a {
+      color: #bed7cb;
+    }
+    h1,
+    h2,
+    h3,
+    p {
+      margin-top: 0;
+    }
+    p {
+      line-height: 1.7;
+    }
+    small,
+    .muted {
+      color: #a4a49f;
+    }
+    small {
+      line-height: 1.6;
+    }
+    h1 {
+      font-size: 36px;
+      line-height: 1.2;
+      letter-spacing: -1.3px;
+      font-weight: 650;
+    }
+    h2 {
+      font-size: 22px;
+      letter-spacing: -0.5px;
+      margin-top: 30px;
+    }
+    h3 {
+      font-size: 16px;
+    }
+    button.selected {
+      background: #333c37;
+      border-color: #63806e;
+    }
+    [hidden] {
+      display: none !important;
+    }
+    .shell {
+      display: grid;
+      grid-template-columns: 212px 1fr;
+      height: 100dvh;
+    }
+    .sidebar {
+      padding: 26px 18px;
+      background: #1e1e1e;
+      border-right: 1px solid #343434;
+      display: flex;
+      flex-direction: column;
+      gap: 28px;
+    }
+    .brand {
+      font-size: 20px;
+      font-weight: 650;
+      letter-spacing: -0.7px;
+    }
+    .sidebar nav {
+      display: grid;
+      gap: 5px;
+    }
+    .sidebar button {
+      text-align: left;
+      background: transparent;
+      border-color: transparent;
+    }
+    .sidebar button.selected {
+      background: #333c37;
+    }
+    .sidebar small {
+      display: block;
+    }
+    .sidebar .foot {
+      margin-top: auto;
+      font-size: 11px;
+      color: #9b9b96;
+    }
+    .workspace {
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      height: 100dvh;
+    }
+    .topbar {
+      min-height: 58px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 26px;
+      border-bottom: 1px solid #343434;
+      gap: 14px;
+    }
+    .topbar span {
+      color: #aaa;
+      font-size: 12px;
+    }
+    .badge {
+      font-size: 10px;
+      letter-spacing: 1.2px;
+      text-transform: uppercase;
+      color: #bdcabe;
+      border: 1px solid #49604e;
+      padding: 5px 9px;
+      border-radius: 20px;
+    }
+    .view {
+      min-height: 0;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+    }
+    .intro {
+      padding: 35px 38px 20px;
+    }
+    .intro h1 {
+      font-size: 30px;
+    }
+    .index {
+      padding: 0 38px 100px;
+      overflow: auto;
+    }
+    .report-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      text-align: left;
+      width: 100%;
+      padding: 23px 20px;
+      margin-bottom: 12px;
+      background: #202020;
+      border: 1px solid #353535;
+      border-radius: 10px;
+      gap: 12px;
+    }
+    .report-row strong {
+      font-size: 17px;
+      display: block;
+      margin-bottom: 8px;
+    }
+    .report-row p {
+      color: #b8b8b1;
+      margin: 5px 0;
+    }
+    .report-row .date {
+      white-space: nowrap;
+      font-size: 12px;
+      color: #b6c9bc;
+    }
+    .reader-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 14px 22px;
+      gap: 14px;
+      border-bottom: 1px solid #333;
+      flex-wrap: wrap;
+    }
+    .reader-top .actions {
+      display: flex;
+      gap: 8px;
+    }
+    .content {
+      display: flex;
+      flex: 1;
+      min-height: 0;
+    }
+    .reading {
+      flex: 1;
+      min-width: 0;
+      overflow: auto;
+      padding: 35px clamp(24px, 4vw, 64px) 90px;
+    }
+    .paper {
+      max-width: 760px;
+      margin: auto;
+    }
+    .eyebrow {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 1.8px;
+      color: #b5ccbc;
+      margin-bottom: 18px;
+    }
+    .byline {
+      font-size: 12px;
+      color: #999c96;
+      line-height: 1.9;
+      margin-bottom: 28px;
+    }
+    .summary {
+      border-left: 3px solid #91b09c;
+      padding: 6px 22px;
+      margin: 25px 0;
+      background: #202420;
+    }
+    .summary p {
+      margin: 8px 0;
+    }
+    .finding {
+      padding: 20px 0;
+      border-bottom: 1px solid #353535;
+    }
+    .finding h3 {
+      margin-bottom: 8px;
+    }
+    .finding p {
+      color: #c6c8c1;
+    }
+    .severity {
+      font-size: 10px;
+      letter-spacing: 1px;
+      color: #cfc0a3;
+      margin-bottom: 8px;
+    }
+    .evidence {
+      font-size: 12px;
+      background: transparent;
+      border: 0;
+      padding: 0;
+      color: #b7d2c0;
+      text-decoration: underline;
+    }
+    .callout {
+      border: 1px solid #3b433d;
+      padding: 18px;
+      border-radius: 8px;
+      margin: 25px 0;
+      color: #bdc8be;
+    }
+    .reading ul {
+      padding-left: 20px;
+      line-height: 1.8;
+    }
+    .chat {
+      width: 355px;
+      flex-shrink: 0;
+      border-left: 1px solid #3b3b3b;
+      background: #202020;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+    .chat-head {
+      padding: 18px 20px 12px;
+      border-bottom: 1px solid #393939;
+    }
+    .chat-head h3 {
+      margin-bottom: 6px;
+    }
+    .context {
+      margin-top: 14px;
+      padding: 10px;
+      background: #2b342e;
+      border: 1px solid #445b4b;
+      border-radius: 6px;
+      font-size: 12px;
+      color: #c1d3c6;
+    }
+    .history {
+      overflow: auto;
+      flex: 1;
+      padding: 18px 20px;
+    }
+    .msg {
+      padding: 14px 0;
+      border-bottom: 1px solid #353535;
+      line-height: 1.6;
+    }
+    .msg small {
+      display: block;
+      margin-bottom: 5px;
+      font-size: 11px;
+    }
+    .msg p {
+      margin: 0;
+    }
+    .draft-context {
+      font-size: 11px;
+      color: #b1c5b7;
+      margin-bottom: 8px;
+    }
+    .composer {
+      padding: 14px 16px 78px;
+      border-top: 1px solid #3b3b3b;
+    }
+    .composer textarea {
+      resize: vertical;
+      min-height: 80px;
+      width: 100%;
+      padding: 12px;
+      line-height: 1.5;
+      background: #191919;
+    }
+    .controls {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      align-items: center;
+      margin-top: 10px;
+    }
+    .controls select {
+      max-width: 105px;
+      font-size: 11px;
+      padding: 7px;
+    }
+    .controls button {
+      padding: 7px;
+      font-size: 11px;
+    }
+    .controls .send {
+      margin-left: auto;
+    }
+    .toolbox {
+      font-size: 12px;
+      color: #bbb;
+      margin: 12px 0;
+      line-height: 1.8;
+    }
+    .list-pane {
+      width: 245px;
+      overflow: auto;
+      flex-shrink: 0;
+      border-right: 1px solid #343434;
+      padding: 16px 12px;
+    }
+    .list-pane .report-row {
+      display: block;
+      padding: 14px 12px;
+      background: transparent;
+      border: 0;
+      margin: 0 0 8px;
+    }
+    .list-pane strong {
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .list-pane .report-row.selected {
+      background: #303a33;
+    }
+    .list-pane p {
+      display: none;
+    }
+    .list-pane .date {
+      display: block;
+      margin-top: 8px;
+    }
+    .stacked .content {
+      flex-direction: column;
+    }
+    .stacked .chat {
+      width: 100%;
+      height: 310px;
+      flex-direction: row;
+      border-left: 0;
+      border-top: 1px solid #484848;
+    }
+    .stacked .chat-head {
+      width: 235px;
+      flex-shrink: 0;
+      border-right: 1px solid #393939;
+    }
+    .stacked .history {
+      flex: 1;
+    }
+    .stacked .composer {
+      width: 340px;
+      flex-shrink: 0;
+      border-left: 1px solid #393939;
+      padding-bottom: 70px;
+    }
+    .stacked .reading {
+      padding-top: 24px;
+      padding-bottom: 35px;
+    }
+    .switcher {
+      position: fixed;
+      bottom: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #e6e9e3;
+      color: #1b221d;
+      border: 1px solid #aab5ac;
+      border-radius: 30px;
+      padding: 6px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      box-shadow: 0 4px 25px #0008;
+      z-index: 20;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+    .switcher button {
+      border: 0;
+      background: transparent;
+      color: #1a231c;
+      border-radius: 20px;
+      padding: 8px 12px;
+    }
+    .switcher strong {
+      min-width: 170px;
+      text-align: center;
+    }
+    .switcher button:hover {
+      background: #cbd7cd;
+    }
+    .state {
+      font-size: 10px;
+      max-width: 190px;
+      border-left: 1px solid #b3bdb4;
+      padding-left: 10px;
+      color: #46534a;
+    }
+    .notice {
+      font-size: 12px;
+      padding: 12px 20px;
+      background: #29271e;
+      color: #d7ccb1;
+      border-bottom: 1px solid #4b4534;
+    }
+    .back {
+      color: #c5d5c9;
+      background: transparent;
+      border: 0;
+      padding-left: 0;
+    }
+    .empty {
+      color: #aaa;
+      padding: 15px 0;
+    }
+    .evidence-view {
+      padding: 18px;
+      margin-top: 14px;
+      border: 1px solid #555;
+      border-radius: 8px;
+      font-size: 13px;
+      background: #252a26;
+    }
+    .flow-card {
+      border: 1px solid #454d46;
+      border-radius: 8px;
+      padding: 18px;
+      margin: 20px 0;
+    }
+    .flow-card strong {
+      display: block;
+      margin-bottom: 8px;
+    }
+    @media (max-width: 1000px) {
+      .sidebar {
+        width: 150px;
+        padding: 20px 12px;
+      }
+      .shell {
+        grid-template-columns: 150px 1fr;
+      }
+      .chat {
+        width: 310px;
+      }
+      .list-pane {
+        width: 185px;
+      }
+      .reading {
+        padding: 24px;
+      }
+      h1 {
+        font-size: 27px;
+      }
+      .stacked .chat-head {
+        display: none;
+      }
+      .stacked .composer {
+        width: 310px;
+      }
+    }
+    @media (max-width: 760px) {
+      .shell {
+        grid-template-columns: 1fr;
+      }
+      .sidebar {
+        display: none;
+      }
+      .content {
+        flex-direction: column;
+      }
+      .chat {
+        width: 100%;
+        height: 380px;
+        border-left: 0;
+        border-top: 1px solid #444;
+      }
+      .reading {
+        min-height: 220px;
+      }
+      .list-pane {
+        width: 100%;
+        height: 110px;
+        border-bottom: 1px solid #444;
+      }
+      .stacked .chat {
+        height: 380px;
+        flex-direction: column;
+      }
+      .stacked .composer {
+        width: 100%;
+        padding-bottom: 72px;
+      }
+      .stacked .history {
+        min-height: 60px;
+      }
+      .state {
+        display: none;
+      }
+      .intro,
+      .index {
+        padding-left: 22px;
+        padding-right: 22px;
+      }
+      .reader-top select {
+        max-width: 210px;
+      }
+    }
+
+    .stacked .chat {
+      height: var(--discussion-height, 390px);
+      min-height: 230px;
+      flex-direction: column;
+      border: 0;
+    }
+    .stacked .chat-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      width: 100%;
+      padding: 12px 24px;
+      border-right: 0;
+    }
+    .stacked .chat-head h3 {
+      font-size: 14px;
+      margin: 0 0 4px;
+    }
+    .stacked .chat-head small {
+      font-size: 11px;
+    }
+    .stacked .context {
+      margin: 0;
+      padding: 8px 12px;
+      font-size: 11px;
+      max-width: 50%;
+    }
+    .stacked .history {
+      width: 100%;
+      padding: 10px 26px;
+      min-height: 40px;
+    }
+    .stacked .history .msg {
+      padding: 8px 0;
+    }
+    .stacked .history .empty {
+      font-size: 12px;
+      padding: 8px 0;
+    }
+    .stacked .composer {
+      width: 100%;
+      padding: 12px 26px 72px;
+      border-left: 0;
+      flex-shrink: 0;
+    }
+    .stacked .composer textarea {
+      min-height: 56px;
+      height: 56px;
+      resize: vertical;
+    }
+    .stacked .draft-context {
+      margin: 0 0 8px;
+    }
+    .prompt-pills {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin: 0 0 10px;
+    }
+    .prompt-pills button {
+      font-size: 12px;
+      border-radius: 22px;
+      background: #28312b;
+      border-color: #46554a;
+      color: #cbd9cd;
+      padding: 7px 13px;
+    }
+    .prompt-pills button:hover {
+      background: #37483c;
+    }
+    .discussion-divider {
+      height: 1px;
+      flex: 0 0 1px;
+      position: relative;
+      z-index: 2;
+      cursor: row-resize;
+      background: #343434;
+      touch-action: none;
+      user-select: none;
+      outline: none;
+    }
+    .discussion-divider:after {
+      content: '';
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: -4px;
+      height: 9px;
+      background: transparent;
+    }
+    .discussion-divider:hover,
+    .discussion-divider:focus-visible,
+    .resizing .discussion-divider {
+      background: #8599b2;
+    }
+    .discussion-divider:focus-visible {
+      box-shadow: 0 0 0 1px #8599b2;
+    }
+    .resizing,
+    .resizing * {
+      cursor: row-resize !important;
+      user-select: none !important;
+    }
+    @media (max-width: 760px) {
+      .stacked .chat-head {
+        padding: 10px 16px;
+        gap: 10px;
+      }
+      .stacked .context {
+        max-width: 48%;
+      }
+      .stacked .chat-head small {
+        display: none;
+      }
+      .stacked .history {
+        padding: 8px 16px;
+      }
+      .stacked .composer {
+        padding: 10px 16px 72px;
+      }
+      .prompt-pills {
+        gap: 5px;
+      }
+      .prompt-pills button {
+        font-size: 11px;
+        padding: 6px 9px;
+      }
+    }
+  </style>
+  <link rel="stylesheet" href="project-discuss.css" />
+  <div class="shell">
+    <aside class="sidebar">
+      <div>
+        <div class="brand">Factory</div>
+        <small>timey / project workspace</small>
+      </div>
+      <nav aria-label="Project menu">
+        <button data-home>Home</button><button data-home>Issues</button
+        ><button class="selected" data-home>Reports</button><button data-project-chat>Discuss</button
+        ><button data-home>Admin</button>
+      </nav>
+      <div>
+        <small>ISSUE FOLDERS</small>
+        <p class="muted">Inbox<br />Priority<br />Retro items<br />Saved</p>
+      </div>
+      <div class="foot">READING PROTOTYPE<br />Sample reports · simulated chat<br />No project actions run.</div>
+    </aside>
+    <main class="workspace">
+      <header class="topbar">
+        <span id="breadcrumb">Project / Reports</span>
+        <div class="badge">Design prototype</div>
+      </header>
+      <div id="view" class="view"></div>
+    </main>
+  </div>
+  <div class="switcher" aria-label="Prototype variants">
+    <button id="prev" aria-label="Previous layout">←</button><strong id="variant-name"></strong
+    ><button id="next" aria-label="Next layout">→</button>
+    <div class="state" id="state"></div>
+  </div>
+  <script>
+    const reports = [
+      {
+        id: 'quality-21',
+        title: 'Where verification loses time',
+        date: '21 Nov 2026 · 09:30',
+        run: 'Run 2',
+        issue: 'Verification workflow investigation',
+        key: 'verification',
+        summary:
+          'Repeated checks obscure the result that matters. Keep evidence tied to a candidate and make the next action explicit.',
+        findings: [
+          [
+            'The same candidate is checked repeatedly',
+            'A finished check is discarded when the workflow changes state, even when the source and verification inputs have not changed.',
+            'verification-reuse.mjs:48',
+          ],
+          [
+            'A paused route looks ready to continue',
+            'Turning off No new actions leaves the route paused. The next action needs to remain visible beside the retained result.',
+            'flow-service.mjs:932',
+          ],
+        ],
+      },
+      {
+        id: 'quality-19',
+        title: 'Verification ownership and evidence',
+        date: '19 Nov 2026 · 14:10',
+        run: 'Run 1',
+        issue: 'Verification workflow investigation',
+        key: 'verification',
+        summary: 'Verification records need a clear owner and a stable reference to the source that was checked.',
+        findings: [
+          [
+            'Candidate identity is split across records',
+            'The attempt and delivery record can retain different candidate metadata. Readers need to see which revision the result proves.',
+            'candidate-records.mjs:75',
+          ],
+          [
+            'Useful failure evidence is hard to find',
+            'A single result should link the command, output, candidate, and next step.',
+            'verification-results.mjs:31',
+          ],
+        ],
+      },
+      {
+        id: 'architecture-20',
+        title: 'A clearer boundary for project conversations',
+        date: '20 Nov 2026 · 11:45',
+        run: 'Run 1',
+        issue: 'Project architecture investigation',
+        key: 'architecture',
+        summary:
+          'Project discussion can share tools with issue discussion while keeping conversation history and work ownership explicit.',
+        findings: [
+          [
+            'Tool registration should have one source',
+            'Report chat needs the same registered skills and tools as project chat.',
+            'project-discuss-provider.mjs:116',
+          ],
+        ],
+      },
+    ];
+    let variant = new URLSearchParams(location.search).get('variant') || 'A';
+    if (!['A', 'B', 'C'].includes(variant)) variant = 'A';
+    const query = new URLSearchParams(location.search);
+    let selected = reports.some((r) => r.id === query.get('report')) ? query.get('report') : null,
+      chatOpen = query.get('discuss') === '1',
+      screen = 'reports',
+      evidenceOpen = false;
+    const readingState = {};
+    const chats = {},
+      drafts = {};
+    const names = { A: 'Focused reader', B: 'Report browser', C: 'Full-width discussion' };
+    const view = document.getElementById('view');
+    const esc = (s) =>
+      String(s).replace(
+        /[&<>"']/g,
+        (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]
+      );
+    const report = () => reports.find((r) => r.id === selected);
+    function rows(compact = false) {
+      return reports
+        .map(
+          (r) =>
+            `<button class="report-row ${selected === r.id ? 'selected' : ''}" data-report="${r.id}"><div><strong>${r.title}</strong><small>${r.issue} · ${r.run}</small>${compact ? '' : `<p>${r.summary}</p>`}</div><span class="date">${r.date}</span></button>`
+        )
+        .join('');
+    }
+    function paper(r) {
+      return `<article class="paper"><div class="eyebrow">Investigation report</div><h1>${r.title}</h1><div class="byline">${r.date} · ${r.run}<br>${r.issue} · Committed snapshot · Sample content</div><div class="summary"><h3>Executive summary</h3><p>${r.summary}</p></div><h2>Findings</h2>${r.findings.map(([title, body, path], i) => `<section class="finding"><div class="severity">FINDING ${i + 1} · NEEDS ATTENTION</div><h3>${title}</h3><p>${body}</p><button class="evidence" data-evidence>View supporting evidence · ${path}</button></section>`).join('')}${evidenceOpen ? '<div class="evidence-view">Sample evidence preview. A production report opens the retained evidence for this exact run, even when newer results exist.<p><button data-evidence>Close evidence</button></p></div>' : ''}<h2>Recommendations</h2><p>Make the result and its source explicit. Prefer one clear next action over asking the reader to reconcile several records.</p><h2>Scope and limitations</h2><p>This is fixture content for judging the report reader. It does not establish findings about the current project.</p></article>`;
+    }
+    function chat(r) {
+      const history = chats[r.key] || [];
+      return `<aside class="chat" aria-label="Investigation discussion"><div class="history discuss-messages">${history.map((m) => `<article class="discuss-message ${m.role === 'You' ? 'user' : 'assistant'}" title="${esc(m.title)}"><div class="discuss-message-heading"><strong>${m.role === 'You' ? 'You' : 'Assistant'}</strong><span class="muted">${m.role === 'You' ? '' : 'Prototype · '}${m.run}</span></div><div class="discuss-message-body"><p>${esc(m.text)}</p></div></article>`).join('')}</div><form class="composer" id="chat-form"><div class="prompt-pills" aria-label="Recommended prompts"><button type="button" data-prompt="Summarize the main findings in plain language.">Summarize findings</button><button type="button" data-prompt="Which finding should we act on first, and why?">What should we do first?</button><button type="button" data-prompt="Create follow-up issues for the actionable findings in this report.">Create follow-up issues</button></div><textarea aria-label="Discuss this report" placeholder="Discuss this report…">${esc(drafts[r.id] || '')}</textarea><div class="controls"><select aria-label="Model"><option>Project model</option><option>Other model…</option></select><select aria-label="Effort"><option>High</option><option>Medium</option></select><button type="button" data-tools>Skills & tools</button><button class="discuss-send-button send" type="submit" aria-label="Send message" title="Send message"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 16V4M5 9l5-5 5 5"/></svg></button></div><div class="toolbox" id="toolbox" hidden>Same registered skills and tools as project chat.<br>Skill picker · project files · issue controls · project operations<br><small>This prototype simulates messages and runs no tools.</small></div></form></aside>`;
+    }
+    function render() {
+      const r = report();
+      document.getElementById('variant-name').textContent = variant + ' · ' + names[variant];
+      document.getElementById('breadcrumb').textContent = 'Project / Reports' + (r ? ' / ' + r.run : '');
+      document.getElementById('state').textContent =
+        (r ? r.run + ' · ' + r.key : 'Reports list') + ' · Chat ' + (chatOpen ? 'open' : 'closed');
+      view.className = 'view ' + (variant === 'C' ? 'stacked' : '');
+      if (screen === 'investigation' && r) {
+        view.innerHTML = `<div class="intro"><button class="back" data-return>← Return to report</button><h1>${r.issue}</h1><p class="muted">Prototype investigation workspace</p><div class="flow-card"><strong>Request → Investigate → Generate report → Create Issues</strong>Selected report belongs to ${r.run}. Returning to the report restores its discussion and draft.</div><button data-discuss>Discuss selected report</button></div>`;
+        wire();
+        return;
+      }
+      if (!r) {
+        view.innerHTML = `<div class="intro"><div class="eyebrow">Project knowledge</div><h1>Reports</h1><p class="muted">Findings worth keeping. Read a report, then discuss what to do next.</p><label>Find a report <input id="search" placeholder="Title or investigation…" style="padding:9px 12px;margin-left:10px"></label></div><div class="index">${rows()}</div>`;
+        wire();
+        document.getElementById('search').oninput = (e) => {
+          const q = e.target.value.toLowerCase();
+          view.querySelectorAll('.report-row').forEach((el) => (el.hidden = !el.textContent.toLowerCase().includes(q)));
+        };
+        return;
+      }
+      view.innerHTML = `<div class="reader-top"><button class="back" data-home>← All reports</button><select aria-label="Investigation run">${reports
+        .filter((x) => x.key === r.key)
+        .map((x) => `<option value="${x.id}" ${x.id === r.id ? 'selected' : ''}>${x.run} · ${x.date}</option>`)
+        .join(
+          ''
+        )}</select><div class="actions"><button data-investigation>Open investigation</button><button class="${chatOpen ? 'selected' : 'primary'}" data-discuss>${chatOpen ? 'Hide discussion' : 'Discuss'}</button></div></div><div class="content">${variant === 'B' ? `<nav class="list-pane" aria-label="Saved reports">${rows(true)}</nav>` : ''}<div class="reading">${paper(r)}</div>${chatOpen ? (variant === 'C' ? '<div class="discussion-divider" role="separator" tabindex="0" aria-label="Resize report and discussion" aria-orientation="horizontal" aria-valuemin="230" aria-valuemax="600" aria-valuenow="390" title="Drag to resize. Arrow Up and Arrow Down also resize."></div>' : '') + chat(r) : ''}</div>`;
+      wire();
+    }
+    function choose(id) {
+      saveDraft();
+      selected = id;
+      chatOpen = readingState[id]?.chatOpen || false;
+      screen = 'reports';
+      evidenceOpen = false;
+      render();
+    }
+    function saveDraft() {
+      const r = report();
+      if (!r) return;
+      const t = view.querySelector('textarea');
+      if (t) drafts[r.id] = t.value;
+      const reading = view.querySelector('.reading');
+      if (reading)
+        readingState[r.id] = {
+          scroll: reading.scrollTop,
+          chatOpen,
+          height: view.querySelector('.chat')?.getBoundingClientRect().height || readingState[r.id]?.height,
+        };
+    }
+    function resizeDiscussion(height) {
+      const content = view.querySelector('.content'),
+        panel = view.querySelector('.chat'),
+        divider = view.querySelector('.discussion-divider');
+      if (!content || !panel || !divider) return;
+      const min = Math.ceil(panel.querySelector('.composer').getBoundingClientRect().height + 48);
+      const max = Math.max(min, content.clientHeight - 130);
+      const size = Math.round(Math.max(min, Math.min(max, height)));
+      divider.setAttribute('aria-valuemin', String(min));
+      content.style.setProperty('--discussion-height', size + 'px');
+      divider.setAttribute('aria-valuemax', String(max));
+      divider.setAttribute('aria-valuenow', String(size));
+      readingState[selected] = { ...readingState[selected], height: size };
+      document.getElementById('state').textContent = report().run + ' · Discussion ' + size + 'px';
+    }
+    function wireDivider() {
+      const divider = view.querySelector('.discussion-divider');
+      if (!divider) return;
+      resizeDiscussion(readingState[selected]?.height || view.querySelector('.content').clientHeight * 0.53);
+      divider.onpointerdown = (e) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        const startY = e.clientY,
+          startHeight = view.querySelector('.chat').getBoundingClientRect().height;
+        divider.setPointerCapture(e.pointerId);
+        document.body.classList.add('resizing');
+        divider.onpointermove = (event) => resizeDiscussion(startHeight + startY - event.clientY);
+        const end = () => {
+          document.body.classList.remove('resizing');
+          divider.onpointermove = null;
+          divider.onpointerup = null;
+          divider.onpointercancel = null;
+        };
+        divider.onpointerup = end;
+        divider.onpointercancel = end;
+      };
+      divider.onkeydown = (e) => {
+        if (!['ArrowUp', 'ArrowDown', 'Home', 'End'].includes(e.key)) return;
+        e.preventDefault();
+        e.stopPropagation();
+        const current = Number(divider.getAttribute('aria-valuenow'));
+        resizeDiscussion(
+          e.key === 'Home'
+            ? 230
+            : e.key === 'End'
+              ? Number(divider.getAttribute('aria-valuemax'))
+              : current + (e.key === 'ArrowUp' ? 24 : -24)
+        );
+      };
+    }
+
+    function wire() {
+      const reading = view.querySelector('.reading');
+      if (reading) reading.scrollTop = readingState[selected]?.scroll || 0;
+      wireDivider();
+      view.querySelectorAll('[data-prompt]').forEach(
+        (el) =>
+          (el.onclick = () => {
+            const input = view.querySelector('textarea');
+            input.value = el.dataset.prompt;
+            drafts[selected] = input.value;
+            input.focus();
+          })
+      );
+      view.querySelectorAll('[data-report]').forEach((el) => (el.onclick = () => choose(el.dataset.report)));
+      view.querySelectorAll('[data-home]').forEach((el) => (el.onclick = home));
+      view.querySelectorAll('[data-discuss]').forEach(
+        (el) =>
+          (el.onclick = () => {
+            saveDraft();
+            screen = 'reports';
+            chatOpen = !chatOpen;
+            render();
+          })
+      );
+      view.querySelectorAll('[data-investigation]').forEach(
+        (el) =>
+          (el.onclick = () => {
+            saveDraft();
+            screen = 'investigation';
+            render();
+          })
+      );
+      view.querySelectorAll('[data-return]').forEach(
+        (el) =>
+          (el.onclick = () => {
+            screen = 'reports';
+            render();
+          })
+      );
+      view.querySelectorAll('[data-evidence]').forEach(
+        (el) =>
+          (el.onclick = () => {
+            saveDraft();
+            evidenceOpen = !evidenceOpen;
+            render();
+          })
+      );
+      const picker = view.querySelector('[aria-label="Investigation run"]');
+      if (picker) picker.onchange = (e) => choose(e.target.value);
+      const tools = view.querySelector('[data-tools]');
+      if (tools)
+        tools.onclick = () => {
+          const box = document.getElementById('toolbox');
+          box.hidden = !box.hidden;
+          if (variant === 'C') resizeDiscussion(readingState[selected]?.height || 390);
+        };
+      const form = document.getElementById('chat-form');
+      if (form)
+        form.onsubmit = (e) => {
+          e.preventDefault();
+          const text = form.querySelector('textarea').value.trim();
+          if (!text) return;
+          saveDraft();
+          const r = report();
+          (chats[r.key] ??= []).push(
+            { role: 'You', run: r.run, title: r.title, text },
+            {
+              role: 'Simulated reply',
+              run: r.run,
+              title: r.title,
+              text: 'I would start with the first finding. Review its supporting evidence, agree the next action, and turn that action into a bounded follow-up issue.',
+            }
+          );
+          drafts[r.id] = '';
+          render();
+          const h = view.querySelector('.history');
+          h.scrollTop = h.scrollHeight;
+        };
+    }
+    function home() {
+      saveDraft();
+      selected = null;
+      screen = 'reports';
+      render();
+    }
+    function change(delta) {
+      saveDraft();
+      const keys = ['A', 'B', 'C'];
+      variant = keys[(keys.indexOf(variant) + delta + 3) % 3];
+      const url = new URL(location);
+      url.searchParams.set('variant', variant);
+      history.replaceState(null, '', url);
+      render();
+    }
+    document.getElementById('prev').onclick = () => change(-1);
+    document.getElementById('next').onclick = () => change(1);
+    document.addEventListener('keydown', (e) => {
+      if (e.target.closest('input,textarea,select,[contenteditable],[role=separator]')) return;
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        e.preventDefault();
+        change(e.key === 'ArrowLeft' ? -1 : 1);
+      }
+    });
+    document.querySelectorAll('.sidebar [data-home]').forEach((el) => (el.onclick = home));
+    document.querySelector('[data-project-chat]').onclick = () => {
+      if (!selected) selected = reports[0].id;
+      chatOpen = true;
+      screen = 'reports';
+      render();
+    };
+    render();
+  </script>
+</html>

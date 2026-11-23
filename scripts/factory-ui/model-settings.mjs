@@ -10,6 +10,7 @@ import {
 import { savedIssueExecutionSettings } from './issue-execution-settings.mjs';
 import { FlowStore } from './flow-store.mjs';
 import { folderSettingsFields } from './folder-settings-schema.mjs';
+import { afterReportWrite } from './stores/report-access.mjs';
 
 const issueSettingsPath = (root) => join(root, '.issues', 'model-settings.json');
 
@@ -18,7 +19,7 @@ function readLocalSettings(root) {
   return existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : { issues: {} };
 }
 
-export function readModelSettings(root, { initialize = true } = {}) {
+export function readModelSettings(root, { initialize = false } = {}) {
   if (initialize) initializeFolderSettings(root);
   const { values, errors } = resolveFolderSettings(root, null);
   const fields = folderSettingsFields(root, { branchChoices: false });
@@ -33,7 +34,6 @@ export function readModelSettings(root, { initialize = true } = {}) {
 }
 
 export function readIssueModelSettings(root, issueId) {
-  readModelSettings(root);
   const { values, overrides, errors } = savedIssueExecutionSettings(root, issueId);
   return {
     model: overrides.model === 'default' ? '' : overrides.model || '',
@@ -115,7 +115,7 @@ export function saveIssueModelSettings(service, input) {
   if (existsSync(store.path(input.issueId))) {
     const flow = JSON.parse(readFileSync(store.path(input.issueId), 'utf8'));
     flow.settings = { ...flow.settings, model: input.model || 'default', effort: input.effort || 'default' };
-    store.save(flow, flow.revision);
+    return afterReportWrite(store.save(flow, flow.revision), () => readIssueModelSettings(service.root, input.issueId));
   }
   return readIssueModelSettings(service.root, input.issueId);
 }

@@ -25,6 +25,33 @@ const finishing = new Set([
   '/api/discussion-commit',
   '/api/discussion-end',
 ]);
+const chatRoutes = new Set([
+  '/api/native-chat-prepare',
+  '/api/discussion-open',
+  '/api/discussion-turn',
+  '/api/discussion-skills',
+  '/api/discussion-retro',
+  '/api/coordinator-send',
+  '/api/coordinator-stop',
+  '/api/coordinator-fresh',
+]);
+const chatActions = new Set(['create', 'send', 'retry', 'resume', 'steer', 'close']);
+const routeActions = new Map([
+  ['/api/project-discuss-action', chatActions],
+  ['/api/report-discuss-action', chatActions],
+  [
+    '/api/project-home-action',
+    new Set(['investigation-discuss', 'automate-start', 'automate-message', 'automate-retry']),
+  ],
+]);
+function isChatRequest(path, input) {
+  if (chatRoutes.has(path)) return true;
+  return routeActions.get(path)?.has(input.action);
+}
+function allowedWhilePaused(phase, path, input) {
+  if (finishing.has(path)) return true;
+  return phase === 'paused' && isChatRequest(path, input);
+}
 export function serverControl(service, restart) {
   let phase = 'idle',
     error = null,
@@ -51,7 +78,7 @@ export function serverControl(service, restart) {
         nativeActions(service.codex) +
         controllers.length +
         (service.captures?.active || 0) +
-        (service.flows?.active.size || 0) +
+        flowActions(service) +
         (service.flows?.flowBuilds?.size || 0) +
         (service.flows?.captures?.size || 0) +
         (service.flows?.followups?.busy.size || 0) +
@@ -95,14 +122,12 @@ export function serverControl(service, restart) {
     return status();
   }
   function allow(path, input = {}) {
+    if (phase === 'idle') return;
     requireThat(
-      phase === 'idle' || finishing.has(path),
+      allowedWhilePaused(phase, path, input),
       'New work is paused. Turn off No new actions to start more work.'
     );
-    requireThat(
-      phase === 'idle' || !input.continue,
-      'Save these results without continuing while new actions are paused.'
-    );
+    requireThat(!input.continue, 'Save these results without continuing while new actions are paused.');
   }
   function cancel() {
     requireThat(phase !== 'restarting', 'Restart has already started.');
@@ -153,7 +178,7 @@ function actionItems(service) {
     .filter((run) => listableAction(run, service))
     .sort((left, right) => Date.parse(right.updated || right.created) - Date.parse(left.updated || left.created))
     .map((run) => actionEntry(run, service, queue));
-  const current = runs.filter((item) => item.active);
+  const current = [...flowActionItems(service, queue), ...runs.filter((item) => item.active)];
   const recent = runs.filter((item) => !item.active && item.currentStrategy);
   const cleanup = activeCleanups(service).map((record) => ({
     id: `cleanup:${record.issueId}`,
@@ -172,6 +197,43 @@ function actionItems(service) {
     canSteer: false,
   }));
   return [...cleanup, ...current, ...recent.slice(0, Math.max(0, 40 - cleanup.length - current.length))];
+}
+
+function flowActionItems(service, queue) {
+  return [...(service.flows?.active || [])].map(([issueId, active]) => {
+    const issue = service.flows.selected(issueId);
+    const flow = service.flows.read(issue);
+    const block = flow.blocks.find((item) => item.id === active.blockId);
+    const label = block?.label || active.blockId.replaceAll('-', ' ');
+    return {
+      id: `flow:${issueId}:${active.attemptId || active.blockId}`,
+      title: `${issue.title} · ${label}`,
+      kind: 'flow',
+      active: true,
+      ...flowActionProgress(block, active.attemptId),
+      issues: [issueLink(queue, issueId)],
+      outputHref: `/?issue=${encodeURIComponent(issueId)}&block=${encodeURIComponent(active.blockId)}`,
+      canStop: false,
+      canRestart: false,
+      canSkip: false,
+      canCancel: false,
+      canPause: false,
+      canSteer: false,
+    };
+  });
+}
+
+function flowActionProgress(block = { attempts: [] }, attemptId) {
+  const attempt = block.attempts.find((item) => item.id === attemptId) || {
+    status: 'running',
+    summary: 'Action is running.',
+  };
+  const summary = attempt.summary;
+  return {
+    status: attempt.status,
+    summary,
+    details: `${attempt.step || summary} Open the issue for controls.`,
+  };
 }
 
 function cleanupSummary(record) {
@@ -388,4 +450,8 @@ function pendingPermissions(service) {
 
 function projectHomeActions(service) {
   return service.projectHome?.activeCount || 0;
+}
+
+function flowActions(service) {
+  return (service.flows?.active.size || 0) + (service.flows?.branchRepairs?.active.size || 0);
 }

@@ -153,7 +153,7 @@ The user accepted all four recommendations on November 18, 2026.
    Use **Start all** or **Archive all** when all results are checked, and
    **Start selected (N)** or **Archive selected (N)** for a subset. Disable with
    no selection. Clear selection on an Open or Closed view change.
-3. Start each selected issue's existing Play flow independently, preserving
+3. Start each selected issue's saved route independently, preserving
    individual settings, eligibility checks, and confirmation stops. Preview the
    selection, skip ineligible issues with reasons, and retain individual outcomes.
    Never group automatically. Archive also previews its selection and uses the

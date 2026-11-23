@@ -33,7 +33,11 @@ export async function listAvailableSkills(connection, cwd) {
       const content = readFileSync(path, 'utf8');
       const metadata = skillMetadata(content);
       if (typeof metadata.name !== 'string' || !metadata.name) continue;
-      if (found.some((entry) => entry.name === metadata.name)) continue;
+      const duplicate = found.findIndex((entry) => entry.name === metadata.name);
+      if (duplicate !== -1) {
+        if (found[duplicate].source === 'Factory') continue;
+        found.splice(duplicate, 1);
+      }
       found.push({
         name: metadata.name,
         path,
@@ -75,7 +79,14 @@ export function selectedSkills(skills, names) {
 }
 
 export function skillInputs(skills) {
-  return skills.map(({ name, path }) => ({ type: 'skill', name, path }));
+  return skills.map(({ name, path, source }) =>
+    source === 'Factory' || source === 'Project'
+      ? {
+          type: 'text',
+          text: `Selected project skill: ${name}\nSkill file: ${path}\nResolve supporting files relative to this skill file. Follow these instructions for this request:\n\n${readFileSync(path, 'utf8')}`,
+        }
+      : { type: 'skill', name, path }
+  );
 }
 
 export function publicSkills(skills) {

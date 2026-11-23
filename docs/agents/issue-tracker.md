@@ -23,7 +23,24 @@ Keep specs and working plans under `docs/plans/`; link them from reports.
 Record durable terminology and architecture decisions using
 `docs/agents/domain.md`.
 
-The queue is local by default. In [shared queue mode](../plans/shared-issue-queue.md), reports and display numbers are tracked on a dedicated queue branch. Timey publishes new report updates as direct commits using its GitHub App. Workspaces and runtime files stay local. The [Closed issues and Archive design](../plans/archive-closed-issues.md) describes the separate views and local migration.
+The queue is local by default. In [shared queue mode](../plans/shared-issue-queue.md), reports, lifecycle statuses, display numbers, and claim records are tracked on
+a dedicated queue branch. Source commits exclude those records and queue refresh
+does not advance source workspaces. Timey publishes new report updates as direct commits using its GitHub App. Workspaces and runtime files stay local. The [Closed issues and Archive design](../plans/archive-closed-issues.md) describes the separate views and local migration.
+
+## Issue stores
+
+Factory stores issue reports separately from coordination and artifacts. Existing
+`.issues/` Markdown reports and flow JSON remain the local display files; shared
+mutations go through the configured Issue and Coordination stores. Use Factory
+controls or the registered report writer rather than treating a direct edit to a
+remote-backed report as a published update. Unexpected local edits are retained
+as drafts during refresh. Updating shared status does not update source workspaces.
+
+Read [Issue stores](issue-stores.md) for named destinations, project and folder
+defaults, dedicated database requirements, checked migrations, and ownership
+recovery. An issue's saved store remains fixed until an explicit checked move.
+Stop and upgrade old Factory runners before activating the new shared authority;
+old binaries cannot honor its ownership records.
 
 ## Clarification and lifecycle roles
 

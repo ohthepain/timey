@@ -14,7 +14,7 @@ export async function clarifyRequest(root, definition, attempt, signal, discussi
     values.some(({ key }) => key === 'type'),
     'Request Markdown is missing the type artifact.'
   );
-  const session = discussion();
+  const session = discussion(undefined, { root });
   let timer;
   let cancel;
   try {

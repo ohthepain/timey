@@ -7,12 +7,54 @@
       (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]
     );
   const busy = (session) => ['running', 'starting', 'stopping'].includes(session?.status);
+  function homeMessageAttributes(role, text, key) {
+    if (role === 'user') return '';
+    return ` data-ai-text data-ai-key="${escape(key)}" data-ai-source="${escape(text)}"`;
+  }
+  function homeMessage(message, index, id, sessionId) {
+    const text = message.text || message.content;
+    const key = `home-${id}-${sessionId}-${index}`;
+    const attributes = homeMessageAttributes(message.role, text, key);
+    return `<article data-home-message><strong>${message.role === 'user' ? 'You' : 'Assistant'}</strong><div${attributes}>${escape(text)}</div></article>`;
+  }
+  function renderMessages(id, messages, sessionId) {
+    const markup = (messages || []).map((message, index) => homeMessage(message, index, id, sessionId)).join('');
+    const scope = 'home-messages:' + id + ':' + sessionId;
+    const first = !window.timeyView.read(scope);
+    window.timeyView.render($(id), markup, scope);
+    if (first) $(id).scrollTop = $(id).scrollHeight;
+  }
+
+  function markAutomateContent(content, sessionId) {
+    const field = $('home-automate-content');
+    const block = field.closest('[data-ai-text]') || field.parentElement;
+    block.dataset.aiText = '';
+    block.dataset.aiKey = 'automate-content-' + sessionId;
+    block.dataset.aiSource = content;
+    window.FactoryTextControls.refresh();
+  }
+  function saveProjectTab(tab) {
+    const url = new URL(location.href);
+    if (tab !== 'home') url.searchParams.set('projectTab', tab);
+    else url.searchParams.delete('projectTab');
+    history.replaceState(null, '', url);
+  }
+  function updateChatVisibility(visible, projectTab, discuss, reports) {
+    const chats = new Map([
+      ['discuss', discuss],
+      ['reports', reports],
+    ]);
+    for (const [tab, chat] of chats) chat.setVisible(visible && projectTab === tab);
+  }
   window.createProjectHomeUI = ({ request, post, navigateHome, changed }) => {
     const discuss = window.createProjectDiscussUI({ request, post });
+    const reports = window.createProjectReportsUI({ request, post });
     window.createProjectAdminUI({ request, post });
     const tabs = document.querySelectorAll('[role="tab"][data-project-tab]');
     const requestedTab = new URL(location.href).searchParams.get('projectTab');
-    let projectTab = ['issues', 'discuss', 'admin'].includes(requestedTab) ? requestedTab : 'home';
+    let projectTab = ['issues', 'reports', 'discuss', 'automate', 'admin'].includes(requestedTab)
+      ? requestedTab
+      : 'home';
     const state = {
       visible: false,
       data: null,
@@ -32,18 +74,16 @@
 
     function selectProjectTab(tab) {
       projectTab = tab;
-      const url = new URL(location.href);
-      if (tab !== 'home') url.searchParams.set('projectTab', tab);
-      else url.searchParams.delete('projectTab');
-      history.replaceState(null, '', url);
+      saveProjectTab(tab);
       $('project-home').dataset.projectTab = tab;
       document.querySelector('.workspace').dataset.projectHomeTab = tab;
-      document.querySelector('.flow-footer')?.classList.toggle('discuss-hidden', tab === 'discuss');
+      document.querySelector('.flow-footer')?.classList.toggle('discuss-hidden', ['discuss', 'reports'].includes(tab));
       $('project-home-content').hidden = tab !== 'home';
       $('project-issues').hidden = tab !== 'issues';
       $('project-admin').hidden = tab !== 'admin';
+      $('project-automate').hidden = tab !== 'automate';
+      updateChatVisibility(state.visible, projectTab, discuss, reports);
       for (const button of tabs) button.setAttribute('aria-selected', String(button.dataset.projectTab === tab));
-      discuss.setVisible(state.visible && tab === 'discuss');
       loadIssuesFrame();
     }
     for (const button of tabs) button.addEventListener('click', () => selectProjectTab(button.dataset.projectTab));
@@ -116,7 +156,7 @@
         )
         .join('');
       const content = markup || '<p class="muted">No saved sessions yet.</p>';
-      if ($(id).innerHTML !== content) $(id).innerHTML = content;
+      window.timeyView.render($(id), content, 'home-runs:' + id);
     }
     function renderHome() {
       const { project, stats } = state.data;
@@ -183,19 +223,6 @@
       $('home-investigation-reusable').checked = false;
     }
 
-    function renderMessages(id, messages) {
-      const markup = (messages || [])
-        .map(
-          ({ role, text, content }) =>
-            `<article data-home-message><strong>${role === 'user' ? 'You' : 'Assistant'}</strong><div>${escape(text || content)}</div></article>`
-        )
-        .join('');
-      if ($(id).innerHTML !== markup) {
-        $(id).innerHTML = markup;
-        $(id).scrollTop = $(id).scrollHeight;
-      }
-    }
-
     function operationStatus(kind, session) {
       $(`home-${kind}-status`).textContent = session.status === 'draft' ? '' : session.phase || session.status;
       if (session.error) $(`home-${kind}-error`).textContent = session.error;
@@ -252,7 +279,7 @@
     function renderAutomate(fillDraft = false) {
       const session = state.automate;
       setRunButtons('automate', session);
-      renderMessages('home-automate-messages', session.messages);
+      renderMessages('home-automate-messages', session.messages, session.id);
       automateReplyControls(session);
       $('home-automate-coverage').textContent = coverageText(session.history);
       $('home-automate-review').hidden = !session.draft;
@@ -269,6 +296,7 @@
     function writeAutomateDraft(draft) {
       $('home-automate-name').value = draft.name;
       $('home-automate-content').value = draft.content;
+      markAutomateContent(draft.content, state.automate.id);
       $('home-automate-current').value = draft.currentContent || 'No existing skill at this destination.';
       $('home-automate-path').textContent = draft.path;
       $('home-automate-destination').value = draft.destination;
@@ -344,7 +372,7 @@
     }
     function projectNavigation(button) {
       const route = button.dataset.projectHome;
-      if (route === 'home' || route === 'discuss') {
+      if (['home', 'issues', 'discuss', 'reports'].includes(route)) {
         navigateHome();
         selectProjectTab(route);
         void refresh();
@@ -430,7 +458,7 @@
         const wasVisible = state.visible;
         state.visible = value;
         $('project-home').hidden = !value;
-        discuss.setVisible(value && projectTab === 'discuss');
+        updateChatVisibility(state.visible, projectTab, discuss, reports);
         loadIssuesFrame();
         if (value && !wasVisible) void refresh();
       },

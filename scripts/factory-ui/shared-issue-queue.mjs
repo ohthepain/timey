@@ -16,6 +16,7 @@ import {
   formatArchivedIssue,
   moveStoredIssue,
   storedIssuePath,
+  updateStoredIssueMetadata,
 } from './issue-report-storage.mjs';
 import { createSharedIssueTransport } from './shared-issue-transport.mjs';
 import { createSharedIssueClaims } from './shared-issue-claims.mjs';
@@ -43,7 +44,7 @@ export function createSharedIssueQueue(service, options = {}) {
   if (!queueConfig) return null;
   const transport = createSharedIssueTransport(root, queueConfig.remote);
   const config = { ...queueConfig, transport };
-  const claims = createSharedIssueClaims({ root, ...config });
+  const claims = createSharedIssueClaims({ root, ...config, pushDirect: options.pushClaim });
   const publication = createSharedIssuePublication({ root, ...config, ...options });
   const directory = join(root, '.issues/shared-queue');
   mkdirSync(directory, { recursive: true });
@@ -261,6 +262,33 @@ export function createSharedIssueQueue(service, options = {}) {
     }
     return acquire(issue, true);
   }
+  function failedInitialProposal(pending) {
+    if (!pending) return false;
+    return [pending.status === 'failed', pending.base === null, pending.location === 'open', !pending.claim].every(
+      Boolean
+    );
+  }
+  function moveFolder(issue, folderId) {
+    const pending = receipt(issue.id);
+    if (failedInitialProposal(pending)) {
+      requireThat(
+        [!active(issue.id), !claims.own(issue.id), !remoteClaims.has(issue.id)].every(Boolean),
+        'Wait for this issue’s active operation to finish before moving it.'
+      );
+      requireThat(pending.report === issue.content, 'The pending report changed. Refresh before moving this issue.');
+      requireThat(
+        publication.readTarget(issue.id).report === null,
+        'The proposal is already shared. Reconcile its publication before moving this issue.'
+      );
+      updateStoredIssueMetadata(root, issue, { folder_id: folderId });
+      save(pending, { report: localReport(issue.id) });
+      return;
+    }
+    if (pending) reconcileReceipt(pending);
+    const context = acquire(issue, true);
+    updateStoredIssueMetadata(root, issue, { folder_id: folderId });
+    checkpoint(issue.id, 'Issue folder assignment changed', context);
+  }
   function flowBlockReceipt(id, blockId) {
     const pending = receipt(id);
     if (pending && pending.status === 'claimed' && pending.flowBlock === blockId) return pending;
@@ -269,9 +297,18 @@ export function createSharedIssueQueue(service, options = {}) {
     const pending = continuing ? flowBlockReceipt(issue.id, blockId) : undefined;
     if (!pending) return acquire(issue, false, false, undefined, blockId).claim;
     const claim = claims.verifyOwn(issue.id);
-    requireThat(claim, 'Reconcile the interrupted shared issue claim.');
-    requireThat(claim.oid === pending.claim.oid, 'The interrupted shared issue claim changed.');
-    return claim;
+    if (claim) {
+      requireThat(claim.oid === pending.claim.oid, 'The interrupted shared issue claim changed.');
+      return claim;
+    }
+    reconcileReleasedFlowClaim(issue.id, pending);
+    return acquire(issue, false, false, undefined, blockId).claim;
+  }
+  function reconcileReleasedFlowClaim(id, pending) {
+    const local = claims.own(id);
+    requireThat(!local || local.oid === pending.claim.oid, 'The interrupted shared issue claim changed.');
+    if (local) release(id, local);
+    save(pending, { status: 'published' });
   }
   function releaseFlowBlock(claim) {
     const pending = receipt(claim.issueId);
@@ -283,8 +320,8 @@ export function createSharedIssueQueue(service, options = {}) {
     release(claim.issueId, claim);
     save(pending, { status: 'published' });
   }
-  function archiveClaim(record) {
-    return config.direct && record.storageAction === 'archive' ? record.claim : undefined;
+  function checkpointClaim(record) {
+    return config.direct ? record.claim : undefined;
   }
   function publish(record, reprepare = false) {
     try {
@@ -295,7 +332,8 @@ export function createSharedIssueQueue(service, options = {}) {
         location: record.location === undefined ? 'open' : record.location,
         report: record.report,
         reason: record.reason,
-        releaseClaim: archiveClaim(record),
+        claim: record.claim,
+        releaseClaim: checkpointClaim(record),
         batchHead: record.batchHead,
       });
       if (result.status === 'landed') return publishConfirmed(record, result);
@@ -541,6 +579,7 @@ export function createSharedIssueQueue(service, options = {}) {
     branch: config.separateBranch,
     acquire,
     acquireForApproval,
+    moveFolder,
     acquireGroupClosure,
     acquireFlowBlock,
     releaseFlowBlock,

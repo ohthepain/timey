@@ -103,7 +103,7 @@ function requireMerged(service, c) {
   }
   service.requireLock(c.run);
 }
-function finish(service, record, c, checked) {
+async function finish(service, record, c, checked) {
   requireThat(
     git(service.root, 'rev-parse', 'HEAD') === checked.head && !git(service.root, 'status', '--porcelain'),
     'The project changed during recovery. Retry against the current revision.'
@@ -129,7 +129,7 @@ function finish(service, record, c, checked) {
     if (stage?.role !== 'ready-to-fix' || next?.role !== 'ready-to-verify') continue;
     service.guard(service.root, c.action, 'advance', q.head, { target_state: next.state });
     const evidence = checked.summaries.map((path) => ({ path, sha256: digest(readFileSync(path)) }));
-    appendCompletion(service.root, issue, result, { ...c.run, base: checked.head }, evidence, next.state);
+    await appendCompletion(service.root, issue, result, { ...c.run, base: checked.head }, evidence, next.state);
   }
   completeDeliveryRun(service, c.run, result, checked.head);
   saveLifecycle(service, record, { integrationRecovery: null });
@@ -161,7 +161,7 @@ export async function recoverPendingIntegration(service, record, explicit = fals
         service.store.connected.delete(c.run.id);
       }
     }
-    finish(service, record, c, checked);
+    await finish(service, record, c, checked);
     return 'recovered';
   } catch (error) {
     const reason = error.message;

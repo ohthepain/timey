@@ -7,7 +7,7 @@ const nodeTestFile = (value) => localPath(value) && /\.(?:mjs|cjs|js)$/.test(val
 
 const focusedCommands = new Map([
   ['node --test', (args) => args.some(nodeTestFile) && args.every(nodeTestArgument)],
-  ['node scripts/flow-browser.mjs', (args) => args.length === 1 && /^--[\w-]+$/.test(args[0])],
+  ['node scripts/flow-browser.mjs', (args) => args.length > 0 && args.every((arg) => /^--[\w-]+$/.test(arg))],
   ['pnpm run', (args) => args.length === 1 && /^test:[\w:-]+$/.test(args[0]) && !aggregateScripts.has(args[0])],
   [
     'pnpm exec',
@@ -32,7 +32,14 @@ function validArgv(argv) {
 }
 
 function focusedCommand([command, subcommand, ...args]) {
-  return focusedCommands.get(`${command} ${subcommand}`)?.(args);
+  const known = focusedCommands.get(`${command} ${subcommand}`);
+  if (known) return known(args);
+  return standaloneBrowserCheck(command, subcommand, args);
+}
+
+function standaloneBrowserCheck(command, script, args) {
+  if (command !== 'node' || args.length !== 0 || script === 'scripts/factory-browser.mjs') return false;
+  return /^scripts\/[\w-]+-browser\.mjs$/.test(script);
 }
 
 export function normalizeFocusedTests(value) {
@@ -48,7 +55,7 @@ export function normalizeFocusedTests(value) {
 function requireFocusedCommand(argv) {
   if (!validArgv(argv) || !focusedCommand(argv))
     throw Error(
-      'Record focused test commands using Node test files, a Flow browser scenario, a focused pnpm test script, or Vitest paths.'
+      'Record focused test commands using Node test files, a standalone browser check, a Flow browser scenario, a focused pnpm test script, or Vitest paths.'
     );
   return argv;
 }

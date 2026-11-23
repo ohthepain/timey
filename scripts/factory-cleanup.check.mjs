@@ -14,6 +14,7 @@ import {
   previewIssueCleanup,
   previewIssueCleanupResource,
   retryIssueCleanup,
+  restoreDetachedWorktree,
   startIssueCleanupRetry,
 } from './factory-ui/issue-cleanup.mjs';
 import { git } from './factory-ui/common.mjs';
@@ -246,6 +247,27 @@ test('Delete worktree removes the issue checkout and local branch while the issu
   assert.equal(existsSync(checkout), false);
   assert.equal(git(queue.root, 'branch', '--list', branch), '');
   assert.equal(readQueue(queue.root).issues.find((item) => item.id === issue.id).state, issue.state);
+});
+
+test('checkout-only deletion discards local edits and retains the branch for later work', async (t) => {
+  const { queue, service, issue } = fixture(t);
+  const checkout = join(realpathSync(queue.root), '.issues/issue-work', issue.id);
+  const branch = `codex/issue-${issue.issueNumber}`;
+  git(queue.root, 'worktree', 'add', '-b', branch, checkout, 'HEAD');
+  service.lifecycleRuns[issue.id] = { issueId: issue.id, work: { branch, checkout } };
+  writeFileSync(join(checkout, 'draft.txt'), 'Discard this draft');
+  const conversation = join('.issues/conversations', issue.id);
+  mkdirSync(join(checkout, conversation), { recursive: true });
+  writeFileSync(join(checkout, conversation, 'messages.jsonl'), 'Saved conversation\n');
+  const input = { issueId: issue.id, checkoutOnly: true };
+  const expected = deleteIssueWorktree(service, input);
+  await deleteIssueWorktree(service, { ...input, expected });
+  assert.equal(existsSync(checkout), false);
+  assert.equal(git(queue.root, 'rev-parse', branch), expected.revision);
+  assert.equal(readFileSync(join(queue.root, conversation, 'messages.jsonl'), 'utf8'), 'Saved conversation\n');
+  restoreDetachedWorktree(queue.root, issue.id, { branch, checkout });
+  assert.equal(git(checkout, 'rev-parse', 'HEAD'), expected.revision);
+  assert.equal(existsSync(join(checkout, 'draft.txt')), false);
 });
 
 test('Cleanup checks a saved unloaded chat before removing its worktree', async (t) => {

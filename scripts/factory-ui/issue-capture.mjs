@@ -1,3 +1,4 @@
+import { readClarificationSkills } from './project-discuss.mjs';
 import { defaultIssueFolder, initializeFolderSettings, requireIssueFolder } from './issue-folder-settings.mjs';
 import { storedIssuePath } from './issue-report-storage.mjs';
 import { formatIssueReport, originalRequestSection } from './issue-report-format.mjs';
@@ -14,13 +15,19 @@ import { captureRoute, validateCaptureLifecycle, captureLifecycle } from './capt
 import { readQueue } from './data.mjs';
 import { queueIssueNumbers } from './issue-numbers.mjs';
 import { digest, requireThat, writeJson } from './common.mjs';
+import { resolveIssueStore } from './stores/settings.mjs';
+import { ensureProjectStores } from './stores/runtime.mjs';
+import { newFlow } from './flow-store.mjs';
+import { flowTarget } from './flow-observer.mjs';
 
 const requestSchema = z
   .object({
     requestId: z.uuid(),
     folder: z.string().trim().min(1).max(4096).optional(),
+    issueStore: z.string().min(1).max(100).optional(),
     description: z.string().min(1).max(24000),
     grill: z.boolean().default(false),
+    grillSkill: z.string().min(1).max(128).optional(),
     go: z.boolean().default(false),
     strategy: z.enum(['full-stop', 'full-send']).default('full-stop'),
     model: z.string().optional(),
@@ -51,7 +58,8 @@ const receiptSchema = z
 const endpoint = '/api/issue-capture';
 export function createCaptures(service, options = {}) {
   const tasks = new Map();
-  const assess = options.assess || assessCapture;
+  let persistence = Promise.resolve();
+  const assess = options.assess || ((description, lifecycle) => assessCapture(description, lifecycle, service.root));
   const random = options.random || (() => randomBytes(8).toString('hex'));
   const publish = options.publish || publishExclusive;
   function guard() {
@@ -73,7 +81,14 @@ export function createCaptures(service, options = {}) {
     initializeFolderSettings(service.root);
     input.folder ||= defaultIssueFolder(service.root).name;
     requireIssueFolder(service.root, input.folder);
+    if (service.projectStores) {
+      requireThat(input.issueStore, 'Choose an Issue store before creating the issue.');
+      await ensureProjectStores(service, { fresh: true });
+    }
+    if (input.issueStore)
+      input.issueStore = resolveIssueStore(service.root, { storeId: input.issueStore, folder: input.folder }).id;
     validateModel(service.root, input.model);
+    validateGrillingSkill(service.root, input);
     const pending = tasks.get(input.requestId);
     if (pending) {
       requireThat(
@@ -83,15 +98,15 @@ export function createCaptures(service, options = {}) {
       return pending.promise;
     }
     const promise = perform(input)
-      .then((result) => {
+      .then(async (result) => {
         if (service.sharedIssues)
           for (const issue of result.issues) {
             const saved = service.sharedIssues.checkpoint(issue.id, 'Issue created');
             issue.publication = { status: saved.status, url: saved.url, error: saved.error };
           }
-        if (input.model)
+        if (input.model && !service.projectStores)
           for (const issue of result.issues)
-            saveIssueModelSettings(service, { issueId: issue.id, model: input.model, effort: '' });
+            await saveIssueModelSettings(service, { issueId: issue.id, model: input.model, effort: '' });
         return result;
       })
       .then((result) => (input.grill ? startCaptureGrilling(service, input, result) : result))
@@ -110,30 +125,54 @@ export function createCaptures(service, options = {}) {
     const basis = policyBasis(service.root);
     const assessment = previous ? null : captureAssessment.parse(await assess(input.description, before.lifecycle));
     guard();
-    return locked(service.root, () => {
-      const receipt = readReceipt(file, hash);
-      if (receipt?.complete) return response(receipt, service.root);
-      requireThat(
-        policyBasis(service.root) === (receipt?.basis || basis),
-        'Capture policy changed. Restore it or submit a new draft after reviewing the change.'
-      );
-      const queue = captureQueue(service.root);
-      const saved = receipt || allocate(queue, input, assessment, basis, random);
-      mkdirSync(directory, { recursive: true });
-      if (!receipt) writeJson(file, saved);
-      for (const report of saved.reports) {
-        const path = join(service.root, '.issues', report.id + '.md');
-        if (existsSync(path)) {
-          requireThat(
-            readFileSync(path, 'utf8') === report.content,
-            `Capture ${report.id} already exists with changed contents. Preserve it and reconcile this submission.`
-          );
-        } else publish(path, report.content);
-      }
-      saved.complete = true;
-      writeJson(file, saved);
-      return response(saved, service.root);
-    });
+    const publishReceipt = () =>
+      locked(service.root, () => {
+        const receipt = readReceipt(file, hash);
+        if (receipt?.complete) return response(receipt, service.root);
+        requireThat(
+          policyBasis(service.root) === (receipt?.basis || basis),
+          'Capture policy changed. Restore it or submit a new draft after reviewing the change.'
+        );
+        const queue = captureQueue(service.root);
+        const saved = receipt || allocate(queue, input, assessment, basis, random);
+        mkdirSync(directory, { recursive: true });
+        if (!receipt) writeJson(file, saved);
+        const finish = () => {
+          saved.complete = true;
+          writeJson(file, saved);
+          return response(saved, service.root);
+        };
+        if (service.projectStores) return publishCanonical(saved, input).then(finish);
+        for (const report of saved.reports) {
+          const path = join(service.root, '.issues', report.id + '.md');
+          if (existsSync(path)) {
+            requireThat(
+              readFileSync(path, 'utf8') === report.content,
+              `Capture ${report.id} already exists with changed contents. Preserve it and reconcile this submission.`
+            );
+          } else publish(path, report.content);
+        }
+        return finish();
+      });
+    if (!service.projectStores) return publishReceipt();
+    const queued = persistence.then(publishReceipt, publishReceipt);
+    persistence = queued.catch(() => {});
+    return queued;
+  }
+  async function publishCanonical(saved, input) {
+    for (const report of saved.reports) {
+      const flow = newFlow({ ...report, content: report.content, folder: input.folder }, flowTarget(service.root));
+      if (input.model) flow.settings = { model: input.model, effort: 'default' };
+      await service.projectStores.createIssue({
+        issueId: report.id,
+        report: report.content,
+        location: 'open',
+        storeId: input.issueStore,
+        operationId: 'classic-capture/' + input.requestId + '/' + report.id,
+        flow,
+      });
+    }
+    await service.projectStores.refresh();
   }
   return {
     save,
@@ -168,11 +207,17 @@ function locked(root, operation) {
       throw Error('Queue lock exists. Retry after its owner finishes; uncertain locks need reconciliation.');
     throw error;
   }
+  const release = () => rmSync(lock, { recursive: true });
+  let result;
   try {
-    return operation();
-  } finally {
-    rmSync(lock, { recursive: true });
+    result = operation();
+  } catch (error) {
+    release();
+    throw error;
   }
+  if (result instanceof Promise) return result.finally(release);
+  release();
+  return result;
 }
 function allocate(queue, input, assessment, basis, random) {
   const at = new Date().toISOString(),
@@ -198,7 +243,12 @@ function allocate(queue, input, assessment, basis, random) {
       autonomy: 'ask',
       folder_id: requireIssueFolder(queue.root, input.folder).id,
       category: proposal.category,
-      capture_intent: { grill: input.grill, go: input.go, strategy: input.strategy },
+      capture_intent: {
+        grill: input.grill,
+        go: input.go,
+        strategy: input.strategy,
+        ...(input.grillSkill ? { grillSkill: input.grillSkill } : {}),
+      },
       lifecycle_history: route.skipped.map((s) => ({
         ...s,
         outcome: 'skipped',
@@ -272,12 +322,29 @@ function captureHash(input) {
 }
 
 function captureIdentity(input) {
-  return JSON.stringify([input.description, input.folder, input.grill, input.go, input.strategy, input.model || null]);
+  return JSON.stringify([
+    input.description,
+    input.folder,
+    ...(input.issueStore ? [{ issueStore: input.issueStore }] : []),
+    input.grill,
+    input.go,
+    input.strategy,
+    input.model || null,
+    ...(input.grillSkill ? [input.grillSkill] : []),
+  ]);
 }
 
 function validateModel(root, model) {
   requireThat(
     !model || readModelSettings(root).models.some((item) => item.id === model),
     'Choose one of the listed models.'
+  );
+}
+
+function validateGrillingSkill(root, input) {
+  if (!input.grill || !input.grillSkill) return;
+  requireThat(
+    readClarificationSkills(root).some((item) => item.kind === 'skill' && item.skill === input.grillSkill),
+    'Choose a configured grilling skill.'
   );
 }

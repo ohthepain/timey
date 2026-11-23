@@ -5,21 +5,26 @@ import { readQueue } from './data.mjs';
 import { appendCompletion } from '../factory-completion.mjs';
 import { retainClosingRegistry } from './closure-registry.mjs';
 import { recordedResult, validateRecordedEvidence } from './recorded-result.mjs';
+import { afterReportWrite } from './stores/report-access.mjs';
 
 export function recordClosingApproval(service, queue, issue, savedArtifact) {
   const artifact = savedArtifact || recordedResult(queue, issue);
   validateRecordedEvidence(queue, artifact);
   requireActualObservations(issue);
   requireRecordedChecklist(issue);
-  if (issue.plan_verification) queue = retainClosingRegistry(service, queue, issue);
-  issue = queue.issues.find((entry) => entry.id === issue.id);
-  const checks = (issue.human_checks || []).filter(closureJudgment);
-  for (const check of checks) {
-    recordAcceptanceCheck(service, queue, issue, check, artifact.revision);
-    queue = readQueue(service.root);
-    issue = queue.issues.find((entry) => entry.id === issue.id);
-  }
-  return queue;
+  const id = issue.id;
+  return afterReportWrite(issue.plan_verification ? retainClosingRegistry(service, queue, issue) : queue, (current) => {
+    const next = (latest) => {
+      const selected = latest.issues.find((entry) => entry.id === id);
+      const check = (selected.human_checks || []).find(closureJudgment);
+      return check
+        ? afterReportWrite(recordAcceptanceCheck(service, latest, selected, check, artifact.revision), () =>
+            next(readQueue(service.root))
+          )
+        : latest;
+    };
+    return next(current);
+  });
 }
 function closureJudgment(check) {
   return check.kind === 'judgment' && check.blocks === 'closure' && check.status === 'pending';
@@ -43,29 +48,36 @@ function recordAcceptanceCheck(service, queue, issue, check, revision) {
   writeJson(path, { actor: 'human', issueId: issue.id, checkId: check.id, revision, result });
   const record = updatedChecklist(issue.plan_verification, check.id, result);
   try {
-    appendCompletion(
-      service.root,
-      issue,
-      {
-        summary: 'Final judgment recorded from Close issue.',
-        notes: result,
-        remaining: [],
-        plan_verification: record,
-        human_check_update: {
-          ...check,
-          status: 'passed',
-          revision: revision || check.revision || queue.head,
-          result,
-          evidence_refs: [path],
+    return afterReportWrite(
+      appendCompletion(
+        service.root,
+        issue,
+        {
+          summary: 'Final judgment recorded from Close issue.',
+          notes: result,
+          remaining: [],
+          plan_verification: record,
+          human_check_update: {
+            ...check,
+            status: 'passed',
+            revision: revision || check.revision || queue.head,
+            result,
+            evidence_refs: [path],
+          },
         },
+        run,
+        [{ path, sha256: digest(readFileSync(path)) }],
+        null,
+        { purpose: 'closure' }
+      ),
+      () => {
+        service.store.update(run, { issueId: issue.id, status: 'completed', summary: 'Final judgment recorded.' });
       },
-      run,
-      [{ path, sha256: digest(readFileSync(path)) }],
-      null
+      { onSettled: () => service.store.connected.delete(run.id) }
     );
-    service.store.update(run, { issueId: issue.id, status: 'completed', summary: 'Final judgment recorded.' });
-  } finally {
+  } catch (error) {
     service.store.connected.delete(run.id);
+    throw error;
   }
 }
 function updatedChecklist(value, id, result) {

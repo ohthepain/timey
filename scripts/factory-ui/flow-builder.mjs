@@ -21,7 +21,7 @@ const schema = {
 };
 
 export async function buildFlowStructure({ service, issue, type, definition, catalog, request }) {
-  const session = createDiscussionRuntime();
+  const session = createDiscussionRuntime(undefined, { root: service.root });
   let deadline;
   try {
     const timeout = new Promise((_, reject) => {
@@ -38,7 +38,7 @@ export async function buildFlowStructure({ service, issue, type, definition, cat
       const output = await session.ask(
         JSON.stringify({
           issueType: type,
-          request: request ?? { title: issue.title, wording: issue.content.slice(0, 24000) },
+          request: request ?? { title: issue.title, wording: issue.content },
           blocks: definition.blocks,
           availableBlockDefinitions: catalog
             .filter((entry) => entry.usable && entry.kind !== 'verify')

@@ -19,7 +19,7 @@ import { uiDirectory } from './ui-source.mjs';
 
 export { validateSettingValue } from './folder-settings-schema.mjs';
 const settingsName = 'folder.md';
-const inboxId = '759bf44b-f95a-417b-99e3-b4a1dd31555c';
+export const inboxFolderId = '759bf44b-f95a-417b-99e3-b4a1dd31555c';
 const folderId = /^[\da-f]{8}(?:-[\da-f]{4}){3}-[\da-f]{12}$/;
 const stat = (path) => lstatSync(path, { throwIfNoEntry: false });
 const skipped = new Set(['node_modules', '.git', '.issues', '.aws', '.ssh']);
@@ -172,7 +172,7 @@ function fieldErrors(data, fields) {
 }
 
 function inheritedField(root, chain, field) {
-  const fallback = { value: field.fallback, source: 'Factory built-in' };
+  const fallback = { value: field.fallback, source: field.fallbackSource || 'Factory built-in' };
   for (const { record } of chain) {
     if (!record.exists) continue;
     if (record.errors.length)
@@ -328,7 +328,7 @@ export function createIssueFolderSettings(project, name, { id: requestedId } = {
     );
     return { ...descriptor(root, directory, configured.id), ...configured };
   }
-  const id = requestedId || (name === 'Inbox' ? inboxId : randomUUID());
+  const id = requestedId || (name === 'Inbox' ? inboxFolderId : randomUUID());
   writeFileSync(join(directory, settingsName), newSettings(folderSettingsFields(root), id), { flag: 'wx' });
   return { ...descriptor(root, directory, id), id };
 }
@@ -457,7 +457,7 @@ export function requireIssueFolder(project, name) {
 
 export function ensureInboxFolder(project) {
   return (
-    readIssueFolderSettings(project).find((folder) => folder.id === inboxId || folder.name === 'Inbox') || {
+    readIssueFolderSettings(project).find((folder) => folder.id === inboxFolderId || folder.name === 'Inbox') || {
       name: 'Inbox',
       ...createIssueFolderSettings(project, 'Inbox'),
     }
@@ -479,6 +479,19 @@ function jsonFile(path) {
   return stat(path)?.isFile() ? JSON.parse(readFileSync(path, 'utf8')) : {};
 }
 
+function initialProjectValues(root, fields) {
+  const values = Object.fromEntries(fields.map((field) => [field.key, field.fallback]));
+  const config = jsonFile(join(root, 'factory.config.json'));
+  const defaults = jsonFile(join(root, '.issues/model-settings.json')).defaults || {};
+  const delivery = jsonFile(join(root, '.issues/issue-delivery-config.json'));
+  return {
+    ...values,
+    branch: [delivery.target, values.branch].find(Boolean),
+    model: [defaults.model, config.factoryModel, values.model].find(Boolean),
+    effort: [defaults.effort, config.factoryEffort, values.effort].find(Boolean),
+  };
+}
+
 export function initializeFolderSettings(project) {
   const root = realpathSync(project);
   if (stat(join(root, settingsName))) return readFolderSettings(root, root);
@@ -488,13 +501,7 @@ export function initializeFolderSettings(project) {
   );
   const inbox = ensureInboxFolder(root);
   const fields = folderSettingsFields(root);
-  const config = jsonFile(join(root, 'factory.config.json'));
-  const local = jsonFile(join(root, '.issues/model-settings.json'));
-  const delivery = jsonFile(join(root, '.issues/issue-delivery-config.json'));
-  const values = Object.fromEntries(fields.map((field) => [field.key, field.fallback]));
-  values.branch = delivery.target || values.branch;
-  values.model = local.defaults?.model || config.factoryModel || values.model;
-  values.effort = local.defaults?.effort || config.factoryEffort || values.effort;
+  const values = initialProjectValues(root, fields);
   if (
     !readIssueFolderSettings(root, { includeCopies: true, includeBroken: true }).some(
       (folder) => folder.isDefaultFolder
@@ -513,7 +520,7 @@ export function resolveFolderSettings(project, name) {
   if (view.kind === 'plain') {
     const fields = folderSettingsFields(project);
     return {
-      values: Object.fromEntries(fields.map((field) => [field.key, field.fallback])),
+      values: initialProjectValues(project, fields),
       sources: Object.fromEntries(fields.map((field) => [field.key, 'Factory built-in'])),
       errors: [],
       basis: view.revision,

@@ -57,7 +57,13 @@
     "label": "Work",
     "color": "green",
     "order": 10,
-    "defaultSkill": null
+    "defaultSkill": "poteto-mode"
+  },
+  "fix-the-branch": {
+    "label": "Fix the Branch",
+    "color": "orange",
+    "order": 10,
+    "defaultSkill": "poteto-mode"
   },
   "edit": {
     "label": "Edit",
@@ -124,5 +130,23 @@
     "color": "neutral",
     "order": 20,
     "defaultSkill": null
+  },
+  "investigate": {
+    "label": "Investigate",
+    "color": "yellow",
+    "order": 3,
+    "defaultSkill": null
+  },
+  "generate-report": {
+    "label": "Generate report",
+    "color": "yellow",
+    "order": 3,
+    "defaultSkill": "generate-report"
+  },
+  "create-issues": {
+    "label": "Create Issues",
+    "color": "yellow",
+    "order": 3,
+    "defaultSkill": "create-issues"
   }
 }

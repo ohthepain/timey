@@ -1,3 +1,16 @@
+import { storeUnavailable } from './stores/availability.mjs';
+import { abortOwnedMerge, moveOwnedStartingPoint, updateOwnedWorktree } from './stores/manual-operations.mjs';
+import { prepareAttemptCommit } from './stores/flow-evidence.mjs';
+import { readSnapshot } from './stores/snapshots.mjs';
+import { resolveIssueStore } from './stores/settings.mjs';
+import { registeredProjectStores } from './stores/report-access.mjs';
+import { ensureProjectStores, hydrateProjectEvidence } from './stores/runtime.mjs';
+import { evidencePath } from './stores/evidence.mjs';
+import { mergedDelivery, mergedIssueMessage, allowsMergedAction, mergedIssueState } from './merged-issue.mjs';
+import { pendingIssueMerge } from './flow-merge-state.mjs';
+import { abortPendingMerge } from './flow-update-branch.mjs';
+import { BranchRepairs } from './branch-repair.mjs';
+import { observeDisconnectedFlow } from './flow-reconciliation.mjs';
 import {
   existsSync,
   mkdirSync,
@@ -35,6 +48,18 @@ import { trashDirectory, whileTrashingDirectory } from './folder-trash.mjs';
 import { FlowGrouping } from './flow-grouping.mjs';
 import { FlowFollowups } from './flow-followups.mjs';
 import { isInvestigation } from './investigation-records.mjs';
+import {
+  adoptInvestigationFlow,
+  historicalInvestigationOutputComplete,
+  savedInvestigationSessions,
+  savedInvestigationFollowups,
+} from './investigation-adoption.mjs';
+import {
+  requireInvestigationBlock,
+  prepareInvestigationBlock,
+  attachInvestigationAttempt,
+  reconcileInvestigationFindings,
+} from './investigation-execution.mjs';
 import { flowHumanInput } from './flow-human-input.mjs';
 import { FolderOperations } from './folder-operations.mjs';
 import { executionBlockSkill, executionStarted, resolveIssueExecutionSettings } from './issue-execution-settings.mjs';
@@ -105,8 +130,28 @@ import { branchStartingPoint, captureStartingPoint, flowBranches } from './flow-
 import { FlowFolderSelection } from './flow-folder-selection.mjs';
 import { FlowOvernight } from './flow-overnight.mjs';
 
+function folderSettingsSnapshot() {
+  const settings = new Map();
+  return (root, folder) => {
+    if (!settings.has(folder)) settings.set(folder, resolveFolderSettings(root, folder));
+    return settings.get(folder);
+  };
+}
+
 const hiddenRepoFolders = new Set(['.git', '.issues', 'node_modules', '.next', '.turbo', 'coverage', 'dist', 'build']);
 const confirmationBlocks = new Set(['close', 'delete-worktree']);
+
+function declinesClosureRetro({ resolution, runClosureRetro }) {
+  return Boolean(resolution && resolution !== 'fixed' && runClosureRetro === false);
+}
+const branchActions = new Set([
+  'abort-merge',
+  'open-worktree',
+  'branch-repair-start',
+  'branch-repair-stop',
+  'branch-repair-approve',
+  'branch-repair-reconcile',
+]);
 const retroFolder = 'Retro items';
 const closureActions = new Set(['retro-setting', 'auto-close-setting', 'retry-closure', 'skip-retro', 'cleanup-again']);
 const folderSelectionActions = new Set(['folder-selection', 'folder-scan', 'folder-move', 'folder-remove']);
@@ -123,7 +168,31 @@ const folderActions = new Set([
 ]);
 const unresolvedAttempt = (attempt) =>
   !attempt.reconciledAt && ['running', 'stopping', 'uncertain'].includes(attempt.status);
-const completedBlock = (block) =>
+function assignBlockSkills(flow, catalog, settings) {
+  for (const block of flow.blocks) {
+    const definition = catalog.find((entry) => entry.id === blockDefinitionId(block));
+    if (definition) block.effectiveSkill = executionBlockSkill(block, definition, settings);
+  }
+}
+function investigationSessions(owner, issueId) {
+  const { investigations = {} } = owner;
+  const sessions = investigations.sessions
+    ? [...investigations.sessions.values()]
+    : savedInvestigationSessions(owner.service.root, issueId);
+  return sessions.filter((entry) => entry.issueId === issueId);
+}
+function adoptIdleInvestigation(owner, issue, flow, catalog) {
+  if (!isInvestigation(issue, flow) || owner.active.has(issue.id)) return;
+  adoptInvestigationFlow(
+    flow,
+    catalog,
+    investigationSessions(owner, issue.id),
+    makeBlock,
+    savedInvestigationFollowups(owner.service.root, issue.id)
+  );
+}
+const completedBlock = (block, flow) =>
+  (flow && historicalInvestigationOutputComplete(block, flow)) ||
   latestCurrentAttempt(block)?.status === 'completed' ||
   (block.kind === 'request' && Boolean(block.data.fields) && !latestCurrentAttempt(block));
 
@@ -197,11 +266,11 @@ function repoFilePath(root, path) {
 }
 
 export function createIssueFlows(service, options = {}) {
-  return new IssueFlows(service, options);
+  return (service.flows = new IssueFlows(service, options));
 }
 
 function captureIdentity(
-  { description, type, needsApproval, runRetro, sourceIssue, sourceAttempt, startingRef, reusable },
+  { description, type, needsApproval, runRetro, sourceIssue, sourceAttempt, startingRef, reusable, issueStore },
   folder,
   grouping
 ) {
@@ -212,6 +281,7 @@ function captureIdentity(
   if (sourceAttempt) fields.push({ sourceAttempt });
   if (startingRef !== undefined) fields.push({ startingRef });
   if (reusable !== undefined) fields.push({ reusable });
+  if (issueStore !== undefined) fields.push({ issueStore });
   return digest(JSON.stringify(fields));
 }
 
@@ -260,13 +330,16 @@ function validateCaptureSource(input, flows) {
 class IssueFlows {
   constructor(service, options) {
     this.service = service;
-    this.store = new FlowStore(service.root);
+    this.store = new FlowStore(service.root, { ownerForIssue: (id) => this.active.get(id)?.storeOwner });
     this.catalog = new BlockCatalog(service.root);
     this.deliveryOptions = options.deliveryOptions || {};
     this.trashDirectory = options.trashDirectory || trashDirectory;
-    this.observer = options.observer || createFlowObserver(service);
+    this.observer = options.observer || createFlowObserver(service, { provider: this.deliveryOptions.provider });
     this.executor = options.executor || createFlowExecutor(service, this.deliveryOptions);
     this.active = new Map();
+    this.evidenceLoads = new Map();
+    this.deliveryObservations = new Map();
+    this.branchRepairs = new BranchRepairs(this, options.branchRepairs);
     this.autoplay = new Map();
     this.clarify = options.clarify || clarifyRequest;
     this.buildStructure = options.buildStructure || buildFlowStructure;
@@ -313,6 +386,9 @@ class IssueFlows {
   issues(selectedId) {
     const numbersPath = join(this.service.root, '.issues/issue-numbers.json');
     const numbers = existsSync(numbersPath) ? JSON.parse(readFileSync(numbersPath, 'utf8')).issues : {};
+    const homes = this.service.projectStores
+      ? new Map((readSnapshot(this.service.root)?.issues || []).map((issue) => [issue.id, issue]))
+      : null;
     const issues = [];
     const reportHeaders = selectedId ? this.reportHeaders : new Map();
     const closedState = closedIssueState(this.service.root);
@@ -320,6 +396,7 @@ class IssueFlows {
     for (const location of locations) {
       const paths = listStoredIssues(this.service.root, location);
       for (const path of selectedId ? paths.filter((path) => basename(path, '.md') === selectedId) : paths) {
+        if (homes && !homes.has(basename(path, '.md'))) continue;
         const content = readFileSync(path, 'utf8');
         const header = content.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/)?.[1];
         requireThat(header, `The issue report ${basename(path)} has no valid metadata.`);
@@ -337,6 +414,7 @@ class IssueFlows {
           location,
           closed: location !== 'open' || metadata.state === closedState,
           issueNumber: numbers?.[basename(path, '.md')],
+          storeId: homes?.get(basename(path, '.md'))?.storeId,
         });
       }
     }
@@ -349,16 +427,22 @@ class IssueFlows {
     requireThat(issue, 'This issue no longer exists. Choose a saved issue.');
     return issue;
   }
-  read(issue, catalog = this.catalog.read().entries, folderSettings = readIssueFolderSettings(this.service.root)) {
+  read(
+    issue,
+    catalog = this.catalog.read().entries,
+    folderSettings = readIssueFolderSettings(this.service.root),
+    resolveFolder
+  ) {
     const flow = this.store.read(issue, flowTarget(this.service.root), catalog);
+    if (mergedDelivery(flow)) return flow;
     const fallback = folderSettings.find(({ id }) => id === this.inboxFolder.id)?.name || this.inboxFolder.name;
     if (Object.hasOwn(issue, 'folder_id'))
       flow.folder = folderSettings.find(({ id }) => id === issue.folder_id)?.name || flow.folder || fallback;
     flow.folder ||= fallback;
-    const settings = this.issueSettings(issue, flow);
+    const settings = this.issueSettings(issue, flow, resolveFolder);
     flow.resolvedBranch = settings.values.branch;
     if (typeof issue.run_retro === 'boolean') requestBlock(flow).data.runRetro = issue.run_retro;
-    if (!flow.closing) setRetroBlock(flow, catalog);
+    setRetroBlock(flow, catalog);
     if (isInvestigation(issue, flow) && !flow.closing && !issue.closed) {
       const removed = flow.blocks.filter((block) =>
         ['close', 'retro', 'cleanup', 'delete-worktree'].includes(block.kind)
@@ -366,27 +450,29 @@ class IssueFlows {
       flow.retiredBlocks = [...(flow.retiredBlocks || []), ...removed.filter((block) => block.attempts.length)];
       flow.blocks = flow.blocks.filter((block) => !removed.includes(block));
     }
+    adoptIdleInvestigation(this, issue, flow, catalog);
     return flow;
   }
-  issueSettings(issue, flow) {
+  issueSettings(issue, flow, resolveFolder) {
     if (isInvestigation(issue, flow) && !this.active.has(issue.id))
       return resolveIssueExecutionSettings(
         this.service.root,
         issue,
         { ...flow, executionSettings: undefined, destination: undefined },
-        { started: false }
+        { started: false, resolveFolder }
       );
     return resolveIssueExecutionSettings(this.service.root, issue, flow, {
       started: executionStarted(this.service, flow),
+      resolveFolder,
     });
   }
-  groupEligible(issue, flow) {
+  groupEligible(issue, flow, resolveFolder = resolveFolderSettings) {
+    if (!this.folderSelection.eligible(issue, flow)) return false;
     try {
-      const folder = resolveFolderSettings(this.service.root, flow.folder);
+      const folder = resolveFolder(this.service.root, flow.folder);
       return (
         !folder.errors.length &&
-        !this.issueSettings(issue, flow).errors.length &&
-        this.folderSelection.eligible(issue, flow) &&
+        !this.issueSettings(issue, flow, resolveFolder).errors.length &&
         deliveryTarget(flow).branch === folder.values.branch
       );
     } catch {
@@ -419,14 +505,18 @@ class IssueFlows {
     const needsInitialReport = id && !this.issues(id).length;
     return this.service.sharedIssues.refreshInBackground(Boolean(needsInitialReport));
   }
-  indexIssue(issue, flow, issues) {
+  indexIssue(issue, flow, issues, resolveFolder) {
     const activeBlock = flow.blocks.find((block) =>
       ['running', 'stopping', 'in-progress'].includes(block.attempts.at(-1)?.status)
     );
     const active =
       this.active.has(issue.id) ||
       this.service.lifecycleTasks?.has(issue.id) ||
-      this.service.issueChats?.active?.has(issue.id);
+      this.service.issueChats?.active?.has(issue.id) ||
+      Boolean(
+        this.service.projectStores &&
+        readSnapshot(this.service.root)?.claims?.some((claim) => claim.issueId === issue.id && claim.attemptId)
+      );
     return {
       id: issue.id,
       title: issue.title,
@@ -437,16 +527,48 @@ class IssueFlows {
       folder: flow.folder,
       flowRevision: flow.revision,
       folderLocked: Boolean(flow.folderLocked),
+      readOnly: Boolean(mergedDelivery(flow)),
       folderEligible: this.folderSelection.eligible(issue, flow),
-      groupEligible: this.groupEligible(issue, flow),
+      groupEligible: this.groupEligible(issue, flow, resolveFolder),
+      storeId: issue.storeId,
       resolvedBranch: deliveryTarget(flow).branch,
       activeBlock: activeBlock ? { id: activeBlock.id, kind: activeBlock.kind } : null,
-      humanInput: issue.closed ? null : flowHumanInput(flow),
+      humanInput: availableHumanInput(issue, flow),
+      paused: Boolean(this.autoplay.get(issue.id)?.userPaused),
+      waitingForApproval: this.autoplay.get(issue.id)?.mode === 'waiting',
       status: flowStatus(flow, issue, active),
     };
   }
+  async storageView(id) {
+    if (!this.service.projectStores)
+      return { sharedQueueWarning: await this.refreshSharedQueue(id), storeStatus: this.service.storeStatus };
+    let evidence = this.evidenceLoads.get(id);
+    if (id && !evidence?.pending && (!evidence || Date.now() - evidence.checkedAt >= 30_000)) {
+      evidence ||= {};
+      this.evidenceLoads.set(id, evidence);
+      evidence.pending = hydrateProjectEvidence(this.service, id)
+        .then(([resolver]) => {
+          evidence.status = resolver ? { gaps: resolver.gaps, retainedFiles: resolver.files.length } : undefined;
+          evidence.warning = undefined;
+        })
+        .catch(() => {
+          evidence.warning = 'Retained evidence could not be refreshed. The last saved evidence remains visible.';
+        })
+        .finally(() => {
+          evidence.pending = null;
+          evidence.checkedAt = Date.now();
+        });
+    }
+    return {
+      sharedQueueWarning:
+        this.service.storeStatus?.warning || this.deliveryObservations.get(id)?.warning || evidence?.warning,
+      storeStatus: this.service.storeStatus,
+      ...(evidence?.status ? { evidenceStatus: evidence.status } : {}),
+      ownership: readSnapshot(this.service.root)?.claims?.find((claim) => claim.issueId === id),
+    };
+  }
   async view(id, { requestOnly = false } = {}) {
-    const sharedQueueWarning = await this.refreshSharedQueue(id);
+    const { ownership, ...storage } = await this.storageView(id);
     const issues = this.issues();
     const { entries: catalog, errors: catalogErrors } = this.catalog.read();
     let branches = [];
@@ -462,12 +584,15 @@ class IssueFlows {
       this.service.root,
       requestOnly ? {} : { includeCopies: true, includeBroken: true }
     );
+    const resolveFolder = folderSettingsSnapshot();
     const index = requestOnly
       ? []
-      : issues.map((issue) => this.indexIssue(issue, this.read(issue, catalog, folderSettings), issues));
+      : issues.map((issue) =>
+          this.indexIssue(issue, this.read(issue, catalog, folderSettings, resolveFolder), issues, resolveFolder)
+        );
     const data = {
+      ...storage,
       project: basename(this.service.root),
-      sharedQueueWarning,
       folderMigrationErrors: this.folderMigrationErrors,
       branches,
       ...(branchCatalogError ? { branchCatalogError } : {}),
@@ -495,13 +620,14 @@ class IssueFlows {
     }
     if (!id) return data;
     const issue = this.selected(id);
-    const savedFlow = this.read(issue, catalog);
+    const observedFlow = this.read(issue, catalog, undefined, resolveFolder);
+    const environment = await this.observer.observe(observedFlow);
+    const savedFlow = await this.observedDelivery(issue, observedFlow, environment, catalog, {
+      background: Boolean(this.service.projectStores),
+    });
     const flow = this.visibleFlow(savedFlow);
-    const issueSettings = this.issueSettings(issue, savedFlow);
-    for (const block of flow.blocks) {
-      const definition = catalog.find((entry) => entry.id === blockDefinitionId(block));
-      if (definition) block.effectiveSkill = executionBlockSkill(block, definition, issueSettings);
-    }
+    const issueSettings = this.issueSettings(issue, savedFlow, resolveFolder);
+    assignBlockSkills(flow, catalog, issueSettings);
     const flowDefinitions = requestOnly ? null : this.flowDefinitionOptions(flow, catalog);
     const legacyRun = this.service.store?.runs?.findLast(
       (run) => run.issueId === id && this.service.store.connected.has(run.id)
@@ -525,20 +651,10 @@ class IssueFlows {
       ];
       flow.blocks.splice(1, 0, block);
     }
-    const environment = await this.observer.observe(flow);
-    if (environment.pr && !savedFlow.destination?.pr && !this.active.has(id)) {
-      const current = this.read(issue, catalog);
-      if (current.revision === savedFlow.revision) {
-        current.destination = this.lockedDestination(environment.pr);
-        const saved = this.store.save(current, current.revision);
-        flow.destination = saved.destination;
-        flow.revision = saved.revision;
-      }
-    }
-    suggestTargetUpdate(flow, environment, catalog);
+    this.suggestTargetUpdate(flow, environment, catalog);
     const issuesWithSelected = issues.some((entry) => entry.id === id) ? issues : [...issues, issue];
     const selectedRow = requestOnly
-      ? this.indexIssue(issue, savedFlow, issuesWithSelected)
+      ? this.indexIssue(issue, savedFlow, issuesWithSelected, resolveFolder)
       : selectedFlowRow(data.issues, id);
     if (requestOnly) data.issues = [selectedRow];
     if (!['closed', 'needs-approval'].includes(selectedRow.status) && !this.active.has(id)) {
@@ -550,21 +666,7 @@ class IssueFlows {
       )
         selectedRow.status = 'ready';
     }
-    const definitions = definitionMap(catalog);
-    const addresses = blockAddresses(flow.blocks);
-    const checkout = flowWorkspace(this.service, flow)?.checkout;
-    const fileRoot = realpathSync(checkout && existsSync(checkout) ? checkout : this.service.root);
-    for (const block of flow.blocks) {
-      block.address = addresses.get(block.id);
-      block.details = blockDetails(flow, issue, block, definitions);
-      block.outputs = blockOutputs(flow, block, definitions);
-      for (const detail of block.details)
-        if (detail.type === 'filename' && typeof detail.value === 'string')
-          detail.fileAvailable = repoFilePath(fileRoot, detail.value);
-      for (const output of block.outputs)
-        if (output.type === 'filename' && typeof output.value === 'string')
-          output.fileAvailable = repoFilePath(fileRoot, output.value);
-    }
+    this.populateBlockDetails(flow, issue, catalog);
     return {
       ...data,
       issue: {
@@ -574,11 +676,15 @@ class IssueFlows {
         state: issue.state,
         reusable: issue.reusable === true,
         location: issue.location,
+        storeId: issue.storeId,
+        localOwner: this.active.has(id),
+        ownership,
         status: selectedRow.status,
+        ...mergedIssueState(flow),
         closure: issue.closure,
       },
       flow,
-      humanInput: issue.closed ? null : flowHumanInput(flow),
+      humanInput: availableHumanInput(issue, flow),
       issueSettings: {
         ...issueSettings,
         fields: folderSettingsFields(this.service.root).filter(({ key }) =>
@@ -606,17 +712,150 @@ class IssueFlows {
       flowDefinitions,
       startingPointEditable: !branchCatalogError && this.startingPointEditable(issue, flow, environment.pr),
       environment,
+      branchRepair: this.branchRepairs.view(issue, savedFlow, environment.merge),
       artifacts: this.artifacts(flow),
       conversation: conversationMessages(this.service.root, id).slice(-100),
     };
   }
+  populateBlockDetails(flow, issue, catalog) {
+    const definitions = definitionMap(catalog);
+    const addresses = blockAddresses(flow.blocks);
+    const checkout = flowWorkspace(this.service, flow)?.checkout;
+    const fileRoot = realpathSync(checkout && existsSync(checkout) ? checkout : this.service.root);
+    for (const block of flow.blocks) {
+      block.address = addresses.get(block.id);
+      block.details = blockDetails(flow, issue, block, definitions);
+      block.outputs = blockOutputs(flow, block, definitions);
+      block.historicallyCompleted = historicalInvestigationOutputComplete(block, flow);
+      for (const detail of block.details)
+        if (detail.type === 'filename' && typeof detail.value === 'string')
+          detail.fileAvailable = repoFilePath(fileRoot, detail.value);
+      for (const output of block.outputs)
+        if (output.type === 'filename' && typeof output.value === 'string')
+          output.fileAvailable = repoFilePath(fileRoot, output.value);
+    }
+  }
+  suggestTargetUpdate(flow, environment, catalog) {
+    if (!mergedDelivery(flow)) suggestTargetUpdate(flow, environment, catalog);
+  }
+  async observedDelivery(issue, flow, environment, catalog, { background = false } = {}) {
+    if (
+      this.service.storeStatus?.unavailable ||
+      (this.service.projectStores &&
+        readSnapshot(this.service.root)?.claims?.some((claim) => claim.issueId === issue.id))
+    )
+      return flow;
+    if (background) {
+      if (!environment.pr) return flow;
+      const basis = JSON.stringify([flow.revision, environment.pr]);
+      let observation = this.deliveryObservations.get(issue.id);
+      if (!observation?.pending && observation?.basis !== basis) {
+        observation = { basis };
+        this.deliveryObservations.set(issue.id, observation);
+        observation.pending = this.observedDelivery(issue, flow, environment, catalog)
+          .catch(() => {
+            observation.warning = 'The observed PR state could not be saved. Refresh storage before editing.';
+          })
+          .finally(() => {
+            observation.pending = null;
+          });
+      }
+      return environment.pr.mergedAt
+        ? {
+            ...flow,
+            merged: {
+              pr: environment.pr.number,
+              url: environment.pr.url,
+              head: environment.pr.head,
+              branch: environment.pr.branch,
+              mergedAt: environment.pr.mergedAt,
+              revision: environment.pr.revision,
+            },
+          }
+        : flow;
+    }
+    if (await this.retainMerge(issue, flow, environment.pr)) return this.read(issue, catalog);
+    if (mergedDelivery(flow)) return flow;
+    if (environment.pr && !flow.destination?.pr && !this.active.has(issue.id)) {
+      const current = this.read(issue, catalog);
+      if (current.revision === flow.revision) {
+        current.destination = this.lockedDestination(environment.pr);
+        return await this.store.save(current, current.revision);
+      }
+    }
+    return flow;
+  }
+  async retainMerge(issue, flow, pr) {
+    if (mergedDelivery(flow) || !pr?.mergedAt) return false;
+    const current = this.store.read(issue, flowTarget(this.service.root), this.catalog.read().entries);
+    current.merged = {
+      pr: pr.number,
+      url: pr.url,
+      head: pr.head,
+      branch: pr.branch,
+      mergedAt: pr.mergedAt,
+      revision: pr.revision,
+    };
+    await this.store.save(current, current.revision);
+    this.pause(issue.id, 'This issue has merged. Close it when ready.');
+    return true;
+  }
+  async refreshMergeState(issue, flow) {
+    if (mergedDelivery(flow)) return flow;
+    const workspace = flowWorkspace(this.service, flow);
+    if (!flow.destination?.pr && !workspace?.branch && !workspace?.pr) return flow;
+    const observed = await this.observer.observe(flow, { refresh: true });
+    requireThat(
+      !observed.remoteError,
+      'Cannot confirm whether this PR merged. Refresh its GitHub status before editing.'
+    );
+    if (
+      observed.pr?.mergedAt &&
+      this.service.projectStores &&
+      readSnapshot(this.service.root)?.claims?.some((claim) => claim.issueId === issue.id)
+    ) {
+      const receipt = {
+        pr: observed.pr.number,
+        url: observed.pr.url,
+        head: observed.pr.head,
+        branch: observed.pr.branch,
+        mergedAt: observed.pr.mergedAt,
+        revision: observed.pr.revision,
+      };
+      const active = this.active.get(issue.id);
+      if (active) active.mergedReceipt = receipt;
+      return { ...flow, merged: receipt };
+    }
+    return (await this.retainMerge(issue, flow, observed.pr)) ? this.read(issue) : flow;
+  }
+  async requireEditableIssue(id) {
+    const issue = this.selected(id);
+    const flow = await this.refreshMergeState(issue, this.read(issue));
+    requireThat(!mergedDelivery(flow), mergedIssueMessage);
+  }
+  async actionFlow(issue, input, catalog) {
+    if (input.action === 'open-block') return this.refreshMergeState(issue, this.read(issue, catalog));
+    if (!allowsMergedAction(input.action)) await this.requireEditableIssue(issue.id);
+    return this.read(issue, catalog);
+  }
   visibleFlow(flow) {
     const view = structuredClone(flow);
+    const snapshot = this.service.projectStores && readSnapshot(this.service.root);
+    const claim = snapshot?.claims?.find((owner) => owner.issueId === flow.issueId);
+    const command = snapshot?.commands?.find(
+      (entry) => entry.issueId === flow.issueId && entry.ownerToken === claim?.token && entry.status === 'requested'
+    );
     for (const block of view.blocks) {
       const attempt = block.attempts.at(-1);
+      if (command && attempt?.id === command.attemptId) {
+        attempt.status = 'stopping';
+        attempt.summary = 'Stop requested. Waiting for the owning runner to confirm cancellation.';
+        attempt.stopRequested = true;
+      }
       if (
         ['running', 'stopping'].includes(attempt?.status) &&
-        this.active.get(flow.issueId)?.attemptId !== attempt.id
+        this.active.get(flow.issueId)?.attemptId !== attempt.id &&
+        claim?.attemptId !== attempt.id
       ) {
         attempt.status = 'uncertain';
         attempt.endedAt ??= attempt.lastActiveAt;
@@ -632,10 +871,12 @@ class IssueFlows {
     const checkout = flowWorkspace(this.service, flow)?.checkout;
     return realpathSync(checkout && existsSync(checkout) ? checkout : this.service.root);
   }
-  files(id) {
+  async files(id) {
+    await (this.evidenceLoads.get(id)?.pending || hydrateProjectEvidence(this.service, id));
     return { files: listRepoFiles(this.fileRoot(id)) };
   }
-  file(id, path) {
+  async file(id, path) {
+    await (this.evidenceLoads.get(id)?.pending || hydrateProjectEvidence(this.service, id));
     return readShownFile(this.fileRoot(id), path);
   }
   async manualClosureArtifact(id, revision) {
@@ -678,7 +919,7 @@ class IssueFlows {
     const closing = JSON.parse(readFileSync(path, 'utf8')).closing;
     return Boolean(closing && !closing.complete);
   }
-  closeWithReason(input, artifact) {
+  async closeWithReason(input, artifact) {
     const issue = this.selected(input.issueId);
     this.groups.requireIndependent(issue.id);
     const catalog = this.catalog.read().entries;
@@ -697,15 +938,15 @@ class IssueFlows {
       id: randomUUID(),
       startedAt: new Date().toISOString(),
       resolution: input.resolution,
-      retro: requestBlock(flow).data.runRetro === true,
+      retro: requestBlock(flow).data.runRetro === true && !declinesClosureRetro(input),
       branches,
     };
     delete flow.autoClose;
     closureBlocks(flow, catalog);
-    this.store.save(flow, flow.revision);
+    await this.store.save(flow, flow.revision);
     let result;
     try {
-      result = this.service.decideIssue(
+      result = await this.service.decideIssue(
         issue.id,
         input.state,
         'close',
@@ -719,7 +960,7 @@ class IssueFlows {
     } catch (error) {
       if (!this.selected(issue.id).closed) {
         delete flow.closing;
-        this.store.save(flow, this.read(issue).revision);
+        await this.store.save(flow, this.read(issue).revision);
       }
       throw error;
     }
@@ -727,13 +968,14 @@ class IssueFlows {
     this.resumeClosure(issue.id);
     return result;
   }
-  reopened(id) {
+  async reopened(id) {
     const issue = this.selected(id);
     const flow = this.read(issue);
+    requireThat(!mergedDelivery(flow), mergedIssueMessage);
     if (!flow.closing && !flow.autoClose) return;
     delete flow.closing;
     delete flow.autoClose;
-    this.store.save(flow, flow.revision);
+    await this.store.save(flow, flow.revision);
   }
   async autoClose(id) {
     const issue = this.selected(id);
@@ -745,7 +987,7 @@ class IssueFlows {
       const queue = readQueue(this.service.root, { issueId: id });
       const saved = queue.issues.find((entry) => entry.id === id);
       if (!saved || !this.read(this.selected(id)).autoClose) return;
-      this.closeWithReason(
+      await this.closeWithReason(
         {
           issueId: id,
           flowRevision: flow.revision,
@@ -790,7 +1032,7 @@ class IssueFlows {
         summary: 'Closure saved.',
         evidence: [],
       });
-      this.store.save(flow, flow.revision);
+      await this.store.save(flow, flow.revision);
       return this.advanceClosure(id, retry, resourceId);
     }
     const retroAttempt = latestForClosure(retro);
@@ -807,7 +1049,7 @@ class IssueFlows {
       await this.fileRetroItems(retroAttempt.result?.recommendations ?? [], issue.id);
       const current = this.read(issue, catalog);
       current.closing.filedRetro = true;
-      this.store.save(current, current.revision);
+      await this.store.save(current, current.revision);
       return this.advanceClosure(id, retry, resourceId);
     }
     const cleanupAttempt = cleanup.attempts.findLast(
@@ -815,7 +1057,7 @@ class IssueFlows {
     );
     if (cleanupAttempt?.status === 'completed') {
       closing.complete = true;
-      this.store.save(flow, flow.revision);
+      await this.store.save(flow, flow.revision);
       return;
     }
     if (cleanupAttempt && !retry) return;
@@ -840,13 +1082,13 @@ class IssueFlows {
   resumeClosure(id, retry = false, resourceId) {
     if (this.closureTasks.has(id)) return;
     const task = this.advanceClosure(id, retry, resourceId)
-      .catch((error) => {
+      .catch(async (error) => {
         const [issue] = this.issues(id);
         if (!issue?.closed) return;
         const flow = this.read(issue);
         if (!flow.closing) return;
         flow.closing.error = redactValue(error.message);
-        this.store.save(flow, flow.revision);
+        await this.store.save(flow, flow.revision);
       })
       .finally(() => this.closureTasks.delete(id));
     this.closureTasks.set(id, task);
@@ -892,14 +1134,15 @@ class IssueFlows {
       const issue = this.selected(issueId);
       const { entries: catalog } = this.catalog.read();
       const flow = this.read(issue, catalog);
+      if (mergedDelivery(flow)) return this.pause(issueId, 'This issue has merged. Close it when ready.');
       const interrupted = flow.blocks.find((block) => block.attempts.some(unresolvedAttempt));
-      if (interrupted) return this.pause(issueId, `Recover ${interrupted.label} before playing.`);
+      if (interrupted) return this.pause(issueId, `Recover ${interrupted.label} before resuming the route.`);
       requireThat(
         !this.flowBuilds.has(issueId) &&
           !issueHasActiveWork(this.service, issueId) &&
           !this.service.lifecycleTasks?.has(issueId) &&
           !this.service.issueChats?.active?.has(issueId),
-        'Wait for the existing issue operation to finish before playing.'
+        'Wait for the existing issue operation to finish before starting or resuming the route.'
       );
       const next = await this.nextAutoplayBlock(flow, catalog);
       if (this.autoplay.get(issueId)?.mode !== 'playing') return;
@@ -913,7 +1156,7 @@ class IssueFlows {
         this.autoplay.set(issueId, { mode: 'waiting', blockId: next.id });
         return;
       }
-      if (this.checkDefinition(issue, flow, next.id, catalog)) return;
+      if (await this.checkDefinition(issue, flow, next.id, catalog)) return;
       if (next.kind === 'request') {
         await this.refreshRequest(issue, flow, next.data.wording, catalog, true);
         return;
@@ -924,7 +1167,7 @@ class IssueFlows {
     }
   }
   async nextAutoplayBlock(flow, catalog) {
-    const next = flow.blocks.find((block) => !completedBlock(block));
+    const next = flow.blocks.find((block) => !completedBlock(block, flow));
     return (await this.checkSuggestedWorkUpdate(flow, next, catalog)) || next;
   }
   async checkSuggestedWorkUpdate(flow, block, catalog) {
@@ -939,6 +1182,19 @@ class IssueFlows {
     else this.pause(issueId, attempt?.summary || `${block.label} needs attention.`);
   }
   async action(input) {
+    const localControl = ['stop', 'pause'].includes(input.action) && this.active.has(input.issueId);
+    if (!localControl && (this.service.projectStores || existsSync(join(this.service.root, '.issues/stores.json'))))
+      await ensureProjectStores(this.service, { fresh: true });
+    if (
+      this.service.projectStores &&
+      input.issueId &&
+      !['stop', 'pause', 'cancel-confirmation', 'branch-repair-stop', 'open-block', 'open-worktree'].includes(
+        input.action
+      )
+    ) {
+      const claim = await this.service.projectStores.coordination.get('claims/' + input.issueId);
+      requireThat(!claim, 'Stop or explicitly recover the owning attempt before editing or starting this issue.');
+    }
     const waiting = this.autoplay.get(input.issueId);
     try {
       return await this.dispatch(input);
@@ -954,10 +1210,22 @@ class IssueFlows {
     }
   }
   requireAvailableAction(issue, flow, action) {
-    if (!['open-block', 'open-worktree', 'pause', 'stop', 'folder', 'folder-lock', 'comment'].includes(action))
+    if (
+      ![
+        'open-block',
+        'open-worktree',
+        'pause',
+        'stop',
+        'branch-repair-stop',
+        'folder',
+        'folder-lock',
+        'comment',
+      ].includes(action)
+    )
       this.groups.requireIndependent(issue.id);
     requireThat(
-      ['pause', 'open-worktree'].includes(action) || !this.active.get(issue.id)?.movingStartingPoint,
+      ['pause', 'open-worktree', 'branch-repair-stop'].includes(action) ||
+        !this.active.get(issue.id)?.movingStartingPoint,
       'Wait for the starting branch move to finish.'
     );
     if (issue.state === 'needs-approval')
@@ -980,25 +1248,27 @@ class IssueFlows {
           'pause',
           'cancel-confirmation',
           'stop',
+          'branch-repair-stop',
           'open-block',
           'comment',
           'retry-closure',
           'skip-retro',
           'cleanup-again',
           'open-worktree',
+          'delete-worktree',
         ].includes(action),
         'Finish the saved closure sequence before changing this flow.'
       );
   }
-  dispatchClosure(input, issue, flow, catalog) {
+  async dispatchClosure(input, issue, flow, catalog) {
     if (input.action === 'retro-setting') {
       requireThat(!issue.closed && !this.active.has(issue.id), 'Choose an idle, open issue.');
       requireThat(typeof input.enabled === 'boolean', 'Choose whether to run a retro.');
       requestBlock(flow).data.runRetro = input.enabled;
       setRetroBlock(flow, catalog);
       const shared = this.service.sharedIssues?.acquire(issue, true);
-      updateStoredIssueMetadata(this.service.root, issue, { run_retro: input.enabled });
-      this.store.save(flow, flow.revision);
+      await updateStoredIssueMetadata(this.service.root, issue, { run_retro: input.enabled });
+      await this.store.save(flow, flow.revision);
       if (shared) this.service.sharedIssues.checkpoint(issue.id, 'Retro setting updated', shared);
       return this.view(issue.id);
     }
@@ -1010,7 +1280,7 @@ class IssueFlows {
         'Accept the master’s sub-issue proof before closing it.'
       );
       flow.autoClose = input.enabled;
-      this.store.save(flow, flow.revision);
+      await this.store.save(flow, flow.revision);
       return this.view(issue.id);
     }
     if (['retry-closure', 'skip-retro'].includes(input.action)) {
@@ -1029,7 +1299,7 @@ class IssueFlows {
         }
       }
       delete flow.closing.error;
-      this.store.save(flow, flow.revision);
+      await this.store.save(flow, flow.revision);
       this.resumeClosure(issue.id, true, input.resourceId);
       return this.view(issue.id);
     }
@@ -1051,7 +1321,7 @@ class IssueFlows {
       );
       delete flow.closing.error;
       closureBlocks(flow, catalog);
-      this.store.save(flow, flow.revision);
+      await this.store.save(flow, flow.revision);
       this.resumeClosure(issue.id, true);
       return this.view(issue.id);
     }
@@ -1064,7 +1334,7 @@ class IssueFlows {
     if (folderActions.has(input.action)) return this.dispatchFolder(input);
     const issue = this.selected(input.issueId);
     const { entries: catalog } = this.catalog.read();
-    let flow = this.read(issue, catalog);
+    let flow = await this.actionFlow(issue, input, catalog);
     if (isInvestigation(issue, flow))
       requireThat(
         !closureActions.has(input.action) && !['retro-setting', 'full-regression-setting'].includes(input.action),
@@ -1073,19 +1343,16 @@ class IssueFlows {
     this.overnight.requireManualAction(issue.id, input.action);
     if (['approve-issue', 'delete-pending-issue'].includes(input.action)) {
       requireThat(input.revision === flow.revision, 'This issue changed. Refresh before deciding.');
-      return this.decidePendingIssue(issue, flow, input);
+      return await this.decidePendingIssue(issue, flow, input);
     }
     this.requireAvailableAction(issue, flow, input.action);
     if (input.action === 'pause' || input.action === 'cancel-confirmation') {
       const waiting = this.autoplay.get(issue.id);
       if (input.action === 'pause' || (waiting?.mode === 'waiting' && waiting.blockId === input.blockId))
-        this.pause(issue.id);
+        this.autoplay.set(issue.id, { mode: 'paused', userPaused: input.action === 'pause' });
       return this.view(issue.id);
     }
-    if (input.action === 'open-worktree')
-      return openWorkFolder(flowWorkspace(this.service, flow)?.checkout, undefined, {
-        terminal: input.terminal === true,
-      });
+    if (branchActions.has(input.action)) return this.branchOperation(issue, flow, input);
     if (input.action === 'restate-artifact') return this.restateArtifact(flow, input);
     if (input.action === 'stop') return this.stop(flow, input);
     requireThat(!this.flowBuilds.has(issue.id), 'Wait for the flow structure to finish building.');
@@ -1093,7 +1360,7 @@ class IssueFlows {
     if (input.action === 'preview-publish' || input.action === 'confirm-publish')
       return this.reviewPublication(issue, flow, input, catalog);
     if (input.action === 'play') {
-      requireThat(!issue.closed, 'Reopen this issue before playing.');
+      requireThat(!issue.closed, 'Reopen this issue before starting or resuming the route.');
       if (!['playing', 'waiting'].includes(this.autoplay.get(issue.id)?.mode)) {
         this.autoplay.set(issue.id, { mode: 'playing' });
         void this.advanceAutoplay(issue.id, true);
@@ -1108,12 +1375,12 @@ class IssueFlows {
         'Choose whether to run full regression on this open issue.'
       );
       requestBlock(flow).data.fullRegression = input.enabled;
-      this.store.save(flow, flow.revision);
+      await this.store.save(flow, flow.revision);
       return this.view(issue.id);
     }
     if (input.action === 'edit-request') return this.editRequest(issue, flow, input, catalog);
-    if (input.action === 'folder' || input.action === 'folder-lock') return this.editFolder(issue, flow, input);
-    if (closureActions.has(input.action)) return this.dispatchClosure(input, issue, flow, catalog);
+    if (input.action === 'folder' || input.action === 'folder-lock') return await this.editFolder(issue, flow, input);
+    if (closureActions.has(input.action)) return await this.dispatchClosure(input, issue, flow, catalog);
     if (['open-block-extension', 'reveal-definition'].includes(input.action))
       return this.openDefinitionFile(issue, flow, input, catalog);
     if (
@@ -1141,14 +1408,14 @@ class IssueFlows {
     }
     if (['rebuild-flow', 'select-flow'].includes(input.action))
       return this.applyFlowDefinition(issue, flow, catalog, input);
-    if (input.action === 'export-flow') return this.exportFlow(issue, flow, catalog, input);
+    if (input.action === 'export-flow') return await this.exportFlow(issue, flow, catalog, input);
     if (input.action === 'reveal-flow') return this.revealFlow(issue, flow, catalog);
     if (input.action === 'update-worktree') return this.updateWorktree(issue, flow, catalog);
     if (input.action === 'delete-worktree') return this.deleteWorktree(issue, flow, input.expected);
     if (input.action === 'starting-point') return this.setStartingPoint(issue, flow, input);
     if (input.action === 'destination' || input.action === 'accept-pr-base')
       return this.setDestination(issue, flow, input);
-    if (input.action === 'issue-settings') return this.editIssueSettings(issue, flow, input);
+    if (input.action === 'issue-settings') return await this.editIssueSettings(issue, flow, input);
     if (input.action === 'rename-issue') {
       const title = typeof input.title === 'string' ? input.title.trim() : '';
       requireThat(
@@ -1161,12 +1428,64 @@ class IssueFlows {
       );
       requireThat(input.previousTitle === issue.title, 'The issue title changed. Refresh before renaming.');
       if (title !== issue.title) {
-        if (!existsSync(this.store.path(issue.id))) this.store.save(flow, flow.revision);
-        renameStoredIssue(this.service.root, issue, title);
+        if (!existsSync(this.store.path(issue.id))) await this.store.save(flow, flow.revision);
+        await renameStoredIssue(this.service.root, issue, title);
       }
       return this.view(issue.id);
     }
     return this.dispatchBlockAction(issue, flow, input, catalog);
+  }
+  async abortMerge(issue, flow, input) {
+    this.branchRepairs.requireIdle(issue);
+    requireThat(
+      !issueHasActiveWork(this.service, issue.id),
+      'Finish or stop active issue work before aborting its merge.'
+    );
+    requireThat(!this.branchRepairs.active.has(issue.id), 'Wait for the branch repair to finish.');
+    requireThat(!issue.closed && !this.flowBuilds.has(issue.id), 'Choose an idle, open issue.');
+    requireThat(input.revision === flow.revision, 'This issue changed. Refresh before aborting its merge.');
+    const workspace = flowWorkspace(this.service, flow);
+    const merge = pendingIssueMerge(workspace?.checkout);
+    requireThat(
+      merge && JSON.stringify(input.merge) === JSON.stringify(merge),
+      'The merge changed. Refresh before aborting.'
+    );
+    this.service.guard(
+      this.service.root,
+      { id: 'abort-merge-' + issue.id, issues: [issue.id] },
+      'implement',
+      workspace.base
+    );
+    if (this.service.projectStores) {
+      await abortOwnedMerge(this, { issue, flow, workspace, merge });
+      return this.view(issue.id);
+    }
+    const queue = this.service.sharedIssues;
+    const claim = queue?.acquireFlowBlock(issue, 'abort-merge', false);
+    const controller = new AbortController();
+    this.active.set(issue.id, { controller, blockId: 'abort-merge' });
+    try {
+      this.pauseAutoplay(issue.id, 'The local merge was aborted.');
+      await abortPendingMerge(workspace, (command, args) => git(workspace.checkout, ...args));
+    } finally {
+      this.active.delete(issue.id);
+      if (claim) queue.releaseFlowBlock(claim);
+    }
+    return this.view(issue.id);
+  }
+  async branchOperation(issue, flow, input) {
+    if (input.action === 'abort-merge') return this.abortMerge(issue, flow, input);
+    if (input.action === 'open-worktree')
+      return openWorkFolder(flowWorkspace(this.service, flow)?.checkout, undefined, {
+        terminal: input.terminal === true,
+      });
+    await this.branchRepairs.action(issue, flow, input);
+    if (input.action === 'branch-repair-approve') {
+      if (this.service.projectStores) flow = this.read(this.selected(issue.id));
+      invalidateBlocks(flow, new Set(flow.blocks.filter((block) => block.kind !== 'request').map((block) => block.id)));
+      await this.store.save(flow, flow.revision);
+    }
+    return this.view(issue.id);
   }
   async editRequest(issue, flow, input, catalog) {
     requireThat(!issue.closed, 'Reopen this issue before editing its request.');
@@ -1192,7 +1511,7 @@ class IssueFlows {
         request.data.fields = { ...fields, type: input.type };
         if (currentType !== input.type)
           return this.applyFlowDefinition(issue, flow, catalog, { action: 'rebuild-flow' });
-        this.store.save(flow, flow.revision);
+        await this.store.save(flow, flow.revision);
       }
     }
     return this.view(issue.id);
@@ -1211,7 +1530,7 @@ class IssueFlows {
     }
     return this.createFolder(input);
   }
-  editIssueSettings(issue, flow, input) {
+  async editIssueSettings(issue, flow, input) {
     requireThat(
       !issue.closed &&
         (isInvestigation(issue, flow) || !executionStarted(this.service, flow)) &&
@@ -1232,32 +1551,31 @@ class IssueFlows {
       if (key === 'branch') flow.destination = value === 'default' ? null : { branch: value };
     }
     flow.settings = next;
-    this.store.save(flow, flow.revision);
+    await this.store.save(flow, flow.revision);
     return this.view(issue.id);
   }
-  editFolder(issue, flow, input) {
+  async editFolder(issue, flow, input) {
     if (input.action === 'folder-lock') {
       requireThat(!issue.closed && typeof input.locked === 'boolean', 'Choose a move setting for an open issue.');
       flow.folderLocked = input.locked;
-      this.store.save(flow, flow.revision);
+      await this.store.save(flow, flow.revision);
       return this.view(issue.id);
     }
     if (input.folder && input.folder !== flow.folder) {
       requireThat(!flow.folderLocked, 'This issue is protected from moves into folders.');
       this.folderSelection.requireFolder(input.folder);
     }
-    this.moveIssueToFolder(issue, flow, folderName(input.folder));
+    await this.moveIssueToFolder(issue, flow, folderName(input.folder));
     return this.view(issue.id);
   }
-  moveIssueToFolder(issue, flow, name) {
+  async moveIssueToFolder(issue, flow, name) {
     requireThat(!issue.closed && !issueHasActiveWork(this.service, issue.id), 'Choose an idle, open issue.');
     const folder = requireIssueFolder(this.service.root, name);
     if (flow.folder === name && issue.folder_id === folder.id) return;
-    const shared = this.service.sharedIssues?.acquireForApproval(issue);
-    updateStoredIssueMetadata(this.service.root, issue, { folder_id: folder.id });
-    if (shared) this.service.sharedIssues.checkpoint(issue.id, 'Issue folder assignment changed', shared);
+    if (this.service.sharedIssues) this.service.sharedIssues.moveFolder(issue, folder.id);
+    else await updateStoredIssueMetadata(this.service.root, issue, { folder_id: folder.id });
     flow.folder = name;
-    this.store.save(flow, flow.revision);
+    await this.store.save(flow, flow.revision);
   }
   async dispatchBlockAction(issue, flow, input, catalog) {
     if (input.blockId?.startsWith('target-') && !flow.blocks.some((block) => block.id === input.blockId)) {
@@ -1267,7 +1585,13 @@ class IssueFlows {
       insertSuggestedTargetUpdate(flow, suggestion);
     }
     if (['start', 'continue', 'open-block', 'refresh-definition'].includes(input.action)) {
-      const changed = this.checkDefinition(issue, flow, input.blockId, catalog);
+      const sharedOwner =
+        this.service.projectStores &&
+        readSnapshot(this.service.root)?.claims?.some((claim) => claim.issueId === issue.id);
+      const changed =
+        input.action === 'open-block' && sharedOwner
+          ? false
+          : await this.checkDefinition(issue, flow, input.blockId, catalog);
       if (changed || input.action === 'refresh-definition') return this.view(issue.id);
       if (input.action === 'open-block') {
         const block = flow.blocks.find((item) => item.id === input.blockId);
@@ -1289,7 +1613,7 @@ class IssueFlows {
           requireThat(this.read(issue).revision === flow.revision, 'The issue changed. Review Merge again.');
           if (pr && !flow.destination?.pr) {
             flow.destination = this.lockedDestination(flowPRLink(pr));
-            this.store.save(flow, flow.revision);
+            await this.store.save(flow, flow.revision);
             return this.view(issue.id);
           }
           requireThat(
@@ -1305,7 +1629,7 @@ class IssueFlows {
       return this.start(issue, flow, input, catalog);
     }
     if (input.action === 'delete-artifact') return this.deleteArtifact(flow, issue, input);
-    return this.editGraph(issue, flow, input, catalog);
+    return await this.editGraph(issue, flow, input, catalog);
   }
   async openDefinitionFile(issue, flow, input, catalog) {
     const block = flow.blocks.find((item) => item.id === input.blockId);
@@ -1342,12 +1666,12 @@ class IssueFlows {
     await promisify(execFile)('/usr/bin/open', ['-R', path], { timeout: 5000 });
     return this.view(issue.id);
   }
-  exportFlow(issue, flow, catalog, input) {
+  async exportFlow(issue, flow, catalog, input) {
     const { definition, names, source } = exportFlowDefinition(this.service.root, input, flow, catalog);
     for (const block of flow.blocks) block.flowKey = names.get(block.id);
     linkFlowDefinition(flow, definition);
     try {
-      this.store.save(flow, flow.revision);
+      await this.store.save(flow, flow.revision);
     } catch (error) {
       if (existsSync(definition.path) && readFileSync(definition.path, 'utf8') === source) unlinkSync(definition.path);
       throw error;
@@ -1359,9 +1683,13 @@ class IssueFlows {
     const nodes = await this.buildStructure({ service: this.service, issue, type, definition, catalog, request });
     return validateFlowNodes(nodes, catalog);
   }
-  requireRouteIdle(issue, flow) {
+  requireRouteIdle(issue, flow, afterClarification = false) {
+    const service =
+      afterClarification && this.overnight.owns(issue.id)
+        ? Object.assign(Object.create(this.service), { flowOperationIssueId: issue.id })
+        : this.service;
     requireThat(
-      !this.active.has(issue.id) && !this.flowBuilds.has(issue.id) && !issueHasActiveWork(this.service, issue.id),
+      !this.active.has(issue.id) && !this.flowBuilds.has(issue.id) && !issueHasActiveWork(service, issue.id),
       'Wait for the current operation to finish.'
     );
     requireThat(
@@ -1382,13 +1710,13 @@ class IssueFlows {
       if (type === flow.routeType && id === flow.definition.id) return this.view(issue.id);
     }
     const definition = selectFlowDefinition(definitions, type, id);
-    this.requireRouteIdle(issue, flow);
+    this.requireRouteIdle(issue, flow, input.afterClarification);
     if (!input.afterClarification) this.pauseAutoplay(issue.id, 'The route changed.');
     this.flowBuilds.add(issue.id);
     try {
       const nodes = await this.flowNodes(issue, type, definition, catalog, requestData(flow));
       rebuildRoute(flow, type, definition, nodes, catalog);
-      this.store.save(flow, flow.revision);
+      await this.store.save(flow, flow.revision);
     } finally {
       this.flowBuilds.delete(issue.id);
     }
@@ -1397,41 +1725,62 @@ class IssueFlows {
   async updateWorktree(issue, flow, catalog) {
     const checkout = flowWorkspace(this.service, flow)?.checkout;
     requireThat(checkout && existsSync(checkout), 'This issue has no available worktree.');
+    const scoped = Object.assign(Object.create(this.service), { flowOperationIssueId: issue.id });
     requireThat(
-      !issue.closed && !issueHasActiveWork(this.service, issue.id),
+      !issue.closed &&
+        !this.active.has(issue.id) &&
+        !this.flowBuilds.has(issue.id) &&
+        !this.closureTasks.has(issue.id) &&
+        !issueHasActiveWork(scoped, issue.id),
       'Update the branch of an idle open issue.'
     );
-    requireThat(
-      !flow.blocks.some((block) => block.attempts.some(unresolvedAttempt)),
-      'Recover the disconnected block before updating the branch.'
-    );
+    if (this.service.projectStores) {
+      const outcome = await updateOwnedWorktree(this, issue, flow);
+      return { ...(await this.view(issue.id)), branchUpdateSummary: outcome.summary };
+    }
     const block = makeBlock('update-branch', [], false, catalog);
     const attempt = this.makeAttempt(flow, issue, block, catalog);
     const controller = new AbortController();
     const queue = this.service.sharedIssues;
-    const claim = queue?.acquireFlowBlock(issue, block.id, false);
-    this.pauseAutoplay(issue.id, 'Updating the branch manually.');
-    this.active.set(issue.id, { controller, blockId: block.id, attemptId: attempt.id });
+    let claim;
     let outcome;
+    this.flowBuilds.add(issue.id);
     try {
+      const disconnected = await observeDisconnectedFlow(this.service, flow, this.deliveryOptions.createConnection);
+      controller.signal.throwIfAborted();
+      claim = queue?.acquireFlowBlock(issue, disconnected.at(-1)?.id ?? block.id, disconnected.length > 0);
+      if (disconnected.length) {
+        for (const saved of disconnected)
+          for (const previous of saved.attempts.filter(unresolvedAttempt)) {
+            previous.reconciledAt = new Date().toISOString();
+            previous.reconciliation =
+              'Before manual branch update, the original provider was observed idle or its oversized input was confirmed rejected before acceptance.';
+            if (['running', 'stopping'].includes(previous.status)) previous.status = 'uncertain';
+          }
+        await this.store.save(flow, flow.revision);
+      }
+      this.pauseAutoplay(issue.id, 'Updating the branch manually.');
+      this.active.set(issue.id, { controller, blockId: block.id, attemptId: attempt.id });
+      this.flowBuilds.delete(issue.id);
       outcome = await this.executor.run({ issue, flow, block, attempt, signal: controller.signal });
     } finally {
+      this.flowBuilds.delete(issue.id);
       this.active.delete(issue.id);
       if (claim) queue.releaseFlowBlock(claim);
     }
     return { ...(await this.view(issue.id)), branchUpdateSummary: outcome.summary };
   }
   async deleteWorktree(issue, flow, expected) {
-    requireThat(!flow.closing || flow.closing.complete, 'Finish the saved closure sequence before deleting resources.');
+    requireThat(!issueHasActiveWork(this.service, issue.id), 'An issue operation is still in progress.');
     const workspace = flowWorkspace(this.service, flow);
     requireThat(workspace?.checkout && existsSync(workspace.checkout), 'This issue has no available worktree.');
     const cleanupService = worktreeCleanupService(this.service, issue.id, workspace);
     if (!expected) return deleteIssueWorktree(cleanupService, { issueId: issue.id });
     this.pauseAutoplay(issue.id, 'Worktree deletion requested.');
-    await deleteIssueWorktree(cleanupService, { issueId: issue.id, expected });
+    await deleteIssueWorktree(cleanupService, { issueId: issue.id, expected, checkoutOnly: true });
     return this.view(issue.id);
   }
-  editGraph(issue, flow, input, catalog) {
+  async editGraph(issue, flow, input, catalog) {
     requireThat(
       !flow.closing || flow.closing.complete || input.action === 'comment',
       'Finish the saved closure sequence before editing this flow.'
@@ -1449,9 +1798,9 @@ class IssueFlows {
           .filter((block, index) => JSON.stringify(block) !== JSON.stringify(before.blocks[index]))
           .map((block) => block.id)
       );
-      this.saveEdit(flow, seeds);
+      await this.saveEdit(flow, seeds);
     } else {
-      this.store.save(flow, flow.revision);
+      await this.store.save(flow, flow.revision);
       if (['add', 'move', 'remove'].includes(input.action)) this.pauseAutoplay(issue.id, 'The route changed.');
     }
     if (input.action === 'comment') {
@@ -1467,7 +1816,7 @@ class IssueFlows {
     }
     return this.view(issue.id);
   }
-  saveEdit(flow, seeds, cascade = true, keepPlaying = false) {
+  async saveEdit(flow, seeds, cascade = true, keepPlaying = false) {
     const affected = invalidateBlocks(flow, seeds, cascade);
     const active = this.active.get(flow.issueId);
     if (active && seeds.size) {
@@ -1481,7 +1830,7 @@ class IssueFlows {
         if (!affected.has(block.id)) attempt.cancelledByEdit = true;
       }
     }
-    const saved = this.store.save(flow, flow.revision);
+    const saved = await this.store.save(flow, flow.revision);
     if (seeds.size) {
       if (!keepPlaying) this.pauseAutoplay(flow.issueId, 'The flow changed.');
       active?.controller.abort();
@@ -1526,7 +1875,8 @@ class IssueFlows {
         );
     }
   }
-  checkDefinition(issue, flow, blockId, catalog) {
+  async checkDefinition(issue, flow, blockId, catalog) {
+    if (mergedDelivery(flow)) return false;
     const block = flow.blocks.find((item) => item.id === blockId);
     requireThat(block, 'Choose a saved block.');
     const id = blockDefinitionId(block);
@@ -1534,7 +1884,8 @@ class IssueFlows {
     const checksum = definitionIdentity(definition);
     if (block.definitionChecksum === checksum) return false;
     const changed = block.definitionChecksum !== undefined;
-    const refresh = (current) => {
+    const refresh = async (current) => {
+      if (mergedDelivery(current)) return { dirty: new Set(), saved: current };
       const dirty = new Set();
       let initialized = false;
       for (const item of current.blocks.filter((item) => blockDefinitionId(item) === id)) {
@@ -1550,27 +1901,29 @@ class IssueFlows {
         item.declaredArtifacts = definition?.artifacts;
         item.declaredDetails = definition?.details;
       }
-      const saved = dirty.size || initialized ? this.saveEdit(current, dirty) : current;
+      const saved = dirty.size || initialized ? await this.saveEdit(current, dirty) : current;
       return { dirty, saved };
     };
     // Pin every existing instance of this exact definition when its change is discovered.
-    const update = refresh(flow);
+    const update = await refresh(flow);
     Object.assign(flow, update.saved);
     if (changed || update.dirty.size)
       for (const other of this.issues()) {
         if (other.id === issue.id || !existsSync(this.store.path(other.id))) continue;
-        refresh(this.read(other, catalog));
+        await refresh(this.read(other, catalog));
       }
     return update.dirty.size > 0;
   }
   async refreshRequest(issue, flow, wording, catalog, keepPlaying = false) {
     const block = requestBlock(flow);
     const priorFields = block.data.fields;
-    this.checkDefinition(issue, flow, block.id, catalog);
+    const wordingChanged = block.data.wording !== wording;
+    await this.checkDefinition(issue, flow, block.id, catalog);
     block.data.wording = wording;
     const revision = (block.data.editId = randomUUID());
     const previous = this.active.get(issue.id);
-    this.saveEdit(flow, new Set([block.id]), false, keepPlaying);
+    const affected = wordingChanged ? flow.blocks.map((item) => item.id) : [block.id];
+    await this.saveEdit(flow, new Set(affected), false, keepPlaying);
     await previous?.task;
     flow = this.read(this.selected(issue.id));
     requireThat(
@@ -1586,10 +1939,9 @@ class IssueFlows {
       );
     }
     const controller = new AbortController();
-    current.attempts.push(attempt);
-    this.store.save(flow, flow.revision);
-    const owned = { blockId: current.id, attemptId: attempt.id, controller };
-    this.active.set(issue.id, owned);
+    const admitted = await this.admitAttempt(issue, flow, current, attempt, controller);
+    flow = admitted.flow;
+    const owned = admitted.owned;
     owned.task = this.execute(issue, flow, current.id, attempt.id, controller, {}, definition);
     await owned.task;
     const saved = this.read(issue, catalog);
@@ -1656,7 +2008,7 @@ class IssueFlows {
       'The issue changed. Refresh before changing Destination.'
     );
     current.destination = destination;
-    this.store.save(current, current.revision);
+    await this.store.save(current, current.revision);
     this.pauseAutoplay(issue.id, 'Destination changed.');
     return this.view(issue.id);
   }
@@ -1672,7 +2024,7 @@ class IssueFlows {
       request.data.fields || (!request.data.editId && !clarification),
       'Request clarification did not finish. Retry Request before publishing.'
     );
-    this.checkDefinition(issue, flow, input.blockId, catalog);
+    await this.checkDefinition(issue, flow, input.blockId, catalog);
     const block = flow.blocks.find((item) => item.id === input.blockId);
     requireThat(block?.kind === 'publish', 'Choose a saved Publish block.');
     const workspace = flowWorkspace(this.service, flow);
@@ -1687,7 +2039,7 @@ class IssueFlows {
       return { previewChanged: true };
     if (pr && !flow.destination?.pr) {
       flow.destination = this.lockedDestination(flowPRLink(pr));
-      flow = this.store.save(flow, flow.revision);
+      flow = await this.store.save(flow, flow.revision);
     }
     const { preview } = await prepareFlowPublication(this.service, { issue, flow, block }, workspace, {
       ...this.deliveryOptions,
@@ -1795,7 +2147,7 @@ class IssueFlows {
       return this.moveStartingPoint(issue, flow, workspace, point);
     }
     flow.startingPoint = point;
-    this.store.save(flow, flow.revision);
+    await this.store.save(flow, flow.revision);
     return this.view(issue.id);
   }
   async moveStartingPoint(issue, flow, workspace, point) {
@@ -1811,6 +2163,10 @@ class IssueFlows {
       this.read(issue).revision === flow.revision && this.startingPointEditable(this.selected(issue.id), flow),
       'The issue changed. Refresh before moving the starting branch.'
     );
+    if (this.service.projectStores) {
+      await moveOwnedStartingPoint(this, { issue, flow, workspace, point });
+      return this.view(issue.id);
+    }
     const controller = new AbortController();
     const operation = 'move-starting-point';
     const attempt = { id: randomUUID() };
@@ -1825,7 +2181,7 @@ class IssueFlows {
       };
       flow.startingPoint = point;
       invalidateBlocks(flow, new Set(flow.blocks.filter((block) => block.kind !== 'request').map((block) => block.id)));
-      this.store.save(flow, flow.revision);
+      await this.store.save(flow, flow.revision);
     } finally {
       this.active.delete(issue.id);
       if (claim) queue.releaseFlowBlock(claim);
@@ -1833,17 +2189,8 @@ class IssueFlows {
     return this.view(issue.id);
   }
   async start(issue, flow, input, catalog, publication = null, overnightRunId = null) {
-    if (isInvestigation(issue, flow) && !flow.closing) {
-      requireThat(
-        input.investigationOperation && this.investigations?.active.has(input.investigationOperation),
-        'Run this investigation from its issue page.'
-      );
-      const selected = flow.blocks.find(({ id }) => id === input.blockId);
-      requireThat(
-        selected?.kind === 'understand',
-        'Investigations run Understand without code delivery or closure steps.'
-      );
-    }
+    if (!input.closureId) await this.requireEditableIssue(issue.id);
+    requireInvestigationBlock(this, issue, flow, input);
     this.groups.requireIndependent(issue.id);
     requireThat(
       !this.active.has(issue.id),
@@ -1881,7 +2228,7 @@ class IssueFlows {
       requireThat(input.action === 'continue', 'The previous attempt is uncertain. Inspect it before Continue.');
     requireThat(block.kind !== 'request', 'Edit Request in Details.');
     if (block.kind === 'publish') {
-      requireThat(publication, 'Review Publish or use Play to publish the branch.');
+      requireThat(publication, 'Review Publish or resume the route to publish the branch.');
       const request = requestBlock(flow);
       requireThat(
         request.data.fields || (!request.data.editId && !latestCurrentAttempt(request)),
@@ -1900,22 +2247,26 @@ class IssueFlows {
       flow.executionSettings = { values: settings.values, sources: settings.sources, basis: settings.basis };
       flow.resolvedBranch = settings.values.branch;
     }
+    await prepareInvestigationBlock(this, issue, flow, block, input);
     const attempt = this.makeAttempt(flow, issue, block, catalog);
+    attachInvestigationAttempt(flow, issue, block, input, attempt);
     if (input.closureId) attempt.closureId = input.closureId;
     if (block.kind === 'cleanup' && flow.closing.cleanupGeneration)
       attempt.cleanupGeneration = flow.closing.cleanupGeneration;
     block.suggested = false;
-    block.attempts.push(attempt);
     const controller = new AbortController();
-    const owned = { blockId: block.id, attemptId: attempt.id, controller };
-    this.active.set(issue.id, owned);
-    try {
-      flow = this.store.save(flow, flow.revision);
-    } catch (error) {
-      this.active.delete(issue.id);
-      throw error;
-    }
+    const admitted = await this.admitAttempt(
+      issue,
+      flow,
+      block,
+      attempt,
+      controller,
+      input.closureId ? 'closure' : 'edit'
+    );
+    flow = admitted.flow;
+    const owned = admitted.owned;
     const waiting = this.autoplay.get(issue.id);
+    if (waiting?.userPaused) this.pause(issue.id, 'A block was started.');
     if (waiting?.mode === 'waiting') {
       if (waiting.blockId === block.id && input.confirmed === true) this.autoplay.set(issue.id, { mode: 'playing' });
       else this.pause(issue.id, 'A different block was started.');
@@ -1935,21 +2286,60 @@ class IssueFlows {
     );
     return { accepted: true, issueId: issue.id, blockId: block.id, attemptId: attempt.id };
   }
+  async admitAttempt(issue, flow, block, attempt, controller, purpose = 'edit') {
+    const owned = { blockId: block.id, attemptId: attempt.id, controller };
+    this.active.set(issue.id, owned);
+    try {
+      if (this.service.projectStores) {
+        const admitted = await this.service.projectStores.beginAttempt({
+          issueId: issue.id,
+          blockId: block.id,
+          attempt,
+          flow,
+          expectedRevision: flow.revision,
+          operationId: 'attempt-' + attempt.id,
+          purpose,
+        });
+        owned.storeOwner = admitted.owner;
+        flow = admitted.flow;
+        await this.service.projectStores.refresh({ issueIds: [issue.id] });
+      } else {
+        block.attempts.push(attempt);
+        flow = await this.store.save(flow, flow.revision);
+      }
+      return { flow, owned };
+    } catch (error) {
+      this.active.delete(issue.id);
+      throw error;
+    }
+  }
   changeAttempt(issue, blockId, attemptId, change = () => {}) {
-    const flow = this.read(issue);
-    const block = flow.blocks.find((item) => item.id === blockId);
+    const flow = this.store.read(issue, flowTarget(this.service.root));
+    const block = [...flow.blocks, ...(flow.retiredBlocks || [])].find((item) => item.id === blockId);
     const attempt = block?.attempts.find((item) => item.id === attemptId);
     requireThat(attempt, 'The running block record is missing. Retain its original execution before reconciling.');
     change(attempt, flow);
     if (['running', 'stopping'].includes(attempt.status)) attempt.lastActiveAt = new Date().toISOString();
-    this.store.save(flow, flow.revision);
+    this.store.stage(reconcileInvestigationFindings(flow, block), flow.revision);
   }
   async execute(issue, flow, blockId, attemptId, controller, input, definition) {
     const block = flow.blocks.find((item) => item.id === blockId);
     const attempt = block.attempts.at(-1);
+    const owner = this.active.get(issue.id)?.storeOwner;
+    let synchronizing = false;
     const checkpoint = setInterval(() => {
       try {
         this.changeAttempt(issue, blockId, attemptId);
+        if (owner && !synchronizing) {
+          synchronizing = true;
+          this.synchronizeAttempt(issue, owner, controller)
+            .catch((error) => {
+              this.pause(issue.id, 'Waiting for shared storage: ' + redactValue(error.message));
+            })
+            .finally(() => {
+              synchronizing = false;
+            });
+        }
       } catch (error) {
         clearInterval(checkpoint);
         console.warn('Could not save block timing for ' + attemptId + ': ' + error.message);
@@ -1960,7 +2350,7 @@ class IssueFlows {
     let claim;
     const queue = this.service.sharedIssues;
     try {
-      if (!['request', 'retro', 'cleanup', 'close'].includes(block.kind))
+      if (!owner && !['request', 'retro', 'cleanup', 'close'].includes(block.kind))
         claim = queue?.acquireFlowBlock(issue, blockId, input.action === 'continue');
       const result =
         block.kind === 'request'
@@ -1996,12 +2386,20 @@ class IssueFlows {
               onWorkspace: (workspace) =>
                 this.changeAttempt(issue, blockId, attemptId, (_, current) => {
                   current.workspace = workspace;
+                  if (owner) current.workspaceRunnerId = owner.runnerId;
                 }),
-              onProgress: (text) =>
-                this.changeAttempt(issue, blockId, attemptId, (current) => {
+              onEvent: (event) => {
+                if (owner)
+                  this.service.projectStores.recordProgress(owner, { kind: 'provider', event: redactValue(event) });
+              },
+              onProgress: (text) => {
+                if (owner)
+                  this.service.projectStores.recordProgress(owner, { kind: 'output', text: redactValue(String(text)) });
+                return this.changeAttempt(issue, blockId, attemptId, (current) => {
                   current.output = (current.output + String(text)).slice(-64000);
                   current.summary = String(text).trim().split('\n').at(-1)?.slice(0, 500) || current.summary;
-                }),
+                });
+              },
               onStep: (step) =>
                 this.changeAttempt(issue, blockId, attemptId, (current) => {
                   if (step === current.step || current.status === 'stopping' || current.inputRequestedAt) return;
@@ -2065,13 +2463,22 @@ class IssueFlows {
       });
     } finally {
       clearInterval(checkpoint);
+      if (owner && outcome) {
+        if (unresolvedAttempt(outcome)) {
+          await prepareAttemptCommit(this, issue, owner, outcome, block);
+          await this.service.projectStores.flushProgress(owner);
+          await this.store.flush(issue.id);
+        } else await this.confirmAttempt(issue, owner, outcome, block);
+      }
       if (claim && outcome && !unresolvedAttempt(outcome)) {
         try {
           queue.releaseFlowBlock(claim);
         } catch (error) {
           this.changeAttempt(issue, blockId, attemptId, (current) => {
+            const message = redactValue(error.message);
+            current.claimReleaseFailure = { status: current.status, summary: current.summary, message };
+            current.summary += '\nShared issue claim release failed: ' + message;
             current.status = 'uncertain';
-            current.summary = error.message;
             outcome = current;
           });
         }
@@ -2090,8 +2497,53 @@ class IssueFlows {
       } else if (block.kind !== 'request') this.autoplayFinished(issue.id, block, outcome);
     }
   }
-  stop(flow, input) {
+  async synchronizeAttempt(issue, owner, controller) {
+    const stores = this.service.projectStores;
+    const commands = await stores.commands(owner);
+    if (commands.length) controller.abort();
+    await stores.flushProgress(owner);
+    await this.store.flush(issue.id, { drain: false });
+  }
+  async confirmAttempt(issue, owner, outcome, block) {
+    const stores = this.service.projectStores;
+    const operationId = 'finish-' + owner.attemptId;
+    for (;;) {
+      try {
+        const receipt = await stores.coordination.get('operations/' + encodeURIComponent(operationId));
+        if (receipt?.value.status === 'confirmed') {
+          await stores.finishAttempt(owner, { result: outcome, operationId });
+          await stores.refresh({ issueIds: [issue.id] });
+          return;
+        }
+        await prepareAttemptCommit(this, issue, owner, outcome, block);
+        await stores.flushProgress(owner);
+        await this.store.flush(issue.id);
+        for (const command of await stores.commands(owner)) await stores.acknowledgeStop(owner, command.id);
+        await stores.finishAttempt(owner, { result: outcome, operationId });
+        await stores.refresh({ issueIds: [issue.id] });
+        return;
+      } catch (error) {
+        if (!storeUnavailable(error)) throw error;
+        this.pause(issue.id, 'Work finished locally. Waiting for shared storage confirmation.');
+        await new Promise((resolve) => {
+          const timer = setTimeout(resolve, 5000);
+          timer.unref();
+        });
+      }
+    }
+  }
+  async stop(flow, input) {
     const active = this.active.get(flow.issueId);
+    if (!active && this.service.projectStores) {
+      const claim = await this.service.projectStores.coordination.get('claims/' + flow.issueId);
+      requireThat(claim?.value.attemptId, 'This issue has no running attempt.');
+      return this.service.projectStores.requestStop({
+        issueId: flow.issueId,
+        attemptId: claim.value.attemptId,
+        ownerToken: claim.value.token,
+        operationId: input.operationId || 'stop-' + randomUUID(),
+      });
+    }
     requireThat(active?.blockId === input.blockId, 'This block is no longer running. Refresh its saved result.');
     this.changeAttempt(this.selected(flow.issueId), input.blockId, active.attemptId, (attempt) => {
       attempt.status = 'stopping';
@@ -2168,7 +2620,7 @@ class IssueFlows {
     const ids = new Map([...names].map((name) => [name, createIssueFolderSettings(this.service.root, name).id]));
     for (const { issue, flow } of legacy) {
       const shared = issue.location !== 'archive' && this.service.sharedIssues?.acquire(issue, true);
-      updateStoredIssueMetadata(this.service.root, issue, { folder_id: ids.get(flow.folder) });
+      await updateStoredIssueMetadata(this.service.root, issue, { folder_id: ids.get(flow.folder) });
       if (shared) this.service.sharedIssues.checkpoint(issue.id, 'Issue folder assignment migrated', shared);
     }
     const path = join(this.store.directory, 'folders.json');
@@ -2182,6 +2634,13 @@ class IssueFlows {
     return this.view();
   }
   async capture(input, grouping = null) {
+    if (this.service.projectStores) {
+      requireThat(
+        typeof input.issueStore === 'string' && input.issueStore.length > 0,
+        'Choose an Issue store for this issue.'
+      );
+      resolveIssueStore(this.service.root, { storeId: input.issueStore, folder: input.folder });
+    }
     validateCaptureId(input.requestId);
     validateCaptureDescription(input.description);
     validateCaptureType(input.type);
@@ -2226,38 +2685,7 @@ class IssueFlows {
     const receiptPath = join(directory, input.requestId + '.json');
     const publish = (id) =>
       this.service.sharedIssues?.capture(id, input.needsApproval ? 'Proposed issue created' : 'Issue created');
-    if (existsSync(receiptPath)) {
-      const receipt = JSON.parse(readFileSync(receiptPath, 'utf8'));
-      requireThat(receipt.identity === identity, 'This request identity already contains different wording.');
-      if (receipt.deleted) return { deleted: true, issueId: receipt.id };
-      if (receipt.complete !== false) {
-        if (
-          !existsSync(storedIssuePath(this.service.root, receipt.id)) &&
-          !existsSync(storedIssuePath(this.service.root, receipt.id, 'closed')) &&
-          !existsSync(storedIssuePath(this.service.root, receipt.id, 'archive'))
-        )
-          return { deleted: true, issueId: receipt.id };
-        if (existsSync(storedIssuePath(this.service.root, receipt.id))) publish(receipt.id);
-        return this.view(receipt.id);
-      }
-      const path = storedIssuePath(this.service.root, receipt.id);
-      if (!existsSync(path)) {
-        this.groups.writeCapture(grouping, () => {
-          mkdirSync(dirname(path), { recursive: true });
-          writeFileSync(path, receipt.content, { flag: 'wx', mode: 0o600 });
-        });
-      }
-      if (!existsSync(this.store.path(receipt.id))) {
-        const issue = { ...receipt.metadata, content: receipt.content };
-        const flow = receipt.flow ?? (await this.initialFlow(issue, receipt.startingPoint));
-        if (receipt.folder != null) flow.folder = receipt.folder;
-        this.store.save(flow, 0);
-      }
-      queueIssueNumbers(this.service.root, [receipt.id]);
-      writeJson(receiptPath, { ...receipt, complete: true });
-      publish(receipt.id);
-      return this.view(receipt.id);
-    }
+    if (existsSync(receiptPath)) return this.resumeCapture({ input, receiptPath, identity, grouping, publish });
     const startingPoint = await this.startingPointForCapture(input, folder);
     const at = new Date().toISOString();
     const id = at.replace(/[-:.Z]/g, '') + '-' + randomBytes(8).toString('hex');
@@ -2290,7 +2718,8 @@ class IssueFlows {
         stringify(metadata) +
         '---\n\n' +
         originalRequestSection(input.description) +
-        '\n\n## Issue flow\n\nThe selected flow definition builds the structure. Run blocks individually or press Play to run the route.\n'
+        '\n\n## Issue flow\n\nThe selected flow definition builds the structure. ' +
+        'Run blocks individually or use Start or Resume to run the route.\n'
     );
     const issue = { ...metadata, content };
     const flow = await this.initialFlow(issue, startingPoint);
@@ -2300,25 +2729,86 @@ class IssueFlows {
     if (input.runRetro) setRetroBlock(flow, this.catalog.read().entries);
     flow.folder = folder;
     mkdirSync(directory, { recursive: true });
-    const receipt = { id, identity, content, metadata, startingPoint, folder };
+    const receipt = { id, identity, content, metadata, startingPoint, folder, storeId: input.issueStore };
+    if (this.service.projectStores) {
+      await this.requireCaptureGroupStore(input.issueStore, grouping);
+      return this.captureStoredIssue(input, receiptPath, { ...receipt, flow });
+    }
     const path = storedIssuePath(this.service.root, id);
     this.groups.writeCapture(grouping, () => {
       writeJson(receiptPath, { ...receipt, flow, complete: false });
       mkdirSync(dirname(path), { recursive: true });
       writeFileSync(path, content, { flag: 'wx', mode: 0o600 });
     });
-    this.store.save(flow, 0);
+    await this.store.save(flow, 0);
     queueIssueNumbers(this.service.root, [id]);
     writeJson(receiptPath, { ...receipt, flow, complete: true });
     publish(id);
     return this.view(id);
   }
-  decidePendingIssue(issue, flow, input) {
+  async resumeCapture({ input, receiptPath, identity, grouping, publish }) {
+    const receipt = JSON.parse(readFileSync(receiptPath, 'utf8'));
+    requireThat(receipt.identity === identity, 'This request identity already contains different wording.');
+    if (receipt.deleted) return { deleted: true, issueId: receipt.id };
+    if (receipt.complete !== false) {
+      if (
+        !existsSync(storedIssuePath(this.service.root, receipt.id)) &&
+        !existsSync(storedIssuePath(this.service.root, receipt.id, 'closed')) &&
+        !existsSync(storedIssuePath(this.service.root, receipt.id, 'archive'))
+      )
+        return { deleted: true, issueId: receipt.id };
+      if (existsSync(storedIssuePath(this.service.root, receipt.id))) publish(receipt.id);
+      return this.view(receipt.id);
+    }
+    if (this.service.projectStores) return this.captureStoredIssue(input, receiptPath, receipt);
+    const path = storedIssuePath(this.service.root, receipt.id);
+    if (!existsSync(path)) {
+      this.groups.writeCapture(grouping, () => {
+        mkdirSync(dirname(path), { recursive: true });
+        writeFileSync(path, receipt.content, { flag: 'wx', mode: 0o600 });
+      });
+    }
+    if (!existsSync(this.store.path(receipt.id))) {
+      const issue = { ...receipt.metadata, content: receipt.content };
+      const flow = receipt.flow ?? (await this.initialFlow(issue, receipt.startingPoint));
+      if (receipt.folder != null) flow.folder = receipt.folder;
+      await this.store.save(flow, 0);
+    }
+    queueIssueNumbers(this.service.root, [receipt.id]);
+    writeJson(receiptPath, { ...receipt, complete: true });
+    publish(receipt.id);
+    return this.view(receipt.id);
+  }
+  async requireCaptureGroupStore(storeId, grouping) {
+    if (!grouping?.children?.length) return;
+    const selected = await this.service.projectStores.assertSameStore(
+      grouping.children.map((child) => (typeof child === 'string' ? child : child.id))
+    );
+    requireThat(selected === storeId, 'A master and its sub-issues must use the same Issue store.');
+  }
+  async captureStoredIssue(input, receiptPath, receipt) {
+    requireThat(receipt.storeId === input.issueStore, 'This creation is assigned to another Issue store.');
+    writeJson(receiptPath, { ...receipt, complete: false });
+    await this.service.projectStores.createIssue({
+      issueId: receipt.id,
+      storeId: receipt.storeId,
+      report: receipt.content,
+      flow: receipt.flow,
+      operationId: 'capture-' + input.requestId,
+    });
+    await this.service.projectStores.refresh();
+    writeJson(receiptPath, { ...receipt, complete: true });
+    return this.view(receipt.id);
+  }
+  async decidePendingIssue(issue, flow, input) {
     requireThat(issue.state === 'needs-approval' && !issue.closed, 'This issue is no longer awaiting approval.');
     requireThat(!issueHasActiveWork(this.service, issue.id), 'Wait for this issue’s active operation to finish.');
     if (input.action === 'approve-issue') {
       const shared = this.service.sharedIssues?.acquireForApproval(issue);
-      updateStoredIssueMetadata(this.service.root, issue, { state: 'backlog', updated: new Date().toISOString() });
+      await updateStoredIssueMetadata(this.service.root, issue, {
+        state: 'backlog',
+        updated: new Date().toISOString(),
+      });
       if (shared) this.service.sharedIssues.checkpoint(issue.id, 'Issue approved', shared);
       return this.view(issue.id);
     }
@@ -2329,7 +2819,7 @@ class IssueFlows {
       if (publication.status !== 'published') return { publication };
       return this.view();
     }
-    deletePendingIssueReport(this.service.root, issue);
+    await deletePendingIssueReport(this.service.root, issue);
     this.removePendingFlow(issue.id);
     return this.view();
   }
@@ -2364,9 +2854,11 @@ class IssueFlows {
     return [...flow.blocks, ...(flow.retiredBlocks ?? [])].flatMap((block) => {
       const listed = new Set();
       return block.attempts.toReversed().flatMap((attempt) =>
-        (attempt.evidence || []).flatMap(({ path, label, sha256 }) => {
-          if (!path || listed.has(path)) return [];
+        (attempt.evidence || []).flatMap(({ path: originalPath, label, sha256 }) => {
+          if (!originalPath || listed.has(originalPath)) return [];
+          let path;
           try {
+            path = evidencePath(this.service.root, originalPath, sha256);
             if (!lstatSync(path, { throwIfNoEntry: false })?.isFile()) return [];
             const child = relative(root, realpathSync(path));
             if (!child || child === '..' || child.startsWith('..' + sep) || isAbsolute(child)) return [];
@@ -2374,13 +2866,14 @@ class IssueFlows {
           } catch {
             return [];
           }
-          listed.add(path);
+          listed.add(originalPath);
           return [
             {
-              id: digest(JSON.stringify([block.id, attempt.id, path])),
+              id: digest(JSON.stringify([block.id, attempt.id, originalPath])),
               blockId: block.id,
               attemptId: attempt.id,
               path,
+              originalPath,
               label: label || block.label + ' evidence',
             },
           ];
@@ -2392,11 +2885,8 @@ class IssueFlows {
     const artifact = this.artifacts(flow).find((item) => item.id === input.artifactId);
     requireThat(artifact, 'Choose an artifact from this issue’s block.');
     const { content } = this.service.readShownFile(artifact.path);
-    requireThat(
-      content.trim() && content.length <= 100_000,
-      'Restate needs a nonempty text artifact of up to 100,000 characters.'
-    );
-    const discussion = createDiscussionRuntime();
+    requireThat(content.trim(), 'Restate needs a nonempty text artifact.');
+    const discussion = createDiscussionRuntime(undefined, { root: this.service.root });
     let timer;
     try {
       const restate = async () => {
@@ -2442,14 +2932,20 @@ class IssueFlows {
     return this.view(issue.id);
   }
   close() {
+    this.branchRepairs.close();
     this.overnight.close();
     this.autoplay.clear();
     for (const active of this.active.values()) active.controller.abort();
     this.executor.close();
   }
 }
+function availableHumanInput(issue, flow) {
+  return issue.closed || mergedDelivery(flow) ? null : flowHumanInput(flow);
+}
+
 function flowStatus(flow, issue, active) {
   if (issue.closed) return 'closed';
+  if (mergedDelivery(flow)) return 'merged';
   if (issue.state === 'needs-approval') return 'needs-approval';
   if (active) return 'running';
   const attempts = flow.blocks.flatMap((block) => block.attempts);

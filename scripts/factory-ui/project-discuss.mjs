@@ -1,18 +1,40 @@
+import { readSkillExtension, personalSkillExtension, ensureSkillExtension } from './skill-list.mjs';
+import { fileURLToPath } from 'node:url';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { requireThat, writeJson } from './common.mjs';
 import { readModelSettings } from './model-settings.mjs';
 import { createProjectDiscussProvider } from './project-discuss-provider.mjs';
+import { LocalNotes } from './local-notes.mjs';
+import { retainReportConversation } from './report-conversation.mjs';
 
 const idPattern = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/;
 const stamp = () => new Date().toISOString();
 const copy = (value) => structuredClone(value);
-const clarificationSkills = [
-  { name: 'grilling', label: 'Grilling' },
-  { name: 'grill-me', label: 'Grill Me' },
-  { name: 'grill-with-docs', label: 'Grill with Docs' },
-];
+export function readClarificationSkills(root) {
+  const paths = [
+    fileURLToPath(new URL('../../factory/system/chat/grilling.md', import.meta.url)),
+    personalSkillExtension('chat/grilling.md'),
+    join(root, 'user/chat/grilling.md'),
+  ];
+  const entries = new Map(paths.flatMap(readSkillExtension).map((entry) => [entry.name, entry]));
+  return [...entries.values()]
+    .map(({ name, source }) => ({
+      kind: 'skill',
+      name,
+      label: name
+        .split('-')
+        .map((word) => word[0].toUpperCase() + word.slice(1))
+        .join(' '),
+      skill: name,
+      ...(source ? { source } : {}),
+    }))
+    .concat({ kind: 'value', name: 'none', label: 'No Grilling' });
+}
+
 function checkedId(id) {
   requireThat(typeof id === 'string' && idPattern.test(id), 'Choose a valid project conversation or message.');
   return id;
@@ -23,6 +45,15 @@ function text(value, empty = false) {
     'Enter a message of up to 100,000 characters.'
   );
   return value;
+}
+function containsMessage(session, id) {
+  return [...session.messages, ...session.queue].some((message) => message.id === id);
+}
+function discussionOwnerMatches(session, ownership) {
+  return JSON.stringify(session.ownership) === JSON.stringify(ownership);
+}
+function reportMessageContext(input) {
+  return input.reportContext ? { reportContext: copy(input.reportContext) } : {};
 }
 function publicEvent(event) {
   if (event.method === 'item/agentMessage/delta' || event.method === 'ui/transportPhase') return null;
@@ -70,14 +101,14 @@ export class ProjectDiscuss {
   }
   settings(input = {}, previous = {}) {
     const choices = this.choices();
-    const result = { ...choices.defaults, clarificationSkill: 'grilling', skills: [], ...previous, ...input };
+    const result = { ...choices.defaults, clarificationSkill: 'none', skills: [], ...previous, ...input };
     requireThat(
       choices.models.some(({ id }) => id === result.model),
       'Choose an available model.'
     );
     requireThat(choices.efforts.includes(result.effort), 'Choose an available effort level.');
     requireThat(
-      clarificationSkills.some(({ name }) => name === result.clarificationSkill),
+      readClarificationSkills(this.service.root).some(({ name }) => name === result.clarificationSkill),
       'Choose a listed clarification skill.'
     );
     requireThat(
@@ -163,15 +194,20 @@ export class ProjectDiscuss {
     }
     return result;
   }
-  view(id) {
-    const sessions = this.records();
-    const requested = id ? this.read(id) : null;
+  readOwned(id, ownership) {
+    const session = this.read(id);
+    requireThat(discussionOwnerMatches(session, ownership), 'Choose a conversation belonging to this workspace.');
+    return session;
+  }
+  view(id, ownership) {
+    const sessions = this.records().filter((session) => discussionOwnerMatches(session, ownership));
+    const requested = id ? this.readOwned(id, ownership) : null;
     const selected = requested && !requested.closedAt ? requested : sessions[0];
     return {
       conversations: sessions.map(({ id, title, status, updatedAt }) => ({ id, title, status, updatedAt })),
       selected: selected ? this.publicSession(selected) : null,
       ...this.choices(),
-      clarificationSkills,
+      clarificationSkills: readClarificationSkills(this.service.root),
     };
   }
   provider(id) {
@@ -197,45 +233,112 @@ export class ProjectDiscuss {
       settings: this.settings(input.settings, session.settings),
       attachments: this.attachments(session.id, input.attachments || []),
       status: 'queued',
+      ...reportMessageContext(input),
       createdAt: stamp(),
     };
   }
-  async action(input) {
+  async prepareNote(note) {
+    const value = await this.action({ action: 'create', requestId: 'local-note-' + note.id });
+    const id = value.selected.id;
+    this.change(id, (session) => {
+      if (!session.noteContext || session.noteContext.text !== note.text) {
+        const initial = !session.noteContext;
+        session.noteContext = { ...session.noteContext, id: note.id, text: note.text };
+        session.title = 'Note: ' + note.text.split('\n')[0].slice(0, 72);
+        session.messages.push({
+          ...this.envelope(session, {
+            text:
+              'We are discussing this local note:\n\n' +
+              note.text +
+              '\n\nContext prepared. Wait for my first prompt before answering.',
+          }),
+          status: 'context',
+        });
+        if (initial) session.draft.text = 'Help me think through this note and identify a useful next step.';
+      }
+      if (note.issueId && !session.messages.some((message) => message.id === 'issue-' + note.issueId)) {
+        session.messages.push({
+          id: 'issue-' + note.issueId,
+          role: 'assistant',
+          status: 'completed',
+          createdAt: stamp(),
+          text:
+            'Created [the new issue](/?issue=' +
+            encodeURIComponent(note.issueId) +
+            '). We can continue discussing it here. Would you like to delete the original note?',
+          localNoteId: note.id,
+        });
+        session.noteContext.issueId = note.issueId;
+      }
+    });
+    return this.view(id);
+  }
+  createSession(requestId, input, context) {
+    const ownership = context.ownership;
+    return {
+      id: randomUUID(),
+      requestId,
+      ...(ownership ? { ownership } : {}),
+      title: ownership ? 'Investigation discussion' : 'New conversation',
+      createdAt: stamp(),
+      updatedAt: stamp(),
+      status: 'idle',
+      settings: this.settings(input.settings),
+      draft: { text: '', attachments: [] },
+      messages: context.messages || [],
+      queue: [],
+      approvals: [],
+      paused: false,
+      activeMessageId: null,
+    };
+  }
+  create(input, context) {
+    const ownership = context.ownership;
+    const resultView = (id) => this.view(id, ownership);
+    const requestId = checkedId(input.requestId || randomUUID());
+    const existing = this.records().find(
+      (session) => session.requestId === requestId && discussionOwnerMatches(session, ownership)
+    );
+    if (existing) return resultView(existing.id);
+    const session = this.createSession(requestId, input, context);
+    this.save(session);
+    return resultView(session.id);
+  }
+  async action(input, context = {}) {
+    const ownership = context.ownership;
+    const resultView = (id) => this.view(id, ownership);
     requireThat(!this.closed && this.service.reviewMode !== 'preview', 'Open the live project to use Discuss.');
     this.service.ownServer();
     const operation = input.action;
     if (['send', 'retry', 'resume', 'steer'].includes(operation))
       this.service.serverControl?.allow('/api/project-discuss-action', input);
-    if (operation === 'create') {
-      const requestId = checkedId(input.requestId || randomUUID());
-      const existing = this.records().find((session) => session.requestId === requestId);
-      if (existing) return this.view(existing.id);
-      const session = {
-        id: randomUUID(),
-        requestId,
-        title: 'New conversation',
-        createdAt: stamp(),
-        updatedAt: stamp(),
-        status: 'idle',
-        settings: this.settings(input.settings),
-        draft: { text: '', attachments: [] },
-        messages: [],
-        queue: [],
-        approvals: [],
-        paused: false,
-        activeMessageId: null,
-      };
-      this.save(session);
-      return this.view(session.id);
+    if (operation === 'open-skill-extension') {
+      const path = ensureSkillExtension(join(this.service.root, 'user/chat/grilling.md'));
+      if (this.options.openFile) await this.options.openFile(path);
+      else await promisify(execFile)('/usr/bin/open', [path]);
+      return resultView(input.conversationId || undefined);
     }
+    if (operation === 'create') return this.create(input, context);
     const id = checkedId(input.conversationId);
-    let session = this.read(id);
-    if (operation === 'close') {
+    let session = this.readOwned(id, ownership);
+    if (operation === 'delete-note') {
+      requireThat(
+        session.messages.some((message) => message.localNoteId === input.noteId),
+        'Choose the original note offered in this conversation.'
+      );
+      const notes = new LocalNotes(this.service.root);
+      const current = notes.view();
+      if (current.notes.some((note) => note.id === input.noteId))
+        notes.action({ action: 'delete', id: input.noteId, basis: current.basis });
+      this.change(id, (saved) => {
+        for (const message of saved.messages) if (message.localNoteId === input.noteId) message.localNoteDeleted = true;
+      });
+    } else if (operation === 'close') {
       requireThat(!session.closedAt, 'This project conversation is already closed.');
       this.change(id, (s) => {
         s.closedAt = stamp();
       });
-      return this.view(input.returnTo ? checkedId(input.returnTo) : undefined);
+      return resultView(input.returnTo ? checkedId(input.returnTo) : undefined);
     } else if (operation === 'settings')
       this.change(id, (s) => {
         s.settings = this.settings(input.settings, s.settings);
@@ -249,11 +352,18 @@ export class ProjectDiscuss {
       });
     else if (operation === 'send') {
       const clientId = checkedId(input.clientId || randomUUID());
-      if (!session.messages.some((m) => m.id === clientId) && !session.queue.some((m) => m.id === clientId)) {
-        const message = this.envelope(session, { ...input, clientId });
+      if (!containsMessage(session, clientId)) {
+        const message = this.envelope(session, { ...input, clientId, reportContext: context.reportContext });
         this.change(id, (s) => {
           if (s.title === 'New conversation') s.title = message.text.slice(0, 80) || 'Attached files';
-          s.queue.push(message);
+          const failed =
+            !s.activeMessageId && s.messages.findLast((entry) => entry.role === 'assistant')?.status === 'failed';
+          if (failed) {
+            s.paused = false;
+            s.queue.unshift(message);
+          } else {
+            s.queue.push(message);
+          }
           s.draft = { text: '', attachments: [] };
         });
       }
@@ -261,7 +371,12 @@ export class ProjectDiscuss {
     } else if (operation === 'edit-queued') {
       const previous = session.queue.find((m) => m.id === input.messageId);
       requireThat(previous, 'That message has already started or was removed.');
-      const next = this.envelope(session, { ...previous, ...input, clientId: previous.id });
+      const next = this.envelope(session, {
+        ...previous,
+        ...input,
+        clientId: previous.id,
+        reportContext: previous.reportContext,
+      });
       this.change(id, (s) => {
         s.queue[s.queue.findIndex((m) => m.id === previous.id)] = next;
       });
@@ -280,7 +395,7 @@ export class ProjectDiscuss {
         selected?.role === 'assistant' ? session.messages.find((m) => m.id === selected.replyTo) : selected;
       requireThat(original?.role === 'user', 'Choose the message to retry.');
       const clientId = checkedId(input.clientId || randomUUID());
-      if (!session.messages.some((m) => m.id === clientId) && !session.queue.some((m) => m.id === clientId))
+      if (!containsMessage(session, clientId))
         this.change(id, (s) => {
           for (const m of s.messages) if (m.status === 'running') m.status = 'interrupted';
           s.queue.unshift({
@@ -331,7 +446,7 @@ export class ProjectDiscuss {
         s.approvals = s.approvals.filter((a) => a.requestId !== input.requestId);
       });
     } else throw Error('Unknown project conversation operation.');
-    return this.view(id);
+    return resultView(id);
   }
   dispatch(id) {
     const session = this.read(id);
@@ -359,6 +474,7 @@ export class ProjectDiscuss {
         id: responseId,
         role: 'assistant',
         replyTo: message.id,
+        ...(message.reportContext ? { reportContext: copy(message.reportContext) } : {}),
         text: '',
         status: 'running',
         settings: copy(message.settings),
@@ -407,6 +523,7 @@ export class ProjectDiscuss {
         s.approvals = [];
         s.status = s.paused ? 'paused' : 'idle';
       });
+      retainReportConversation(this.service.root, this.read(id));
     }
   }
   close() {

@@ -1,3 +1,4 @@
+import { ensureProjectStores, closeProjectStores } from './factory-ui/stores/runtime.mjs';
 import { createServer as createHTTPServer } from 'node:http';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -11,6 +12,7 @@ import { controlServerAction } from './factory-ui/server-action.mjs';
 import { runtimeInfo } from './factory-ui/runtime.mjs';
 import { factoryEntry, uiDirectory } from './factory-ui/ui-source.mjs';
 import { JSDOM } from 'jsdom';
+import { createFactoryServer } from './factory-ui/http.mjs';
 
 const delay = (ms) => new Promise((done) => setTimeout(done, ms));
 function loadServerControlDom(html = '<header></header>') {
@@ -110,6 +112,8 @@ test('restart counts actual work once, blocks new work and waits for chats, perm
     control.request();
     assert.throws(() => control.allow('/api/start'), /New work is paused/);
     assert.throws(() => control.allow('/api/lifecycle-answer'), /New work is paused/);
+    assert.throws(() => control.allow('/api/project-discuss-action', { action: 'send' }), /New work is paused/);
+    assert.throws(() => control.allow('/api/discussion-turn'), /New work is paused/);
     assert.throws(() => control.allow('/api/discussion-commit', { continue: true }), /without continuing/);
     control.allow('/api/answer');
     control.allow('/api/discussion-commit');
@@ -285,6 +289,98 @@ test('No new actions pauses dispatch without restarting and can be turned off', 
     control.close();
     service.close();
   }
+});
+
+test('No new actions permits every chat while keeping work dispatch paused', (t) => {
+  const service = new FactoryUI(project(t));
+  const control = serverControl(service);
+  t.after(() => {
+    control.close();
+    service.close();
+  });
+  service.store.connected.add('existing-work');
+  control.pause();
+  for (const path of [
+    '/api/issue-chat-send',
+    '/api/issue-chat-control',
+    '/api/native-chat-prepare',
+    '/api/discussion-open',
+    '/api/discussion-turn',
+    '/api/discussion-skills',
+    '/api/discussion-retro',
+    '/api/coordinator-send',
+    '/api/coordinator-stop',
+    '/api/coordinator-fresh',
+  ])
+    assert.doesNotThrow(() => control.allow(path), path);
+  for (const path of ['/api/project-discuss-action', '/api/report-discuss-action']) {
+    for (const action of ['create', 'send', 'retry', 'resume', 'steer', 'close'])
+      assert.doesNotThrow(() => control.allow(path, { action }), `${path}: ${action}`);
+    assert.throws(() => control.allow(path, { action: 'unknown' }), /New work is paused/);
+  }
+  for (const action of ['investigation-discuss', 'automate-start', 'automate-message', 'automate-retry'])
+    assert.doesNotThrow(() => control.allow('/api/project-home-action', { action }), action);
+  for (const action of ['investigation-run', 'investigation-retry', 'automate-apply'])
+    assert.throws(() => control.allow('/api/project-home-action', { action }), /New work is paused/);
+  for (const path of ['/api/start', '/api/flow-action', '/api/project-home-action', '/api/coordinator-continue'])
+    assert.throws(() => control.allow(path, { action: 'start' }), /New work is paused/);
+  assert.equal(control.status().phase, 'paused');
+  service.store.connected.clear();
+});
+
+test('Discuss sends and drains queued prompts over HTTP with No new actions enabled', async (t) => {
+  const service = new FactoryUI(project(t));
+  const calls = [];
+  const held = Promise.withResolvers();
+  service.projectDiscussOptions = {
+    modelSettings: () => ({ defaults: { model: 'test', effort: 'high' }, models: [{ id: 'test' }], efforts: ['high'] }),
+    createProvider: () => ({
+      async turn(_session, message) {
+        calls.push(message.text);
+        if (calls.length === 1) await held.promise;
+        return { text: 'Reply' };
+      },
+      close() {},
+    }),
+  };
+  const server = createFactoryServer(service);
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(async () => {
+    held.resolve();
+    await new Promise((resolve) => server.close(resolve));
+    service.close();
+  });
+  const base = `http://127.0.0.1:${server.address().port}`;
+  const page = await fetch(base);
+  const cookie = page.headers.get('set-cookie').split(';')[0];
+  async function post(path, value = {}) {
+    const response = await fetch(base + '/api/' + path, {
+      method: 'POST',
+      headers: { cookie, origin: base, 'content-type': 'application/json', 'x-factory-action': 'manual' },
+      body: JSON.stringify(value),
+    });
+    const result = await response.json();
+    assert.equal(response.status, 200, JSON.stringify(result));
+    return result;
+  }
+  service.store.connected.add('existing-work');
+  await post('server-pause');
+  const { selected } = await post('project-discuss-action', { action: 'create' });
+  for (const text of ['First prompt', 'Queued prompt'])
+    await post('project-discuss-action', { action: 'send', conversationId: selected.id, text });
+  assert.deepEqual(calls, ['First prompt']);
+  held.resolve();
+  const deadline = Date.now() + 5000;
+  while (service.projectDiscuss.active.size && Date.now() < deadline) await delay(10);
+  assert.deepEqual(calls, ['First prompt', 'Queued prompt']);
+  const session = service.projectDiscuss.view(selected.id).selected;
+  assert.equal(
+    session.messages.filter((message) => message.role === 'assistant' && message.status === 'completed').length,
+    2
+  );
+  assert.equal(service.serverControl.status().phase, 'paused');
+  assert.throws(() => service.serverControl.allow('/api/flow-action', { action: 'play' }), /New work is paused/);
+  service.store.connected.clear();
 });
 
 test('header toggle shows immediate feedback while the request is pending', async () => {
@@ -710,4 +806,94 @@ test('restart waits for a storage batch even after its chat response has stopped
     control.close();
     service.close();
   }
+});
+
+async function localControlSession(t, service) {
+  let restarted = 0;
+  const server = createFactoryServer(service, {
+    restart: () => {
+      restarted++;
+    },
+  });
+  service.store.connected.add('retained-local-work');
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(async () => {
+    service.store.connected.clear();
+    await new Promise((resolve) => server.close(resolve));
+    await closeProjectStores(service);
+    service.close();
+  });
+  const url = `http://127.0.0.1:${server.address().port}`;
+  const headers = await session(url);
+  return {
+    restarted: () => restarted,
+    async post(path, input = {}) {
+      const response = await fetch(url + '/api/' + path, { method: 'POST', headers, body: JSON.stringify(input) });
+      return { status: response.status, value: await response.json() };
+    },
+  };
+}
+
+async function assertLocalControls(http) {
+  for (const [path, phase] of [
+    ['server-pause', 'paused'],
+    ['server-cancel-restart', 'idle'],
+    ['server-restart', 'draining'],
+    ['server-cancel-restart', 'idle'],
+  ]) {
+    const result = await http.post(path);
+    assert.equal(result.status, 200, JSON.stringify(result.value));
+    assert.equal(result.value.phase, phase);
+  }
+  assert.equal(http.restarted(), 0, 'Existing local work must keep the real restart callback idle.');
+}
+
+test('local pause and restart controls do not import or bootstrap legacy issue storage', async (t) => {
+  const root = project(t);
+  const id = '20261122-unreconciled-legacy';
+  const directory = join(root, '.issues/flows', id);
+  mkdirSync(directory, { recursive: true });
+  const path = join(root, '.issues', id + '.md');
+  const report = `---\nid: ${id}\ntitle: Retained legacy work\nstate: investigate\n---\nOriginal report.\n`;
+  writeFileSync(path, report);
+  const flow = JSON.stringify({ id, revision: 1, blocks: [{ kind: 'work', attempts: [{ status: 'running' }] }] });
+  writeFileSync(join(directory, 'flow.json'), flow);
+  const service = new FactoryUI(root);
+  const http = await localControlSession(t, service);
+  await assertLocalControls(http);
+  assert.equal(service.projectStores, undefined);
+  assert.equal(existsSync(join(root, '.issues/store-runtime')), false);
+  assert.equal(readFileSync(path, 'utf8'), report);
+  assert.equal(readFileSync(join(directory, 'flow.json'), 'utf8'), flow);
+  const shared = await http.post('server-action', { operation: 'resume', runId: 'legacy-worker' });
+  assert.equal(shared.status, 400);
+  assert.match(shared.value.error, /Recover active legacy attempts/);
+});
+
+test('local pause and restart controls stay available during a required store outage without shared reads or writes', async (t) => {
+  const service = new FactoryUI(project(t));
+  const stores = await ensureProjectStores(service, { fresh: true });
+  let reads = 0,
+    writes = 0;
+  const unavailable = () =>
+    Object.assign(Error('Required coordination store is unavailable.'), { code: 'STORE_UNAVAILABLE' });
+  for (const method of ['get', 'list', 'readSnapshot'])
+    if (stores.records[method])
+      stores.records[method] = async () => {
+        reads++;
+        throw unavailable();
+      };
+  stores.records.commit = async () => {
+    writes++;
+    throw unavailable();
+  };
+  const http = await localControlSession(t, service);
+  await assertLocalControls(http);
+  assert.equal(reads, 0);
+  assert.equal(writes, 0);
+  const shared = await http.post('server-action', { operation: 'resume', runId: 'unconfirmed-worker' });
+  assert.equal(shared.status, 400);
+  assert.match(shared.value.error, /coordination store is unavailable/);
+  assert.ok(reads > 0, 'Shared issue operations must still check their configured authority.');
+  assert.equal(writes, 0);
 });

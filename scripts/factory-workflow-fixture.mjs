@@ -1,20 +1,22 @@
 import { DeliveryStore } from './issue-delivery-store.mjs';
+import { initializeFolderSettings } from './factory-ui/issue-folder-settings.mjs';
 import { mkdirSync, writeFileSync, readFileSync, cpSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { gitFixture } from './git-fixture.mjs';
+import { factoryGitFixture } from './git-fixture.mjs';
 import { factory } from './factory-ledger.mjs';
 import { readQueue } from './factory-ui/data.mjs';
 import { digest } from './factory-ui/common.mjs';
 
-export function deliveryFixture(t) {
-  const queue = gitFixture(t, 'delivery-queue-'),
-    source = gitFixture(t, 'delivery-source-');
+export function deliveryFixture(t, { sourceChange = false } = {}) {
+  const queue = factoryGitFixture(t, 'delivery-queue-'),
+    source = factoryGitFixture(t, 'delivery-source-');
   for (const repo of [queue, source]) {
     writeFileSync(join(repo.root, '.gitignore'), '.issues/\n');
     writeFileSync(join(repo.root, 'code.js'), 'export const value = 1;\n');
+    initializeFolderSettings(repo.root);
     repo.git('add', '.');
     repo.git('commit', '-qm', 'source');
-    mkdirSync(join(repo.root, '.issues'));
+    mkdirSync(join(repo.root, '.issues'), { recursive: true });
   }
   const helper = join(queue.root, '.agents/skills/issues/scripts');
   mkdirSync(helper, { recursive: true });
@@ -32,6 +34,11 @@ export function deliveryFixture(t) {
   );
   writeFileSync(join(queue.root, '.issues/preferences.json'), JSON.stringify({ commit: true }));
   factory(queue.root).init();
+  const base = source.git('rev-parse', 'HEAD');
+  if (sourceChange) {
+    writeFileSync(join(source.root, 'code.js'), 'export const value = 2;\n');
+    source.git('commit', '-qam', 'Issue change');
+  }
   const revision = source.git('rev-parse', 'HEAD'),
     tree = source.git('rev-parse', 'HEAD^{tree}');
   const log = join(source.root, '.issues/audit.log');
@@ -58,7 +65,7 @@ export function deliveryFixture(t) {
       path,
       JSON.stringify({
         checkpoint,
-        base: revision,
+        base,
         snapshot_tree: tree,
         passed: true,
         changed_files: [],
@@ -83,7 +90,7 @@ export function deliveryFixture(t) {
     reportDigest: digest(issue.content),
     checkout: source.root,
     revision,
-    base: revision,
+    base,
     verification,
     requirements: [
       { description: 'Reviewed delivered behavior', evidence: [{ path: log, sha256: digest(readFileSync(log)) }] },
