@@ -1101,8 +1101,19 @@ Manual owned operations and Update Branch blocks publish admission and completio
 through `stores/providers/git-transaction.mjs`. `git-read-set.mjs` checks record
 and list dependencies before retrying disjoint peer changes without replaying work.
 `git-github.mjs` publishes matching prepared Git objects with the configured App
-and conditionally updates the metadata ref. `record-payloads.mjs` shares verified
-immutable payloads within one transaction. Progress saves cannot overlap completion.
+and conditionally updates the metadata ref. `stores/metadata-operation.mjs` scopes immutable payload reuse across an operation
+and uses the provider’s outer transaction when supported.
+`record-payloads.mjs` shares verified
+immutable payloads within one metadata operation. Standalone record lists use a
+fresh snapshot for both records and overflow relocation metadata, avoiding a
+remote authority lookup for each retained payload.
+Progress saves cannot overlap completion.
+`stores/snapshots.mjs` keeps the display API hydrated while persisting a small
+atomic index over immutable per-issue fragments. Selected refreshes serialize only
+the selected issues; legacy caches convert on installation. Full authoritative
+refreshes can repair damaged fragments while retaining local report drafts.
+PostgreSQL records and receipts up to 1 MiB use native JSONB; larger payloads retain
+the configured Artifact store.
 See the [Update Branch measurements](../plans/update-branch-performance.md).
 `flow-merge.mjs` shares the Git fetch and merge helpers for Destination, budgets recovery per blocker, stops repeated failing source trees, waits for GitHub checks, and binds approval to the exact issue commit
 and target revision. `flow-merge-github.mjs` bounds transient GitHub observation

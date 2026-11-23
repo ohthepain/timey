@@ -1225,3 +1225,10 @@ just-uploaded payloads, while replay and later reads still validate storage.
 They also check scoped payload reuse, independent values, failure retries and
 expiry for detached callbacks. Git transaction checks cover disjoint peer updates
 without callback replay and rejection of changed input or command prefixes.
+
+`node --test scripts/store-snapshot-files.check.mjs` verifies legacy display-cache
+conversion, scoped issue/claim/command preservation, fresh-process reads, immutable
+objects, fragment corruption, failed-index rollback, deletion and authoritative
+cache repair with local drafts. `scripts/snapshot-refresh-benchmark.mjs` compares
+selected cache publication against a fixed Git revision in disposable directories;
+it checks selected and unrelated issue values and never changes shared records.

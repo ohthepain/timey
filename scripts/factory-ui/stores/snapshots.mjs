@@ -30,25 +30,97 @@ function reportPath(root, issue) {
   return join(root, directory, validIdentity(issue.id) + '.md');
 }
 
-export function readSnapshot(root) {
-  const path = snapshotPath(root);
+function fileStamp(path) {
   const details = statSync(path, { throwIfNoEntry: false });
-  if (!details) {
-    snapshotCache.delete(path);
-    return null;
-  }
-  const stamp = `${details.ino}:${details.size}:${details.mtimeMs}`;
-  const cached = snapshotCache.get(path);
-  if (cached?.stamp === stamp) return cached.snapshot;
-  const snapshot = JSON.parse(readFileSync(path, 'utf8'));
+  return details ? `${details.ino}:${details.size}:${details.mtimeMs}` : null;
+}
+
+function fragmentPath(root, id, digest) {
+  validIdentity(id);
   assertStoreState(
-    snapshot.version === 1 && Array.isArray(snapshot.issues),
+    typeof digest === 'string' && /^[a-f0-9]{64}$/.test(digest),
+    'STORE_INVALID_SNAPSHOT',
+    'The display snapshot fragment identity is invalid.'
+  );
+  return join(root, '.issues/store-runtime/snapshot-issues', id, digest + '.json');
+}
+
+function readFragment(root, ref, previous) {
+  const path = fragmentPath(root, ref.id, ref.sha256);
+  const stamp = fileStamp(path);
+  assertStoreState(
+    Boolean(stamp),
+    'STORE_INVALID_SNAPSHOT',
+    'A display snapshot fragment is missing. Refresh authoritative storage.'
+  );
+  if (previous?.stamp === stamp) return previous;
+  const bytes = readFileSync(path);
+  assertStoreState(
+    bytesHash(bytes) === ref.sha256,
+    'STORE_INVALID_SNAPSHOT',
+    'A display snapshot fragment changed. Refresh authoritative storage.'
+  );
+  const issue = JSON.parse(bytes.toString());
+  assertStoreState(
+    issue.id === ref.id && typeof issue.report === 'string',
+    'STORE_INVALID_SNAPSHOT',
+    'The display snapshot fragment identifies another issue.'
+  );
+  return { issue: immutable(issue), stamp, path, ref };
+}
+
+function hydrateSnapshot(root, stored, cached) {
+  assertStoreState(
+    [1, 2].includes(stored.version) && Array.isArray(stored.issues),
     'STORE_INVALID_SNAPSHOT',
     'The display snapshot needs reconciliation.'
   );
-  const saved = immutable({ ...snapshot, authoritative: false });
-  snapshotCache.set(path, { stamp, snapshot: saved });
-  return saved;
+  const fragments = new Map();
+  const issues =
+    stored.version === 1
+      ? stored.issues
+      : stored.issues.map((ref) => {
+          assertStoreState(!fragments.has(ref.id), 'STORE_INVALID_SNAPSHOT', 'The display snapshot repeats an issue.');
+          const previous = cached?.fragments.get(ref.id);
+          const fragment = readFragment(root, ref, previous?.ref.sha256 === ref.sha256 ? previous : null);
+          fragments.set(ref.id, fragment);
+          return fragment.issue;
+        });
+  return { snapshot: immutable({ ...stored, version: 1, authoritative: false, issues }), fragments };
+}
+
+export function readSnapshot(root) {
+  const path = snapshotPath(root);
+  const stamp = fileStamp(path);
+  if (!stamp) {
+    snapshotCache.delete(path);
+    return null;
+  }
+  const cached = snapshotCache.get(path);
+  if (
+    cached?.stamp === stamp &&
+    [...cached.fragments.values()].every((fragment) => fileStamp(fragment.path) === fragment.stamp)
+  )
+    return cached.snapshot;
+  const decoded = hydrateSnapshot(root, JSON.parse(readFileSync(path, 'utf8')), cached);
+  snapshotCache.set(path, { stamp, ...decoded });
+  return decoded.snapshot;
+}
+
+function snapshotFileChanges(root, saved) {
+  const cached = snapshotCache.get(snapshotPath(root));
+  const changes = [];
+  const refs = saved.issues.map((issue) => {
+    const previous = cached?.fragments.get(issue.id);
+    if (previous?.issue === issue) return previous.ref;
+    const body = JSON.stringify(issue);
+    const ref = { id: issue.id, sha256: bytesHash(body) };
+    const path = fragmentPath(root, ref.id, ref.sha256);
+    if (!existsSync(path) || bytesHash(readFileSync(path)) !== ref.sha256) changes.push({ path, body });
+    return ref;
+  });
+  changes.push({ path: snapshotPath(root), body: JSON.stringify({ ...saved, version: 2, issues: refs }) + '\n' });
+  return changes;
 }
 
 function draftChange(root, issue, prior, path) {
@@ -121,13 +193,23 @@ function mergeSnapshotMetadata(snapshot, previous, issues) {
   return saved;
 }
 
+function previousSnapshot(root, snapshot) {
+  try {
+    return readSnapshot(root);
+  } catch (error) {
+    if (error.code !== 'STORE_INVALID_SNAPSHOT' || snapshot.issueIds?.length) throw error;
+    snapshotCache.delete(snapshotPath(root));
+    return null;
+  }
+}
+
 function prepareSnapshot(root, snapshot) {
   assertStoreState(
     snapshot.version === 1 && Array.isArray(snapshot.issues),
     'STORE_INVALID_SNAPSHOT',
     'A confirmed snapshot is required.'
   );
-  const previous = readSnapshot(root);
+  const previous = previousSnapshot(root, snapshot);
   const byId = new Map((previous?.issues || []).map((issue) => [issue.id, issue]));
   const changes = [];
   for (const issue of snapshot.issues) {
@@ -150,10 +232,7 @@ function prepareSnapshot(root, snapshot) {
   }
   for (const issue of snapshot.issues) merged.set(issue.id, issue);
   const saved = mergeSnapshotMetadata(snapshot, previous, [...merged.values()]);
-  changes.push({
-    path: snapshotPath(root),
-    body: JSON.stringify(saved, null, 2) + '\n',
-  });
+  changes.push(...snapshotFileChanges(root, saved));
   return { changes, saved, previous };
 }
 
@@ -195,7 +274,10 @@ function applyGeneration(root, changes) {
 export function installSnapshot(root, snapshot) {
   const prepared = prepareSnapshot(root, snapshot);
   applyGeneration(root, prepared.changes);
-  if (snapshot.deletedIssueIds?.length)
+  if (snapshot.deletedIssueIds?.length) {
     cleanupDeletedCache(root, { ...prepared.saved, deletedIssueIds: snapshot.deletedIssueIds }, prepared.previous);
+    for (const id of snapshot.deletedIssueIds)
+      rmSync(join(root, '.issues/store-runtime/snapshot-issues', validIdentity(id)), { recursive: true, force: true });
+  }
   return prepared.saved;
 }
