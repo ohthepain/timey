@@ -32,7 +32,7 @@ export async function manualCloseBrowserChecks({ page, project, service, output,
     const observations = [];
     for (const automatic of [false, true]) {
       const id = '20261122-manual-close-' + automatic;
-      writeBrowserIssue(project, {
+      await writeBrowserIssue(service, {
         id,
         title: 'Close after Merge ' + automatic,
         body: 'Committed as ' + git(project, 'rev-parse', 'HEAD'),
@@ -49,7 +49,7 @@ export async function manualCloseBrowserChecks({ page, project, service, output,
           summary: 'Fixture delivery prerequisite completed.',
         });
       });
-      flows.store.save(flow, flow.revision);
+      await flows.store.save(flow, flow.revision);
       await page.goto('/?issue=' + id);
       await page.locator('[data-block="request"]').click();
       const checkbox = page.getByRole('checkbox', {

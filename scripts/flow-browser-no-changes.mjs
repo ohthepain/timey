@@ -10,7 +10,11 @@ export async function noChangesBrowserChecks({ page, service, project, output, r
     const id = '20261121-no-changes-fixture';
     const lifecyclePath = join(project, '.issues/triage-labels.md');
     if (!existsSync(lifecyclePath)) copyFileSync(join(root, '.issues/triage-labels.md'), lifecyclePath);
-    writeBrowserIssue(project, { id, title: 'No changes required', body: 'The reported behavior already works.' });
+    await writeBrowserIssue(service, {
+      id,
+      title: 'No changes required',
+      body: 'The reported behavior already works.',
+    });
     const issue = service.flows.selected(id);
     const flow = service.flows.read(issue);
     const checkout = join(project, '.issues/issue-work', id);
@@ -22,7 +26,7 @@ export async function noChangesBrowserChecks({ page, service, project, output, r
     request.data.fields = { type: 'bug', goal: 'Check the reported behavior' };
     const publish = flow.blocks.find((block) => block.kind === 'publish');
     publish.after = [];
-    service.flows.store.save(flow, flow.revision);
+    await service.flows.store.save(flow, flow.revision);
     if (!git(project, 'remote').split('\n').includes('origin'))
       git(project, 'remote', 'add', 'origin', 'git@github.com:test/fixture.git');
     git(project, 'remote', 'set-url', '--push', 'origin', 'git@github.com:test/fixture.git');

@@ -61,6 +61,10 @@ export default async function captureStartChecks(page) {
       return select && !select.disabled && select.options.length > 1;
     });
     await page.locator('#capture-folder').selectOption('Inbox');
+    await page.waitForFunction(() => {
+      const select = document.querySelector('#capture-issue-store');
+      return select && !select.disabled && select.value === 'local';
+    });
   }
 
   async function verifyDefaultCapture(page, captures, starts) {
@@ -91,6 +95,7 @@ export default async function captureStartChecks(page) {
     );
     expect(captures.length === 1, 'Capture request was not received.');
     expect(captures[0].model === 'gpt-6-astra', 'Model not retained');
+    expect(captures[0].storageProfile === 'local', 'Storage profile not retained');
     expect(starts.length === 0, 'Save without selected operations started work.');
   }
 

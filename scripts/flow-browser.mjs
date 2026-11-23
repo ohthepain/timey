@@ -280,11 +280,11 @@ function unexpectedConsoleErrors(entries) {
     );
   });
 }
-function connectionRecoveryIssue() {
+async function connectionRecoveryIssue() {
   const id = '20261120-connection-recovery-fixture';
   if (!existsSync(join(project, '.issues/triage-labels.md')))
     copyFileSync(join(root, '.issues/triage-labels.md'), join(project, '.issues/triage-labels.md'));
-  writeBrowserIssue(project, {
+  await writeBrowserIssue(service, {
     id,
     title: 'Reconnect the selected issue',
     body: 'Keep the selected issue after reconnecting.',
@@ -668,7 +668,7 @@ try {
   });
   await check('Issue flow scrollbar appears only while scrolling', async () => {
     const id = '20261122-issue-scrollbar-fixture';
-    writeBrowserIssue(project, {
+    await writeBrowserIssue(service, {
       id,
       title: 'Scroll the issue flow',
       body: 'Show the scrollbar only during scrolling.',
@@ -877,7 +877,7 @@ try {
   });
   await check(storageStatusCheck, async () => {
     const id = '20261123-storage-status-fixture';
-    writeBrowserIssue(project, { id, title: 'Confirm storage recovery', body: 'Keep the local draft.' });
+    await writeBrowserIssue(service, { id, title: 'Confirm storage recovery', body: 'Keep the local draft.' });
     let storage = {
       phase: 'refreshing',
       available: false,
@@ -942,7 +942,7 @@ try {
   });
   await check(blockInspectionCheck, async () => {
     const id = '20261123-block-inspection-fixture';
-    writeBrowserIssue(project, { id, title: 'Read saved state on demand', body: 'Keep navigation local.' });
+    await writeBrowserIssue(service, { id, title: 'Read saved state on demand', body: 'Keep navigation local.' });
     const inspections = [];
     const refreshes = [];
     const observeRequest = (request) => {
@@ -1049,7 +1049,7 @@ try {
   });
   await check(requestSaveCheck, async () => {
     const id = '20261123-request-save-fixture';
-    writeBrowserIssue(project, {
+    await writeBrowserIssue(service, {
       id,
       title: 'Save an existing request',
       body: 'Original request',
@@ -1241,7 +1241,7 @@ try {
     await page.keyboard.press('Escape');
     await page.getByRole('button', { name: 'Inspect UI' }).click();
     await page.locator('#refresh').click();
-    await page.locator('#toast').filter({ hasText: 'Saved flow refreshed.' }).waitFor();
+    await page.locator('#toast').filter({ hasText: 'Current view refreshed.' }).waitFor();
     await tab.hover();
     await page.getByRole('tooltip').filter({ hasText: 'Inherited' }).waitFor();
     await tab.click({ button: 'right' });
@@ -2689,7 +2689,7 @@ try {
   await check(
     'Flow and Classic reload the selected issue after a lost connection without replaying the click',
     async () => {
-      issueId = connectionRecoveryIssue();
+      issueId = await connectionRecoveryIssue();
       const helperDir = '.agents/skills/issues/scripts';
       mkdirSync(join(project, helperDir), { recursive: true });
       for (const file of ['human-input.mjs', 'human-input-version.json']) {

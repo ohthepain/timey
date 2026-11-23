@@ -143,7 +143,12 @@ test('staged audit sees the index even when unstaged changes hide an unused file
 
 function copySourceSeparation(root) {
   mkdirSync(join(root, 'scripts/factory-ui'), { recursive: true });
-  for (const name of ['source-issue-separation.mjs', 'shared-issue-config.mjs', 'common.mjs'])
+  for (const name of [
+    'source-issue-separation.mjs',
+    'shared-issue-config.mjs',
+    'common.mjs',
+    'diagnostic-activity.mjs',
+  ])
     writeFileSync(join(root, 'scripts/factory-ui', name), readFileSync(join('scripts/factory-ui', name)));
 }
 
