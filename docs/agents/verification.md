@@ -1,5 +1,12 @@
 # Verification
 
+`node scripts/flow-browser.mjs --investigation-reports` checks retained Markdown
+and HTML reports in the actual reader. The editorial HTML fixture checks embedded
+styles, mobile width, hidden mobile navigation, scroll restoration, retained and
+missing evidence links, blocked scripts, and blocked external resources. It uses
+saved fixture content, not live model generation, so it does not establish that a
+model follows the report design prompt.
+
 `node --test scripts/discussion-evidence.check.mjs` checks temporary discussion
 protocol configuration, complete context/input references above the provider
 limit, small follow-up messages, and cleanup that preserves the project. It uses

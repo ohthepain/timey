@@ -4,6 +4,26 @@ Language used to coordinate work and review changes.
 
 ## Language
 
+**Factory installation**:
+A project's own Factory, with settings and work belonging to that project.
+
+**Factory settings**:
+The configuration of Factory within one project, including its provider connections,
+model availability, and execution controls.
+_Avoid_: Project settings as the name of the Factory configuration UI
+
+**Enabled model**:
+A model the person has chosen to permit for Factory work. Quota pauses or other
+restrictions may still make it unavailable.
+
+**Provider quota pause**:
+A temporary block on all models from a provider when its reported remaining
+allowance falls below the project's configured threshold.
+
+**Allow work without quota monitoring**:
+The person's explicit choice to permit Factory work with a provider whose remaining
+allowance is unknown. Confirmed exhaustion still blocks affected work.
+
 **Spoken send command**:
 The person's explicit choice to send a dictated prompt by saying “go” as its
 final word. Every chat excludes the command word from the submitted prompt.

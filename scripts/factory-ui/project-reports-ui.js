@@ -3,6 +3,38 @@
   const escape = window.timeyEscapeHTML;
   const template = (id, values) =>
     document.getElementById(id).innerHTML.replace(/{{(\w+)}}/g, (_match, key) => values[key]);
+  function htmlReport(report) {
+    const doc = new DOMParser().parseFromString(report.content, 'text/html');
+    const policy = doc.createElement('meta');
+    policy.httpEquiv = 'Content-Security-Policy';
+    policy.content = `default-src 'none'; style-src 'unsafe-inline'; img-src ${location.origin}/api/report-evidence; base-uri 'none'; form-action 'none'`;
+    doc.head.prepend(policy);
+    const evidence = new Map(report.evidence.map((item, index) => [item.original, { ...item, index }]));
+    for (const link of doc.querySelectorAll('a[href], img[src]')) {
+      const attribute = link.tagName === 'A' ? 'href' : 'src';
+      const path = link.getAttribute(attribute);
+      if (path.startsWith('#')) continue;
+      const item = evidence.get(path);
+      if (item?.status === 'verified') {
+        link.setAttribute(
+          attribute,
+          `${location.origin}/api/report-evidence?report=${encodeURIComponent(report.id)}&item=${item.index}`
+        );
+      } else if (item || !/^[a-z][a-z0-9+.-]*:/i.test(path)) {
+        link.replaceWith(
+          doc.createTextNode(
+            `${link.textContent || link.getAttribute('alt') || 'Evidence'} [evidence ${item?.status || 'unavailable'}]`
+          )
+        );
+        continue;
+      }
+      if (link.tagName === 'A') {
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+      }
+    }
+    return `<iframe class="report-document" title="${escape(report.title)}" sandbox="allow-same-origin allow-popups" srcdoc="${escape('<!DOCTYPE html>\n' + doc.documentElement.outerHTML)}"></iframe>`;
+  }
   window.createProjectReportsUI = ({ request, post }) => {
     const root = document.getElementById('project-reports');
     let visible = false,
@@ -118,11 +150,28 @@
         runNumber: run.number,
         title: escape(report.title),
         revision: escape(report.source.revision),
-        content: window.timeyChatMarkdown(retainedLinks(report)),
+        content: /^\s*<!doctype html\b/i.test(report.content)
+          ? htmlReport(report)
+          : window.timeyChatMarkdown(retainedLinks(report)),
         evidence:
           report.evidence.map((item, index) => evidenceMarkup(item, index, report.id)).join('') ||
           '<p class="muted">No separate evidence files were saved.</p>',
       });
+      const frame = root.querySelector('.report-document');
+      if (frame) {
+        root.querySelector('.report-reading').classList.add('report-reading-html');
+        frame.addEventListener('load', () => {
+          frame.contentWindow.scrollTo(0, saved.htmlScroll || 0);
+          frame.contentWindow.addEventListener(
+            'scroll',
+            () => {
+              saved.htmlScroll = frame.contentWindow.scrollY;
+              remember();
+            },
+            { passive: true }
+          );
+        });
+      }
     }
     function evidenceMarkup(item, index, id) {
       const link =

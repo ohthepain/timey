@@ -880,7 +880,16 @@ explicit generation gets another identity. `investigation-outputs.mjs` owns
 approval-needed issue capture and per-finding receipts shared across skills.
 `investigation-output-execution.mjs` binds these guarded tools to the active output
 and retains returned saved-result references before snapshot cleanup.
-`project-reports-ui.js` owns the Reports library and full-width reader. Its lower
+The default `factory/system/skills/generate-report/SKILL.md` uses `/bro` for
+user-facing copy and its linked `report-design.md` for a self-contained editorial
+HTML document. Internal issue records and machine-readable outputs keep their
+existing formats. The Generate report block delegates copy and layout to the
+selected skill.
+`project-reports-ui.js` owns the Reports library and full-width reader. Complete
+HTML reports render in a script-disabled iframe with isolated styles and a
+restrictive resource policy. Evidence links resolve to verified retained copies;
+unavailable evidence stays explicit. The reader preserves HTML scroll position
+and continues to render existing Markdown publications. Its lower
 panel reuses `project-discuss-ui.js`; `report-discussion.mjs` binds that conversation
 to the investigation and copies selected report context into each message.
 Archived inquiry execution stays guarded while retained report discussion remains
