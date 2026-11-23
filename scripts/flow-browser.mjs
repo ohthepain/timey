@@ -196,7 +196,7 @@ service.codex.call = async (method) => {
   throw Error('Unexpected model call ' + method);
 };
 const executor = {
-  async run({ signal, onProgress, onStep, block, issue }) {
+  async run({ signal, onProgress, onStep, block, issue, attempt }) {
     const number = logs.execution.length + 1;
     logs.execution.push({ number, blockId: block.id, issueId: issue.id });
     onStep('pnpm test');
@@ -209,7 +209,7 @@ const executor = {
         signal.addEventListener('abort', () => reject(Error('Stopped by the user.')), { once: true });
       });
     }
-    const evidence = join(project, 'flow-browser-result.txt');
+    const evidence = join(project, '.issues', 'flow-browser-result-' + attempt.id + '.txt');
     writeFileSync(evidence, 'Explicit browser retry completed.\n');
     return {
       summary: 'Explicit browser retry completed.',
@@ -299,6 +299,27 @@ function unexpectedConsoleErrors(entries) {
     );
   });
 }
+function unexpectedWorkflowConsoleErrors() {
+  const expected = new Map([
+    [400, JSON.stringify({ error: 'Model is disabled in Factory settings.' })],
+    [409, JSON.stringify({ error: 'Request admission rejected.' })],
+  ]);
+  const errors = unexpectedConsoleErrors(logs.console);
+  const responses = logs.responses.filter(
+    ({ path, status, body }) => path === '/api/flow-action' && expected.has(status) && expected.get(status) === body
+  );
+  for (const { path, status } of responses) {
+    const index = errors.findIndex(
+      ({ location, text }) =>
+        location?.url?.endsWith(path) &&
+        text.startsWith('Failed to load resource') &&
+        text.includes('status of ' + status)
+    );
+    if (index >= 0) errors.splice(index, 1);
+  }
+  return errors;
+}
+
 async function connectionRecoveryIssue() {
   const id = '20261120-connection-recovery-fixture';
   if (!existsSync(join(project, '.issues/triage-labels.md')))
@@ -533,7 +554,7 @@ try {
     const failure = { url: request.url(), error: request.failure() };
     const cancelledRead =
       request.method() === 'GET' &&
-      new URL(request.url()).pathname === '/api/flow' &&
+      ['/api/flow', '/api/flow-changes'].includes(new URL(request.url()).pathname) &&
       failure.error?.errorText === 'net::ERR_ABORTED';
     logs[cancelledRead ? 'cancelledReads' : 'failedRequests'].push(failure);
   });
@@ -1149,6 +1170,7 @@ try {
   const description =
     'Understand why the save button loses text\nDone: The text survives a reload.\nProof: Retained saved text.\nKnown facts: The problem occurs after refresh.\nConstraints: Reproduce before changing code.';
   await check('Folder plus creates an issue directly in that folder and retains typed wording', async () => {
+    await page.goto('/');
     await page.locator('#new-folder').click();
     await page.locator('#folder-name').fill('Browser folder');
     await page.locator('#folder-form button[type="submit"]').click();
@@ -1588,8 +1610,8 @@ try {
     await clickAction(page.locator('#request-form button[type="submit"]'));
     await poll(
       view,
-      (value) => requestData(value.flow).fields?.type === 'bug',
-      'Request clarification did not finish.'
+      (value) => value.flow.routeType === 'bug' && requestData(value.flow).fields?.type === 'bug',
+      'Request clarification did not save its fields and route.'
     );
     await page.reload();
     await page.locator('#request-form').waitFor();
@@ -1634,8 +1656,10 @@ try {
     const updated = await clickAction(wand);
     assert.equal(updated.flowDefinitions.updated, false);
     assert.equal(updated.flow.definition.id, 'team-delivery');
+    assert.equal(updated.flow.definition.name, 'Updated team delivery');
+    assert.ok(updated.flow.revision > linked.flow.revision);
     const rebuilt = await clickAction(wand);
-    assert.ok(rebuilt.flow.revision > updated.flow.revision);
+    assert.equal(rebuilt.flow.revision, updated.flow.revision);
     for (const data of [result, switched, linked, updated, rebuilt]) {
       assert.deepEqual(data.flow.blocks.find((block) => block.kind === 'request').attempts, expected);
     }
@@ -1768,8 +1792,11 @@ try {
     await page.setViewportSize({ width: 1440, height: 960 });
   });
   await check('Block comments remain attached after reload', async () => {
+    await page.reload();
     await block(addedId);
-    await page.locator('#comment-form [name="comment"]').fill('Keep every partial attempt for review.');
+    const comment = page.locator('#comment-form [name="comment"]');
+    await comment.fill('Keep every partial attempt for review.');
+    assert.equal(await comment.inputValue(), 'Keep every partial attempt for review.');
     await clickAction(page.locator('#comment-form button[type="submit"]'));
     await page.reload();
     await page.locator('[data-block="' + addedId + '"]').waitFor();
@@ -1896,7 +1923,9 @@ try {
     await clickAction(page.locator('[data-action="stop"]'));
     const stopped = await poll(
       view,
-      (data) => data.flow.blocks.find((item) => item.id === workId).attempts[0]?.status === 'stopped',
+      (data) =>
+        data.flow.blocks.find((item) => item.id === workId).attempts[0]?.status === 'stopped' &&
+        !service.flows.active.has(issueId),
       'Stop was not retained.'
     );
     const attempt = stopped.flow.blocks.find((item) => item.id === workId).attempts[0];
@@ -1909,11 +1938,14 @@ try {
     assert.ok(stopped.flow.blocks.filter((item) => item.suggested).every((item) => item.attempts.length === 0));
   });
   await check('Retry retains both attempts and does not start the next block', async () => {
+    await page.reload();
     await page.locator('#run-block').filter({ hasText: 'Retry' }).waitFor();
     await clickAction(page.locator('#run-block'));
     const completed = await poll(
       view,
-      (data) => data.flow.blocks.find((item) => item.id === workId).attempts.at(-1)?.status === 'completed',
+      (data) =>
+        data.flow.blocks.find((item) => item.id === workId).attempts.at(-1)?.status === 'completed' &&
+        !service.flows.active.has(issueId),
       'Retry did not complete.'
     );
     const attempts = completed.flow.blocks.find((item) => item.id === workId).attempts;
@@ -2044,7 +2076,8 @@ try {
       ),
       []
     );
-    assert.deepEqual(unexpectedConsoleErrors(logs.console), []);
+    await Promise.all(pendingResponses);
+    assert.deepEqual(unexpectedWorkflowConsoleErrors(), []);
     assert.equal(logs.execution.length, 2);
     assert.equal(logs.modelCalls.length, 0);
   });
@@ -2054,7 +2087,9 @@ try {
     await clickAction(page.locator('#run-block'));
     await poll(
       view,
-      (data) => data.flow.blocks.find((item) => item.id === open.id).attempts.at(-1)?.status === 'completed',
+      (data) =>
+        data.flow.blocks.find((item) => item.id === open.id).attempts.at(-1)?.status === 'completed' &&
+        !service.flows.active.has(issueId),
       'The Markdown Work block did not finish.'
     );
     assert.equal(logs.execution.length, 3);
