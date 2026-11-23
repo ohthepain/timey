@@ -2,6 +2,7 @@
 <html lang="en">
   <head>
     <link rel="stylesheet" href="/project-discuss.css" />
+    <link rel="stylesheet" href="/project-settings.css" />
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>Factory · Issue queue</title>
@@ -2103,6 +2104,10 @@
       Source code changed on disk since this page loaded. Reload to see the latest version.
     </div>
     <div id="connection-banner" role="alert" hidden></div>
+    <aside id="provider-status-banner" class="provider-status-banner" role="status" hidden>
+      <span data-provider-status-text></span>
+      <button type="button" data-provider-settings-open>Factory settings</button>
+    </aside>
     <header>
       <a href="#/queue"><b>Factory</b></a
       ><a href="#/coordinator">Coordinator</a><small id="connection">Connecting…</small>
@@ -2142,6 +2147,7 @@
       <div class="actions"><button id="approve">Confirm</button><button id="cancel">Cancel</button></div>
     </dialog>
     <link rel="stylesheet" href="/ai-text.css" />
+    <script src="/provider-settings-ui.js"></script>
     <script src="/hotkeys-ui.js"></script>
     <script src="/ai-text-ui.js"></script>
     <script src="/view-state.js"></script>
@@ -4626,12 +4632,14 @@
       }
       function issueModelSettings(issue) {
         const selected = issue.modelSelection;
-        const models = data.modelSettings.models
+        let models = data.modelSettings.models
           .map(
             (choice) =>
               `<option value="${esc(choice.id)}" ${selected.model === choice.id ? 'selected' : ''}>${esc(choice.name)}</option>`
           )
           .join('');
+        if (selected.model && !data.modelSettings.models.some((choice) => choice.id === selected.model))
+          models += `<option value="${esc(selected.model)}" selected disabled>${esc(selected.model)} · unavailable</option>`;
         const efforts = data.modelSettings.efforts
           .map(
             (effort) =>
@@ -5167,6 +5175,13 @@
             $('default-effort').innerHTML = data.modelSettings.efforts
               .map((effort) => `<option value="${esc(effort)}">${esc(effort)}</option>`)
               .join('');
+            if (!data.modelSettings.models.some((choice) => choice.id === data.modelSettings.defaults.model))
+              $('default-model').add(
+                new Option(
+                  data.modelSettings.defaults.model + ' · ' + data.modelSettings.defaultAvailability.reason,
+                  data.modelSettings.defaults.model
+                )
+              );
             $('default-model').value = data.modelSettings.defaults.model;
             $('default-effort').value = data.modelSettings.defaults.effort;
             updateDefaultModelDescription();

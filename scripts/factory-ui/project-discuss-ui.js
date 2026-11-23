@@ -261,8 +261,13 @@
     }
     function choices(id, entries, selected) {
       const node = byId(id);
+      if (selected && !entries.some((entry) => entry.value === selected))
+        entries = [...entries, { value: selected, label: selected + ' · unavailable', disabled: true }];
       const html = entries
-        .map(({ value, label }) => `<option value="${escape(value)}">${escape(label)}</option>`)
+        .map(
+          ({ value, label, disabled }) =>
+            `<option value="${escape(value)}"${disabled ? ' disabled' : ''}>${escape(label)}</option>`
+        )
         .join('');
       if (node.innerHTML !== html) node.innerHTML = html;
       if (entries.some((entry) => entry.value === selected)) node.value = selected;

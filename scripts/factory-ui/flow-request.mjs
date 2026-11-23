@@ -17,6 +17,7 @@ export async function clarifyRequest(root, definition, attempt, signal, discussi
   const startedAt = Date.now();
   const diagnostic = { version: 1, stage: 'starting-provider', transport: [], items: {} };
   const session = discussion(undefined, {
+    root,
     onEvent: ({ method, params = {} }) => {
       if (
         method === 'ui/transportPhase' &&

@@ -1,3 +1,4 @@
+import { providerSettingsBrowserChecks } from './flow-browser-provider-settings.mjs';
 import { investigationReportsBrowserChecks } from './flow-browser-investigation-reports.mjs';
 import { issueStatusFoldersBrowserChecks } from './flow-browser-issue-status-folders.mjs';
 import { projectIssuesBrowserChecks } from './flow-browser-project-issues.mjs';
@@ -98,6 +99,7 @@ const assets = [
   'issue-folder-drag-ui.js',
   'sidebar-files-ui.js',
   'folder-settings-ui.js',
+  'provider-settings-ui.js',
   'project-settings-ui.js',
   'project-settings.css',
   'github-calls-ui.js',
@@ -313,6 +315,7 @@ function checkExcluded(name) {
     ['--project-navigation', navigationCheck],
     ['--project-discuss', discussCheck],
     ['--project-settings', settingsCheck],
+    ['--ai-providers', 'Factory provider settings save enablement and quota warnings'],
     ['--native-agents', 'Native Flow approvals and questions retain their exact attempt'],
     ['--stores', storesCheck],
     ['--ai-text', aiTextCheck],
@@ -613,6 +616,9 @@ try {
     )
   );
   await check(discussCheck, () => projectDiscussBrowserChecks({ page, project, service, poll, screenshot }));
+  await check('Factory provider settings save enablement and quota warnings', () =>
+    providerSettingsBrowserChecks({ page, project, screenshot })
+  );
   await check(settingsCheck, () =>
     withQueueConfiguration({ page, project, root }, () =>
       projectSettingsBrowserChecks({ page, project, service, logs, poll, screenshot, output, candidate })

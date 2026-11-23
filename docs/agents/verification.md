@@ -1058,3 +1058,24 @@ retains no credentials, and reports only supported protocol metadata. A passing
 handshake does not prove login, billing, coding, approval pauses, or continuation
 against a live model. The authenticated workflow checks remain listed in the
 [native agent plan](../plans/anthropic-google-model-support.md).
+
+## AI provider settings
+
+`node --test scripts/provider-settings.check.mjs scripts/provider-setup.check.mjs`
+checks migration, saved choices, threshold boundaries, multiple windows, scoped
+quota, freshness, explicit unknown-quota permission, exhaustion, revision guards,
+and metadata discovery through disposable native-protocol executables. The
+executables reject unexpected methods and retain requests, establishing that
+Setup discovery sends no model prompt or sign-in request. These fixtures do not
+prove live vendor entitlements or browser sign-in completion.
+
+`node --test scripts/native-agent.check.mjs` checks actual child-process
+interruption when a model is disabled and refusal of a later prompt. The focused
+`node --test --test-name-pattern='provider disable lets' scripts/flow.check.mjs`
+checks a publication already underway: it retains its outcome, receives no abort,
+and starts no later merge after provider disablement.
+
+`node scripts/flow-browser.mjs --ai-providers` checks the real Settings form,
+explicit Save, unsaved edits, unchecked discovery, filtered model dropdowns,
+warning banner, and desktop/mobile layout. Its allowance observations are
+fixtures; it launches no live model or vendor login.

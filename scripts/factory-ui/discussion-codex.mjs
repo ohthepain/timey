@@ -23,7 +23,7 @@ import { validateTextInput } from './codex-input.mjs';
 // A separate read-only process, never the worker/recovery connection.
 class DiscussionCodex extends CodexConnection {
   constructor({ root, onEvent } = {}, suppliedText = false) {
-    super({ onEvent });
+    super({ onEvent, root });
     this.runtime = realpathSync(mkdtempSync(join(tmpdir(), 'timey-discussion-runtime-')));
     this.files = join(this.runtime, 'evidence');
     this.suppliedText = suppliedText;

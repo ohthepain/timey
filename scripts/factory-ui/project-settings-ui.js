@@ -5,7 +5,8 @@
     ['lifecycle', 'Issue Lifecycle'],
     ['git', 'Git'],
     ['storage', 'Issue Storage'],
-    ['skills', 'Skills', 'AI Skills'],
+    ['providers', 'AI providers', 'AI'],
+    ['skills', 'Skills'],
     ['prompts', 'Prompts'],
     ['hotkeys', 'Hotkeys'],
   ];
@@ -369,6 +370,7 @@
         )}<button class="small-button" type="button" data-restore-hotkeys>Restore defaults</button>${saveButton}</form>`;
     }
     const renderers = {
+      providers: () => window.factoryProviderSettings.render(data, esc, saveButton),
       issues: renderIssues,
       lifecycle: renderLifecycle,
       git: renderGit,
@@ -393,6 +395,7 @@
       baseline = snapshot();
       navigation();
       const endpoints = {
+        providers: '/api/ai-providers',
         issues: '/api/folder-settings?project=true',
         prompts: '/api/project-preferences',
         hotkeys: '/api/project-preferences',
@@ -414,6 +417,7 @@
     }
     function notifySaved() {
       changed?.();
+      window.dispatchEvent(new Event('factory-provider-settings-saved'));
       content
         .querySelector('[data-settings-status]')
         ?.append(page === 'storage' ? 'Saved. Restart Factory to apply publication options.' : 'Saved');
@@ -426,6 +430,7 @@
       try {
         const fields = values();
         const saves = {
+          providers: () => post('/api/ai-providers', window.factoryProviderSettings.input(data, fields)),
           issues: () =>
             post('/api/folder-settings', { project: true, action: 'save', revision: data.revision, changes: fields }),
           prompts: () =>
@@ -513,6 +518,7 @@
       });
     }
     const clicks = [
+      ['[data-provider-action]', (button) => leave(() => void providerAction(button))],
       ['[data-settings-page]', (button) => select(button.dataset.settingsPage)],
       ['[data-settings-close]', close],
       ['[data-restore-prompt]', restorePrompt],
@@ -541,6 +547,43 @@
         void action(button);
         break;
       }
+    });
+    let pendingProviderSetup = null;
+    async function providerAction(button) {
+      if (busy) return;
+      busy = true;
+      dialog.inert = true;
+      showError();
+      const id = button.dataset.providerId,
+        action = button.dataset.providerAction;
+      const output = content.querySelector(`[data-provider-result="${id}"]`);
+      if (output)
+        output.textContent =
+          action === 'setup' ? 'Opening native setup…' : 'Checking native sign-in, models, and quota…';
+      try {
+        const result = await post('/api/ai-provider-action', { provider: id, action });
+        if (action === 'refresh') {
+          await load('providers');
+          changed?.();
+          window.dispatchEvent(new Event('factory-provider-settings-saved'));
+        } else {
+          pendingProviderSetup = result.ready ? null : id;
+          await load('providers');
+          const status = content.querySelector(`[data-provider-result="${id}"]`);
+          if (status) status.textContent = result.message;
+        }
+      } catch (failure) {
+        showError(failure.message);
+      } finally {
+        busy = false;
+        dialog.inert = false;
+      }
+    }
+    window.addEventListener('focus', () => {
+      if (!pendingProviderSetup || !dialog.open || page !== 'providers' || busy || dirty()) return;
+      const id = pendingProviderSetup;
+      pendingProviderSetup = null;
+      void providerAction({ dataset: { providerId: id, providerAction: 'refresh' } });
     });
     async function runAction(button) {
       button.disabled = true;

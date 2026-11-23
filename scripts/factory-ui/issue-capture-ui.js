@@ -207,7 +207,14 @@ async function startCaptureIfRequested(issues, input, context) {
 function populateCaptureModels(model, settings) {
   const selected = model.dataset.draft || model.value;
   const defaultChoice = settings.models.find((item) => item.id === settings.defaults.model);
-  model.replaceChildren(new Option('Use default · ' + defaultChoice.name, ''));
+  model.replaceChildren(
+    new Option('Use default · ' + (defaultChoice?.name || settings.defaults.model + ' · unavailable'), '')
+  );
+  if (selected && !settings.models.some((item) => item.id === selected)) {
+    const retained = new Option(selected + ' · unavailable', selected);
+    retained.disabled = true;
+    model.add(retained);
+  }
   for (const item of settings.models) model.add(new Option(item.name, item.id));
   model.value = selected;
   delete model.dataset.draft;

@@ -1,3 +1,6 @@
+import { readProviderConfig } from './provider-config.mjs';
+import { providerSettings, saveProviderSettings } from './provider-runtime.mjs';
+import { refreshProvider, setupProvider } from './provider-setup.mjs';
 import { readDiagnosticActivity, resetCodexActivity } from './diagnostic-activity.mjs';
 import { readCodexQuota } from './codex-quota.mjs';
 import { readGitHubCalls, resetGitHubCalls } from './github-call-history.mjs';
@@ -252,6 +255,7 @@ function reportChatAction(service, value) {
 }
 
 async function prepareStoreMutation(service, path, value) {
+  if (['/api/ai-providers', '/api/ai-provider-action'].includes(path)) return;
   if (['/api/server-pause', '/api/server-restart', '/api/server-cancel-restart'].includes(path)) return;
   if (localClassicControl(service, path, value)) return;
   if (
@@ -335,6 +339,17 @@ async function mutation(service, path, value, owner) {
     },
     '/api/folder-delete': () => flows(service).deleteFolder(value),
     '/api/sidebar-files-action': () => new SidebarFiles(service.root).change(value),
+    '/api/ai-providers': () => {
+      service.ownServer();
+      return saveProviderSettings(service.root, value);
+    },
+    '/api/ai-provider-action': () => {
+      service.ownServer();
+      requireThat(['setup', 'refresh'].includes(value.action), 'Choose Setup or Refresh.');
+      return value.action === 'setup'
+        ? setupProvider(service.root, value.provider)
+        : refreshProvider(service.root, value.provider);
+    },
     '/api/project-settings': () => changeProjectSettings(service, value),
     '/api/project-preferences': () => saveProjectPreferences(service, value),
     '/api/project-settings-initialize': () => initializeProjectLifecycle(service, value),
@@ -576,6 +591,9 @@ async function read(service, request, response, owner) {
     '/api/sidebar-directory': () => new SidebarFiles(service.root).directory(Object.fromEntries(url.searchParams)),
     '/api/sidebar-file': () => new SidebarFiles(service.root).file(Object.fromEntries(url.searchParams)),
     '/api/capture-grilling-skills': () => readClarificationSkills(service.root).filter((item) => item.kind === 'skill'),
+    '/api/ai-provider-status': () =>
+      readProviderConfig(service.root) ? providerSettings(service.root) : { providers: [] },
+    '/api/ai-providers': () => providerSettings(service.root, { initialize: service.reviewMode !== 'preview' }),
     '/api/project-settings': () => readProjectSettingsOverview(service),
     '/api/project-preferences': () => readProjectPreferences(service.root),
     '/api/project-home': () => projectHome(service).view(),
@@ -791,6 +809,7 @@ function readResource(service, request, response, owner) {
     '/github-calls.css': 'github-calls.css',
     '/diagnostics-ui.js': 'diagnostics-ui.js',
     '/diagnostics.css': 'diagnostics.css',
+    '/provider-settings-ui.js': 'provider-settings-ui.js',
     '/project-settings-ui.js': 'project-settings-ui.js',
     '/project-settings.css': 'project-settings.css',
     '/hotkeys-ui.js': 'hotkeys-ui.js',

@@ -1118,9 +1118,11 @@ dynamic tool registrations. Loading the application starts no conversation or tu
 
 ## Native coding agents
 
-`factory/system/folder.md` lists the supported Codex, Claude, and Gemini choices.
-`model-settings.mjs` exposes provider metadata through the existing inherited
-settings. `agent-models.mjs` resolves the supported native aliases and keeps
+`factory/system/folder.md` retains the legacy model choices and built-in defaults.
+Once provider settings are initialized, `folder-settings-schema.mjs` and
+`model-settings.mjs` expose enabled, advertised, currently usable models from the
+native catalog. Saved unavailable selections retain their identity and reason.
+`agent-models.mjs` preserves exact native provider/model identities and keeps
 native session identities distinct from Codex threads.
 
 `issue-chat-runtime.mjs` selects `NativeAgentConnection` for native models and
@@ -1137,3 +1139,26 @@ group ends. Recovery sends no prompt. Project discussion provider changes retain
 the original conversation and supply a handoff with the history location. Existing
 issue execution settings remain frozen after execution starts. Background helpers
 and the explicitly named Sol reviewer retain their Codex execution path.
+
+## AI provider settings
+
+`provider-config.mjs` owns project-scoped choices and quota thresholds in
+`user/ai-providers.json`. Initialization preserves referenced default, issue,
+frozen execution and helper model choices. `provider-runtime.mjs` owns local
+native observations, availability, monitoring and interruption watches; its
+observations live under `.issues/factory-ui/` and contain no credentials.
+
+`provider-setup.mjs` discovers native metadata without a model prompt, guides
+installation, and opens vendor sign-in in a native terminal. `codex-account.mjs`
+is a metadata-only transport shared by discovery and `codex-quota.mjs`; it cannot
+start a turn or change sign-in. Claude quota events provide scoped observations,
+but cannot establish a complete fresh account snapshot. Gemini ACP context usage
+is not account allowance. Both remain unknown unless supported allowance data
+exist; the explicit unmonitored-work option governs admission.
+
+`provider-settings-ui.js` renders the provider controls and persistent warning
+banner in Flow and Classic. `project-settings-ui.js` retains the shared Factory
+settings Save and unsaved-change handling. The execution adapters check policy
+before turns and interrupt affected work. Flow also checks each block, aborts
+cancellable work, and lets protected Git/publication operations retain an outcome
+before pausing the route. Quota recovery restores eligibility, never autoplay.

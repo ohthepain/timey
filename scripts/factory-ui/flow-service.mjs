@@ -1,3 +1,4 @@
+import { guardProviderWork } from './provider-runtime.mjs';
 import { withDiagnosticContext } from './diagnostic-activity.mjs';
 import { storeUnavailable } from './stores/availability.mjs';
 import { abortOwnedMerge, moveOwnedStartingPoint, updateOwnedWorktree } from './stores/manual-operations.mjs';
@@ -2402,8 +2403,14 @@ class IssueFlows {
     checkpoint.unref();
     let outcome;
     let claim;
+    let providerGuard;
     const queue = this.service.sharedIssues;
     try {
+      const model = this.issueSettings(issue, flow).values.model;
+      providerGuard = await guardProviderWork(this.service.root, model, (error) => {
+        this.pause(issue.id, error.message);
+        if (!['publish', 'merge', 'update-branch', 'cleanup'].includes(block.kind)) controller.abort(error);
+      });
       if (!owner && !['request', 'retro', 'cleanup', 'close'].includes(block.kind))
         claim = queue?.acquireFlowBlock(issue, blockId, input.action === 'continue');
       const result =
@@ -2516,6 +2523,7 @@ class IssueFlows {
         outcome = current;
       });
     } finally {
+      providerGuard?.close();
       clearInterval(checkpoint);
       if (owner && outcome) {
         if (unresolvedAttempt(outcome)) {

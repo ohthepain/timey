@@ -1,3 +1,5 @@
+import { initializeProviderConfig, readProviderConfig } from './factory-ui/provider-config.mjs';
+import { observeProvider, saveProviderSettings } from './factory-ui/provider-runtime.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -23,7 +25,12 @@ import {
   requestData,
   startingPoint,
 } from './factory-ui/flow-block-data.mjs';
-import { giveIssueFolderCopyNewId, initializeFolderSettings } from './factory-ui/issue-folder-settings.mjs';
+import {
+  giveIssueFolderCopyNewId,
+  initializeFolderSettings,
+  readFolderSettings,
+  updateFolderSettings,
+} from './factory-ui/issue-folder-settings.mjs';
 import { FlowStore, newFlow, editFlow, makeBlock } from './factory-ui/flow-store.mjs';
 import { createIssueFlows } from './factory-ui/flow-service.mjs';
 import { createFlowObserver } from './factory-ui/flow-observer.mjs';
@@ -312,6 +319,49 @@ test('flow views wait for the first shared copy of a selected report', async (t)
   assert.equal(result.issue.title, 'Preserve request wording');
   assert.equal(result.issues.find((issue) => issue.id === id)?.title, 'Preserve request wording');
   assert.equal(result.sharedQueueWarning, null);
+});
+
+test('provider disable lets a protected publication finish but pauses the route before the next block', async (t) => {
+  const { root, id, service } = fixture(t);
+  initializeProviderConfig(root);
+  observeProvider(root, 'google', { ready: true, models: [{ id: 'google:pro', name: 'Gemini Pro' }] });
+  let config = readProviderConfig(root);
+  config.providers.google.enabled = ['google:pro'];
+  config.providers.google.allowUnmonitored = true;
+  saveProviderSettings(root, config);
+  const settings = readFolderSettings(root, root);
+  updateFolderSettings(root, { directory: root, revision: settings.revision, changes: { model: 'google:pro' } });
+  const publication = Promise.withResolvers();
+  const started = [];
+  let signal;
+  const flows = createIssueFlows(service, {
+    clarify: async () => ({ artifacts: { values: { type: 'bug', goal: 'Repair Save' } } }),
+    executor: executor(async (context) => {
+      started.push(context.block.kind);
+      if (context.block.kind === 'publish') {
+        signal = context.signal;
+        await publication.promise;
+      }
+      return { summary: 'Recorded operation outcome.' };
+    }),
+  });
+  t.after(() => flows.close());
+  await flows.action({ issueId: id, action: 'play', revision: flows.read(flows.selected(id)).revision });
+  for (let count = 0; !signal && count < 100; count++) await delay(10);
+  assert.ok(signal, JSON.stringify({ started, autoplay: flows.autoplay.get(id) }));
+  const task = flows.active.get(id).task;
+  config = readProviderConfig(root);
+  config.providers.google.enabled = [];
+  saveProviderSettings(root, config);
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(signal.aborted, false);
+  assert.equal(flows.autoplay.get(id).mode, 'paused');
+  publication.resolve();
+  await task;
+  assert.equal(started.includes('merge'), false);
+  const saved = flows.read(flows.selected(id));
+  assert.equal(saved.blocks.find((block) => block.kind === 'publish').attempts.at(-1).status, 'completed');
 });
 
 test('issue route Start runs Update Branch without confirmation and Pause lets the active block finish', async (t) => {

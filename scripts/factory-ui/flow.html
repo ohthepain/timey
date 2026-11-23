@@ -15,6 +15,7 @@
     <script src="/github-calls-ui.js" defer></script>
     <link rel="stylesheet" href="/diagnostics.css" />
     <script src="/diagnostics-ui.js" defer></script>
+    <script src="/provider-settings-ui.js" defer></script>
     <script src="/project-settings-ui.js" defer></script>
     <link rel="stylesheet" href="/project-discuss.css" />
     <link rel="stylesheet" href="/project-reports.css" />
@@ -92,7 +93,7 @@
               <span id="github-call-total">–</span>
               <span class="github-call-failed" id="github-call-failed" hidden></span>
             </button>
-            <button class="icon-button" id="project-settings" aria-label="Project settings" title="Project settings">
+            <button class="icon-button" id="project-settings" aria-label="Factory settings" title="Factory settings">
               <svg
                 width="18"
                 height="18"
@@ -200,6 +201,10 @@
         ></div>
       </aside>
       <main class="flow-main">
+        <aside id="provider-status-banner" class="provider-status-banner" role="status" hidden>
+          <span data-provider-status-text></span>
+          <button type="button" data-provider-settings-open>Factory settings</button>
+        </aside>
         <header class="flow-heading">
           <div class="breadcrumb">
             <span>Workspace</span><span class="breadcrumb-divider">/</span><span id="flow-view-title">Issue flow</span>
@@ -1105,8 +1110,8 @@
     </section>
     <dialog id="project-settings-dialog" class="modal" aria-labelledby="project-settings-title">
       <div class="modal-heading">
-        <h2 id="project-settings-title">Project settings</h2>
-        <button class="icon-button" type="button" data-settings-close aria-label="Close project settings">×</button>
+        <h2 id="project-settings-title">Factory settings</h2>
+        <button class="icon-button" type="button" data-settings-close aria-label="Close Factory settings">×</button>
       </div>
       <div class="settings-layout">
         <nav id="settings-navigation" aria-label="Settings categories"></nav>

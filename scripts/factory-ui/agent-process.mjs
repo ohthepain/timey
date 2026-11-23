@@ -109,7 +109,7 @@ export class AgentProcess {
         this.send(
           this.protocol === 'claude'
             ? { type: 'control_request', request_id: id, request: { subtype: method, ...params } }
-            : { jsonrpc: '2.0', id, method, params }
+            : { ...(this.protocol === 'codex' ? {} : { jsonrpc: '2.0' }), id, method, params }
         );
       } catch (error) {
         clearTimeout(timer);

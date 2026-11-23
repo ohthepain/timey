@@ -1,3 +1,4 @@
+import { guardProviderWork, observeProvider, providerCatalogs } from './provider-runtime.mjs';
 import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -269,7 +270,7 @@ export class NativeAgentConnection {
     const response = await this.loadGoogleSession(resume, mcp);
     requireThat(
       response.models?.availableModels?.some(({ modelId }) => modelId === this.selection.model),
-      'The selected Gemini model is unavailable for this account. No substitute was selected.'
+      'The installed Gemini agent does not advertise this model. Refresh available models; no substitute was selected.'
     );
     await process.call('session/set_model', { sessionId: this.session.nativeId, modelId: this.selection.model });
     await process.call('session/set_mode', {
@@ -392,10 +393,17 @@ export class NativeAgentConnection {
     const turn = { id, text: '', resolve, reject, receipt, started: Promise.resolve({ turn: { id } }) };
     this.turns.set(threadId, turn);
     this.retain({ status: 'running', turnId: id, ownerPid: this.process.child.pid });
-    void this.startTurn(turn, text, settings).catch((error) => this.finish(turn, error, true));
+    void this.startTurn(turn, text, settings).catch((error) => this.finish(turn, error, !error.turnRejected));
     return promise;
   }
   async startTurn(turn, text, settings) {
+    turn.guard = await guardProviderWork(this.root, settings?.model || this.session.model, () =>
+      this.interrupt(this.session.threadId)
+    );
+    if (this.turns.get(this.session.threadId) !== turn) {
+      turn.guard.close();
+      return;
+    }
     await this.changeModel(settings);
     if (this.turns.get(this.session.threadId) !== turn) return;
     turn.dispatched = true;
@@ -422,6 +430,7 @@ export class NativeAgentConnection {
     );
   }
   nativeEvent(message) {
+    if (message.type === 'rate_limit_event') this.observeClaudeQuota(message.rate_limit_info);
     if (message.type === 'control_cancel_request') return this.clearRequest(String(message.request_id));
     const turn = this.turns.get(this.session.threadId);
     if (!turn) return;
@@ -430,6 +439,33 @@ export class NativeAgentConnection {
       google: () => this.googleEvent(message, turn),
     };
     handlers[this.selection.provider]();
+  }
+  observeClaudeQuota(info) {
+    const type =
+      info?.status === 'rejected' && info.errorCode === 'credits_required' ? 'account_credits' : info?.rateLimitType;
+    if (!['account_credits', 'five_hour', 'seven_day', 'seven_day_opus', 'seven_day_sonnet'].includes(type)) return;
+    const utilization = info.status === 'rejected' ? 1 : info.utilization;
+    if (!Number.isFinite(utilization) || utilization < 0 || utilization > 1) return;
+    const catalog = providerCatalogs(this.root).anthropic;
+    const models =
+      type.endsWith('_opus') || type.endsWith('_sonnet')
+        ? (catalog?.models || [])
+            .filter((entry) => entry.id.includes(type.endsWith('_opus') ? 'opus' : 'sonnet'))
+            .map((entry) => entry.id)
+        : undefined;
+    const window = {
+      id: type,
+      remainingPercent: Number(((1 - utilization) * 100).toFixed(6)),
+      checkedAt: Date.now(),
+      resetsAt: info.resetsAt,
+      ...(models ? { models } : {}),
+    };
+    observeProvider(this.root, 'anthropic', {
+      quota: {
+        complete: false,
+        windows: [...(catalog?.quota?.windows || []).filter((entry) => entry.id !== type), window],
+      },
+    });
   }
   claudeEvent(message, turn) {
     if (message.parent_tool_use_id) return;
@@ -528,6 +564,12 @@ export class NativeAgentConnection {
   }
   finish(turn, error, uncertain = false) {
     if (this.turns.get(this.session.threadId) !== turn) return;
+    try {
+      turn.guard?.assert();
+    } catch (paused) {
+      error = paused;
+    }
+    turn.guard?.close();
     this.turns.delete(this.session.threadId);
     this.retainTerminalState(error, uncertain);
     this.clearRequests();
@@ -642,9 +684,14 @@ export class NativeAgentConnection {
       this.finish(turn, Error('The turn was stopped before its prompt was sent.'));
       return { interrupted: true };
     }
-    if (this.selection.provider === 'anthropic') await this.process.call('interrupt');
-    else this.process.send({ jsonrpc: '2.0', method: 'session/cancel', params: { sessionId: this.session.nativeId } });
-    return { interrupted: true };
+    turn.interruption ||= Promise.resolve().then(async () => {
+      if (this.turns.get(threadId) !== turn) return { interrupted: false };
+      if (this.selection.provider === 'anthropic') await this.process.call('interrupt');
+      else
+        this.process.send({ jsonrpc: '2.0', method: 'session/cancel', params: { sessionId: this.session.nativeId } });
+      return { interrupted: true };
+    });
+    return turn.interruption;
   }
   close() {
     this.closed = true;

@@ -1,3 +1,5 @@
+import { readProviderConfig } from './provider-config.mjs';
+import { guardProviderWork } from './provider-runtime.mjs';
 import { meterCodexTurn } from './codex-diagnostics.mjs';
 import { createChatToolMcp } from './chat-tool-mcp.mjs';
 import { approvalReply } from './approval-options.mjs';
@@ -13,6 +15,7 @@ import { agentModel } from './agent-models.mjs';
 // One local RPC connection. It never starts a thread or turn on construction.
 export class CodexConnection {
   constructor({
+    root,
     command = 'codex',
     args = ['app-server', '--listen', 'stdio://'],
     onEvent = () => {},
@@ -20,6 +23,7 @@ export class CodexConnection {
     mcpTools,
     model,
   } = {}) {
+    this.root = root;
     this.command = command;
     this.args = args;
     this.onEvent = onEvent;
@@ -98,7 +102,7 @@ export class CodexConnection {
         this.pending.delete(id);
         reject(Error(`${method} did not respond. Do not retry a creation without reconciliation.`));
       }, timeoutMs);
-      this.pending.set(id, { resolve, reject, timer, method, threadId: params.threadId });
+      this.pending.set(id, { resolve, reject, timer, method, params, threadId: params.threadId });
       this.send({ id, method, params });
     });
   }
@@ -130,7 +134,18 @@ export class CodexConnection {
     this.phase(message.error ? 'rejected' : 'replied', pending.method, pending.threadId);
     this.pending.delete(message.id);
     if (message.error) pending.reject(Error(message.error.message));
-    else pending.resolve(message.result);
+    else {
+      const result = message.result;
+      if (['thread/start', 'thread/resume'].includes(pending.method)) {
+        const threadId = result?.thread?.id || pending.threadId;
+        const previous = this.threadDiagnostics.get(threadId);
+        this.threadDiagnostics.set(threadId, {
+          ...previous,
+          model: result?.model || pending.params.model || previous?.model,
+        });
+      }
+      pending.resolve(result);
+    }
   }
   request(message) {
     const methods = [
@@ -179,6 +194,12 @@ export class CodexConnection {
     this.phase('finished', 'turn/completed', params.threadId);
     this.turns.delete(params.threadId);
     this.clearRequests(params.threadId);
+    try {
+      turn.guard?.assert();
+    } catch (error) {
+      turn.reject(error);
+      return;
+    }
     if (params.turn.status === 'completed') turn.resolve(turn.text);
     else turn.reject(terminalTurnError(params.turn, turn));
   }
@@ -213,6 +234,7 @@ export class CodexConnection {
     instructions,
     dynamicTools
   ) {
+    this.root ||= settingsRoot;
     await this.ready();
     onStartup({ status: 'starting' });
     const settings = this.threadModelSettings(settingsRoot, issueId);
@@ -286,9 +308,20 @@ export class CodexConnection {
       thread: this.threadDiagnostics.get(threadId),
       settings,
     });
-    const turn = { resolve, reject, text: '', id: null, meter };
+    const turn = { resolve, reject, text: '', id: null, meter, admitting: true };
     this.turns.set(threadId, turn);
     try {
+      const root = this.root || cwd;
+      if (readProviderConfig(root)) {
+        const model =
+          settings?.model ||
+          this.threadDiagnostics.get(threadId)?.model ||
+          this.model ||
+          newChatModelSettings(root).model;
+        turn.guard = await guardProviderWork(root, model, () => interruptCodexTurn(this, threadId));
+        if (this.turns.get(threadId) !== turn) return await completion.finally(() => turn.guard.close());
+      }
+      turn.admitting = false;
       const request = () =>
         this.call('turn/start', {
           threadId,
@@ -318,7 +351,7 @@ export class CodexConnection {
       meter.finish('dispatch failed');
       reject(error);
     }
-    return completion;
+    return completion.finally(() => turn.guard?.close());
   }
   fail(error) {
     for (const entry of this.pending.values()) {
@@ -375,8 +408,15 @@ function captureDelta(turn, params) {
 export async function interruptCodexTurn(connection, threadId) {
   const turn = connection.turns.get(threadId);
   if (!turn) return { interrupted: false };
+  if (turn.admitting) {
+    connection.turns.delete(threadId);
+    turn.meter?.finish('stopped');
+    turn.reject(Error('The turn was stopped before its prompt was sent.'));
+    return { interrupted: true };
+  }
   const started = await turn.started;
   if (connection.turns.get(threadId) !== turn) return { interrupted: false };
-  await connection.call('turn/interrupt', { threadId, turnId: started.turn.id });
+  turn.interruption ||= connection.call('turn/interrupt', { threadId, turnId: started.turn.id });
+  await turn.interruption;
   return { interrupted: true };
 }
