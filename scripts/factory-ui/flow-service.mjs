@@ -10,10 +10,11 @@ import { lastBlockingError, retainBlockingError, resolveBlockingErrors } from '.
 import { guardProviderWork } from './provider-runtime.mjs';
 import { withDiagnosticContext } from './diagnostic-activity.mjs';
 import { storeUnavailable } from './stores/availability.mjs';
+import { sameOwner } from './stores/coordination.mjs';
 import { abortOwnedMerge, moveOwnedStartingPoint, updateOwnedWorktree } from './stores/manual-operations.mjs';
 import { prepareAttemptCommit } from './stores/flow-evidence.mjs';
 import { readSnapshot } from './stores/snapshots.mjs';
-import { resolveIssueStorage } from './stores/settings.mjs';
+import { inheritedIssueCaptureProfile, resolveIssueStorage } from './stores/settings.mjs';
 import { registeredProjectStores } from './stores/report-access.mjs';
 import { ensureProjectStores, hydrateProjectEvidence } from './stores/runtime.mjs';
 import { evidencePath, evidenceResolverGeneration } from './stores/evidence.mjs';
@@ -1190,6 +1191,7 @@ class IssueFlows {
         requestId: item.requestId,
         description,
         folder: retroFolder,
+        storageProfile: inheritedIssueCaptureProfile(this.service),
         needsApproval: true,
         sourceIssue,
       });
@@ -1269,6 +1271,15 @@ class IssueFlows {
   async action(input, { storesReady = false } = {}) {
     return this.withBlockingError(input, () => this.preparedAction(input, storesReady));
   }
+  async requireAvailableClaim(input) {
+    const claim = await this.service.projectStores.coordination.get('claims/' + input.issueId);
+    if (!claim) return;
+    const owner = this.active.get(input.issueId)?.storeOwner;
+    requireThat(
+      input.action === 'play' && sameOwner(claim.value, owner),
+      'Stop or explicitly recover the owning attempt before editing or starting this issue.'
+    );
+  }
   async preparedAction(input, storesReady) {
     if (!storesReady && this.actionNeedsFreshStore(input)) await prepareFlowActionStores(this.service, input);
     if (
@@ -1284,8 +1295,7 @@ class IssueFlows {
         'agent-answer',
       ].includes(input.action)
     ) {
-      const claim = await this.service.projectStores.coordination.get('claims/' + input.issueId);
-      requireThat(!claim, 'Stop or explicitly recover the owning attempt before editing or starting this issue.');
+      await this.requireAvailableClaim(input);
     }
     const waiting = this.autoplay.get(input.issueId);
     try {

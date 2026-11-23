@@ -2303,8 +2303,10 @@ try {
     playbackWork.resolve();
     const paused = await poll(
       view,
-      (data) => data.flow.blocks.find(({ id }) => id === 'work').attempts.at(-1)?.status === 'completed',
-      'Work did not finish after Pause.'
+      (data) =>
+        data.flow.blocks.find(({ id }) => id === 'work').attempts.at(-1)?.status === 'completed' &&
+        data.autoplay.mode === 'paused',
+      'Work did not finish and pause the route.'
     );
     assert.equal(paused.flow.blocks.find(({ id }) => id === verify.id).attempts.length, 0);
     assert.equal(paused.autoplay.mode, 'paused');
@@ -2344,6 +2346,7 @@ try {
     await dialog.getByRole('button', { name: 'Close issue', exact: true }).click();
     await dialog.waitFor({ state: 'hidden' });
     await close.waitFor({ state: 'hidden' });
+    await poll(() => !service.flows.closureBusy(issueId), Boolean, 'Close did not finish Cleanup.');
     assert.deepEqual(
       logs.execution.slice(executionCount).map(({ blockId }) => blockId),
       [service.flows.read(service.flows.selected(issueId)).blocks.find(({ kind }) => kind === 'cleanup').id]
@@ -2417,8 +2420,8 @@ try {
     );
     await poll(
       () => logs.execution.length,
-      (count) => count > executionCount,
-      'Cleanup did not run.'
+      (count) => count > executionCount && !service.flows.closureBusy(issueId),
+      'Cleanup did not finish.'
     );
     const saved = service.flows.selected(issueId);
     assert.equal(saved.closure.reason, 'fixed');

@@ -162,6 +162,8 @@ allows chat requests across issue, project, report, temporary, and coordinator
 conversations while work dispatch stays paused. Its HTTP Discuss regression
 sends and drains queued prompts through an injected provider with the switch on
 and another action running. It starts no live model work.
+The Flow browser suite checks that the runner holding the active Work claim can
+resume playback and that No new actions still prevents dispatching the next block.
 
 `node scripts/flow-browser.mjs --investigation-reports` checks retained report
 reading and discussion. Its draft-restoration regression holds the discussion
