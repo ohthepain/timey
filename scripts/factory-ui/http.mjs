@@ -1,6 +1,6 @@
 import { readProviderConfig } from './provider-config.mjs';
 import { providerSettings, saveProviderSettings } from './provider-runtime.mjs';
-import { refreshProvider, setupProvider } from './provider-setup.mjs';
+import { refreshProvider, setupProvider, installProvider } from './provider-setup.mjs';
 import { readDiagnosticActivity, resetCodexActivity } from './diagnostic-activity.mjs';
 import { readCodexQuota } from './codex-quota.mjs';
 import { readGitHubCalls, resetGitHubCalls } from './github-call-history.mjs';
@@ -345,7 +345,8 @@ async function mutation(service, path, value, owner) {
     },
     '/api/ai-provider-action': () => {
       service.ownServer();
-      requireThat(['setup', 'refresh'].includes(value.action), 'Choose Setup or Refresh.');
+      requireThat(['setup', 'refresh', 'install'].includes(value.action), 'Choose Install, Sign in, or Check again.');
+      if (value.action === 'install') return installProvider(service.root, value.provider);
       return value.action === 'setup'
         ? setupProvider(service.root, value.provider)
         : refreshProvider(service.root, value.provider);

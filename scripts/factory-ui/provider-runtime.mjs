@@ -107,6 +107,7 @@ export function providerSettings(root, { initialize = true } = {}) {
         ...policy,
         ready: Boolean(catalog?.ready),
         message: catalog?.message || 'Not set up',
+        setup: catalog?.setup || null,
         checkedAt: catalog?.checkedAt || null,
         models: models.map((model) => ({
           ...model,

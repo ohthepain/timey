@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { refreshProvider, setupProvider } from './factory-ui/provider-setup.mjs';
+import { refreshProvider, setupProvider, installProvider } from './factory-ui/provider-setup.mjs';
 
 function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), 'timey-provider-setup-'));
@@ -11,9 +11,12 @@ function fixture(t) {
   mkdirSync(bin);
   symlinkSync('/usr/bin/git', join(bin, 'git'));
   const oldPath = process.env.PATH;
+  const oldHome = process.env.HOME;
+  process.env.HOME = root;
   process.env.PATH = bin;
   t.after(() => {
     process.env.PATH = oldPath;
+    process.env.HOME = oldHome;
     rmSync(root, { recursive: true, force: true });
   });
   const log = join(root, 'requests.jsonl');
@@ -61,7 +64,11 @@ test('missing native installation returns a guide and sends no model request', a
   const { root } = fixture(t);
   rmSync(join(root, 'bin/claude'));
   const result = await setupProvider(root, 'anthropic');
-  assert.match(result.message, /Install the native agent/);
+  assert.equal(result.setup.step, 'install');
+  assert.equal(result.setup.command, 'curl -fsSL https://claude.ai/install.sh | bash');
+  assert.match(result.message, /Claude Code/);
+  const saved = await refreshProvider(root, 'anthropic');
+  assert.equal(saved.providers.find((provider) => provider.id === 'anthropic').setup.command, result.setup.command);
   assert.match(result.guide, /^https:\/\/code.claude.com/);
   await assert.rejects(setupProvider(root, 'other'), /supported provider/);
 });
@@ -73,4 +80,61 @@ test('Setup reuses an existing native sign-in without opening a terminal or send
   assert.match(result.message, /Existing native sign-in found/);
   const requests = readFileSync(log, 'utf8').trim().split('\n').map(JSON.parse);
   assert.ok(requests.every((entry) => !/prompt|turn|authenticate|login/.test(entry.method)));
+});
+
+test('a CLI that exists but fails to start is not reported as missing', async (t) => {
+  const { root } = fixture(t);
+  writeFileSync(join(root, 'bin/claude'), '#!/bin/sh\nexit 1\n', { mode: 0o700 });
+  const result = await setupProvider(root, 'anthropic');
+  assert.equal(result.setup.step, 'error');
+  assert.match(result.message, /found.*could not start/);
+  assert.match(result.setup.checkCommand, /claude --version/);
+});
+
+test('Google missing CLI gives the npm command and explains a missing npm prerequisite', async (t) => {
+  const { root } = fixture(t);
+  rmSync(join(root, 'bin/gemini'));
+  const result = await setupProvider(root, 'google');
+  assert.equal(result.setup.step, 'install');
+  assert.equal(result.setup.command, 'npm install -g @google/gemini-cli');
+  assert.match(result.setup.prerequisite, /Node.js 22.*npm/);
+  assert.equal(result.setup.canInstall, false);
+});
+for (const [id, executable, command] of [
+  ['anthropic', 'claude', 'curl -fsSL https://claude.ai/install.sh | bash'],
+  ['google', 'gemini', 'npm install -g @google/gemini-cli'],
+])
+  test(`${id} installation launches only its fixed recipe after explicit Install`, async (t) => {
+    const { root } = fixture(t);
+    rmSync(join(root, 'bin/' + executable));
+    writeFileSync(join(root, 'bin/npm'), '#!/bin/sh\nprintf "10.0.0\\n"\n', { mode: 0o700 });
+    const launched = [];
+    const result = await installProvider(root, id, { openTerminal: async (value) => launched.push(value) });
+    if (process.platform === 'darwin') {
+      assert.deepEqual(launched, [command]);
+      assert.equal(result.setup.step, 'installing');
+      assert.match(result.message, /Installation opened in Terminal/);
+    } else assert.deepEqual(launched, []);
+    await assert.rejects(installProvider(root, 'untrusted'), /supported provider/);
+  });
+test('a terminal launch failure retains manual install instructions', async (t) => {
+  const { root } = fixture(t);
+  rmSync(join(root, 'bin/claude'));
+  const result = await installProvider(root, 'anthropic', {
+    openTerminal: async () => {
+      throw Error('Denied');
+    },
+  });
+  assert.equal(result.setup.step, 'install');
+  if (process.platform === 'darwin') assert.match(result.message, /Could not open Terminal/);
+  assert.equal(result.setup.command, 'curl -fsSL https://claude.ai/install.sh | bash');
+});
+test('native installation locations work before Factory is restarted', async (t) => {
+  const { root } = fixture(t);
+  mkdirSync(join(root, '.local/bin'), { recursive: true });
+  const source = readFileSync(join(root, 'bin/claude'));
+  rmSync(join(root, 'bin/claude'));
+  writeFileSync(join(root, '.local/bin/claude'), source, { mode: 0o700 });
+  const result = await setupProvider(root, 'anthropic');
+  assert.equal(result.ready, true);
 });

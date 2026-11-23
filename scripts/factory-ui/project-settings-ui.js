@@ -386,12 +386,15 @@
       window.factoryAgentOptions(content);
       baseline = snapshot();
     }
-    async function load(value) {
+    async function load(
+      value,
+      { preserveScroll = false, scrollTop = dialog.querySelector('.settings-body').scrollTop } = {}
+    ) {
       const ticket = ++sequence;
       page = value;
       resetPrompts.clear();
       showError();
-      content.textContent = 'Loading settings…';
+      if (!preserveScroll) content.textContent = 'Loading settings…';
       baseline = snapshot();
       navigation();
       const endpoints = {
@@ -408,6 +411,7 @@
         if (value === 'storage') data.storeRegistry = await request('/api/issue-stores');
         if (ticket !== sequence) return;
         render();
+        dialog.querySelector('.settings-body').scrollTop = preserveScroll ? scrollTop : 0;
       } catch (failure) {
         showCurrentError(ticket, failure);
       }
@@ -447,7 +451,7 @@
         };
         await saves[page]();
         resetPrompts.clear();
-        await load(page);
+        await load(page, { preserveScroll: true });
         await window.FactoryHotkeys.refresh();
         notifySaved();
         return true;
@@ -518,6 +522,7 @@
       });
     }
     const clicks = [
+      ['[data-provider-copy]', copyProviderCommand],
       ['[data-provider-action]', (button) => leave(() => void providerAction(button))],
       ['[data-settings-page]', (button) => select(button.dataset.settingsPage)],
       ['[data-settings-close]', close],
@@ -548,9 +553,24 @@
         break;
       }
     });
+    async function copyProviderCommand(button) {
+      const setup = data.providers.find((provider) => provider.id === button.dataset.providerCopy)?.setup;
+      const command = { install: setup?.command, check: setup?.checkCommand, signin: setup?.loginCommand }[
+        button.dataset.commandKind
+      ];
+      if (!command) return;
+      try {
+        await navigator.clipboard.writeText(command);
+        button.textContent = 'Copied';
+      } catch {
+        showError('Copy the displayed command manually; clipboard access is unavailable.');
+      }
+    }
     let pendingProviderSetup = null;
     async function providerAction(button) {
       if (busy) return;
+      const body = dialog.querySelector('.settings-body'),
+        scrollTop = body.scrollTop;
       busy = true;
       dialog.inert = true;
       showError();
@@ -558,26 +578,33 @@
         action = button.dataset.providerAction;
       const output = content.querySelector(`[data-provider-result="${id}"]`);
       if (output)
-        output.textContent =
-          action === 'setup' ? 'Opening native setup…' : 'Checking native sign-in, models, and quota…';
+        output.textContent = {
+          install: 'Opening installation in Terminal…',
+          setup: 'Checking setup…',
+          refresh: 'Checking native sign-in, models, and quota…',
+        }[action];
       try {
         const result = await post('/api/ai-provider-action', { provider: id, action });
-        if (action === 'refresh') {
-          await load('providers');
-          changed?.();
-          window.dispatchEvent(new Event('factory-provider-settings-saved'));
-        } else {
-          pendingProviderSetup = result.ready ? null : id;
-          await load('providers');
-          const status = content.querySelector(`[data-provider-result="${id}"]`);
-          if (status) status.textContent = result.message;
-        }
+        await load('providers', { preserveScroll: true, scrollTop });
+        providerActionResult(id, action, result);
+        body.scrollTop = scrollTop;
       } catch (failure) {
         showError(failure.message);
       } finally {
         busy = false;
         dialog.inert = false;
       }
+    }
+    function providerActionResult(id, action, result) {
+      if (action === 'refresh') {
+        changed?.();
+        window.dispatchEvent(new Event('factory-provider-settings-saved'));
+        return;
+      }
+      pendingProviderSetup = result.ready || !['signin', 'installing'].includes(result.setup?.step) ? null : id;
+      if (data.providers.find((provider) => provider.id === id)?.message === result.message) return;
+      const status = content.querySelector(`[data-provider-result="${id}"]`);
+      if (status) status.textContent = result.message;
     }
     window.addEventListener('focus', () => {
       if (!pendingProviderSetup || !dialog.open || page !== 'providers' || busy || dirty()) return;

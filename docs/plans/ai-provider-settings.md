@@ -190,3 +190,38 @@ scenario documented in the verification guide. The broad regression run exposed
 a folder-copy membership failure that also reproduces on unchanged HEAD; it is
 outside provider settings. Final logs and screenshots are retained with the
 verification evidence for this change.
+
+## Guided installation and retained scroll position
+
+The first Setup implementation collapsed every version-check failure into a
+missing-agent message and supplied only an installation-guide link. It also
+cleared the Settings content before reloading it after Setup, reducing the scroll
+height and losing the person's position. Regression fixtures reproduce both
+missing actionable guidance and the scroll jump.
+
+Setup now distinguishes a missing executable from one that exists but fails to
+start. Missing agents have named, ordered instructions with copyable install,
+version-check and sign-in commands. Anthropic uses its
+[recommended native installer](https://code.claude.com/docs/en/setup#install-claude-code),
+which does not need npm. Google uses its
+[documented npm installation](https://geminicli.com/docs/get-started/installation/#install-gemini-cli).
+The Google and OpenAI paths explain the Node/npm prerequisite when unavailable.
+
+On macOS, an explicit Install button opens Terminal with the displayed fixed
+vendor command, running from the person's home directory. No command comes from
+the browser request. Setup and Check again never install software automatically;
+installation and sign-in remain separate steps. Other platforms receive exact
+manual commands. Failed terminal launches retain those instructions. Installation
+has machine-user scope, while model choices remain project-scoped.
+
+The native command resolver also checks the user's `.local/bin` and
+`.npm-global/bin` directories. Discovery and execution use the same resolver, so
+an agent installed by the guided flow does not disappear when execution starts.
+Other PATH differences have an explicit restart-from-the-same-terminal instruction.
+
+Setup, Install, Check again and Save keep the existing Settings content during
+refresh and restore its scroll offset. Changing Settings categories still starts
+the new page at the top. Browser checks cover Anthropic and Google, copying the
+real clipboard text, explicit Install requests, and position both while pending
+and after responses. Terminal execution is injected in those checks; no vendor
+software is installed on the user's machine by verification.

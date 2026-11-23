@@ -163,3 +163,37 @@ dialog.modal:where(#project-settings-dialog) {
 .provider-status-banner button {
   margin-left: 10px;
 }
+
+.provider-command {
+  display: flex;
+  align-items: start;
+  gap: 10px;
+  margin: 10px 0 14px;
+  padding: 12px;
+  background: #181a1f;
+  border-radius: 6px;
+}
+.provider-command code {
+  flex: 1;
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.provider-command button {
+  flex-shrink: 0;
+}
+.provider-setup-guide ol {
+  padding-left: 22px;
+}
+.provider-setup-guide li {
+  margin: 14px 0;
+  line-height: 1.5;
+}
+.settings-body {
+  overflow-anchor: none;
+}
+@media (max-width: 650px) {
+  .provider-command {
+    flex-direction: column;
+  }
+}

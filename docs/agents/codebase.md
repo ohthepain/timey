@@ -1148,8 +1148,12 @@ frozen execution and helper model choices. `provider-runtime.mjs` owns local
 native observations, availability, monitoring and interruption watches; its
 observations live under `.issues/factory-ui/` and contain no credentials.
 
-`provider-setup.mjs` discovers native metadata without a model prompt, guides
-installation, and opens vendor sign-in in a native terminal. `codex-account.mjs`
+`provider-setup.mjs` discovers native metadata without a model prompt and separates
+missing executables, startup errors and sign-in. `provider-installation.mjs` owns
+fixed vendor install/sign-in recipes and explicit native-terminal launches.
+`native-agent-command.mjs` resolves the same PATH and user install locations for
+inspection and execution. Install commands are displayed and copyable before an
+explicit Install action; missing npm gets prerequisite instructions. `codex-account.mjs`
 is a metadata-only transport shared by discovery and `codex-quota.mjs`; it cannot
 start a turn or change sign-in. Claude quota events provide scoped observations,
 but cannot establish a complete fresh account snapshot. Gemini ACP context usage

@@ -1079,3 +1079,13 @@ and starts no later merge after provider disablement.
 explicit Save, unsaved edits, unchecked discovery, filtered model dropdowns,
 warning banner, and desktop/mobile layout. Its allowance observations are
 fixtures; it launches no live model or vendor login.
+
+Provider setup checks also cover missing Claude/Gemini executables, an installed
+CLI that fails to start, npm prerequisites, recipe-only explicit installation,
+terminal launch failure, and native executables in a user install directory.
+The install launcher is injected: these checks install no software and open no
+real sign-in or terminal. The provider browser scenario holds Setup responses,
+checks scroll position before and after them, reads copied install commands from
+the real clipboard, and verifies that only a clicked Install sends that action.
+Both Anthropic and Google are exercised. Saving and ordinary Settings navigation
+retain their existing checks.

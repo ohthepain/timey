@@ -1,3 +1,4 @@
+import { nativeAgentCommand } from './native-agent-command.mjs';
 import { readProviderConfig } from './provider-config.mjs';
 import { guardProviderWork } from './provider-runtime.mjs';
 import { meterCodexTurn } from './codex-diagnostics.mjs';
@@ -52,7 +53,7 @@ export class CodexConnection {
     this.phase('connecting', 'initialize');
     const toolArgs = await this.prepareChatTools();
     requireThat(!this.closing, 'This Codex connection closed before startup completed.');
-    this.child = spawn(this.command, [...toolArgs, ...this.args], {
+    this.child = spawn(nativeAgentCommand(this.command), [...toolArgs, ...this.args], {
       env: cleanEnvironment(),
       stdio: ['pipe', 'pipe', 'pipe'],
     });

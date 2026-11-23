@@ -1,12 +1,15 @@
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
+import {
+  installationRecipe,
+  missingInstallation,
+  providerCommand,
+  openProviderTerminal,
+} from './provider-installation.mjs';
 import { CodexAccountConnection } from './codex-account.mjs';
 import { AgentProcess } from './agent-process.mjs';
 import { cleanEnvironment, digest, requireThat } from './common.mjs';
 import { providerNames } from './provider-config.mjs';
 import { observeProvider, providerSettings, refreshProviderQuota } from './provider-runtime.mjs';
 
-const execute = promisify(execFile);
 const providerGuides = {
   codex: 'https://developers.openai.com/codex/cli/',
   anthropic: 'https://code.claude.com/docs/en/setup',
@@ -23,15 +26,6 @@ function model(id, entry) {
     description: entry.description || '',
     supportsEffort: id === 'codex',
   };
-}
-async function run(root, command, args) {
-  const result = await execute(command, args, {
-    cwd: root,
-    env: cleanEnvironment(),
-    timeout: 20000,
-    maxBuffer: 2 * 1024 * 1024,
-  });
-  return result.stdout;
 }
 async function discoverCodex(root) {
   const connection = new CodexAccountConnection();
@@ -53,8 +47,9 @@ async function discoverCodex(root) {
   }
 }
 async function discoverClaude(root) {
-  const auth = JSON.parse(await run(root, 'claude', ['auth', 'status']));
-  requireThat(auth.loggedIn === true, 'Sign in with Claude Code, then Refresh.');
+  const auth = JSON.parse(await providerCommand(root, 'claude', ['auth', 'status']));
+  if (auth.loggedIn !== true)
+    throw Object.assign(Error('Sign in with Claude Code, then check again.'), { code: 'AGENT_SIGN_IN_REQUIRED' });
   const process = new AgentProcess({
     command: 'claude',
     args: [
@@ -125,30 +120,50 @@ export async function refreshProvider(root, id) {
       ready: true,
       message: 'Signed in · native models advertised',
       models,
+      setup: { ...installationRecipe(id), step: 'ready' },
       checkedAt: Date.now(),
     });
     await refreshProviderQuota(root, id);
   } catch (error) {
+    const missing = error.code === 'ENOENT' || error.code === 'AGENT_NOT_INSTALLED';
+    const recipe = installationRecipe(id);
+    const setup = missing
+      ? await missingInstallation(root, id)
+      : { ...recipe, step: error.code === 'AGENT_SIGN_IN_REQUIRED' ? 'signin' : 'error' };
     observeProvider(root, id, {
       ready: false,
-      message:
-        error.code === 'ENOENT' || error.code === 'AGENT_NOT_INSTALLED'
-          ? 'Install the native agent, then sign in and Refresh.'
-          : 'Could not confirm sign-in and models. Complete native Setup, then Refresh.',
+      setup,
+      message: missing
+        ? `${recipe.agent} is not installed or is not on Factory’s PATH.`
+        : `Could not confirm ${recipe.agent} sign-in and models. Sign in, then check again.`,
       checkedAt: Date.now(),
     });
   }
   return providerSettings(root);
 }
-export async function setupProvider(root, id) {
+function recordSetup(root, id, setup, message) {
+  observeProvider(root, id, { ready: false, setup, message, checkedAt: Date.now() });
+  return { setup, guide: providerGuides[id], message };
+}
+export async function setupProvider(root, id, { openTerminal = openProviderTerminal } = {}) {
   requireThat(Object.hasOwn(providerNames, id), 'Choose a supported provider.');
+  const recipe = installationRecipe(id);
   try {
-    await run(root, commands[id], ['--version']);
-  } catch {
-    return {
-      guide: providerGuides[id],
-      message: 'Install the native agent using the linked instructions, then choose Setup again.',
-    };
+    await providerCommand(root, commands[id], ['--version']);
+  } catch (error) {
+    if (error.code === 'ENOENT')
+      return recordSetup(
+        root,
+        id,
+        await missingInstallation(root, id),
+        `${recipe.agent} is not installed or is not on Factory’s PATH.`
+      );
+    return recordSetup(
+      root,
+      id,
+      { ...recipe, step: 'error' },
+      `${recipe.agent} was found but could not start. Run ${recipe.checkCommand} in Terminal to inspect or repair the installation, then check again.`
+    );
   }
   const checked = await refreshProvider(root, id);
   if (checked.providers.find((provider) => provider.id === id)?.ready)
@@ -157,26 +172,66 @@ export async function setupProvider(root, id) {
       guide: providerGuides[id],
       message: 'Existing native sign-in found. Choose which models to enable, then Save.',
     };
-  const login = { codex: 'codex login', anthropic: 'claude auth login', google: 'gemini' }[id];
-  requireThat(
-    process.platform === 'darwin',
-    `Run ${login} in a terminal, then Refresh. Native browser setup is currently available on macOS.`
+  if (process.platform !== 'darwin')
+    return recordSetup(
+      root,
+      id,
+      { ...recipe, step: 'signin' },
+      `Run ${recipe.loginCommand} in your terminal, finish sign-in, then check again.`
+    );
+  try {
+    await openTerminal(recipe.loginCommand, { directory: root });
+  } catch {
+    return recordSetup(
+      root,
+      id,
+      { ...recipe, step: 'signin' },
+      `Could not open Terminal. Run ${recipe.loginCommand} in your terminal, then check again.`
+    );
+  }
+  return recordSetup(
+    root,
+    id,
+    { ...recipe, step: 'signin' },
+    `Finish ${recipe.agent} sign-in in Terminal, then choose Check again. Signing in may change the native agent account used by other projects. Setup sends no model prompt.`
   );
-  const quote = (value) => "'" + value.replaceAll("'", "'\\''") + "'";
-  const command = `cd ${quote(root)} && ${login}`;
-  await execute(
-    '/usr/bin/osascript',
-    [
-      '-e',
-      'tell application "Terminal" to activate',
-      '-e',
-      `tell application "Terminal" to do script ${JSON.stringify(command)}`,
-    ],
-    { timeout: 10000 }
+}
+export async function installProvider(root, id, { openTerminal = openProviderTerminal } = {}) {
+  const recipe = installationRecipe(id);
+  try {
+    await providerCommand(root, recipe.executable, ['--version']);
+    return { ready: false, message: `${recipe.agent} is already installed. Choose Sign in or Check again.` };
+  } catch (error) {
+    if (error.code !== 'ENOENT')
+      return recordSetup(
+        root,
+        id,
+        { ...recipe, step: 'error' },
+        `${recipe.agent} was found but could not start. Run ${recipe.checkCommand} in Terminal before reinstalling.`
+      );
+  }
+  const setup = await missingInstallation(root, id);
+  if (!setup.canInstall)
+    return recordSetup(
+      root,
+      id,
+      setup,
+      setup.prerequisite || 'Run the install command below in your terminal, then check again.'
+    );
+  try {
+    await openTerminal(recipe.command);
+  } catch {
+    return recordSetup(
+      root,
+      id,
+      setup,
+      'Could not open Terminal. Copy the install command below into your terminal, then check again.'
+    );
+  }
+  return recordSetup(
+    root,
+    id,
+    { ...setup, step: 'installing', canInstall: false },
+    `Installation opened in Terminal. When it finishes, choose Check again, then Sign in. If installation fails, the terminal shows the error; the commands below remain available.`
   );
-  return {
-    guide: providerGuides[id],
-    message:
-      'Finish sign-in in the native terminal, then Refresh. Signing in may change the native agent account used by other projects. Setup sends no model prompt.',
-  };
 }
