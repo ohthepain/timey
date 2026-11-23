@@ -2120,15 +2120,20 @@ test('Retro links complete oversized evidence before dispatch without dropping m
   assert.equal(flow.blocks.find((block) => block.kind === 'work').attempts[0].output, large);
 });
 
-test('new investigations expose independent outputs without code delivery or closure blocks', (t) => {
+test('new investigations create issues before generating a report and omit code delivery and closure blocks', (t) => {
   fixture(t);
   const flow = newFlow(
     { id: '20261113-investigation', title: 'Understand the cache', request_type: 'investigation', content: '' },
     { branch: 'dev', remote: 'origin', base: 'base' }
   );
   assert.deepEqual(
-    flow.blocks.map((block) => block.kind),
-    ['request', 'investigate', 'generate-report', 'create-issues']
+    flow.blocks.map(({ kind, after }) => [kind, after]),
+    [
+      ['request', []],
+      ['investigate', ['request']],
+      ['create-issues', ['work']],
+      ['generate-report', ['create-issues']],
+    ]
   );
 });
 

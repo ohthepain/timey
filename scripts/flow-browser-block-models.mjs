@@ -17,7 +17,7 @@ export async function blockModelsBrowserChecks({ page, project, service, poll, s
     close() {},
   };
   try {
-    writeBrowserIssue(project, { id, title: 'Choose the next block model', body: 'Preserve earlier attempts.' });
+    await writeBrowserIssue(project, { id, title: 'Choose the next block model', body: 'Preserve earlier attempts.' });
     const issue = service.flows.selected(id),
       flow = service.flows.read(issue);
     flow.settings = { model: 'anthropic:sonnet' };

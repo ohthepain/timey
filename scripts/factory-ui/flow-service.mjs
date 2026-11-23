@@ -629,14 +629,13 @@ class IssueFlows {
       }
     }
     const folderSnapshot = createFolderSettingsSnapshot(this.service.root);
-    const folderSettings = requestOnly
-      ? folderSnapshot.folders.filter((folder) => folder.id && !folder.duplicate)
-      : folderSnapshot.folders;
+    const assignableFolders = folderSnapshot.folders.filter((folder) => folder.id && !folder.duplicate);
+    const folderSettings = requestOnly ? assignableFolders : folderSnapshot.folders;
     const resolveFolder = folderSnapshot.resolve;
     const index = requestOnly
       ? []
       : issues.map((issue) =>
-          this.indexIssue(issue, this.read(issue, catalog, folderSettings, resolveFolder), issues, resolveFolder)
+          this.indexIssue(issue, this.read(issue, catalog, assignableFolders, resolveFolder), issues, resolveFolder)
         );
     const data = {
       ...storage,
@@ -671,7 +670,7 @@ class IssueFlows {
     if (!id) return data;
     const issue = this.selected(id);
     const agentApprovals = this.agentApprovals(id);
-    const observedFlow = this.read(issue, catalog, folderSettings, resolveFolder);
+    const observedFlow = this.read(issue, catalog, assignableFolders, resolveFolder);
     this.service.flowChanges?.checkout(id, flowWorkspace(this.service, observedFlow)?.checkout);
     const environment = await this.observer.observe(observedFlow, { refresh });
     const savedFlow = await this.observedDelivery(issue, observedFlow, environment, catalog, {
@@ -736,7 +735,7 @@ class IssueFlows {
         closure: issue.closure,
       },
       flow,
-      blockModels: issueBlockModels(this.service, issue, savedFlow, issueSettings),
+      blockModels: issueBlockModels(this.service, issue, savedFlow, issueSettings, resolveFolder),
       lastBlockingError: lastBlockingError(savedFlow),
       humanInput: availableHumanInput(issue, flow, agentApprovals[0]),
       agentApprovals,
@@ -2251,7 +2250,7 @@ class IssueFlows {
     if (preview.status === 'blocked' && this.autoplay.get(issue.id)?.blockId === block.id)
       this.pause(issue.id, preview.message);
     if (input.action === 'preview-publish' || preview.status === 'blocked' || preview.token !== input.previewToken)
-      return { publication: preview };
+      return { publication: { ...preview, flowRevision: flow.revision } };
     if (this.read(issue, catalog).revision !== flow.revision || this.selected(issue.id).title !== issue.title)
       return { previewChanged: true };
     return this.start(
