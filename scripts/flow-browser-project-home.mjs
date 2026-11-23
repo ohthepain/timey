@@ -362,10 +362,20 @@ async function deleteArchivedReports(page, { root }, screenshot) {
   assert.match(readFileSync(report, 'utf8'), /Disposable archive record/);
   assert.equal(git(root, 'branch', '--format=%(refname:short)', '--list', branch), branch);
   await screenshot('project-admin-archive-deletion-confirmation');
+  const deletion = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === '/api/project-archive-deletion' && response.request().method() === 'POST',
+    { timeout: 60_000 }
+  );
   await dialog.getByRole('button', { name: 'Permanently delete 1 archived issue' }).click();
+  const response = await deletion;
+  const result = await response.json();
+  assert.equal(response.status(), 200, JSON.stringify(result));
+  assert.deepEqual(result.results, [{ id, status: 'deleted', branches: [{ name: branch, status: 'deleted' }] }]);
   await dialog.getByText(`${branch} · deleted`).waitFor();
   assert.equal(git(root, 'branch', '--list', branch), '');
   assert.throws(() => readFileSync(report), /ENOENT/);
+  await screenshot('project-admin-archive-deletion-result');
   await dialog.getByRole('button', { name: 'Close' }).click();
   await page.getByRole('tab', { name: 'Home' }).click();
 }

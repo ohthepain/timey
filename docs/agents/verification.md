@@ -307,6 +307,8 @@ project-scoped Automate me history, retained conversations, and reviewed skill
 application in disposable projects. `pnpm run test:project-home:browser` drives
 the actual home page and dialogs, including custom history duration, discussion,
 Run, findings, draft edits, Apply, reload, and narrow layout with injected models.
+The Project Home browser check waits for the archive deletion response, then
+checks the displayed result and confirms that the report and selected branch are gone.
 The factory and Flow aggregate checks include these scenarios. Live provider
 availability remains a separate check.
 
