@@ -14,6 +14,7 @@
   let picked;
   let draft;
   let loading = false;
+  let refreshPending = false;
   let saving = false;
   let editable = false;
   let described;
@@ -45,7 +46,12 @@
   }
 
   async function refresh() {
-    if (loading || saving || document.hidden) return;
+    if (document.hidden) return;
+    if (loading || saving) {
+      refreshPending = true;
+      return;
+    }
+    refreshPending = false;
     loading = true;
     const revision = ++sourceRequest;
     try {
@@ -61,6 +67,7 @@
       status.hidden = false;
     } finally {
       loading = false;
+      if (refreshPending) void refresh();
     }
   }
 
@@ -248,6 +255,7 @@
       errorBox.hidden = false;
     } finally {
       saving = false;
+      if (refreshPending) void refresh();
       save.disabled = false;
     }
   });
@@ -279,6 +287,7 @@
     $('view-index').showModal();
   });
 
-  setInterval(() => void refresh(), 1000);
+  window.addEventListener('factory-sources-changed', () => void refresh());
+  document.addEventListener('visibilitychange', () => void refresh());
   void refresh();
 })();

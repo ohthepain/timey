@@ -988,8 +988,7 @@ try {
       const wording = page.locator('#request-form [name="wording"]');
       await wording.fill('Unsaved wording survives on-demand refresh.');
       for (const blockId of ['work', 'publish', 'request']) await selectBlock(blockId);
-      for (let i = 0; i < 2; i++)
-        await page.waitForResponse((response) => new URL(response.url()).pathname === '/api/flow');
+      await page.waitForTimeout(2400);
       assert.equal(inspections.length, 0, 'Navigation started automatic block mutation checks.');
       assert.equal(refreshes.length, 0, 'Idle polling requested remote refresh.');
       const refreshed = page.waitForResponse((response) => {
@@ -1005,7 +1004,7 @@ try {
       );
       assert.equal(refreshes.length, 1);
       assert.equal(await page.locator('#run-block').isEnabled(), true);
-      assert.match(await page.locator('#connection-status').textContent(), /GitHub on demand/);
+      assert.match(await page.locator('#connection-status').textContent(), /Watching for changes/);
       const pulse = page.locator('#diagnostics-trigger');
       const panel = page.locator('#diagnostics-panel');
       await pulse.scrollIntoViewIfNeeded();
@@ -1335,7 +1334,9 @@ try {
     }
     assert.ok(!options.some((item) => item.value === 'refs/remotes/origin/HEAD'));
     await selector.focus();
-    await page.waitForResponse((response) => response.url().includes('/api/flow?issue='));
+    const update = page.waitForResponse((response) => response.url().includes('/api/flow?issue='));
+    service.flowChanges.notify();
+    await update;
     assert.equal(
       await page.evaluate(() => document.activeElement.id),
       'starting-branch',
@@ -2739,6 +2740,7 @@ try {
         const url = page.url();
 
         await context.clearCookies();
+        if (!screen.path.startsWith('/classic')) await page.locator('#refresh').click();
         const expired = page.locator(screen.error).filter({ hasText: /session expired.*Reload this page/ });
         await expired.waitFor();
         await page.waitForResponse((response) => response.url().endsWith('/api/health') && response.status() === 204);
@@ -2832,7 +2834,6 @@ try {
   if (page) await screenshot('failure').catch(() => {});
   process.exitCode = 1;
 } finally {
-  await Promise.all(pendingResponses);
   if (page && process.env.NODE_V8_COVERAGE) {
     const scripts = await page.coverage.stopJSCoverage().catch(() => []);
     const result = scripts.flatMap((script) => {
@@ -2846,6 +2847,7 @@ try {
     writeFileSync(join(process.env.NODE_V8_COVERAGE, 'browser-' + randomUUID() + '.json'), JSON.stringify({ result }));
   }
   await browser?.close();
+  await Promise.all(pendingResponses);
   server.closeAllConnections();
   if (server.listening) await new Promise((done) => server.close(done));
   service.close();

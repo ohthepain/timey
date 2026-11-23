@@ -794,6 +794,14 @@ Active attempt updates read the persisted graph directly through `FlowStore`.
 They retain revision checks without rediscovering folder settings or rebuilding
 the display. Group eligibility rejects issues with existing work before resolving
 their settings.
+`flow-changes.mjs` sends change notifications over the authenticated Flow event
+stream. It batches notifications from server operations and watches issue
+records, UI definitions, Git metadata and selected checkouts. A visible Flow tab
+reads its snapshot on changes and reconnect, with a check every minute for
+shared storage, GitHub and missed file events. Unchanged snapshots leave the
+issue view in place. The stream carries no issue contents and closes when the
+tab is hidden.
+
 Each Flow view shares a folder settings snapshot across its issue rows. The
 snapshot lasts for that view only; mutation checks resolve current settings.
 `merged-issue.mjs` identifies retained merged delivery and defines the read-only

@@ -423,7 +423,7 @@
     render();
   }
 
-  async function load(force = false, announce = false) {
+  async function load(force = false, announce = false, remote = false) {
     if (serverControlUI.isWaitingForServer()) return;
     if (!force && (state.pending || state.loading)) {
       if (announce) toast('Wait for the current action before refreshing.');
@@ -438,22 +438,29 @@
     try {
       const query = new URLSearchParams();
       if (selected) query.set('issue', selected);
-      if (announce) query.set('refresh', 'true');
+      if (announce || remote) query.set('refresh', 'true');
       if (document.documentElement.dataset.projectIssueRequestEmbed === 'true') query.set('view', 'request');
       const params = query.toString();
       const result = await json(`/api/flow${params ? `?${params}` : ''}`, {
         signal: controller.signal,
       });
       if (sequence !== state.sequence || selected !== state.issueId || serverControlUI.isWaitingForServer()) return;
+      const recovering = Boolean(state.connectionError);
       state.connectionError = '';
       $('connection-status').className = 'connection';
-      $('connection-status').innerHTML = '<span class="connection-dot"></span> Local updates · GitHub on demand';
+      $('connection-status').innerHTML = '<span class="connection-dot"></span> Live · Watching for changes';
       $('connection-status').title = result.storeStatus?.checkedAt
         ? `Shared data last checked ${date(result.storeStatus.checkedAt)}`
-        : 'Remote data refreshes on demand.';
+        : 'Remote data is checked periodically.';
       if (announce) state.error = '';
-      applyView(result);
-      void refreshIssueStore();
+      const { observedAt, remoteObservedAt, remoteAttemptedAt, ...environment } = result.environment || {};
+      const { checkedAt, ...storeStatus } = result.storeStatus || {};
+      const fingerprint = JSON.stringify({ ...result, environment, storeStatus });
+      if (force || recovering || state.snapshotFingerprint !== fingerprint) {
+        state.snapshotFingerprint = fingerprint;
+        applyView(result);
+        void refreshIssueStore();
+      }
       if (announce)
         toast(
           result.environment?.remoteError || result.sharedQueueWarning
@@ -3990,17 +3997,60 @@
     { passive: true }
   );
   new ResizeObserver(drawConnections).observe($('graph-scroll'));
-  document.addEventListener('visibilitychange', () => {
-    if (!document.hidden) void load();
-  });
+  let changes;
+  let changeSelection;
+  let updateTimer;
+  let remoteCheck = false;
+
+  function queueUpdate(remote = false) {
+    remoteCheck ||= remote;
+    if (updateTimer || document.hidden) return;
+    updateTimer = setTimeout(() => {
+      updateTimer = undefined;
+      if (document.hidden) return;
+      if (state.pending || state.loading) {
+        queueUpdate();
+        return;
+      }
+      const refreshRemote = remoteCheck;
+      remoteCheck = false;
+      void load(false, false, refreshRemote);
+    }, 100);
+  }
+
+  function connectChanges() {
+    if (changes && changeSelection === state.issueId) return;
+    changes?.close();
+    changeSelection = state.issueId;
+    const query = changeSelection ? '?issue=' + encodeURIComponent(changeSelection) : '';
+    changes = new EventSource('/api/flow-changes' + query);
+    changes.addEventListener('open', () => queueUpdate());
+    changes.addEventListener('error', () => {
+      if (changes?.readyState === EventSource.CLOSED) queueUpdate();
+    });
+    changes.addEventListener('flow', () => queueUpdate());
+    changes.addEventListener('sources', () => window.dispatchEvent(new Event('factory-sources-changed')));
+  }
+
+  function syncChanges() {
+    if (document.hidden) {
+      changes?.close();
+      changes = undefined;
+    } else {
+      connectChanges();
+    }
+  }
+
+  document.addEventListener('visibilitychange', syncChanges);
+  window.addEventListener('factory-workspace-changed', syncChanges);
   setInterval(updateBlockTimers, 1000);
   setInterval(() => {
-    if (!document.hidden) void load();
-  }, 2000);
+    if (!document.hidden) queueUpdate(true);
+  }, 60_000);
   serverControlUI.watchConnection(() => {
     $('connection-status').className = 'connection offline';
     $('connection-status').innerHTML = '<span class="connection-dot"></span> Offline';
     renderErrors();
   });
-  void load();
+  syncChanges();
 })();

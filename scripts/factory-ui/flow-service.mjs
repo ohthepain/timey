@@ -589,6 +589,7 @@ class IssueFlows {
     if (id && !evidence?.pending && (!evidence || refresh)) {
       evidence ||= {};
       this.evidenceLoads.set(id, evidence);
+      const before = JSON.stringify([evidence.status, evidence.warning]);
       evidence.pending = hydrateProjectEvidence(this.service, id)
         .then(([resolver]) => {
           evidence.status = resolver ? { gaps: resolver.gaps, retainedFiles: resolver.files.length } : undefined;
@@ -600,6 +601,8 @@ class IssueFlows {
         .finally(() => {
           evidence.pending = null;
           evidence.checkedAt = Date.now();
+          if (before !== JSON.stringify([evidence.status, evidence.warning]))
+            this.service.flowChanges?.notify('flow', id);
         });
     }
     return {
@@ -670,6 +673,7 @@ class IssueFlows {
     const issue = this.selected(id);
     const agentApprovals = this.agentApprovals(id);
     const observedFlow = this.read(issue, catalog, folderSettings, resolveFolder);
+    this.service.flowChanges?.checkout(id, flowWorkspace(this.service, observedFlow)?.checkout);
     const environment = await this.observer.observe(observedFlow, { refresh });
     const savedFlow = await this.observedDelivery(issue, observedFlow, environment, catalog, {
       background: Boolean(this.service.projectStores),
@@ -807,6 +811,7 @@ class IssueFlows {
         observation.pending = this.observedDelivery(issue, flow, environment, catalog)
           .catch(() => {
             observation.warning = 'The observed PR state could not be saved. Refresh storage before editing.';
+            this.service.flowChanges?.notify('flow', issue.id);
           })
           .finally(() => {
             observation.pending = null;
@@ -2525,6 +2530,7 @@ class IssueFlows {
         block.attempts.push(attempt);
         flow = await this.store.save(flow, flow.revision);
       }
+      this.service.flowChanges?.notify();
       return { flow, owned };
     } catch (error) {
       this.active.delete(issue.id);
@@ -2718,6 +2724,7 @@ class IssueFlows {
         }
       }
       if (this.active.get(issue.id)?.attemptId === attemptId) this.active.delete(issue.id);
+      this.service.flowChanges?.notify();
       if (['retro', 'cleanup'].includes(block.kind) && outcome?.status === 'completed') {
         await this.closureTasks.get(issue.id);
         this.resumeClosure(issue.id);

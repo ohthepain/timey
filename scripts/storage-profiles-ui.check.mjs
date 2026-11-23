@@ -159,7 +159,7 @@ test('move endpoint refuses a profile that changed after preview and resolves bo
 test('project settings adds and saves a named profile without changing saved project roles', async (t) => {
   const f = configured(t);
   const dom = new JSDOM(
-    '<dialog id="project-settings-dialog"><nav id="settings-navigation"></nav><h2 id="settings-page-title"></h2><p id="project-settings-error"></p><div id="project-settings-content"></div></dialog><dialog id="settings-unsaved-dialog"></dialog>',
+    '<dialog id="project-settings-dialog"><nav id="settings-navigation"></nav><div class="settings-body"><h2 id="settings-page-title"></h2><p id="project-settings-error"></p><div id="project-settings-content"></div></div></dialog><dialog id="settings-unsaved-dialog"></dialog>',
     { url: 'http://localhost', runScripts: 'outside-only' }
   );
   t.after(() => dom.window.close());
@@ -171,6 +171,7 @@ test('project settings adds and saves a named profile without changing saved pro
     this.open = false;
   };
   window.FactoryHotkeys = { refresh: async () => {} };
+  window.factoryAgentOptions = () => {};
   for (const file of ['issue-store-ui.js', 'project-settings-ui.js'])
     window.eval(readFileSync(new URL('./factory-ui/' + file, import.meta.url), 'utf8'));
   let registry = { ...f.config, stores: f.config.stores.map((store) => ({ ...store, references: [] })) };
