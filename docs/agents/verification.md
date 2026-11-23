@@ -1208,3 +1208,20 @@ The PR repair-first step records V8 coverage under `.issues/repair-first-coverag
 The following strict static audit consumes that actual coverage before broad
 verification, so tested runtime helpers are evaluated with measured coverage.
 No changed repair plan means the focused step skips, as before.
+`node --test scripts/store-git-transaction.check.mjs` checks atomic Git metadata
+publication, rollback, competing writes, replay, lost push responses, pinned
+reads and detached callbacks. The manual operation tests in
+`project-stores-flow.check.mjs` check failed admission and checkpoint ordering.
+`RUNS=5 node scripts/branch-update-benchmark.mjs --compare --assert` compares the
+original and current owned branch-update paths against disposable Git stores,
+verifies completed work and released ownership, and counts metadata lookups and
+pushes. It also measures plain fetch-and-merge. See the
+[performance evidence](../plans/update-branch-performance.md) for scope and limits.
+
+`node --test scripts/store-git-github.check.mjs` checks the GitHub metadata request
+schema, exact object identities, conditional ref update, permissions and rejected
+responses. The store-record tests verify that fresh writes avoid downloading their
+just-uploaded payloads, while replay and later reads still validate storage.
+They also check scoped payload reuse, independent values, failure retries and
+expiry for detached callbacks. Git transaction checks cover disjoint peer updates
+without callback replay and rejection of changed input or command prefixes.

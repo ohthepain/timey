@@ -1097,6 +1097,13 @@ guards. `flow-merge-state.mjs` reads the pending local merge for the header
 control, whose explicit abort action is guarded by the flow service.
 Confirmed Flow saves notify subscribed readers directly through the existing
 flow-change channel. Filesystem watching remains the fallback for external writes.
+Manual owned operations and Update Branch blocks publish admission and completion
+through `stores/providers/git-transaction.mjs`. `git-read-set.mjs` checks record
+and list dependencies before retrying disjoint peer changes without replaying work.
+`git-github.mjs` publishes matching prepared Git objects with the configured App
+and conditionally updates the metadata ref. `record-payloads.mjs` shares verified
+immutable payloads within one transaction. Progress saves cannot overlap completion.
+See the [Update Branch measurements](../plans/update-branch-performance.md).
 `flow-merge.mjs` shares the Git fetch and merge helpers for Destination, budgets recovery per blocker, stops repeated failing source trees, waits for GitHub checks, and binds approval to the exact issue commit
 and target revision. `flow-merge-github.mjs` bounds transient GitHub observation
 and merge retries, reconciling uncertain writes before repeating them. Merge

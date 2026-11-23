@@ -10,7 +10,7 @@ import { registerProjectStores } from './factory-ui/stores/report-access.mjs';
 import { FlowStore, newFlow, makeBlock } from './factory-ui/flow-store.mjs';
 import { createIssueFlows } from './factory-ui/flow-service.mjs';
 
-async function fixture(t, run = async () => ({ summary: 'Completed' })) {
+async function fixture(t, run = async () => ({ summary: 'Completed' }), recordKind = 'files') {
   const { root, git } = gitFixture(t, 'project-stores-flow-');
   writeFileSync(join(root, '.gitignore'), '.issues/\n');
   writeFileSync(join(root, 'source.txt'), 'Source\n');
@@ -19,7 +19,8 @@ async function fixture(t, run = async () => ({ summary: 'Completed' })) {
   git('branch', 'dev');
   const options = { root, projectId: 'fixture' };
   const artifacts = await openArtifactStore({ id: 'files', kind: 'files' }, options);
-  const records = await openRecordStore({ id: 'files', kind: 'files' }, { ...options, artifacts });
+  if (recordKind === 'git') git('remote', 'add', 'origin', root);
+  const records = await openRecordStore({ id: 'files', kind: recordKind, branch: 'queue' }, { ...options, artifacts });
   const issues = await openIssueStore({ id: 'files', kind: 'files' }, { ...options, artifacts });
   const project = createProjectStores({
     ...options,
@@ -818,3 +819,112 @@ for (const mode of ['error', 'result']) {
     );
   });
 }
+
+test('manual operation admits no execution and releases local activity when atomic publication fails', async (t) => {
+  const f = await fixture(t, undefined, 'git');
+  const { runOwnedOperation } = await import('./factory-ui/stores/owned-operation.mjs');
+  f.git('config', 'core.hooksPath', join(f.root, '.git/hooks'));
+  const hook = join(f.root, '.git/hooks/pre-receive');
+  writeFileSync(hook, '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+  const issue = f.flows.selected(f.id);
+  let executions = 0;
+  const run = () =>
+    runOwnedOperation(f.flows, {
+      issue,
+      flow: f.flows.read(issue),
+      label: 'Update branch',
+      operation: 'manual-update',
+      run: async () => {
+        executions++;
+        return { summary: 'Updated' };
+      },
+    });
+  await assert.rejects(run(), { code: 'STORE_UNAVAILABLE' });
+  assert.equal(executions, 0);
+  assert.equal(f.flows.active.has(f.id), false);
+  assert.equal(await f.records.get('claims/' + f.id), null);
+  writeFileSync(hook, '#!/bin/sh\nexit 0\n');
+  await f.project.refresh({ issueIds: [f.id] });
+  await run();
+  assert.equal(executions, 1);
+});
+
+test('manual operation coalesces checkpoints and waits for an in-flight save before completion', async (t) => {
+  const f = await fixture(t);
+  const { runOwnedOperation } = await import('./factory-ui/stores/owned-operation.mjs');
+  const entered = Promise.withResolvers();
+  const releaseRun = Promise.withResolvers();
+  const releaseCheckpoint = Promise.withResolvers();
+  let checkpoints = 0;
+  f.flows.synchronizeAttempt = async () => {
+    checkpoints++;
+    await releaseCheckpoint.promise;
+  };
+  t.mock.timers.enable({ apis: ['setInterval'] });
+  const issue = f.flows.selected(f.id);
+  let completed = false;
+  const task = runOwnedOperation(f.flows, {
+    issue,
+    flow: f.flows.read(issue),
+    label: 'Update branch',
+    operation: 'manual-update',
+    run: async () => {
+      entered.resolve();
+      await releaseRun.promise;
+      return { summary: 'Updated' };
+    },
+  }).then(() => {
+    completed = true;
+  });
+  await entered.promise;
+  t.mock.timers.tick(15000);
+  assert.equal(checkpoints, 1);
+  releaseRun.resolve();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(completed, false);
+  releaseCheckpoint.resolve();
+  await task;
+  assert.equal(completed, true);
+});
+
+test('Update Branch blocks publish admission and completion in two Git metadata commits', async (t) => {
+  const f = await fixture(t, undefined, 'git');
+  const issue = f.flows.selected(f.id);
+  let flow = f.flows.read(issue);
+  const block = makeBlock('update-branch', []);
+  flow.blocks.push(block);
+  flow = await f.flows.store.save(flow, flow.revision);
+  const before = Number(f.git('rev-list', '--count', 'queue'));
+  await f.flows.start(issue, flow, { action: 'start', blockId: block.id }, f.flows.catalog.read().entries);
+  await f.flows.active.get(f.id).task;
+  assert.equal(Number(f.git('rev-list', '--count', 'queue')) - before, 2);
+  const saved = await f.project.readIssue(f.id);
+  assert.equal(saved.flow.blocks.find((entry) => entry.id === block.id).attempts.at(-1).status, 'completed');
+  assert.equal(await f.records.get('claims/' + f.id), null);
+});
+
+test('Update Branch block publication failure leaves no local execution or shared claim', async (t) => {
+  let executed = false;
+  const f = await fixture(
+    t,
+    async () => {
+      executed = true;
+      return { summary: 'Updated' };
+    },
+    'git'
+  );
+  const issue = f.flows.selected(f.id);
+  let flow = f.flows.read(issue);
+  const block = makeBlock('update-branch', []);
+  flow.blocks.push(block);
+  flow = await f.flows.store.save(flow, flow.revision);
+  f.git('config', 'core.hooksPath', join(f.root, '.git/hooks'));
+  writeFileSync(join(f.root, '.git/hooks/pre-receive'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+  await assert.rejects(
+    f.flows.start(issue, flow, { action: 'start', blockId: block.id }, f.flows.catalog.read().entries),
+    { code: 'STORE_UNAVAILABLE' }
+  );
+  assert.equal(executed, false);
+  assert.equal(f.flows.active.has(f.id), false);
+  assert.equal(await f.records.get('claims/' + f.id), null);
+});

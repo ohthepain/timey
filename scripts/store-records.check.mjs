@@ -708,3 +708,87 @@ for (const kind of providers) {
     await f.checkSource();
   });
 }
+
+test('fresh Git writes return their acknowledged values without downloading the uploaded payload again', async (t) => {
+  const f = await fixture(t, 'git');
+  const store = await f.open();
+  const get = f.artifacts.get.bind(f.artifacts);
+  let downloads = 0;
+  f.artifacts.get = async (ref) => {
+    downloads++;
+    return get(ref);
+  };
+  const value = { text: 'large payload'.repeat(5000) };
+  const request = {
+    operationId: 'fresh-large',
+    expected: [{ key: 'value', revision: null }],
+    writes: [{ key: 'value', value }],
+  };
+  const result = await store.commit(request);
+  assert.deepEqual(result.records[0].value, value);
+  assert.equal(downloads, 0, 'A confirmed new write already has its exact canonical values.');
+  assert.deepEqual((await store.get('value')).value, value);
+  assert.ok(downloads > 0, 'Subsequent reads still verify retained artifact bytes.');
+  const beforeReplay = downloads;
+  assert.deepEqual(await store.commit(request), result);
+  assert.ok(downloads > beforeReplay, 'Replayed receipts are read from retained storage.');
+});
+
+test('Git metadata transactions reuse verified payload bytes and expire them before the next action', async (t) => {
+  const f = await fixture(t, 'git');
+  const store = await f.open();
+  const value = { text: 'immutable payload'.repeat(5000) };
+  await store.commit({
+    operationId: 'seed-payload',
+    expected: [{ key: 'value', revision: null }],
+    writes: [{ key: 'value', value }],
+  });
+  const get = f.artifacts.get.bind(f.artifacts);
+  let downloads = 0;
+  f.artifacts.get = async (ref) => {
+    downloads++;
+    return get(ref);
+  };
+  await store.transaction(async () => {
+    const first = await store.get('value');
+    first.value.text = 'caller edit';
+    assert.deepEqual((await store.get('value')).value, value);
+    assert.equal(downloads, 1);
+  });
+  f.artifacts.get = async () => {
+    throw Error('Retained payload unavailable');
+  };
+  await assert.rejects(store.get('value'), /Retained payload unavailable/);
+});
+
+test('Git payload caching retries failed reads and does not leak into detached callbacks', async (t) => {
+  const f = await fixture(t, 'git');
+  const store = await f.open();
+  await store.commit({
+    operationId: 'payload-lifetime',
+    expected: [{ key: 'value', revision: null }],
+    writes: [{ key: 'value', value: { text: 'large'.repeat(5000) } }],
+  });
+  const get = f.artifacts.get.bind(f.artifacts);
+  let downloads = 0;
+  f.artifacts.get = async (ref) => {
+    downloads++;
+    if (downloads === 1) throw Error('Temporary payload failure');
+    return get(ref);
+  };
+  const release = Promise.withResolvers();
+  let detached;
+  await store.transaction(async () => {
+    await assert.rejects(store.get('value'), /Temporary payload failure/);
+    assert.ok((await store.get('value')).value.text);
+    detached = (async () => {
+      await release.promise;
+      return store.get('value');
+    })();
+  });
+  f.artifacts.get = async () => {
+    throw Error('Payload unavailable after completion');
+  };
+  release.resolve();
+  await assert.rejects(detached, /Payload unavailable after completion/);
+});

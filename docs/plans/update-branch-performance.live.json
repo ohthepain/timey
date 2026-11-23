@@ -1,0 +1,42 @@
+{
+  "cores": 10,
+  "load": [3.14990234375, 2.67333984375, 2.6337890625],
+  "errors": 0,
+  "measurements": [
+    {
+      "run": 0,
+      "plainMs": 1829.3215840000012,
+      "updateMs": 16182.569500000001,
+      "completed": true,
+      "headUnchanged": true
+    },
+    {
+      "run": 1,
+      "plainMs": 1993.744292000003,
+      "updateMs": 18041.182749999996,
+      "completed": true,
+      "headUnchanged": true
+    },
+    {
+      "run": 2,
+      "plainMs": 1459.6029579999959,
+      "updateMs": 17304.952167000003,
+      "completed": true,
+      "headUnchanged": true
+    },
+    {
+      "run": 3,
+      "plainMs": 1361.2746250000055,
+      "updateMs": 18703.477790999998,
+      "completed": true,
+      "headUnchanged": true
+    },
+    {
+      "run": 4,
+      "plainMs": 1424.917499999996,
+      "updateMs": 17596.466708000007,
+      "completed": true,
+      "headUnchanged": true
+    }
+  ]
+}

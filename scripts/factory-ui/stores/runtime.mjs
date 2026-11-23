@@ -26,6 +26,14 @@ const methods = {
   artifact: ['put', 'get', 'inspect', 'list', 'remove', 'open', 'probe'],
 };
 
+const snapshots = {
+  issue: { files: ['readSnapshot'], git: ['readSnapshot'], postgres: ['readSnapshot'] },
+  records: { files: ['readSnapshot'], git: ['readSnapshot', 'transaction'], postgres: ['readSnapshot'] },
+};
+function providerMethods(kind, config) {
+  return [...methods[kind], ...(snapshots[kind]?.[config.kind] || [])];
+}
+
 function lazyProvider(runtime, kind, config) {
   const key = kind + ':' + config.id;
   if (runtime.providers.has(key)) return runtime.providers.get(key);
@@ -44,8 +52,7 @@ function lazyProvider(runtime, kind, config) {
     return pending;
   };
   const proxy = { id: config.id, ...(kind === 'issue' && { supportsCoordinatedCommit: true }) };
-  const names = [...methods[kind], ...(kind !== 'artifact' && config.kind !== 'dynamodb' ? ['readSnapshot'] : [])];
-  for (const name of names)
+  for (const name of providerMethods(kind, config))
     proxy[name] = async (...args) => {
       const provider = await open();
       assertStore(
@@ -406,6 +413,12 @@ function activate(runtime) {
   runtime.registeredProject = runtime.project;
 }
 
+function synchronizeGrouped(runtime, fresh, scope) {
+  const transaction = runtime.ready && runtime.project.records.transaction;
+  const run = () => synchronize(runtime, fresh, scope);
+  return transaction ? transaction(run) : run();
+}
+
 async function synchronize(runtime, fresh, scope) {
   await followProjectRoles(runtime);
   await importLegacy(runtime);
@@ -429,7 +442,7 @@ function synchronizeOnce(runtime, fresh, scope) {
     runtime.pendingScope = scope;
     runtime.lastRefresh = Date.now();
     runtime.pending = observeActivity('stores', 'Refresh stores', diagnosticContext(runtime.service.root), () =>
-      synchronize(runtime, fresh, scope)
+      synchronizeGrouped(runtime, fresh, scope)
     )
       .catch((error) => {
         runtime.service.storeStatus = {
