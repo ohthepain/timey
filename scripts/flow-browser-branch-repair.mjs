@@ -4,6 +4,17 @@ import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { git } from './factory-ui/common.mjs';
 
+async function runRepairCommand(page, command) {
+  const result = page.waitForResponse(
+    (response) => response.url().endsWith('/api/flow-action') && response.request().postDataJSON()?.action === command
+  );
+  await page.locator('#branch-repair-dialog [data-repair-command]').click();
+  const response = await result;
+  const body = await response.json();
+  assert.equal(response.status(), 200, JSON.stringify(body));
+  return body;
+}
+
 export async function branchRepairBrowserChecks({ page, service, project, poll, screenshot }) {
   const id = '20261120-branch-repair-fixture';
   await importBrowserIssue(
@@ -105,11 +116,10 @@ export async function branchRepairBrowserChecks({ page, service, project, poll, 
     assert.equal(await button.evaluate((node) => node.dataset.repairState === 'ready'), true);
     assert.match(await dialog.locator('[data-repair-diff]').textContent(), /branch-fix.txt/);
     await screenshot('branch-repair-ready');
-    await dialog.locator('[data-repair-close]').click();
-    await page.locator('#refresh').click();
-    await page.locator('#toast').getByText('Current view refreshed.', { exact: true }).waitFor();
+    await repairs.active.get(id)?.task;
+    await page.reload();
     await button.click();
-    await dialog.locator('[data-repair-command]').click();
+    await runRepairCommand(page, 'branch-repair-approve');
     await poll(
       () => button.textContent(),
       (value) => value.includes('Branch Fix Applied'),
@@ -150,14 +160,7 @@ export async function branchRepairBrowserChecks({ page, service, project, poll, 
         return { summary: 'Updated the issue branch from the starting branch.' };
       },
     };
-    const retry = page.waitForResponse(
-      (response) =>
-        response.url().endsWith('/api/flow-action') && response.request().postDataJSON()?.action === 'update-worktree'
-    );
-    await dialog.locator('[data-repair-command]').click();
-    const response = await retry;
-    const updated = await response.json();
-    assert.equal(response.status(), 200, JSON.stringify(updated));
+    const updated = await runRepairCommand(page, 'update-worktree');
     assert.match(updated.branchUpdateSummary, /Updated the issue branch/);
     await page.locator('#fix-branch:not([data-repair-state="broken"])').waitFor();
     assert.equal(updates, 1);

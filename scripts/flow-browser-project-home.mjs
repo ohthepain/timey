@@ -352,7 +352,7 @@ async function deleteArchivedReports(page, { root }, screenshot) {
   await page.getByRole('tab', { name: 'Admin' }).click();
   await page.getByRole('button', { name: 'Preview archived issues' }).click();
   const dialog = page.getByRole('dialog', { name: 'Delete archived issues' });
-  const choice = dialog.getByRole('checkbox', { name: title, exact: true });
+  const choice = dialog.getByRole('checkbox', { name: new RegExp('^(?:#\\d+ )?' + title + '$') });
   await choice.check();
   const branchChoice = dialog.getByRole('checkbox', { name: `Also delete local branch ${branch}` });
   assert.equal(await branchChoice.isChecked(), false);

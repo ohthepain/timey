@@ -2749,9 +2749,9 @@ try {
   await check('Block timers reset for each attempt and stop at the last saved time after disconnect', async () => {
     const issue = service.flows.selected(issueId);
     let flow = service.flows.read(issue);
-    const request = flow.blocks.find((item) => item.kind === 'request');
-    const badge = page.locator('[data-block="' + request.id + '"] .block-status');
-    request.attempts = [
+    const request = () => flow.blocks.find((item) => item.kind === 'request');
+    const badge = page.locator('[data-block="' + request().id + '"] .block-status');
+    request().attempts = [
       {
         id: 'waiting-attempt',
         status: 'uncertain',
@@ -2762,7 +2762,7 @@ try {
     ];
     flow = await service.flows.store.save(flow, flow.revision);
     await badge.filter({ hasText: /^Needs input$/ }).waitFor();
-    request.attempts.push({
+    request().attempts.push({
       id: 'failed-attempt',
       status: 'blocked',
       startedAt: '2026-11-16T12:10:00Z',
@@ -2770,7 +2770,7 @@ try {
     });
     flow = await service.flows.store.save(flow, flow.revision);
     await badge.filter({ hasText: /^Failed after 00:07$/ }).waitFor();
-    request.attempts.push({
+    request().attempts.push({
       id: 'disconnected-attempt',
       status: 'running',
       startedAt: '2026-11-16T12:20:00Z',
