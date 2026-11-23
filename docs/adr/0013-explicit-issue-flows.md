@@ -148,7 +148,12 @@ flows. A change to Goal or Requested proof invalidates related flow
 results. Publish PR prepares and
 rechecks an exact preview before writing to GitHub. New PR descriptions include
 Requested proof when present. Repeat publication updates the title and commit as
-needed and preserves the original PR description.
+needed and preserves the original PR description. Publish only pushes the existing
+committed candidate and creates or updates its PR. It runs no tests, installs no
+dependencies, and makes no source edits or commits. Failed or missing verification
+evidence does not block publication; Work and Merge own testing and repairs.
+When Merge repair stops after a verification failure, the block summary retains
+the failed test or check names and the repair's reason for stopping.
 
 Work commits its checked issue changes through normal Git hooks before completing.
 Factory rechecks formatting and Fallow, then requires a clean committed checkout.
@@ -279,8 +284,8 @@ commit.
 
 Update Branch records the fetched commit and resulting issue commit after
 checking Git ancestry. It retains Git’s merge commit message or reports a
-fast-forward or already up-to-date result. Publish PR and Merge use passing
-verification for their committed candidate and fetched destination. A no-op
+fast-forward or already up-to-date result. Merge uses passing verification for
+its committed candidate and fetched destination. A no-op
 update leaves uncommitted changes alone.
 
 If Git reports conflicts from this update, Factory gives Codex one attempt. Codex

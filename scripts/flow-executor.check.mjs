@@ -1181,6 +1181,44 @@ test('Merge asks its worker to repair an inherited browser failure and verifies 
   );
 });
 
+for (const thrown of [false, true])
+  test(`Merge names the failed test when its repair ${thrown ? 'throws' : 'returns blocked'}`, async (t) => {
+    let failure;
+    const f = mergeFixture(t, {
+      beforeVerify() {
+        const folder = join(f.root, '.issues/failed-browser');
+        mkdirSync(folder, { recursive: true });
+        const summary = join(folder, 'summary.json');
+        writeFileSync(summary, JSON.stringify({ checks: [{ name: 'browser', passed: false }] }));
+        failure = Object.assign(Error('Fixture issues are absent from the initialized store.'), {
+          verificationFailure: { summaries: [summary], logs: [] },
+        });
+        throw failure;
+      },
+    });
+    await f.run('understand');
+    f.connection.turn = async () => {
+      if (thrown) throw Error('Three repair approaches were exhausted.');
+      return '```flow-result\n' + JSON.stringify({ failure: 'Three repair approaches were exhausted.' }) + '\n```';
+    };
+    await assert.rejects(
+      f.run('merge', {
+        definition: {
+          artifacts: [],
+          mergeWorkflow: { policy: 'automatic', pollSeconds: 5, checkTimeoutSeconds: 900, repairAttempts: 3 },
+        },
+      }),
+      (error) => {
+        assert.match(error.message, /tests or verification checks failed.*browser/i);
+        assert.match(error.message, /Three repair approaches were exhausted/);
+        assert.match(error.message, /Fixture issues are absent/);
+        assert.deepEqual(error.verificationFailure, failure.verificationFailure);
+        return true;
+      }
+    );
+    assert.ok(!f.observations.some(({ operation }) => ['push', 'merge'].includes(operation)));
+  });
+
 test('external merge reconciliation records GitHub facts without manufacturing verification or acceptance', async (t) => {
   const f = mergeFixture(t, { merged: true });
   await f.run('understand');

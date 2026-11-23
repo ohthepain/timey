@@ -66,3 +66,18 @@ export function verificationFailureKey(error) {
   const reports = error.verificationFailure?.summaries;
   return reports?.length ? JSON.stringify(reports.flatMap(checkFailureSignature)) : error.blockerKey;
 }
+
+export function verificationFailureMessage(error) {
+  if (!error.verificationFailure) return error.message;
+  const names = failedVerificationNames(error.verificationFailure);
+  return 'Tests or verification checks failed' + (names.length ? ` (${names.join(', ')})` : '') + '. ' + error.message;
+}
+
+function failedVerificationNames(failure) {
+  const names = (failure.summaries ?? []).flatMap((path) =>
+    JSON.parse(readFileSync(path, 'utf8'))
+      .checks.filter((check) => !check.passed)
+      .map((check) => check.name)
+  );
+  return [...new Set(names)];
+}

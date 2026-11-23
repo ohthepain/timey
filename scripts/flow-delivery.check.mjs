@@ -192,6 +192,25 @@ test('Publish previews and publishes the exact commit without running full Verif
   assert.equal(result.result.verification, undefined);
 });
 
+test('Publish ignores failed test evidence and leaves the committed source unchanged', async (t) => {
+  const f = fixture(t);
+  f.ctx.flow.blocks[0].attempts[0] = {
+    status: 'blocked',
+    summary: 'Browser test failed.',
+  };
+  const before = f.source.git('rev-parse', 'HEAD', 'HEAD^{tree}');
+  const forbidden = async () => assert.fail('Publish must not test or repair source.');
+  Object.assign(f.options, { verifyCandidate: forbidden, verifyWork: forbidden, repair: forbidden });
+  const result = await f.publish();
+  assert.equal(result.result.pr, 17);
+  assert.equal(f.source.git('rev-parse', 'HEAD', 'HEAD^{tree}'), before);
+  assert.equal(f.source.git('status', '--porcelain', '--untracked-files=all'), '');
+  assert.deepEqual(
+    f.calls.filter((call) => call !== 'credentials'),
+    ['push', 'publish']
+  );
+});
+
 test('Publish offers Cannot Reproduce without pushing when the destination already contains the candidate', async (t) => {
   const f = fixture(t);
   f.provider.gh = async () => `dev\t${f.input.revision}`;
