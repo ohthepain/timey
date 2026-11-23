@@ -1,3 +1,12 @@
+import {
+  issueBlockModels,
+  blockModelKind,
+  blockModelView,
+  blockExecutionSettings,
+  validateBlockModel,
+  assertBlockModelAvailable,
+} from './block-models.mjs';
+import { lastBlockingError, retainBlockingError, resolveBlockingErrors } from './block-errors.mjs';
 import { guardProviderWork } from './provider-runtime.mjs';
 import { withDiagnosticContext } from './diagnostic-activity.mjs';
 import { storeUnavailable } from './stores/availability.mjs';
@@ -693,6 +702,8 @@ class IssueFlows {
         closure: issue.closure,
       },
       flow,
+      blockModels: issueBlockModels(this.service, issue, savedFlow, issueSettings),
+      lastBlockingError: lastBlockingError(savedFlow),
       humanInput: availableHumanInput(issue, flow, agentApprovals[0]),
       agentApprovals,
       issueSettings: {
@@ -930,6 +941,11 @@ class IssueFlows {
     return Boolean(closing && !closing.complete);
   }
   async closeWithReason(input, artifact) {
+    return this.withBlockingError({ ...input, action: 'close', blockId: 'close' }, () =>
+      this.prepareClosure(input, artifact)
+    );
+  }
+  async prepareClosure(input, artifact) {
     const issue = this.selected(input.issueId);
     this.groups.requireIndependent(issue.id);
     const catalog = this.catalog.read().entries;
@@ -974,6 +990,9 @@ class IssueFlows {
       }
       throw error;
     }
+    const closedFlow = this.read(this.selected(issue.id));
+    resolveBlockingErrors(closedFlow, 'close', ['close']);
+    await this.store.save(closedFlow, closedFlow.revision);
     this.pause(issue.id, 'Issue closed');
     this.resumeClosure(issue.id);
     return result;
@@ -1067,6 +1086,7 @@ class IssueFlows {
     );
     if (cleanupAttempt?.status === 'completed') {
       closing.complete = true;
+      resolveBlockingErrors(flow, null, ['close', 'retry-closure', 'continue-closure', 'skip-retro']);
       await this.store.save(flow, flow.revision);
       return;
     }
@@ -1098,6 +1118,7 @@ class IssueFlows {
         const flow = this.read(issue);
         if (!flow.closing) return;
         flow.closing.error = redactValue(error.message);
+        flow.closing.errorAt = new Date().toISOString();
         await this.store.save(flow, flow.revision);
       })
       .finally(() => this.closureTasks.delete(id));
@@ -1137,6 +1158,7 @@ class IssueFlows {
     if (mode === 'playing' || mode === 'waiting') this.pause(issueId, reason);
   }
   async advanceAutoplay(issueId, retry = false) {
+    let blockedBlock;
     if (this.autoplay.get(issueId)?.mode !== 'playing' || this.active.has(issueId)) return;
     try {
       this.service.serverControl?.allow('/api/flow-action', { action: 'play', issueId });
@@ -1155,6 +1177,7 @@ class IssueFlows {
         'Wait for the existing issue operation to finish before starting or resuming the route.'
       );
       const next = await this.nextAutoplayBlock(flow, catalog);
+      blockedBlock = next;
       if (this.autoplay.get(issueId)?.mode !== 'playing') return;
       if (!next) return this.pause(issueId, 'Flow complete');
       if (['close', 'retro', 'cleanup'].includes(next.kind)) return this.pause(issueId, 'Close the issue when ready.');
@@ -1173,6 +1196,7 @@ class IssueFlows {
       }
       await this.start(issue, flow, { blockId: next.id, action: needsRetry ? 'continue' : 'start' }, catalog, 'play');
     } catch (error) {
+      await this.rememberBlockingFailure({ issueId, blockId: blockedBlock?.id, action: 'play' }, error);
       this.pauseAutoplay(issueId, redactValue(error.message));
     }
   }
@@ -1205,6 +1229,9 @@ class IssueFlows {
       });
   }
   async action(input, { storesReady = false } = {}) {
+    return this.withBlockingError(input, () => this.preparedAction(input, storesReady));
+  }
+  async preparedAction(input, storesReady) {
     await this.prepareActionStores(input, storesReady);
     if (
       this.service.projectStores &&
@@ -1234,6 +1261,45 @@ class IssueFlows {
       )
         this.pause(input.issueId, redactValue(error.message));
       throw error;
+    }
+  }
+  async withBlockingError(input, operation) {
+    try {
+      return await operation();
+    } catch (error) {
+      await this.rememberBlockingFailure(input, error);
+      throw error;
+    }
+  }
+  async rememberBlockingFailure(input, error) {
+    const actions = [
+      'start',
+      'continue',
+      'play',
+      'run-request',
+      'preview-publish',
+      'confirm-publish',
+      'update-worktree',
+      'close',
+      'retry-closure',
+      'continue-closure',
+      'skip-retro',
+    ];
+    if (!input.issueId || !actions.includes(input.action)) return;
+    try {
+      const issue = this.selected(input.issueId),
+        flow = this.read(issue);
+      if (issue.closed || issue.state === 'needs-approval' || mergedDelivery(flow)) return;
+      if (error.message === 'This flow changed. Refresh before saving this edit.') return;
+      const block = flow.blocks.find((entry) => entry.id === input.blockId);
+      retainBlockingError(flow, {
+        ...input,
+        error,
+        model: block ? blockModelView(this.service, issue, flow, block).model : null,
+      });
+      await this.store.save(flow, flow.revision);
+    } catch {
+      error.message += ' The blocking error could not be saved; restore shared storage before continuing.';
     }
   }
   requireAvailableAction(issue, flow, action) {
@@ -1319,6 +1385,7 @@ class IssueFlows {
       if (input.action === 'skip-retro') {
         requireThat(flow.closing.retro && !flow.closing.filedRetro, 'There is no pending retro to skip.');
         flow.closing.skipRetro = true;
+        resolveBlockingErrors(flow, flow.blocks.find((block) => block.kind === 'retro')?.id);
         const retro = flow.blocks.find((block) => block.kind === 'retro')?.attempts.at(-1);
         if (retro && unresolvedAttempt(retro)) {
           retro.status = 'stopped';
@@ -1825,12 +1892,47 @@ class IssueFlows {
       'Configure Retro in Request. Cleanup is part of Close.'
     );
     const before = flow;
+    const selected = flow.blocks.find((block) => block.id === input.blockId);
+    let handoff = false;
+    if (
+      input.action === 'update' &&
+      Object.hasOwn(input.changes || {}, 'model') &&
+      input.changes.model !== (selected?.model || '')
+    ) {
+      handoff = validateBlockModel(this.service, issue, flow, selected, input.changes.model);
+      requireThat(!this.active.has(issue.id), 'Wait for the active block before changing its model.');
+      requireThat(
+        !handoff || input.confirmedModelHandoff === true,
+        'Confirm the provider handoff before changing this model.'
+      );
+    }
     this.validateBlockFields(issue, flow, input, catalog);
     flow = editFlow(flow, input, catalog);
+    if (
+      input.action === 'update' &&
+      input.changes.model !== undefined &&
+      input.changes.model !== (selected?.model || '')
+    )
+      this.pauseAutoplay(issue.id, 'Block model changed. Resume explicitly when ready.');
+    if (handoff) {
+      const block = flow.blocks.find((entry) => entry.id === input.blockId);
+      const binding = conversationState(this.service.root, issue.id).flowBlocks[block.id];
+      block.modelHandoff = {
+        fromThreadId: binding.threadId,
+        toModel: blockExecutionSettings(this.service, issue, flow, block).model,
+        at: new Date().toISOString(),
+        history: this.store.path(issue.id),
+        summary: (selected.attempts.at(-1)?.output || selected.attempts.at(-1)?.summary || '').slice(-8000),
+      };
+    }
     if (input.action === 'update') {
       const seeds = new Set(
         flow.blocks
-          .filter((block, index) => JSON.stringify(block) !== JSON.stringify(before.blocks[index]))
+          .filter((block, index) => {
+            const { model, modelHandoff, ...value } = block;
+            const { model: oldModel, modelHandoff: oldHandoff, ...old } = before.blocks[index];
+            return JSON.stringify(value) !== JSON.stringify(old);
+          })
           .map((block) => block.id)
       );
       await this.saveEdit(flow, seeds);
@@ -1949,7 +2051,12 @@ class IssueFlows {
       }
     return update.dirty.size > 0;
   }
-  async refreshRequest(issue, flow, wording, catalog, { keepPlaying = false, background = false } = {}) {
+  async refreshRequest(issue, flow, wording, catalog, options = {}) {
+    return this.withBlockingError({ action: 'run-request', issueId: issue.id, blockId: requestBlock(flow).id }, () =>
+      this.prepareRequest(issue, flow, wording, catalog, options)
+    );
+  }
+  async prepareRequest(issue, flow, wording, catalog, { keepPlaying = false, background = false } = {}) {
     const block = requestBlock(flow);
     const priorFields = block.data.fields;
     const wordingChanged = block.data.wording !== wording;
@@ -1967,6 +2074,7 @@ class IssueFlows {
     );
     const current = requestBlock(flow);
     const definition = catalog.find((entry) => entry.id === blockDefinitionId(current));
+    await assertBlockModelAvailable(this.service, issue, flow, current);
     const attempt = this.makeAttempt(flow, issue, current, catalog);
     if (priorFields) {
       current.data.lastVerificationCriteria = Object.fromEntries(
@@ -1996,7 +2104,10 @@ class IssueFlows {
       }
     };
     if (background) {
-      void finish().catch((error) => this.pause(issue.id, redactValue(error.message)));
+      void finish().catch(async (error) => {
+        await this.rememberBlockingFailure({ action: 'run-request', issueId: issue.id, blockId: current.id }, error);
+        this.pause(issue.id, redactValue(error.message));
+      });
       return { accepted: true, issueId: issue.id, blockId: current.id };
     }
     return finish();
@@ -2090,6 +2201,14 @@ class IssueFlows {
       ...this.deliveryOptions,
       observedPR: pr,
     });
+    if (preview.status === 'blocked') {
+      retainBlockingError(flow, {
+        action: 'Publish',
+        blockId: block.id,
+        error: Error(preview.message || 'Publication is blocked.'),
+      });
+      flow = await this.store.save(flow, flow.revision);
+    }
     if (preview.status === 'blocked' && this.autoplay.get(issue.id)?.blockId === block.id)
       this.pause(issue.id, preview.message);
     if (input.action === 'preview-publish' || preview.status === 'blocked' || preview.token !== input.previewToken)
@@ -2122,6 +2241,17 @@ class IssueFlows {
       startedAt,
       lastActiveAt: startedAt,
       summary: 'Preparing this block.',
+      ...(blockModelKind(block) !== 'none'
+        ? {
+            modelSettings: {
+              ...blockExecutionSettings(this.service, issue, flow, block),
+              model:
+                blockModelView(this.service, issue, flow, block).model ||
+                blockExecutionSettings(this.service, issue, flow, block).model,
+              ...(['merge', 'update-branch'].includes(block.kind) ? { conditional: true } : {}),
+            },
+          }
+        : {}),
       output: '',
       evidence: [],
       definitionChecksum: definitionIdentity(definition),
@@ -2290,9 +2420,13 @@ class IssueFlows {
       !block.skill || definition.skills?.includes(block.skill),
       'Choose a skill allowed by this block’s Markdown.'
     );
+    await assertBlockModelAvailable(this.service, issue, flow, block);
     if (!flow.executionSettings) {
       const settings = this.issueSettings(issue, flow);
-      requireThat(!settings.errors.length, 'Fix folder settings before starting this issue.');
+      requireThat(
+        !settings.errors.some((error) => error.key !== 'model' || !block.model),
+        'Fix folder settings before starting this issue.'
+      );
       flow.executionSettings = { values: settings.values, sources: settings.sources, basis: settings.basis };
       flow.resolvedBranch = settings.values.branch;
     }
@@ -2406,7 +2540,7 @@ class IssueFlows {
     let providerGuard;
     const queue = this.service.sharedIssues;
     try {
-      const model = this.issueSettings(issue, flow).values.model;
+      const model = attempt.modelSettings?.model || this.issueSettings(issue, flow).values.model;
       providerGuard = await guardProviderWork(this.service.root, model, (error) => {
         this.pause(issue.id, error.message);
         if (!['publish', 'merge', 'update-branch', 'cleanup'].includes(block.kind)) controller.abort(error);
@@ -2474,6 +2608,7 @@ class IssueFlows {
             });
       this.changeAttempt(issue, blockId, attemptId, (current, saved) => {
         Object.assign(current, result, { status: result.status || 'completed', endedAt: new Date().toISOString() });
+        if (current.status === 'completed') resolveBlockingErrors(saved, blockId, ['play']);
         outcome = current;
         if (result.workspace) saved.workspace = result.workspace;
         if (block.kind === 'publish' && result.result?.pr && result.result?.target && !saved.destination?.pr) {

@@ -1,3 +1,4 @@
+import { blockModelsBrowserChecks } from './flow-browser-block-models.mjs';
 import { providerSettingsBrowserChecks } from './flow-browser-provider-settings.mjs';
 import { activityBrowserChecks } from './flow-browser-activity.mjs';
 import { investigationReportsBrowserChecks } from './flow-browser-investigation-reports.mjs';
@@ -105,6 +106,7 @@ const assets = [
   'issue-ownership-ui.js',
   'issue-folder-drag-ui.js',
   'sidebar-files-ui.js',
+  'block-model-ui.js',
   'folder-settings-ui.js',
   'provider-settings-ui.js',
   'project-settings-ui.js',
@@ -334,6 +336,7 @@ function checkExcluded(name) {
     ['--interface-state', interfaceStateCheck],
     ['--investigation-followups', followupsCheck],
     ['--branch-repair', 'Branch repair progress survives reload and requires candidate approval'],
+    ['--block-models', 'Block models preserve history and surface persistent blockers'],
     ['--block-skills', 'Block skill choices preserve defaults and offer missing-skill setup'],
     ['--block-deletion', blockDeletionCheck],
     ['--folder-settings', folderSettingsCheck],
@@ -960,6 +963,9 @@ try {
       await page.goto('about:blank');
     }
   });
+  await check('Block models preserve history and surface persistent blockers', () =>
+    blockModelsBrowserChecks({ page, project, service, poll, screenshot, block })
+  );
   await check(blockInspectionCheck, async () => {
     const id = '20261123-block-inspection-fixture';
     writeBrowserIssue(project, { id, title: 'Read saved state on demand', body: 'Keep navigation local.' });

@@ -30,6 +30,7 @@
     <script src="/server-control-ui.js" defer></script>
     <script src="/issue-closure-ui.js" defer></script>
     <script src="/issue-folder-drag-ui.js" defer></script>
+    <script src="/block-model-ui.js" defer></script>
     <script src="/folder-settings-ui.js" defer></script>
     <script src="/investigation-followups-ui.js" defer></script>
     <script src="/project-admin-ui.js" defer></script>
@@ -307,6 +308,12 @@
             <button class="small-button" id="skip-retro" type="button" hidden>Continue to Cleanup</button>
             <span class="muted" id="playback-status" aria-live="polite"></span>
           </div>
+        </section>
+        <section id="last-blocking-error" class="issue-results" aria-labelledby="last-blocking-error-title" hidden>
+          <h2 id="last-blocking-error-title">Last blocking error</h2>
+          <p id="last-blocking-error-context" class="muted"></p>
+          <p id="last-blocking-error-message" role="alert"></p>
+          <button type="button" class="small-button" id="last-blocking-error-open">Open block details</button>
         </section>
         <section id="issue-results" class="issue-results" aria-labelledby="issue-results-title" hidden>
           <h2 id="issue-results-title">Results</h2>

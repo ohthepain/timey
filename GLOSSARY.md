@@ -16,6 +16,13 @@ _Avoid_: Project settings as the name of the Factory configuration UI
 A model the person has chosen to permit for Factory work. Quota pauses or other
 restrictions may still make it unavailable.
 
+**Block model override**:
+A model chosen for one block in place of the issue's default model.
+
+**Blocking error**:
+A failure that prevents an issue from progressing. It identifies the affected
+operation and why that operation cannot proceed.
+
 **Provider quota pause**:
 A temporary block on a provider's models caused by a shared allowance limit and
 the configured disable threshold.

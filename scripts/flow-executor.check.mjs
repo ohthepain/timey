@@ -8,7 +8,12 @@ import { createFlowExecutor } from './factory-ui/flow-executor.mjs';
 import { digest } from './factory-ui/common.mjs';
 import { BlockCatalog } from './factory-ui/block-catalog.mjs';
 import { blockDetails, definitionMap } from './factory-ui/flow-block-data.mjs';
-import { conversationMessages, conversationState, conversationFiles } from './factory-ui/conversation-store.mjs';
+import {
+  conversationMessages,
+  conversationState,
+  conversationFiles,
+  saveConversationState,
+} from './factory-ui/conversation-store.mjs';
 import { resumeWorkDependencies, runWorkVerification } from './factory-ui/flow-verification.mjs';
 
 function fixture(t, options = {}) {
@@ -2252,4 +2257,33 @@ test('a peer checkpoint replaces a stale same-path workspace without changing it
   assert.notEqual(result.workspace.checkout, original.workspace.checkout);
   assert.equal(readFileSync(join(result.workspace.checkout, 'source.txt'), 'utf8'), 'New shared checkpoint.\n');
   assert.deepEqual(readFileSync(join(original.workspace.checkout, 'source.txt')), staleBytes);
+});
+
+test('block override reaches the provider while confirmed provider changes start a fresh conversation', async (t) => {
+  const f = fixture(t);
+  f.flow.executionSettings = { values: { model: 'gpt-6-astra', effort: 'high' }, sources: {}, basis: 'frozen' };
+  saveConversationState(f.root, f.issue.id, {
+    flowBlocks: { 'block-work': { threadId: 'anthropic:previous', basis: 'old' } },
+  });
+  await assert.rejects(f.run('work', { model: 'gpt-6.1-sol', continuing: true }), /Confirm the provider handoff/);
+  assert.equal(
+    f.calls.some((call) => call.method === 'turn'),
+    false
+  );
+  const handoff = {
+    fromThreadId: 'anthropic:previous',
+    toModel: 'gpt-6.1-sol',
+    summary: 'Keep the prior diagnosis.',
+    history: 'retained-history.json',
+  };
+  const result = await f.run('work', { model: 'gpt-6.1-sol', continuing: true, modelHandoff: handoff });
+  const turn = f.calls.find((call) => call.method === 'turn');
+  assert.equal(turn.settings.model, 'gpt-6.1-sol');
+  assert.equal(result.modelSettings.model, 'gpt-6.1-sol');
+  assert.equal(f.flow.executionSettings.values.model, 'gpt-6-astra');
+  assert.equal(
+    f.calls.some((call) => call.method === 'resume'),
+    false
+  );
+  assert.match(f.calls.find((call) => call.method === 'start').instructions, /Keep the prior diagnosis/);
 });

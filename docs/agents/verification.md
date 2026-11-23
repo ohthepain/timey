@@ -1113,3 +1113,21 @@ fixture flow, starts no investigation, and does not archive an issue.
 The geometry assertion also runs in the full investigation browser scenario;
 that broader scenario currently stops earlier at an investigation-creation HTTP
 400 and therefore does not establish coverage of the remaining workflow.
+
+## Block models and blocking errors
+
+`node --test scripts/block-model-errors.check.mjs scripts/flow-executor.check.mjs`
+checks frozen defaults, idle block overrides, retained attempt settings and
+results, live availability, admission rejection before an attempt, retained
+errors after controller recreation, and successful resolution without erasing
+history. It checks running and uncertain ownership guards, explicit provider
+handoff and fresh conversation startup, fixed helper models, and command blocks.
+Fixtures inject provider execution and make no live model turn.
+
+`node scripts/flow-browser.mjs --block-models` saves a model through Details,
+checks that earlier results remain valid, disables the saved model, and observes
+its inline error. A rejected Run displays Last blocking error across block
+selection and reload. Saving an available replacement starts no work; explicit
+Run resolves the blocker. The scenario saves unavailable and recovered
+screenshots. Provider observations and execution results are disposable fixtures;
+this does not establish live model entitlements or output quality.

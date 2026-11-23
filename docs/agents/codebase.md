@@ -1102,6 +1102,23 @@ defaults, computes the definition checksum, and writes exported definitions.
 discussion to produce the block list. The controller applies the list or
 links an export through the existing revision-checked flow store.
 
+`factory-ui/block-models.mjs` resolves block overrides against the issue's frozen
+execution settings, describes fixed helper and conditional repair models, and
+checks live provider availability before admission. Each attempt saves the model
+it actually uses. A model-only edit preserves prior results and pauses autoplay;
+a confirmed provider change retains a handoff and opens a fresh conversation.
+`native-codex-settings.mjs` reads the configured model for temporary Request and
+Retro helpers without exposing native credentials.
+
+`factory-ui/block-errors.mjs` projects the latest unresolved blocking error from
+retained attempts, admission errors and closure failures. Admission errors live
+in the existing Flow record even when no attempt could start. Success resolves
+only the relevant step's errors; permitted removal or Retro skip hides its
+blockers while retaining history. Passive inspection writes no error. The issue
+heading shows Last blocking error, and `block-model-ui.js` renders model controls
+in the existing Details panel. See the
+[block model design](../plans/block-models-and-blocking-errors.md).
+
 The shared Flow UI owns the card layout, inspector sections, and controls.
 Selecting a block renders its saved details without an automatic mutation
 request. Start and explicit definition updates retain their server-side freshness

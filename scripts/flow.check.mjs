@@ -346,6 +346,11 @@ test('provider disable lets a protected publication finish but pauses the route 
     }),
   });
   t.after(() => flows.close());
+  const prepared = flows.read(flows.selected(id));
+  const request = prepared.blocks.find((block) => block.kind === 'request');
+  request.data.fields = { type: 'bug', goal: 'Repair Save' };
+  request.attempts.push({ id: 'request-done', status: 'completed', startedAt: new Date().toISOString() });
+  flows.store.save(prepared, prepared.revision);
   await flows.action({ issueId: id, action: 'play', revision: flows.read(flows.selected(id)).revision });
   for (let count = 0; !signal && count < 100; count++) await delay(10);
   assert.ok(signal, JSON.stringify({ started, autoplay: flows.autoplay.get(id) }));
@@ -1625,7 +1630,7 @@ test('Work waits for its Update Branch prerequisite even when Work uses a parall
   assert.ok(work.after.includes(update.id));
   const start = (blockId, revision) => flows.action({ action: 'start', issueId: id, blockId, revision });
   await assert.rejects(start(work.id, saved.revision), /Complete Update Branch successfully/);
-  await start(update.id, saved.revision);
+  await start(update.id, flows.read(issue).revision);
   await flows.active.get(id)?.task;
   await start(work.id, flows.read(issue).revision);
   await flows.active.get(id)?.task;
@@ -2193,6 +2198,7 @@ test('failed continuation retains original ownership until provider idle is posi
     /reconcile/
   );
   idle = true;
+  view = await flows.view(id);
   await flows.action({ issueId: id, revision: view.flow.revision, action: 'continue', blockId: 'work' });
   await flows.active.get(id)?.task;
   assert.equal(flowOwnsIssue(service, id), false);

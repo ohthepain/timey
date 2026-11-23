@@ -62,12 +62,28 @@ whether missing data or proof should fail the task.
 
 Opening the block editor, starting the block or clicking its wand checks the
 selected definition's checksum. A detected edit invalidates every instance of
-that definition and the connected successors of each instance. A saved block edit
+that definition and the connected successors of each instance. A saved prompt, input, or routing edit
 likewise invalidates the edited block and its connected successors. These actions
 request a stop for active work in affected flows. An invalidated attempt remains
 in history with the definition and resolved Details it actually used. Results
 returned after invalidation remain historical. Details resolve again when the
 editor opens, a block starts or a relevant edit is saved.
+
+An idle model-driven block can override the issue model in Details. This changes
+only the next attempt and pauses autoplay without invalidating prior results.
+Use issue default resolves through the frozen issue execution snapshot after
+work has started. Each attempt retains its actual model. Running or uncertain
+work must stop or reconcile before a model change. Fixed native helpers show
+their required model read-only; command blocks identify conditional AI repair
+separately. Cross-provider changes require confirmation, a fresh conversation,
+and a retained handoff. See the [block model design](../plans/block-models-and-blocking-errors.md).
+
+The issue heading shows Last blocking error from retained failures, including
+admission failures before an attempt exists. It survives reload and block
+navigation. Successful retry resolves that step's errors, revealing any older
+unresolved blocker elsewhere. Permitted skip or removal resolves its blockers;
+history remains. Browsing availability and ordinary form validation do not
+replace the retained error. Fixing a cause starts no automatic retry.
 
 Saving Your words or clicking the Request wand reruns Request clarification.
 The agent derives the issue type, goal, requested proof, known facts, and
