@@ -1,3 +1,4 @@
+import { importBrowserIssue } from './flow-browser-fixture.mjs';
 import assert from 'node:assert/strict';
 import { ensureProjectStores } from './factory-ui/stores/runtime.mjs';
 import { writeFileSync } from 'node:fs';
@@ -20,8 +21,9 @@ export async function actionsMenuBrowserChecks({ page, project, service, poll, s
   };
   try {
     for (const [index, id] of ids.entries()) {
-      writeFileSync(
-        join(project, '.issues', id + '.md'),
+      await importBrowserIssue(
+        project,
+        id,
         `---\nid: ${id}\ntitle: Running action ${index + 1}\nstate: backlog\ncreated: 2026-11-20T12:00:00Z\n---\n\n## Original request\n\nCheck action visibility.\n`
       );
     }

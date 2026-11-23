@@ -398,7 +398,7 @@ async function checkDefaultsAndSources({ page, project, poll, observations }) {
   const response = page.waitForResponse(
     (entry) => new URL(entry.url()).pathname === '/api/project-settings' && entry.request().method() === 'POST'
   );
-  await storage.getByRole('button', { name: 'Test connection', exact: true }).click();
+  await storage.locator('[data-settings-action="test-storage"]').click();
   const connection = await response;
   assert.equal(connection.status(), 200, await connection.text());
   const tested = await connection.json();

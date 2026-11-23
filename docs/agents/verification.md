@@ -199,6 +199,10 @@ failure and chained-cleanup coverage with both existing and absent configuration
 Run the scenarios individually with `--no-changes` and `--folder-settings`.
 Run `node scripts/flow-browser.mjs --no-changes --folder-settings` together.
 Add `--reverse-fixture-scenarios` to run folder settings before no-change publication.
+Run `node scripts/flow-browser.mjs --no-changes --sidebar-scroll` and repeat
+with `--reverse-fixture-scenarios`. The sidebar check creates and removes its
+overflow issues both before and after no-change publication activates the
+Issue Store.
 The main browser workflow intentionally shares state between checks and does not
 use this boundary. Independent scenarios opt in at their exported entry point.
 The missing-lifecycle browser scenario removes the disposable project's lifecycle

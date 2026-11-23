@@ -1,11 +1,9 @@
 import assert from 'node:assert/strict';
-import { rmSync } from 'node:fs';
-import { dirname } from 'node:path';
-import { storedIssuePath } from './factory-ui/issue-report-storage.mjs';
+import { removeBrowserIssue } from './flow-browser-fixture.mjs';
 import { seedInvestigation } from './investigation-followups-fixture.mjs';
 
 export async function flowFollowupsBrowserChecks({ page, service, logs, screenshot }) {
-  const source = seedInvestigation(service.flows);
+  const source = await seedInvestigation(service.flows);
   const report = service.flows.selected(source.issueId).content;
   const before = service.flows.issues().length;
   const executions = logs.execution.length;
@@ -44,8 +42,5 @@ export async function flowFollowupsBrowserChecks({ page, service, logs, screensh
   assert.equal(await dialog.locator('[data-proposal]:disabled').count(), 1);
   assert.equal(service.flows.issues().length, before + 1);
   await dialog.getByRole('button', { name: 'Close follow-up review' }).click();
-  for (const id of [source.issueId, child.id]) {
-    rmSync(storedIssuePath(service.root, id));
-    rmSync(dirname(service.flows.store.path(id)), { recursive: true });
-  }
+  for (const id of [child.id, source.issueId]) await removeBrowserIssue(service.root, id);
 }

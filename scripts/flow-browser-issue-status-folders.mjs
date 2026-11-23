@@ -1,10 +1,11 @@
+import { importBrowserIssue, removeBrowserIssue } from './flow-browser-fixture.mjs';
 import assert from 'node:assert/strict';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createIssueFolderSettings } from './factory-ui/issue-folder-settings.mjs';
 import { git } from './factory-ui/common.mjs';
 
-function setAttempt(service, entry, status, humanInput) {
+async function setAttempt(service, entry, status, humanInput) {
   const flow = service.flows.read(service.flows.selected(entry.id));
   const block = flow.blocks.find(({ kind }) => kind === 'work');
   block.attempts = status
@@ -17,20 +18,20 @@ function setAttempt(service, entry, status, humanInput) {
         },
       ]
     : [];
-  service.flows.store.save(flow, flow.revision);
+  await service.flows.store.save(flow, flow.revision);
 }
 
-function writeFixture(project, service, folders, reports, entry) {
+async function writeFixture(project, service, folders, reports, entry) {
   const content = `---\nid: ${entry.id}\ntitle: Status ${entry.key}\nstate: ${entry.state || 'backlog'}\nfolder_id: ${folders[entry.folder].id}\n---\n\nStatus fixture.\n`;
   const path = join(project, '.issues', entry.id + '.md');
   reports.set(path, content);
-  writeFileSync(path, content);
-  setAttempt(service, entry, entry.status, entry.humanInput);
+  await importBrowserIssue(project, entry.id, content);
+  await setAttempt(service, entry, entry.status, entry.humanInput);
   if (entry.active) service.flows.active.set(entry.id, { blockId: 'held-fixture' });
   if (entry.waiting) service.flows.autoplay.set(entry.id, { mode: 'waiting', blockId: 'confirmation' });
 }
 
-function createFixtures(project, service) {
+async function createFixtures(project, service) {
   const folders = ['Status folder one', 'Status folder two'].map((name) => createIssueFolderSettings(project, name));
   const fixtures = [
     { key: 'running', folder: 0, active: true },
@@ -43,16 +44,16 @@ function createFixtures(project, service) {
     { key: 'stopped', folder: 1, status: 'stopped' },
   ].map((entry) => ({ ...entry, id: '20261121-status-' + entry.key }));
   const reports = new Map();
-  fixtures.forEach((entry) => writeFixture(project, service, folders, reports, entry));
+  for (const entry of fixtures) await writeFixture(project, service, folders, reports, entry);
   return { folders, fixtures, reports };
 }
 
-function removeFixtures(project, service, folders, fixtures) {
+async function removeFixtures(project, service, folders, fixtures) {
   for (const folder of folders) rmSync(folder.directory, { recursive: true, force: true });
   for (const entry of fixtures) {
     service.flows.active.delete(entry.id);
     service.flows.autoplay.delete(entry.id);
-    rmSync(join(project, '.issues', entry.id + '.md'), { force: true });
+    await removeBrowserIssue(project, entry.id);
   }
 }
 
@@ -138,7 +139,7 @@ async function checkStatusCarets(page, screenshot, output, poll) {
 }
 
 export async function issueStatusFoldersBrowserChecks({ page, project, service, poll, screenshot, output, root }) {
-  const { folders, fixtures, reports } = createFixtures(project, service);
+  const { folders, fixtures, reports } = await createFixtures(project, service);
   async function members(id) {
     return page
       .locator('#' + id + ' [data-issue]')
@@ -178,18 +179,18 @@ export async function issueStatusFoldersBrowserChecks({ page, project, service, 
     assert.equal(await page.locator('#issue-list [data-issue="' + foreignId + '"]').count(), 0);
     const initial = { running: await members('in-progress-issues'), blocked: await members('blocked-status-issues') };
     await checkDirectStart(service, paused, fixtures[0], expectMembers);
-    setAttempt(service, paused, 'blocked', paused.humanInput);
+    await setAttempt(service, paused, 'blocked', paused.humanInput);
     await service.flows.action({ action: 'pause', issueId: paused.id });
     await expectMembers('in-progress-issues', [fixtures[0].id]);
     await expectMembers('blocked-status-issues', initialBlocked);
     const running = fixtures[0];
     service.flows.active.delete(running.id);
-    setAttempt(service, running, 'blocked');
+    await setAttempt(service, running, 'blocked');
     await expectMembers('in-progress-issues', []);
     await expectMembers('blocked-status-issues', [...initialBlocked, running.id]);
     await service.flows.action({ action: 'pause', issueId: running.id });
     await expectMembers('blocked-status-issues', initialBlocked);
-    setAttempt(service, fixtures[1], 'stopped');
+    await setAttempt(service, fixtures[1], 'stopped');
     await expectMembers(
       'blocked-status-issues',
       initialBlocked.filter((id) => id !== fixtures[1].id)
@@ -227,6 +228,6 @@ export async function issueStatusFoldersBrowserChecks({ page, project, service, 
     );
   } finally {
     await page.goto('about:blank');
-    removeFixtures(project, service, folders, fixtures);
+    await removeFixtures(project, service, folders, fixtures);
   }
 }

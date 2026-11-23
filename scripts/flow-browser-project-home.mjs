@@ -1,4 +1,4 @@
-import { writeBrowserIssue } from './flow-browser-fixture.mjs';
+import { importBrowserIssue, writeBrowserIssue } from './flow-browser-fixture.mjs';
 import assert from 'node:assert/strict';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -120,15 +120,23 @@ function configureHome(service, calls) {
 }
 
 async function runInvestigationBlock(page, service, issueId, kind, poll) {
+  await page.reload();
   const block = service.flows.read(service.flows.selected(issueId)).blocks.find((entry) => entry.kind === kind);
   await page.locator('#graph [data-block="' + block.id + '"]').click();
+  const start = page.waitForResponse(
+    (response) => response.url().endsWith('/api/flow-action') && response.request().postDataJSON()?.action === 'start'
+  );
   await page.locator('#run-block[data-action="start"]').click();
+  const response = await start;
+  assert.ok(response.ok(), await response.text());
   return poll(
     () =>
-      service.flows
-        .read(service.flows.selected(issueId))
-        .blocks.find(({ id }) => id === block.id)
-        .attempts.at(-1),
+      service.flows.active.has(issueId)
+        ? null
+        : service.flows
+            .read(service.flows.selected(issueId))
+            .blocks.find(({ id }) => id === block.id)
+            .attempts.at(-1),
     (attempt) => attempt?.status === 'completed',
     kind + ' did not complete.'
   );
@@ -334,7 +342,12 @@ async function deleteArchivedReports(page, { root }, screenshot) {
   const archive = join(root, '.issues/archive');
   mkdirSync(archive, { recursive: true });
   const report = join(archive, id + '.md');
-  writeFileSync(report, `---\nid: ${id}\ntitle: ${title}\nstate: closed\n---\nDisposable archive record.\n`);
+  await importBrowserIssue(
+    root,
+    id,
+    `---\nid: ${id}\ntitle: ${title}\nstate: closed\n---\nDisposable archive record.\n`,
+    'archive'
+  );
   git(root, 'branch', branch, 'dev');
   await page.getByRole('tab', { name: 'Admin' }).click();
   await page.getByRole('button', { name: 'Preview archived issues' }).click();

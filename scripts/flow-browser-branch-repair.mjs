@@ -1,3 +1,4 @@
+import { importBrowserIssue } from './flow-browser-fixture.mjs';
 import assert from 'node:assert/strict';
 import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -5,8 +6,9 @@ import { git } from './factory-ui/common.mjs';
 
 export async function branchRepairBrowserChecks({ page, service, project, poll, screenshot }) {
   const id = '20261120-branch-repair-fixture';
-  writeFileSync(
-    join(project, '.issues', id + '.md'),
+  await importBrowserIssue(
+    project,
+    id,
     `---\nid: ${id}\ntitle: Follow a branch repair\nstate: backlog\n---\n\nRepair a blocking branch check.\n`
   );
   const issue = service.flows.selected(id);
@@ -26,7 +28,7 @@ export async function branchRepairBrowserChecks({ page, service, project, poll, 
     output: '```flow-result\n{"failure":"Fallow failed in source.txt; Discuss proof could not run."}\n```',
     evidence: [],
   });
-  service.flows.store.save(flow, flow.revision);
+  await service.flows.store.save(flow, flow.revision);
   let release;
   const wait = new Promise((done) => {
     release = done;

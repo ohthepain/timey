@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { storedIssuePath } from './factory-ui/issue-report-storage.mjs';
+import { join } from 'node:path';
+import { importBrowserIssue } from './flow-browser-fixture.mjs';
 import { appendMessage } from './factory-ui/conversation-store.mjs';
 import { InvestigationReports } from './factory-ui/investigation-reports.mjs';
 import { git } from './factory-ui/common.mjs';
@@ -54,11 +54,11 @@ export async function investigationReportsBrowserChecks({ page, service, project
     findings: 'Retained inquiry findings.',
     evidence: [],
   };
-  const archivedSource = storedIssuePath(project, source.issueId, 'archive');
-  mkdirSync(dirname(archivedSource), { recursive: true });
-  writeFileSync(
-    archivedSource,
-    `---\nid: ${source.issueId}\ntitle: Archived source investigation\nstate: backlog\nrequest_type: investigation\n---\n\nRetained archived inquiry.\n`
+  await importBrowserIssue(
+    project,
+    source.issueId,
+    `---\nid: ${source.issueId}\ntitle: Archived source investigation\nstate: backlog\nrequest_type: investigation\n---\n\nRetained archived inquiry.\n`,
+    'archive'
   );
   appendMessage(project, source.issueId, {
     id: 'ordinary-inquiry-result',

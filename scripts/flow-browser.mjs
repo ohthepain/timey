@@ -37,6 +37,7 @@ import { createIssueFlows } from './factory-ui/flow-service.mjs';
 import { createFlowExecutor } from './factory-ui/flow-executor.mjs';
 import { requiredPRReview } from './factory-ui/flow-human-input.mjs';
 import { saveLifecycle } from './factory-ui/lifecycle-store.mjs';
+import { moveStoredIssue, updateStoredIssueMetadata } from './factory-ui/issue-report-storage.mjs';
 import { git } from './factory-ui/common.mjs';
 import { flowIssueFoldersBrowserChecks } from './flow-browser-issue-folders.mjs';
 import { flowBlockDeletionBrowserChecks } from './flow-browser-block-deletion.mjs';
@@ -59,7 +60,7 @@ import { localNotesBrowserChecks } from './flow-browser-local-notes.mjs';
 import { actionsMenuBrowserChecks } from './flow-browser-actions-menu.mjs';
 import { mergedIssueBrowserChecks } from './flow-browser-merged-issue.mjs';
 import { noChangesBrowserChecks } from './flow-browser-no-changes.mjs';
-import { writeBrowserIssue } from './flow-browser-fixture.mjs';
+import { importBrowserIssue, removeBrowserIssue, writeBrowserIssue } from './flow-browser-fixture.mjs';
 import { issueStoresBrowserChecks } from './flow-browser-stores.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -278,9 +279,17 @@ let addedId;
 let workId;
 let passed = false;
 let failure;
+function expectedReportConsoleError({ text, location }) {
+  return (
+    location?.url === 'about:srcdoc' &&
+    (text.startsWith("Blocked script execution in 'about:srcdoc' because the document's frame is sandboxed") ||
+      text.startsWith("Loading the image 'https://example.invalid/report-tracker.png' violates"))
+  );
+}
+
 function unexpectedConsoleErrors(entries) {
-  return entries.filter((item) => {
-    if (item.type !== 'error') return false;
+  const errors = entries.filter((item) => item.type === 'error' && !expectedReportConsoleError(item));
+  return errors.filter((item) => {
     const url = item.location?.url || '';
     if (!/Failed to load resource/.test(item.text) || !item.text.includes('400')) return true;
     return !(
@@ -484,6 +493,26 @@ async function graphGeometry() {
   });
 }
 
+async function seedSidebarOverflow() {
+  const ids = Array.from({ length: 24 }, (_, index) => '20261120-sidebar-overflow-' + index);
+  for (const [index, id] of ids.entries()) {
+    await writeBrowserIssue(project, {
+      id,
+      title: 'Overflowing issue ' + index,
+      body: 'Sidebar scrolling fixture.',
+    });
+  }
+  return ids;
+}
+
+async function removeSidebarOverflow(ids) {
+  for (const id of ids) await removeBrowserIssue(project, id);
+  await page.setViewportSize({ width: 1440, height: 960 });
+  await page.reload();
+  await page.locator('#sidebar-file-tree details').first().waitFor();
+  assert.equal(await page.locator('#open-issues [data-issue^="20261120-sidebar-overflow-"]').count(), 0);
+}
+
 try {
   server.listen(0, '127.0.0.1');
   await once(server, 'listening');
@@ -533,15 +562,7 @@ try {
     );
   if (!process.argv.includes('--reverse-fixture-scenarios')) await noChangesCheck();
   await check('The whole sidebar scrolls over every section', async () => {
-    const issuePaths = Array.from({ length: 24 }, (_, index) =>
-      join(project, '.issues', '20261120-sidebar-overflow-' + index + '.md')
-    );
-    issuePaths.forEach((path, index) =>
-      writeFileSync(
-        path,
-        `---\nid: 20261120-sidebar-overflow-${index}\ntitle: Overflowing issue ${index}\nstate: backlog\n---\n\nSidebar scrolling fixture.\n`
-      )
-    );
+    const ids = await seedSidebarOverflow();
     await page.goto('/');
     await page.locator('#sidebar-file-tree details').first().waitFor();
     await page.evaluate(() => {
@@ -607,9 +628,7 @@ try {
       await screenshot('sidebar-scroll-' + viewport.width);
     }
     writeFileSync(join(output, 'sidebar-scroll.json'), JSON.stringify({ candidate, observations }, null, 2));
-    issuePaths.forEach((path) => rmSync(path));
-    await page.setViewportSize({ width: 1440, height: 960 });
-    await page.reload();
+    await removeSidebarOverflow(ids);
   });
   await check('Status pseudo-folders track project issues without moving them', () =>
     issueStatusFoldersBrowserChecks({ page, project, service, poll, screenshot, output, root })
@@ -739,7 +758,7 @@ try {
       );
     } finally {
       await page.goto('about:blank');
-      rmSync(join(project, '.issues', id + '.md'), { force: true });
+      await removeBrowserIssue(project, id);
       await page.setViewportSize({ width: 1440, height: 960 });
     }
   });
@@ -750,8 +769,9 @@ try {
   await check(followupsCheck, () => flowFollowupsBrowserChecks({ page, service, logs, screenshot }));
   await check(mergeSettingsCheck, async () => {
     const id = '20261119-merge-settings-fixture';
-    writeFileSync(
-      join(project, '.issues', id + '.md'),
+    await importBrowserIssue(
+      project,
+      id,
       `---\nid: ${id}\ntitle: Merge verification settings\nstate: backlog\n---\n\nChoose the local checks before merging.\n`
     );
     const request = service.flows.read(service.flows.selected(id)).blocks.find(({ kind }) => kind === 'request');
@@ -857,7 +877,7 @@ try {
   await check('Project settings explain missing configuration and initialize it only on request', async () => {
     const labels = join(project, '.issues/triage-labels.md');
     rmSync(labels, { force: true });
-    await page.getByRole('button', { name: 'Project settings', exact: true }).click();
+    await page.getByRole('button', { name: 'Factory settings', exact: true }).click();
     const settings = page.locator('#project-settings-dialog');
     await settings.locator('[data-settings-page="lifecycle"]').click();
     const initialize = settings.getByRole('button', { name: 'Initialize lifecycle configuration', exact: true });
@@ -869,7 +889,7 @@ try {
     assert.equal(logs.modelCalls.length, 0);
     await page.keyboard.press('Escape');
     assert.throws(() => readFileSync(labels), /ENOENT/);
-    await page.getByRole('button', { name: 'Project settings', exact: true }).click();
+    await page.getByRole('button', { name: 'Factory settings', exact: true }).click();
     await settings.locator('[data-settings-page="lifecycle"]').click();
     await initialize.click();
     await poll(() => openFile.isEnabled(), Boolean, 'Initialized lifecycle file did not become available.');
@@ -880,7 +900,7 @@ try {
     assert.equal(logs.modelCalls.length, 0);
     await page.keyboard.press('Escape');
     await page.reload();
-    await page.getByRole('button', { name: 'Project settings', exact: true }).click();
+    await page.getByRole('button', { name: 'Factory settings', exact: true }).click();
     await settings.locator('[data-settings-page="lifecycle"]').click();
     await poll(() => openFile.isEnabled(), Boolean, 'Saved lifecycle file did not remain available.');
     assert.equal(await initialize.count(), 0);
@@ -1411,6 +1431,7 @@ try {
       folder: 'Inbox',
       requestId: randomUUID(),
       description: 'Retained closed layout fixture',
+      storageProfile: 'default',
       type: 'feature',
     });
     closedId = closed.issue.id;
@@ -1419,13 +1440,14 @@ try {
       'refs/heads/dev',
       'The next issue did not start on its destination branch.'
     );
-    const source = join(project, '.issues', closedId + '.md');
-    writeFileSync(source, readFileSync(source, 'utf8').replace('state: backlog', 'state: closed'));
-    mkdirSync(join(project, '.issues/closed'), { recursive: true });
-    renameSync(source, join(project, '.issues/closed', closedId + '.md'));
+    await updateStoredIssueMetadata(project, service.flows.selected(closedId), { state: 'closed' });
+    await moveStoredIssue(project, closedId, 'open', 'closed');
     for (const short of [false, true]) {
       if (short)
-        service.flows.store.save({ ...closed.flow, blocks: closed.flow.blocks.slice(0, 2) }, closed.flow.revision);
+        await service.flows.store.save(
+          { ...closed.flow, blocks: closed.flow.blocks.slice(0, 2) },
+          closed.flow.revision
+        );
       await page.goto('/flow?issue=' + closedId);
       await page.locator('[data-node="__destination"]').waitFor();
       await poll(graphGeometry, (value) => Math.abs(value.end) < 2, 'The closed Destination was not bottom aligned.');
@@ -1631,7 +1653,7 @@ try {
     }
     const flow = service.flows.read(service.flows.selected(issueId));
     flow.blocks.find((block) => block.kind === 'request').attempts.at(-1).summary = 'Updated while reading.';
-    service.flows.store.save(flow, flow.revision);
+    await service.flows.store.save(flow, flow.revision);
     await page.locator('#inspector-body').getByText('Updated while reading.', { exact: true }).waitFor();
     for (const section of [system, inputs, closed]) assert.notEqual(await section.getAttribute('open'), null);
   });
@@ -2016,7 +2038,12 @@ try {
   await check('Candidate assets are unchanged and browser execution is clean', async () => {
     assert.deepEqual(fingerprint(), candidate.assets);
     assert.deepEqual(logs.pageErrors, []);
-    assert.deepEqual(logs.failedRequests, []);
+    assert.deepEqual(
+      logs.failedRequests.filter(
+        ({ url, error }) => url !== 'https://example.invalid/report-tracker.png' || error?.errorText !== 'csp'
+      ),
+      []
+    );
     assert.deepEqual(unexpectedConsoleErrors(logs.console), []);
     assert.equal(logs.execution.length, 2);
     assert.equal(logs.modelCalls.length, 0);
@@ -2052,7 +2079,7 @@ try {
     git(project, 'push', 'origin', target + ':refs/heads/older');
     git(project, 'branch', '--set-upstream-to=origin/older', 'recent');
     const flow = service.flows.read(service.flows.selected(issueId));
-    service.flows.store.save(
+    await service.flows.store.save(
       {
         ...flow,
         destination: { branch: 'older' },
@@ -2137,7 +2164,7 @@ try {
       goal: 'Preview exactly',
       requestedProof: 'Browser output',
     };
-    service.flows.store.save(flow, flow.revision);
+    await service.flows.store.save(flow, flow.revision);
     await page.reload();
     await selectBlock(publish.id);
     assert.equal(await page.locator('#issue-pr-menu').isVisible(), false);
@@ -2166,7 +2193,7 @@ try {
     const destination = saved.destination;
     const url = 'https://github.com/test/fixture/pull/17';
     saved.destination = { branch: 'older', pr: 17, url, title: 'Update the folder controls' };
-    saved = service.flows.store.save(saved, saved.revision);
+    saved = await service.flows.store.save(saved, saved.revision);
     await page.reload();
     await page.locator('#connection-status').filter({ hasText: 'Live' }).waitFor();
     const menu = page.locator('#issue-pr-menu');
@@ -2180,14 +2207,15 @@ try {
     assert.equal(await approve.getAttribute('href'), url + '/files');
     assert.equal(await approve.getAttribute('target'), '_blank');
     saved.destination = destination;
-    service.flows.store.save(saved, saved.revision);
+    await service.flows.store.save(saved, saved.revision);
   });
   await check('Issue Start and Resume respect No new actions and run Update Branch without confirmation', async () => {
     service.flows.executor.close();
     service.flows.executor = executor;
     const previousIssueId = issueId;
-    writeFileSync(
-      join(project, '.issues', playbackIssueId + '.md'),
+    await importBrowserIssue(
+      project,
+      playbackIssueId,
       `---\nid: ${playbackIssueId}\ntitle: Playback fixture\nstate: backlog\ncreated: 2026-11-16T12:00:00Z\n---\n\n## Original request\n\nTest autoplay.\n`
     );
     issueId = playbackIssueId;
@@ -2195,7 +2223,7 @@ try {
     const flow = service.flows.read(issue);
     flow.blocks = flow.blocks.filter(({ kind }) => ['request', 'work'].includes(kind));
     flow.blocks[0].data.fields = { type: 'feature', goal: 'Test autoplay' };
-    let saved = service.flows.store.save(flow, flow.revision);
+    let saved = await service.flows.store.save(flow, flow.revision);
     await service.flows.action({
       action: 'add',
       issueId,
@@ -2293,8 +2321,9 @@ try {
   });
   await check('Manual Fixed accepts retained Flow investigation evidence before running Cleanup', async () => {
     issueId = '20261116-manual-fixed-fixture';
-    writeFileSync(
-      join(project, '.issues', issueId + '.md'),
+    await importBrowserIssue(
+      project,
+      issueId,
       `---\nid: ${issueId}\ntitle: Manual Fixed fixture\nstate: backlog\nrequest_type: investigation\ncreated: 2026-11-16T12:00:00Z\n---\n\nInvestigate the test project.\n`
     );
     const flow = service.flows.read(service.flows.selected(issueId));
@@ -2320,7 +2349,7 @@ try {
       evidence: [{ path, sha256: createHash('sha256').update(output).digest('hex') }],
       result: { head, base, tree },
     });
-    service.flows.store.save(flow, flow.revision);
+    await service.flows.store.save(flow, flow.revision);
     const executionCount = logs.execution.length;
     await page.goto(new URL('/?issue=' + issueId, page.url()).href);
     await page.locator('#connection-status').filter({ hasText: 'Live' }).waitFor();
@@ -2511,8 +2540,9 @@ try {
   });
   await check(issueResultsCheck, async () => {
     const resultsIssueId = '20261118-results-fixture';
-    writeFileSync(
-      join(project, '.issues', resultsIssueId + '.md'),
+    await importBrowserIssue(
+      project,
+      resultsIssueId,
       `---\nid: ${resultsIssueId}\ntitle: Keep results and status visible\nstate: backlog\n---\n\nShow results below the banner.\n`
     );
     await page.goto('/?issue=' + resultsIssueId);
@@ -2538,8 +2568,9 @@ try {
   });
   await check(humanInputCheck, async () => {
     const id = '20261118-human-input-fixture';
-    writeFileSync(
-      join(project, '.issues', id + '.md'),
+    await importBrowserIssue(
+      project,
+      id,
       `---\nid: ${id}\ntitle: Review before merging\nstate: backlog\n---\n\nMake the required review visible.\n`
     );
     const issue = service.flows.selected(id);
@@ -2557,7 +2588,7 @@ try {
     ];
     flow.autoClose = false;
     flow.destination = { ...flow.destination, branch: 'dev', pr: 17, url: 'https://github.com/test/fixture/pull/17' };
-    service.flows.store.save(flow, flow.revision);
+    await service.flows.store.save(flow, flow.revision);
     let approved = false;
     let calls = 0;
     const run = executor.run;
@@ -2648,7 +2679,7 @@ try {
           endedAt: '2026-11-18T12:10:01Z',
           summary: 'Verification failed.',
         });
-      service.flows.store.save(flow, flow.revision);
+      await service.flows.store.save(flow, flow.revision);
       await page.reload();
       await selectBlock(merge.id);
       assert.equal(await page.locator('#run-block').textContent(), 'Retry');
@@ -2671,8 +2702,9 @@ try {
   );
   await check(blockDeletionCheck, async () => {
     const deletionIssueId = '20261117-block-deletion-fixture';
-    writeFileSync(
-      join(project, '.issues', deletionIssueId + '.md'),
+    await importBrowserIssue(
+      project,
+      deletionIssueId,
       `---\nid: ${deletionIssueId}\ntitle: Delete selected flow blocks\nstate: backlog\n---\n\nRemove a block after an explicit click.\n`
     );
     await flowBlockDeletionBrowserChecks(page, service, deletionIssueId);
@@ -2692,7 +2724,7 @@ try {
         endedAt: '2026-11-16T12:08:00Z',
       },
     ];
-    flow = service.flows.store.save(flow, flow.revision);
+    flow = await service.flows.store.save(flow, flow.revision);
     await badge.filter({ hasText: /^Needs input$/ }).waitFor();
     request.attempts.push({
       id: 'failed-attempt',
@@ -2700,7 +2732,7 @@ try {
       startedAt: '2026-11-16T12:10:00Z',
       endedAt: '2026-11-16T12:10:07Z',
     });
-    flow = service.flows.store.save(flow, flow.revision);
+    flow = await service.flows.store.save(flow, flow.revision);
     await badge.filter({ hasText: /^Failed after 00:07$/ }).waitFor();
     request.attempts.push({
       id: 'disconnected-attempt',
@@ -2708,7 +2740,7 @@ try {
       startedAt: '2026-11-16T12:20:00Z',
       lastActiveAt: '2026-11-16T12:20:09Z',
     });
-    service.flows.store.save(flow, flow.revision);
+    await service.flows.store.save(flow, flow.revision);
     await badge.filter({ hasText: /^Disconnected after 00:09$/ }).waitFor();
     await page.reload();
     await badge.filter({ hasText: /^Disconnected after 00:09$/ }).waitFor();
@@ -2785,8 +2817,9 @@ try {
   );
   await check('Starting branch confirmation moves saved work through the real UI', async () => {
     issueId = '20261117-starting-branch-fixture';
-    writeFileSync(
-      join(project, '.issues', issueId + '.md'),
+    await importBrowserIssue(
+      project,
+      issueId,
       `---\nid: ${issueId}\ntitle: Correct the starting branch\nstate: backlog\n---\n\nMove the saved edits.\n`
     );
     const issue = service.flows.selected(issueId);
@@ -2798,7 +2831,7 @@ try {
     writeFileSync(join(checkout, 'saved-edit.txt'), 'Keep this local edit.\n');
     flow.workspace = { branch, base, checkout };
     flow.startingPoint = { ref: 'refs/heads/dev', name: 'dev', commit: base };
-    service.flows.store.save(flow, flow.revision);
+    await service.flows.store.save(flow, flow.revision);
     await page.goto('/?issue=' + issueId);
     const selector = page.getByRole('combobox', { name: 'Starting branch', exact: true });
     const dialog = page.getByRole('dialog', { name: 'Change starting branch' });
