@@ -135,3 +135,30 @@ test('confirmed report publication refreshes only its issue and preserves other 
     before
   );
 });
+
+test('HTTP flow actions reuse transport freshness while direct actions still refresh shared state', async (t) => {
+  const { service } = captureFixture(t);
+  const stores = await ensureProjectStores(service, { fresh: true });
+  const { createIssueFlows } = await import('./factory-ui/flow-service.mjs');
+  service.flows = createIssueFlows(service);
+  service.flows.dispatch = async () => ({ inspected: true });
+  const refresh = stores.refresh.bind(stores);
+  let refreshes = 0;
+  stores.refresh = async (...args) => {
+    refreshes++;
+    return refresh(...args);
+  };
+  const { url, cookie } = await startFactoryHttp(t, service);
+  const input = { action: 'open-block', issueId: '20261025-existing', blockId: 'request', revision: 0 };
+  const response = await fetch(url + '/api/flow-action', {
+    method: 'POST',
+    headers: { cookie, origin: url, 'content-type': 'application/json', 'x-factory-action': 'manual' },
+    body: JSON.stringify(input),
+  });
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).inspected, true);
+  assert.equal(refreshes, 1, 'One HTTP action must not refresh the full queue twice.');
+  refreshes = 0;
+  await service.flows.action(input);
+  assert.equal(refreshes, 1, 'Direct controller callers still require fresh authoritative state.');
+});

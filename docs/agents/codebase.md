@@ -422,6 +422,8 @@ without repeating the project refresh and refreshes selected-issue evidence in
 the background. Explicit file reads await evidence hydration. Selected Classic
 queue requests still await their authoritative Classic snapshot. Flow persists
 observed PR changes in the background and shows merged issues read-only immediately.
+Flow actions reuse the fresh admission already performed by the authenticated
+HTTP handler; direct controller callers still perform their own admission.
 The Git record provider reads listing contents with `cat-file --batch` in groups
 of at most 128 records and reuses those raw records across prefixes within a pinned snapshot.
 Later snapshots rediscover the remote revision and read its records independently.

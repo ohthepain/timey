@@ -41,6 +41,8 @@ refresh only the selected issue, without rereading unrelated histories or droppi
 other saved issues. The dialog shows loading feedback when context
 is pending and keeps confirmation disabled if loading fails. These checks never
 close a live issue or launch work.
+The HTTP action regression also requires exactly one shared refresh before
+dispatch and verifies that direct controller calls retain their own fresh read.
 
 `pnpm run test:stores` includes the `storage-profiles-*.check.mjs` fixtures. They
 check metadata-only registry activation, pinned destination pairs, profile edits

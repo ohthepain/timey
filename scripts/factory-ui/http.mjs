@@ -330,7 +330,7 @@ async function mutation(service, path, value, owner) {
       service.ownServer();
       return viewSources(service).edit(value.id, value.revision, value.label);
     },
-    '/api/flow-action': () => flows(service).action(value),
+    '/api/flow-action': () => flows(service).action(value, { storesReady: true }),
     '/api/native-chat-prepare': () => {
       service.ownServer();
       return prepareNativeChat(service.root, value);

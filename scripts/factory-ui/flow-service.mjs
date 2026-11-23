@@ -1183,10 +1183,17 @@ class IssueFlows {
       this.autoplay.set(issueId, { mode: 'waiting', blockId: block.id });
     else this.pause(issueId, attempt?.summary || `${block.label} needs attention.`);
   }
-  async action(input) {
+  actionNeedsFreshStore(input) {
     const localControl = ['stop', 'pause'].includes(input.action) && this.active.has(input.issueId);
-    if (!localControl && (this.service.projectStores || existsSync(join(this.service.root, '.issues/stores.json'))))
-      await ensureProjectStores(this.service, { fresh: true });
+    return (
+      !localControl && Boolean(this.service.projectStores || existsSync(join(this.service.root, '.issues/stores.json')))
+    );
+  }
+  async prepareActionStores(input, storesReady) {
+    if (!storesReady && this.actionNeedsFreshStore(input)) await ensureProjectStores(this.service, { fresh: true });
+  }
+  async action(input, { storesReady = false } = {}) {
+    await this.prepareActionStores(input, storesReady);
     if (
       this.service.projectStores &&
       input.issueId &&
