@@ -10,7 +10,7 @@
   const choiceLabel = (choice) =>
     typeof choice === 'string' ? choice : (choice.name ?? choice.label ?? choiceValue(choice));
 
-  function settingInput(field, setting, prefix, disabled = false) {
+  function settingInput(field, setting = {}, prefix, disabled = false) {
     const raw = setting?.raw == null || setting.raw === '' ? 'default' : setting.raw;
     const id = `${prefix}-${field.key}`;
     const choices = field.choices || [];
@@ -26,7 +26,7 @@
           )}${raw !== 'default' && !choices.some((choice) => choiceValue(choice) === raw) ? `<option value="${escape(raw)}" selected>${escape(raw)}</option>` : ''}</select>`
       : `<input id="${escape(id)}" name="${escape(field.key)}" value="${escape(raw)}" placeholder="default" autocomplete="off"${disabled ? ' disabled' : ''} />`;
     const effective = setting?.value == null ? '' : `${setting.value}${setting.source ? ` · ${setting.source}` : ''}`;
-    return `<label class="folder-setting-field" for="${escape(id)}"><span>${escape(field.label || field.key)}</span>${input}<small class="muted">${escape(effective)}</small></label>`;
+    return `<label class="folder-setting-field" for="${escape(id)}" data-setting-value="${escape(setting.value)}"><span>${escape(field.label || field.key)}</span>${input}<small class="muted">${escape(effective)}</small></label>`;
   }
 
   function settingsWand(view) {
@@ -56,6 +56,16 @@
   }
 
   window.factorySettingField = settingInput;
+  window.factoryAgentOptions = (container) => {
+    const model = container.querySelector('[name="model"]');
+    const effort = container.querySelector('[name="effort"]');
+    if (!model || !effort) return;
+    const value = model.value === 'default' ? model.closest('label').dataset.settingValue : model.value;
+    effort.closest('label').hidden = /^(anthropic|google):/.test(value);
+  };
+  document.addEventListener('change', (event) => {
+    if (event.target.matches('[name="model"]')) window.factoryAgentOptions(event.target.closest('form'));
+  });
 
   window.createFolderSettingsUI = ({
     container,
@@ -102,6 +112,7 @@
         (current.kind === 'plain'
           ? plainFolderSettings(current)
           : configuredFolderSettings(current, location.project, prefix, omitFields));
+      window.factoryAgentOptions(container);
     }
     async function refresh() {
       if (!location) return;

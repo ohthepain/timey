@@ -1,5 +1,9 @@
 ---
 fields:
+  storage_profile:
+    label: Issue storage profile
+    kind: storage-profile
+    fallback: files
   branch:
     label: Target branch
     kind: branch
@@ -28,6 +32,18 @@ fields:
       - value: gpt-6-astra
         label: GPT-6 Astra
         description: The most capable choice for demanding reasoning and coding.
+      - value: anthropic:sonnet
+        label: Claude Sonnet
+        description: Runs the installed Claude Code agent with your configured account.
+      - value: anthropic:opus
+        label: Claude Opus
+        description: Runs the installed Claude Code agent with your configured account.
+      - value: google:pro
+        label: Gemini Pro
+        description: Runs the installed Gemini CLI agent with your configured account.
+      - value: google:flash
+        label: Gemini Flash
+        description: Runs the installed Gemini CLI agent with your configured account.
   effort:
     label: Effort
     kind: choice

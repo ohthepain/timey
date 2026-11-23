@@ -619,13 +619,34 @@ const issueChatUI = (() => {
     link.rel = 'noreferrer';
     links.append(link);
   }
+  function agentRecoveryButton() {
+    const recover = node('button', 'Recover agent session');
+    recover.type = 'button';
+    recover.className = 'small-button';
+    recover.onclick = () => {
+      if (
+        confirm(
+          'Inspect the files, command results, and retained conversation before recovery. Have you reviewed the partial work and confirmed the original agent has stopped? Recovery sends no prompt.'
+        )
+      )
+        void queueControl({ operation: 'recover-agent', confirmed: true });
+    };
+    return recover;
+  }
   function renderQueue(conversation) {
     const queue = conversation.queue || { entries: [], paused: false };
     pause.dataset.operation = queue.paused ? 'resume' : 'pause';
     pause.textContent = pauseLabel(queue);
     queueList.replaceChildren();
     renderQueueEntries(queue.entries || [], queue);
+    renderAgentRecovery(conversation);
   }
+  function renderAgentRecovery(conversation) {
+    if (!conversation.agentRecovery || conversation.connected) return;
+    queueList.append(agentRecoveryButton());
+    queueList.hidden = false;
+  }
+
   function renderQueueEntries(entries, queue) {
     if (queue.operation) queueList.append(node('p', operationStatus(queue.operation)));
     for (const entry of entries) queueList.append(queuedPrompt(entry, queue));

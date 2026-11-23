@@ -1,3 +1,4 @@
+import { observeActivity, diagnosticContext, beginActivity, recordActivity } from './diagnostic-activity.mjs';
 import {
   candidateInput,
   retainedCandidate,
@@ -73,12 +74,14 @@ async function ensureWorkerDependencies(root, folder, options) {
     'Matching dependencies are missing from the worker checkout. Install them there before continuing.'
   );
   mkdirSync(folder, { recursive: true });
-  await runLogged(
-    root,
-    'pnpm',
-    ['install', '--frozen-lockfile'],
-    join(folder, 'dependency-install.log'),
-    options.onProgress
+  await observeActivity('verification', 'Install dependencies', diagnosticContext(root), () =>
+    runLogged(
+      root,
+      'pnpm',
+      ['install', '--frozen-lockfile'],
+      join(folder, 'dependency-install.log'),
+      options.onProgress
+    )
   );
   dependencyPreflight(root, root, workspaces);
 }
@@ -111,7 +114,10 @@ async function checkCandidateOnce(root, base, folder, options = {}) {
           ? 'No valid retained proof for these exact inputs.'
           : 'Dependencies or clean source did not provide a cache key.',
   });
-  if (retained) return retained;
+  if (retained) {
+    beginActivity('verification', 'Reuse saved checks', { ...diagnosticContext(root), candidate: input })('Reused');
+    return retained;
+  }
   const failed = !options.force && !options.retryFailed && retainedFailure(root, input);
   assertNoRetainedFailure(failed);
   const attempt = join(folder, 'attempt-' + randomUUID());
@@ -119,10 +125,16 @@ async function checkCandidateOnce(root, base, folder, options = {}) {
   const summaries = [];
   for (const [checkpoint, command, args, log] of checkpointCommands(base, options.verifier, options.mergeChecks)) {
     const context = { root, base: resolvedBase, tree: treeBefore, folder, attempt, input, options };
-    const output = await executeCheckpoint(context, command, args, log);
+    const output = await observeActivity(
+      'verification',
+      checkpoint === 'step' ? 'Step audit' : 'Verification',
+      { ...diagnosticContext(root), candidate: input },
+      () => executeCheckpoint(context, command, args, log)
+    );
     const path = commandSummary(root, output);
     const value = readJson(path);
     requireThat(value.checkpoint === checkpoint, 'Verification returned the wrong checkpoint.');
+    recordVerificationPhases(value, { ...diagnosticContext(root), candidate: input });
     summaries.push({ path, value });
   }
   requireThat(
@@ -146,6 +158,23 @@ async function checkCandidateOnce(root, base, folder, options = {}) {
   };
   if (input && input === verificationInput(root, resolvedBase, options)) retainCandidate(root, input, result);
   return result;
+}
+
+function recordVerificationPhases(summary, details) {
+  for (const phase of summary.phases ?? []) {
+    if (!/^(tests|fallow|typecheck|build|browser|factory)$/.test(phase.name)) continue;
+    const startedAt = Date.parse(phase.startedAt);
+    const durationMs = Date.parse(phase.finishedAt) - startedAt;
+    if (!Number.isFinite(durationMs)) continue;
+    recordActivity('verification', {
+      ...details,
+      operation: phase.name,
+      startedAt,
+      durationMs,
+      status: phase.passed ? 'Completed' : 'Failed',
+      phase: true,
+    });
+  }
 }
 
 function checkpointCommands(base, script, mergeChecks) {
@@ -205,7 +234,10 @@ function retainCheckpointFailure(context, log, error) {
   const savedLog = join(attempt, log);
   copyFileSync(join(folder, log), savedLog);
   const summaries = failedCheckpointSummaries(context, error);
-  const timedOut = summaries.map(readJson).find((summary) => summary.checks.some((check) => check.timedOut));
+  const failedReports = summaries.map(readJson);
+  for (const summary of failedReports)
+    recordVerificationPhases(summary, { ...diagnosticContext(root), candidate: input });
+  const timedOut = failedReports.find((summary) => summary.checks.some((check) => check.timedOut));
   if (timedOut) {
     error.code = 'MERGE_CHECK_TIMEOUT';
     error.message = timedOut.error;

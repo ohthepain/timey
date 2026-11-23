@@ -10,6 +10,8 @@ import {
 import { savedIssueExecutionSettings } from './issue-execution-settings.mjs';
 import { FlowStore } from './flow-store.mjs';
 import { folderSettingsFields } from './folder-settings-schema.mjs';
+import { afterReportWrite } from './stores/report-access.mjs';
+import { agentModel } from './agent-models.mjs';
 
 const issueSettingsPath = (root) => join(root, '.issues', 'model-settings.json');
 
@@ -27,7 +29,13 @@ export function readModelSettings(root, { initialize = false } = {}) {
     errors,
     models: fields
       .find(({ key }) => key === 'model')
-      .choices.map(({ value, label, description }) => ({ id: value, name: label, description: description || label })),
+      .choices.map(({ value, label, description }) => ({
+        id: value,
+        name: label,
+        description: description || label,
+        provider: agentModel(value).provider,
+        supportsEffort: agentModel(value).supportsEffort,
+      })),
     efforts: fields.find(({ key }) => key === 'effort').choices.map(({ value }) => value),
   };
 }
@@ -54,6 +62,16 @@ export function newChatModelSettings(root, issueId = null) {
   return {
     model: defaults.model,
     effort: defaults.effort,
+  };
+}
+
+export function codexHelperModelSettings(root) {
+  const settings = newChatModelSettings(root);
+  if (agentModel(settings.model).provider === 'codex') return settings;
+  const fields = folderSettingsFields(root, { branchChoices: false });
+  return {
+    model: fields.find(({ key }) => key === 'model').fallback,
+    effort: fields.find(({ key }) => key === 'effort').fallback,
   };
 }
 
@@ -114,7 +132,7 @@ export function saveIssueModelSettings(service, input) {
   if (existsSync(store.path(input.issueId))) {
     const flow = JSON.parse(readFileSync(store.path(input.issueId), 'utf8'));
     flow.settings = { ...flow.settings, model: input.model || 'default', effort: input.effort || 'default' };
-    store.save(flow, flow.revision);
+    return afterReportWrite(store.save(flow, flow.revision), () => readIssueModelSettings(service.root, input.issueId));
   }
   return readIssueModelSettings(service.root, input.issueId);
 }

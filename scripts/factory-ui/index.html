@@ -1631,6 +1631,11 @@
         box-shadow: 0 18px 50px #17211e40;
         padding: 20px;
       }
+      #server-actions-dialog [data-actions-empty] {
+        height: 1.5em;
+        line-height: 1.5;
+        overflow: auto;
+      }
       #server-actions-dialog::backdrop {
         background: #17211e70;
       }
@@ -2140,6 +2145,7 @@
     <script src="/hotkeys-ui.js"></script>
     <script src="/ai-text-ui.js"></script>
     <script src="/view-state.js"></script>
+    <script src="/issue-store-ui.js"></script>
     <script src="/issue-capture-ui.js"></script>
     <script src="/server-control-ui.js"></script>
     <script src="/queue-lifecycle-ui.js"></script>
@@ -2207,7 +2213,10 @@
           const projectIssuesEmbed = document.documentElement.dataset.projectIssuesEmbed === 'true';
           const storage = issueStorageLocation();
           const [snapshot, runtime, conversation, stored] = await Promise.all([
-            request(issueQueueEndpoint(issueId, projectIssuesEmbed)),
+            request(
+              issueQueueEndpoint(issueId, projectIssuesEmbed) +
+                (manualRefreshPending ? (issueId || projectIssuesEmbed ? '&' : '?') + 'refresh=true' : '')
+            ),
             request('runtime'),
             issueId && !projectIssuesEmbed ? request('issue-chat?issue=' + encodeURIComponent(issueId)) : null,
             storage ? loadStoredIssues(storage) : null,
@@ -2224,7 +2233,7 @@
           coordinatorUI.update(data);
           showRuntime(runtime);
           if (runtime.server) serverControlUI.show(runtime.server, request);
-          $('connection').textContent = 'Live local queue · refreshed ' + new Date().toLocaleTimeString();
+          $('connection').textContent = 'Local updates · remote data refreshes on demand';
           updateLiveOutput();
           issueStorageReadOnly = runtime.mode === 'preview';
           refreshPending ||= previous !== JSON.stringify(data) || stored;
@@ -2503,6 +2512,14 @@
         }
         void refresh();
       }
+      document.defaultView.addEventListener('message', (event) => {
+        if (
+          event.origin === location.origin &&
+          event.source === document.defaultView.parent &&
+          event.data?.type === 'factory-refresh'
+        )
+          refreshProgress();
+      });
       function showRuntime(runtime) {
         const sourceChangeBanner = $('source-change-banner');
         if (sourceChangedAtPageLoad === null) sourceChangedAtPageLoad = Boolean(runtime.sourceChanged);
@@ -3056,6 +3073,7 @@
         });
         try {
           const views = await Promise.all(issues.map((issue) => request(`flow?issue=${encodeURIComponent(issue.id)}`)));
+          const storeOptions = await request('issue-stores');
           let branches = [];
           const branchResult = await request('flow-action', {
             issueId: issues[0].id,
@@ -3064,7 +3082,7 @@
           });
           if (!branchResult.branchesUnavailable) branches = branchResult.branches || [];
           if (projectIssueBulk.idsKey !== key) return;
-          Object.assign(projectIssueBulk, { views, branches, loading: false });
+          Object.assign(projectIssueBulk, { views, branches, profiles: storeOptions.profiles, loading: false });
         } catch (error) {
           if (projectIssueBulk.idsKey !== key) return;
           Object.assign(projectIssueBulk, { loading: false, error: error.message });
@@ -3107,6 +3125,17 @@
         const priorities = commonProjectIssueValue(issues.map((issue) => issue.priorityInfo?.id));
         const currentBranches = views.map((view) => view.destination.branch || '');
         const branches = commonProjectIssueValue(currentBranches);
+        const issueStores = commonProjectIssueValue(
+          views.map(
+            (entry) =>
+              (projectIssueBulk.profiles || []).find(
+                (profile) =>
+                  !profile.retired &&
+                  profile.issueStore === entry.issue.storeId &&
+                  profile.artifactStore === entry.issue.artifactStoreId
+              )?.id || ''
+          )
+        );
         const branchOptions = [...new Set([...projectIssueBulk.branches, ...currentBranches.filter(Boolean)])];
         const allBranchEditable = views.every((view) => !view.destination.locked);
         const investigation = views.every(
@@ -3127,6 +3156,15 @@
           'Priority',
           priorities,
           data.priorities.map((priority) => [priority.id, priority.name])
+        )}${projectIssueBulkField(
+          'storageProfile',
+          'Issue storage profile',
+          issueStores,
+          (projectIssueBulk.profiles || [])
+            .filter((profile) => !profile.retired)
+            .map((profile) => [profile.id, profile.label]),
+          false,
+          'Moves selected issue records and artifacts after verification.'
         )}${projectIssueBulkField('targetBranch', 'Target branch', branches, [['__default__', 'Follow project default'], ...branchOptions.map((branch) => [branch, branch])], !allBranchEditable, allBranchEditable ? 'Sets the pull request destination branch.' : 'Locked because at least one selected issue already has a pull request.')}${
           investigation
             ? projectIssueBulkField('reusable', 'Reusable', reusable === '__mixed__' ? reusable : String(reusable), [

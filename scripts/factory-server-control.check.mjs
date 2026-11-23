@@ -1,3 +1,4 @@
+import { ensureProjectStores, closeProjectStores } from './factory-ui/stores/runtime.mjs';
 import { createServer as createHTTPServer } from 'node:http';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -588,6 +589,8 @@ test('old disconnected preparations appear in the count and Action list and can 
 
 test('an open Action list drops cleanup when the running count falls', async () => {
   const dom = loadServerControlDom();
+  let now = 0;
+  dom.window.Date.now = () => now;
   const { document, controls } = dom.window;
   const active = { ...idleServerControl(), actions: 1 };
   controls.show(active, async () => [
@@ -597,6 +600,7 @@ test('an open Action list drops cleanup when the running count falls', async () 
   await delay(0);
   const dialog = document.querySelector('#server-actions-dialog');
   assert.match(dialog.textContent, /Cleanup: Example/);
+  now = 2000;
   controls.show({ ...active, actions: 0 }, async () => []);
   await delay(0);
   assert.match(dialog.textContent, /No issue-linked actions are running/);
@@ -802,6 +806,155 @@ test('restart waits for a storage batch even after its chat response has stopped
     await delay(350);
     assert.equal(restarts, 1);
   } finally {
+    control.close();
+    service.close();
+  }
+});
+
+async function localControlSession(t, service) {
+  let restarted = 0;
+  const server = createFactoryServer(service, {
+    restart: () => {
+      restarted++;
+    },
+  });
+  service.store.connected.add('retained-local-work');
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(async () => {
+    service.store.connected.clear();
+    await new Promise((resolve) => server.close(resolve));
+    await closeProjectStores(service);
+    service.close();
+  });
+  const url = `http://127.0.0.1:${server.address().port}`;
+  const headers = await session(url);
+  return {
+    restarted: () => restarted,
+    async post(path, input = {}) {
+      const response = await fetch(url + '/api/' + path, { method: 'POST', headers, body: JSON.stringify(input) });
+      return { status: response.status, value: await response.json() };
+    },
+  };
+}
+
+async function assertLocalControls(http) {
+  for (const [path, phase] of [
+    ['server-pause', 'paused'],
+    ['server-cancel-restart', 'idle'],
+    ['server-restart', 'draining'],
+    ['server-cancel-restart', 'idle'],
+  ]) {
+    const result = await http.post(path);
+    assert.equal(result.status, 200, JSON.stringify(result.value));
+    assert.equal(result.value.phase, phase);
+  }
+  assert.equal(http.restarted(), 0, 'Existing local work must keep the real restart callback idle.');
+}
+
+test('local pause and restart controls do not import or bootstrap legacy issue storage', async (t) => {
+  const root = project(t);
+  const id = '20261122-unreconciled-legacy';
+  const directory = join(root, '.issues/flows', id);
+  mkdirSync(directory, { recursive: true });
+  const path = join(root, '.issues', id + '.md');
+  const report = `---\nid: ${id}\ntitle: Retained legacy work\nstate: investigate\n---\nOriginal report.\n`;
+  writeFileSync(path, report);
+  const flow = JSON.stringify({ id, revision: 1, blocks: [{ kind: 'work', attempts: [{ status: 'running' }] }] });
+  writeFileSync(join(directory, 'flow.json'), flow);
+  const service = new FactoryUI(root);
+  const http = await localControlSession(t, service);
+  await assertLocalControls(http);
+  assert.equal(service.projectStores, undefined);
+  assert.equal(existsSync(join(root, '.issues/store-runtime')), false);
+  assert.equal(readFileSync(path, 'utf8'), report);
+  assert.equal(readFileSync(join(directory, 'flow.json'), 'utf8'), flow);
+  const shared = await http.post('server-action', { operation: 'resume', runId: 'legacy-worker' });
+  assert.equal(shared.status, 400);
+  assert.match(shared.value.error, /Recover active legacy attempts/);
+});
+
+test('local pause and restart controls stay available during a required store outage without shared reads or writes', async (t) => {
+  const service = new FactoryUI(project(t));
+  const stores = await ensureProjectStores(service, { fresh: true });
+  let reads = 0,
+    writes = 0;
+  const unavailable = () =>
+    Object.assign(Error('Required coordination store is unavailable.'), { code: 'STORE_UNAVAILABLE' });
+  for (const method of ['get', 'list', 'readSnapshot'])
+    if (stores.records[method])
+      stores.records[method] = async () => {
+        reads++;
+        throw unavailable();
+      };
+  stores.records.commit = async () => {
+    writes++;
+    throw unavailable();
+  };
+  const http = await localControlSession(t, service);
+  await assertLocalControls(http);
+  assert.equal(reads, 0);
+  assert.equal(writes, 0);
+  const shared = await http.post('server-action', { operation: 'resume', runId: 'unconfirmed-worker' });
+  assert.equal(shared.status, 400);
+  assert.match(shared.value.error, /coordination store is unavailable/);
+  assert.ok(reads > 0, 'Shared issue operations must still check their configured authority.');
+  assert.equal(writes, 0);
+});
+
+test('Flow actions describe their block purpose and operations outside blocks', (t) => {
+  const root = project(t);
+  const issueId = '20261101T000000000-0123456789abcdef';
+  writeFileSync(
+    join(root, '.issues', issueId + '.md'),
+    `---\nid: ${issueId}\ntitle: Explain manual closure\nstate: investigate\n---\n\n## Original request\n\nClarify Close.\n`
+  );
+  const service = new FactoryUI(root);
+  const control = serverControl(service);
+  const originalFlows = service.flows;
+  service.flows = {
+    active: new Map([[issueId, { blockId: 'publish', attemptId: 'attempt-one' }]]),
+    selected: () => ({ id: issueId, title: 'Explain manual closure' }),
+    read: () => ({
+      blocks: [
+        {
+          id: 'publish',
+          kind: 'publish',
+          label: 'Publish PR',
+          attempts: [{ id: 'attempt-one', status: 'running', step: 'Checking the destination branch' }],
+        },
+      ],
+    }),
+    catalog: {
+      read: () => ({
+        entries: [{ id: 'publish', description: 'Publish the checked issue changes as a pull request.' }],
+      }),
+    },
+  };
+  try {
+    const action = control.actions()[0];
+    assert.equal(action.title, 'Publish PR');
+    assert.equal(action.trigger, 'Block: Publish PR');
+    assert.equal(action.purpose, 'Publish the checked issue changes as a pull request.');
+    assert.equal(action.details, 'Checking the destination branch');
+    assert.equal(action.issues[0].title, 'Explain manual closure');
+    service.flows.active.set(issueId, { blockId: 'abort-merge' });
+    const outside = control.actions()[0];
+    assert.equal(outside.title, 'Abort merge');
+    assert.equal(outside.trigger, 'Branch menu: Abort merge');
+    assert.match(outside.purpose, /Discard the pending merge/);
+    assert.doesNotMatch(outside.details, /undefined/);
+    assert.equal(outside.outputHref, `/?issue=${issueId}`);
+    service.flows.active.clear();
+    service.flows.flowBuilds = new Set([issueId]);
+    service.flows.branchRepairs = { active: new Map([[issueId, {}]]) };
+    const background = control.actions();
+    assert.deepEqual(
+      background.map((item) => item.title),
+      ['Fix Branch', 'Build flow']
+    );
+    assert.ok(background.every((item) => item.trigger && item.purpose && item.issues[0].id === issueId));
+  } finally {
+    service.flows = originalFlows;
     control.close();
     service.close();
   }

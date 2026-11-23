@@ -7,6 +7,36 @@ There is no policy preset selector. The lifecycle file defines saved states,
 transitions, priorities, and closure reasons; it does not define the adapter's
 human-input policy.
 
+The GitHub icon immediately left of the gear shows API requests made by Timey.
+Failed requests appear in red parentheses when the count is nonzero. Open the
+counter to see the latest 30 requests, newest first, with their repository, start
+time, result, and duration. Expand a failed result to read its explanation.
+Authentication, retries, and pagination count per request. Git transport and
+commands run independently by coding agents are outside this history.
+Projects on the same Timey installation share counts and history across restarts.
+**Reset history and counts** clears both after confirmation.
+
+The pulse icon and recorded-turn count open **Codex API requests and usage** in a popup.
+Both the Codex and GitHub popups offer Reset to clear their request count and recent
+history for this installation. Codex reset preserves quota information and other
+activity categories; turns already running before reset do not restore old records. Recent Codex turns show
+reported input, cached input, output, and reasoning tokens, time to first output
+when reported, and total time. **Codex by issue** groups the retained turns.
+**Repeated work** highlights matching submitted inputs, repeated block attempts,
+and verification reruns with matching inputs. Matches are diagnostic leads.
+They do not assign a cost or establish that a rerun was unnecessary.
+
+**Shared stores** shows refreshes, waits, record operations, and counts of
+cached views and joined refreshes since server start. **Git and verification**
+shows times and outcomes for tracked repository operations and checks. Timings
+and turn summaries are local and retain up to 120 entries per activity type.
+They do not store prompt text, command output, or credentials.
+
+The panel also shows the signed-in Codex account's remaining ChatGPT usage
+percentages and reset times when Codex supplies them. The check starts no model
+turn and is cached for five minutes. **Refresh** fetches current limits.
+API key sessions use separate OpenAI API organization and project limits.
+
 If the lifecycle file is missing, settings offers a preview and an explicit
 **Initialize lifecycle configuration** action using the bundled template. Restore
 the original file instead if the project used custom states. Initialization
@@ -337,18 +367,39 @@ Final acceptance is projected from recorded finished work, not a stage name alon
 
 The issue queue's gear edits tracked project defaults in root `folder.md` for
 model and reasoning effort. Built-in defaults start at GPT-6 Luna and medium. The model selector offers Luna,
-GPT-6.1 Sol, GPT-6.1 Terra and GPT-6 Astra with brief practical descriptions;
-effort choices are low, medium, high and max. The issue page has separate model
+GPT-6.1 Sol, GPT-6.1 Terra, GPT-6 Astra, Claude Sonnet, Claude Opus, Gemini Pro, and Gemini Flash.
+Codex effort choices are low, medium, high, and max. Native-agent choices hide the
+effort control. The issue page has separate model
 and effort selectors. An unset issue choice follows its folder's inherited setting
 until work starts; explicit choices remain fixed if defaults change. Legacy local
 defaults migrate into the project file. Explicit legacy issue overrides remain in
 `.issues/model-settings.json` and are preserved.
 
-These preferences are read when a new Codex thread starts. Resuming an existing
-thread keeps its original model and effort. Started Flow work retains its resolved
+These preferences select the agent when a new conversation starts. Resuming keeps
+the same agent; explicit turn settings may change its supported model. Started Flow work retains its resolved
 settings snapshot. `model-settings.mjs` validates preferences against the settings
-reference; `codex.mjs` passes the effective model and reasoning effort
-to `thread/start`. New threads retain the existing sandbox and approval policy.
+reference. `codex.mjs` passes the effective model to `thread/start` and accepts model
+and reasoning effort on configured turns. Native-agent execution uses the installed
+Claude Code or Gemini CLI and its own supported login, billing, and permissions.
+
+Claude and Gemini support issue chats, project discussions, and ordinary
+model-driven Flow blocks. Install and sign in through the vendor CLI on the machine
+running Timey. Missing installation, authentication, quota, or required capability
+stops the operation with an explanation. No other provider, model, or billing method
+is silently substituted. Background helpers remain on Codex; when project defaults
+select a native agent, these helpers use the built-in Codex defaults. The named Sol
+reviewer still selects an advertised Sol model.
+
+A waiting native permission or question appears as **Needs your input**. **Open
+request** opens the running block's input card without starting another operation.
+Approvals stay bound to the current issue, block, attempt, and request. Native
+conversation recovery requires inspection of retained work and explicit confirmation
+after the original process group ends. Project discussion provider changes start a
+fresh native conversation with a handoff while retaining the original history.
+Started issue execution settings retain their existing freeze.
+
+See the [native-agent plan](../plans/anthropic-google-model-support.md) for setup,
+verification, and the initial capability limits.
 
 Descriptions follow the current [OpenAI model-selection guidance](https://developers.openai.com/api/docs/guides/model-selection).
 

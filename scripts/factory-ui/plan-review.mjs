@@ -34,7 +34,7 @@ export function checkImplementation(service, id, state, path, basis) {
     summary: 'Checking the implementation steps and their acceptance criteria.',
   });
   writeJson(join(lock, 'owner.json'), { runId: run.id, pid: process.pid });
-  service.perform(run, async () => {
+  service.perform(run, async (service) => {
     try {
       await reviewPlan(service, queue, issue, plan, run);
     } finally {
@@ -85,10 +85,10 @@ async function reviewPlan(service, queue, issue, plan, run) {
       checklistBasis(current, currentIssue, selectPlan(current, currentIssue, plan.path)),
     'The plan, issue or work changed during review. Check again; no result was recorded.'
   );
-  recordChecklist(service, issue, run, record);
+  await recordChecklist(service, issue, run, record);
 }
 function recordChecklist(service, issue, run, record) {
-  savePlanDecision(
+  return savePlanDecision(
     service,
     issue,
     run,

@@ -16,6 +16,7 @@ import { readQueue } from './data.mjs';
 import { digest, requireThat } from './common.mjs';
 import { createIssueDiscussion } from './issue-discussion.mjs';
 import { recordDiscussion } from './discussion-record.mjs';
+import { afterReportWrite } from './stores/report-access.mjs';
 import { listAvailableSkills, publicSkills, selectedSkills } from './skills.mjs';
 
 const idle = 15 * 60 * 1000,
@@ -303,7 +304,9 @@ function saveStageInterview(manager, session, queue, issue, intent, input) {
     'The interview changed. Review its results again.'
   );
   const saved = recordDiscussion(manager.service, queue, issue, intent, input.continue === true);
-  finishGrilling(manager.service.root, session);
-  manager.drop(session);
-  return saved;
+  return afterReportWrite(saved, (value) => {
+    finishGrilling(manager.service.root, session);
+    manager.drop(session);
+    return value;
+  });
 }

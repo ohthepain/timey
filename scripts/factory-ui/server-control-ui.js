@@ -1,5 +1,7 @@
 const serverControlUI = (() => {
   let actionRequest = 0;
+  let actionsPending = false;
+  let actionsRequestedAt = -Infinity;
   let renderedActions = null;
   let waitingForServer = false;
   let state = null,
@@ -32,7 +34,7 @@ const serverControlUI = (() => {
     if (document.getElementById('project-actions')) dialog.className = 'modal';
     dialog.setAttribute('aria-labelledby', 'server-actions-title');
     dialog.innerHTML =
-      '<h2 id="server-actions-title">Action list</h2><p data-actions-empty></p><div data-server-action-list></div><button type="button" data-actions-close>Close</button>';
+      '<h2 id="server-actions-title">Action list</h2><p data-actions-empty role="status"></p><p>Stop cancels the current action. Pause lets it finish and prevents later work on that issue. Open the issue for Flow controls.</p><div data-server-action-list></div><button type="button" data-actions-close>Close</button>';
     document.querySelector('header').append(dialog);
     dialog.querySelector('[data-actions-close]').onclick = () => {
       if (typeof dialog.close === 'function') dialog.close();
@@ -115,14 +117,20 @@ const serverControlUI = (() => {
     if (dialog.open) loadActions(dialog, request);
   }
   function loadActions(dialog, request) {
+    if (actionsPending || Date.now() - actionsRequestedAt < 2000) return;
+    actionsPending = true;
+    actionsRequestedAt = Date.now();
     const current = ++actionRequest;
-    dialog.querySelector('[data-actions-empty]').textContent = 'Loading current actions…';
+    if (renderedActions === null) dialog.querySelector('[data-actions-empty]').textContent = 'Loading current actions…';
     void request('server-actions')
       .then((items) => {
         if (current === actionRequest) renderActions(Array.isArray(items) ? items : [], request);
       })
       .catch((error) => {
         if (current === actionRequest) dialog.querySelector('[data-actions-empty]').textContent = error.message;
+      })
+      .finally(() => {
+        actionsPending = false;
       });
   }
   function renderActions(items, request) {
@@ -130,7 +138,7 @@ const serverControlUI = (() => {
     const list = dialog.querySelector('[data-server-action-list]');
     const empty = dialog.querySelector('[data-actions-empty]');
     empty.textContent = items.length
-      ? 'Current work stays on its issue. Stop cancels the current action; Pause lets it finish and prevents later work on that issue.'
+      ? `${items.length} current ${items.length === 1 ? 'action' : 'actions'}.`
       : 'No issue-linked actions are running.';
     const signature = JSON.stringify(items);
     if (signature === renderedActions) return;
@@ -147,7 +155,10 @@ const serverControlUI = (() => {
     card.append(textNode('h3', actionTitle(item)));
     const state = textNode('p', actionStatus(item));
     state.className = 'muted';
-    card.append(state, textNode('p', actionDetails(item)), actionLinks(item));
+    card.append(state);
+    if (item.trigger) card.append(textNode('p', item.trigger));
+    if (item.purpose) card.append(textNode('p', item.purpose));
+    card.append(textNode('p', actionDetails(item)), actionLinks(item));
     card.append(actionControls(item, request, drafts));
     return card;
   }

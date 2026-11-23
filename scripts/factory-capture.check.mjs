@@ -12,7 +12,12 @@ import { captureRoute } from './factory-ui/capture-routing.mjs';
 import { readQueue } from './factory-ui/data.mjs';
 import { defaultIssueFolder } from './factory-ui/issue-folder-settings.mjs';
 
-const input = (description = 'Rename heading to Issues') => ({ requestId: randomUUID(), description, folder: 'Inbox' });
+const input = (description = 'Rename heading to Issues') => ({
+  requestId: randomUUID(),
+  description,
+  folder: 'Inbox',
+  storageProfile: 'files',
+});
 const reports = (root) => readdirSync(join(root, '.issues')).filter((f) => /^\d.*\.md$/.test(f));
 const bytes = (root, file) => readFileSync(join(root, '.issues', file), 'utf8');
 function report(root, id) {

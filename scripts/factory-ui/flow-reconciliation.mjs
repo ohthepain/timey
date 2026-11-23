@@ -41,7 +41,6 @@ export async function observeDisconnectedFlow(service, flow, create = createIssu
       (attempt) => !attempt.reconciledAt && ['running', 'stopping', 'uncertain'].includes(attempt.status)
     )
   );
-  if (!blocks.length) return blocks;
   const state = conversationState(service.root, flow.issueId);
   const threads = blocks.flatMap((block) => {
     const binding = state.flowBlocks?.[block.id];
@@ -54,13 +53,16 @@ export async function observeDisconnectedFlow(service, flow, create = createIssu
     return [threadId];
   });
   if (!threads.length) return blocks;
-  const connection = create({ onEvent() {} });
+  const connections = new Set();
   try {
-    await connection.ready();
-    for (const threadId of new Set(threads))
+    for (const threadId of new Set(threads)) {
+      const connection = create({ root: service.root, threadId, onEvent() {} });
+      connections.add(connection);
+      await connection.ready();
       await attachIssueChat(connection, flow.workspace.checkout, { threadId }, () => {}, 'read-only');
+    }
   } finally {
-    connection.close();
+    for (const connection of connections) connection.close();
   }
   return blocks;
 }

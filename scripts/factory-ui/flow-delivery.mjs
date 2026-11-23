@@ -15,6 +15,7 @@ import { StrategyProvider } from './strategy-provider.mjs';
 import { flowMergeChecks, flowVerificationInput } from './flow-verification.mjs';
 import { queueReportPaths } from './shared-issue-config.mjs';
 import { requireGroupProof } from './flow-group-proof.mjs';
+import { evidencePath } from './stores/evidence.mjs';
 
 export function flowDeliveryProvider(service, ctx, workspace, options = {}) {
   requireThat(
@@ -149,7 +150,11 @@ export function verifiedFlowCandidate(ctx, workspace, options = {}) {
       return {
         ...candidate,
         verification: checked,
-        evidence: verifyEvidence({ ...candidate, base: verificationBase }, checked, { ...options, mergeChecks }),
+        evidence: verifyEvidence({ ...candidate, base: verificationBase }, checked, {
+          ...options,
+          mergeChecks,
+          evidenceRoot: ctx.evidenceRoot,
+        }),
       };
     } catch (error) {
       failure ??= error;
@@ -167,13 +172,13 @@ function verifyEvidence({ tree, base }, checked, options) {
   const evidence = [];
   for (const proof of checked.supportingProof || []) {
     requireThat(
-      digest(readFileSync(proof.path)) === proof.sha256,
+      digest(readFileSync(evidencePath(options.evidenceRoot, proof.path, proof.sha256))) === proof.sha256,
       'Supporting verification evidence changed. Run an explicit Verify block again.'
     );
     evidence.push(proof);
   }
   for (const proof of checked.proof) {
-    const bytes = readFileSync(proof.path);
+    const bytes = readFileSync(evidencePath(options.evidenceRoot, proof.path, proof.sha256));
     requireThat(digest(bytes) === proof.sha256, 'The retained verification evidence changed. Run verification again.');
     const summary = JSON.parse(bytes);
     (options.validateSummary || validateSummary)(summary, base, tree, {
@@ -499,7 +504,8 @@ function deliveryWorkProof(ctx, candidate) {
       if (attempt?.status !== 'completed' || !file?.sha256) return { ...record, status: 'missing' };
       if (tree !== candidate.tree) return { ...record, status: 'different-tree' };
       try {
-        if (digest(readFileSync(file.path)) === file.sha256) return { ...record, status: 'retained', file };
+        if (digest(readFileSync(evidencePath(ctx.evidenceRoot, file.path, file.sha256))) === file.sha256)
+          return { ...record, status: 'retained', file };
       } catch {
         // A missing proof file is recorded as a gap.
       }
@@ -519,16 +525,22 @@ function closureCandidate(ctx, workspace, options) {
     'The retained verification does not match the merged issue candidate.'
   );
   git(workspace.checkout, 'merge-base', '--is-ancestor', base, merged.head);
-  return { head: merged.head, tree, base, evidence: verifyEvidence({ tree, base }, checked, options) };
+  return {
+    head: merged.head,
+    tree,
+    base,
+    evidence: verifyEvidence({ tree, base }, checked, { ...options, evidenceRoot: ctx.evidenceRoot }),
+  };
 }
 
 export async function flowClosureArtifact(service, ctx, workspace, folder, options = {}) {
+  ctx = { ...ctx, evidenceRoot: service.root };
   requireThat(ctx.input?.confirmed === true, 'Accept the recorded result explicitly before closing this issue.');
   const type = ctx.details?.type ?? requestData(ctx.flow).fields?.type ?? ctx.flow.routeType;
   requireThat(issueTypes.includes(type), 'Missing issue type. Set the issue type in Request before closing.');
   if (type === 'investigation') return investigationClosureArtifact(ctx, workspace);
   const candidate = closureCandidate(ctx, workspace, options);
-  const groupEvidence = requireGroupProof(ctx.issue, ctx.flow, candidate.tree, ctx.block);
+  const groupEvidence = requireGroupProof(ctx.issue, ctx.flow, candidate.tree, ctx.block, service.root);
   const provider = flowDeliveryProvider(service, ctx, workspace, options);
   const merged = mergedDelivery(ctx.flow);
   const pr = merged ? { number: merged.pr } : await provider.findByBranch(workspace.branch, provider.config.target);
@@ -564,6 +576,15 @@ export async function flowClosureArtifact(service, ctx, workspace, folder, optio
       { path, sha256: digest(readFileSync(path)) },
     ],
   };
+}
+
+function retainedInvestigationProof(root, proof) {
+  try {
+    const path = evidencePath(root, proof.path, proof.sha256);
+    return existsSync(path) && digest(readFileSync(path)) === proof.sha256;
+  } catch {
+    return false;
+  }
 }
 
 function investigationClosureArtifact(ctx, workspace) {
@@ -610,17 +631,19 @@ function investigationClosureArtifact(ctx, workspace) {
       'Investigation output has no recorded immutable digest. Run its inquiry or advisory block again.'
     );
     requireThat(
-      existsSync(proof.path) && digest(readFileSync(proof.path)) === proof.sha256,
+      retainedInvestigationProof(ctx.evidenceRoot, proof),
       'Retained investigation evidence changed or is missing. Run its inquiry or advisory block again.'
     );
     return { path: proof.path, sha256: proof.sha256 };
   });
   requireThat(
-    evidence.some((proof) => readFileSync(proof.path, 'utf8') === attempt.output),
+    evidence.some(
+      (proof) => readFileSync(evidencePath(ctx.evidenceRoot, proof.path, proof.sha256), 'utf8') === attempt.output
+    ),
     'The completed investigation output is missing from its retained evidence. Run its block again.'
   );
   ctx.signal.throwIfAborted();
-  const groupEvidence = requireGroupProof(ctx.issue, ctx.flow, tree, ctx.block);
+  const groupEvidence = requireGroupProof(ctx.issue, ctx.flow, tree, ctx.block, ctx.evidenceRoot);
   return {
     revision: head,
     checkout: workspace.checkout,

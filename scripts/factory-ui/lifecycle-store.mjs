@@ -9,6 +9,10 @@ export function saveLifecycle(service, record, changes = {}) {
   Object.assign(record, changes, { updated: new Date().toISOString() });
   service.lifecycleRuns[record.issueId] = record;
   writeProgress(service.root, record);
+  const operation = service.classicOperation || service.flows?.active.get(record.issueId)?.classicOperation;
+  operation?.contexts
+    ?.get(record.issueId)
+    ?.onEvent({ kind: 'lifecycle-state', record: JSON.parse(JSON.stringify(record)) });
 }
 export function lifecycleEvent(service, record, message, values = {}) {
   record.events.push({ at: new Date().toISOString(), message, ...values });

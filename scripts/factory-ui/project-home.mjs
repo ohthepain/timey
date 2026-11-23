@@ -10,7 +10,7 @@ import {
 import { projectHomeStats } from './project-home-stats.mjs';
 import { flowBranches } from './flow-branches.mjs';
 import { flowTarget } from './flow-observer.mjs';
-import { defaultIssueFolder, readIssueFolderSettings, resolveFolderSettings } from './issue-folder-settings.mjs';
+import { createFolderSettingsSnapshot } from './issue-folder-settings.mjs';
 import { requireThat, writeJson } from './common.mjs';
 
 export class ProjectHome {
@@ -37,17 +37,19 @@ export class ProjectHome {
     return this.investigations.activeCount + (this.automateMe.activeCount ?? 0);
   }
   async view() {
-    const { values, errors } = resolveFolderSettings(this.service.root, null);
+    const folderSnapshot = createFolderSettingsSnapshot(this.service.root);
+    const { values, errors } = folderSnapshot.resolve(this.service.root, null);
     const branches = await flowBranches(this.service.root);
     const defaultBranch = projectDefaultBranch(branches, values.branch, flowTarget(this.service.root).remote);
     let defaultFolder = null;
     let folderError = null;
     try {
-      defaultFolder = defaultIssueFolder(this.service.root).name;
+      defaultFolder = folderSnapshot.defaultFolder().name;
     } catch (error) {
       folderError = error.message;
     }
     return {
+      storeStatus: this.service.storeStatus,
       project: { name: basename(this.service.root), path: this.service.root },
       activeCount: this.activeCount,
       stats: projectHomeStats(this.service.root, new Date(), this.historySince),
@@ -55,7 +57,9 @@ export class ProjectHome {
       defaultBranch: defaultBranch?.ref || null,
       configuredBranch: values.branch,
       settingsErrors: errors,
-      folders: readIssueFolderSettings(this.service.root).map(({ id, name }) => ({ id, name })),
+      folders: folderSnapshot.folders
+        .filter((folder) => folder.id && !folder.duplicate)
+        .map(({ id, name }) => ({ id, name })),
       defaultFolder,
       folderError,
       focuses: investigationFocuses,

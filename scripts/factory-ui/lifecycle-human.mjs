@@ -69,7 +69,7 @@ export async function answerHumanRequirement(service, record, input) {
     'The issue changed during answer review. No answer was applied.'
   );
   if (request.authority === 'human_input') applyNativeAnswer(service, current, request, input.text, answer, review);
-  else recordOwnedAnswer(service, record, request, input, answer, queue);
+  else await recordOwnedAnswer(service, record, request, input, answer, queue);
 }
 function applyNativeAnswer(service, read, request, text, answer, review) {
   const id = request.source_key.slice('human_input:'.length),
@@ -116,7 +116,7 @@ function applyNativeAnswer(service, read, request, text, answer, review) {
   );
   requireThat(!result.diagnostics?.length, 'The answer could not be applied. Its original contents are saved.');
 }
-function recordOwnedAnswer(service, record, request, input, answer, queue) {
+async function recordOwnedAnswer(service, record, request, input, answer, queue) {
   requireThat(request.authority === 'human_checks', 'This decision needs its dedicated approval button below.');
   requireThat(input.decision === 'approve', 'A failed check remains open until the requested changes are addressed.');
   const issue = queue.issues.find((i) => i.id === record.issueId),
@@ -139,7 +139,7 @@ function recordOwnedAnswer(service, record, request, input, answer, queue) {
       evidence_refs: [answer],
     },
   };
-  appendReview(service.root, issue, result, run, [{ path: answer, sha256: digest(readFileSync(answer)) }], null);
+  await appendReview(service.root, issue, result, run, [{ path: answer, sha256: digest(readFileSync(answer)) }], null);
 }
 
 function pauseAtTransition(service, record, stage) {

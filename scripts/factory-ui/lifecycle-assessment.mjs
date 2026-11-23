@@ -75,11 +75,11 @@ export async function assessLifecycle(service, record, queue, issue) {
     'The issue changed while its saved answers were being read. Resume to inspect the current record.'
   );
   if (result.clarification_complete && !result.questions.length)
-    recordClarification(service, queue, issue, run, result);
+    await recordClarification(service, queue, issue, run, result);
   if (combined && result.clarification_complete) reconcileInvestigations(service, queue, issue, run);
   return finishAssessment(service, record, queue, issue, result, run);
 }
-function recordClarification(service, queue, issue, run, assessment) {
+async function recordClarification(service, queue, issue, run, assessment) {
   const stage = queue.lifecycle.find((s) => s.state === issue.state);
   if (stage.role !== 'ready-for-grilling') return;
   service.guard(service.root, { issues: [issue.id] }, 'advance', queue.head, { target_state: stage.next });
@@ -102,7 +102,7 @@ function recordClarification(service, queue, issue, run, assessment) {
     .forEach((e) => {
       e.path = original;
     });
-  appendReview(service.root, issue, result, run, evidence, stage.next);
+  await appendReview(service.root, issue, result, run, evidence, stage.next);
 }
 function finishAssessment(service, record, queue, issue, result, run) {
   requireThat(

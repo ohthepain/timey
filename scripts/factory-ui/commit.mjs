@@ -16,16 +16,16 @@ export function beginCommit(service, queue, issue) {
   const run = service.store.add({ id: 'record-commit' }, 'commit', queue.head);
   service.store.update(run, { issueId: issue.id, issueState: issue.state, summary: 'Recording the verified commit.' });
   writeJson(join(lock, 'owner.json'), { runId: run.id, pid: process.pid });
-  service.perform(run, async () => {
+  service.perform(run, async (service) => {
     try {
-      recordCommit(service, queue, issue, run);
+      await recordCommit(service, queue, issue, run);
     } finally {
       rmSync(lock, { recursive: true });
     }
   });
   return { runId: run.id };
 }
-function recordCommit(service, queue, issue, run) {
+async function recordCommit(service, queue, issue, run) {
   const { stage, next, checked } = commitContext(queue, issue);
   service.guard(service.root, { issues: [issue.id] }, 'commit', queue.head);
   service.guard(service.root, { issues: [issue.id] }, 'advance', queue.head, { target_state: stage.next });
@@ -56,7 +56,7 @@ function recordCommit(service, queue, issue, run) {
     progressBasis(readQueue(service.root), issue.id) === progressBasis(queue, issue.id),
     'The project changed while recording the commit. Refresh and try again.'
   );
-  appendReview(service.root, issue, result, run, evidence, stage.next);
+  await appendReview(service.root, issue, result, run, evidence, stage.next);
   service.store.update(run, { status: 'completed', summary: result.summary, result, evidence });
 }
 

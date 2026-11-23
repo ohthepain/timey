@@ -211,6 +211,7 @@ export async function createChatToolMcp({ tools, active }) {
   });
   const url = 'http://127.0.0.1:' + server.address().port + '/mcp';
   return {
+    config: { type: 'http', url, headers: { Authorization: 'Bearer ' + state.secret } },
     args: [
       '-c',
       'mcp_servers.timey_chat.url=' + JSON.stringify(url),

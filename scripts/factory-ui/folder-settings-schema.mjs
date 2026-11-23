@@ -5,6 +5,7 @@ import { execFileSync } from 'node:child_process';
 import { parse } from 'yaml';
 import { uiDirectory } from './ui-source.mjs';
 import { requireThat } from './common.mjs';
+import { storageProfileChoices, readStoreConfig } from './stores/config.mjs';
 
 const info = (path) => lstatSync(path, { throwIfNoEntry: false });
 const reference = resolve(uiDirectory(), '../../factory/system/folder.md');
@@ -23,6 +24,7 @@ function personalSkillsDirectory() {
 }
 
 function dynamicChoices(project, kind) {
+  if (kind === 'storage-profile') return storageProfileChoices(project);
   if (kind === 'skill')
     return [
       resolve(uiDirectory(), '../../.agents/skills'),
@@ -80,6 +82,9 @@ export function folderSettingsFields(project, { branchChoices = true } = {}) {
     return {
       key,
       ...field,
+      ...(field.kind === 'storage-profile'
+        ? { fallback: readStoreConfig(project).profileDefault, fallbackSource: 'Project storage profile default' }
+        : {}),
       choices: choices.filter(({ value }, index) => choices.findIndex((entry) => entry.value === value) === index),
     };
   });
@@ -120,4 +125,15 @@ export function validateFieldValue(field, value) {
   return field.choices.some((entry) => entry.value === value)
     ? null
     : 'Choose a listed ' + field.label.toLowerCase() + ' or default.';
+}
+
+function isSettingsMap(value) {
+  return value && typeof value === 'object' && !Array.isArray(value);
+}
+
+export function normalizeFolderStorageSettings(data) {
+  if (!isSettingsMap(data)) return data;
+  if (!Object.hasOwn(data, 'issue_store')) return data;
+  const { issue_store: legacy, ...settings } = data;
+  return { storage_profile: legacy, ...settings };
 }

@@ -2,12 +2,13 @@ import { pendingIssueMerge } from './flow-merge-state.mjs';
 import { deliveryTarget } from './flow-block-data.mjs';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
-import { cleanEnvironment } from './common.mjs';
+import { cleanEnvironment, digest, readJson, writeJson } from './common.mjs';
 import { StrategyProvider } from './strategy-provider.mjs';
 import { flowPRLink, lookupFlowPR } from './flow-delivery.mjs';
 import { startingBranchUpstream } from './flow-update-branch.mjs';
+import { mergedDelivery } from './merged-issue.mjs';
 
 const execute = promisify(execFile);
 export async function flowGit(root, ...args) {
@@ -82,27 +83,44 @@ export function createFlowObserver(service, options = {}) {
       workspace?.result?.pr?.number ||
       workspace?.pr ||
       record?.work?.pr;
-    if (Number.isSafeInteger(number) || workspace?.branch) {
+    const merged = mergedDelivery(flow);
+    if (merged && !refresh) {
+      result.pr = { ...merged, number: merged.pr };
+    } else if (Number.isSafeInteger(number) || workspace?.branch) {
       await observePR(flow, number, workspace?.branch, refresh);
       Object.assign(result, remote.get(flow.issueId)?.value || {});
     }
     return result;
   }
   async function observePR(flow, number, branch, refresh) {
-    const cached = remote.get(flow.issueId);
-    if (refresh) {
-      await cached?.promise;
-      await refreshPR(flow, number, branch, remote.get(flow.issueId));
-    } else if (expiredObservation(cached)) refreshPR(flow, number, branch, cached);
+    const configPath = join(service.root, '.issues/issue-delivery-config.json');
+    if (!existsSync(configPath)) return;
+    const config = JSON.parse(readFileSync(configPath, 'utf8'));
+    const path = join(service.root, '.issues/store-runtime/github-observations', digest(flow.issueId) + '.json');
+    let cached = remote.get(flow.issueId);
+    if (!cached) {
+      try {
+        cached = readJson(path);
+      } catch {
+        /* Missing observations are fetched once. */
+      }
+    }
+    const identity = JSON.stringify([config.repository, number || branch]);
+    if (
+      cached?.identity !== identity &&
+      !(number && cached?.repository === config.repository && cached?.value?.pr?.number === number)
+    )
+      cached = null;
+    if (cached) remote.set(flow.issueId, cached);
+    else remote.delete(flow.issueId);
+    if (cached?.pending) await cached.promise;
+    else if (refresh || !cached) await refreshPR(flow, number, branch, cached, { config, path, identity });
   }
-  function refreshPR(flow, number, branch, previous) {
-    const cache = { checkedAt: Date.now(), pending: true, value: previous?.value || {} };
+  function refreshPR(flow, number, branch, previous, { config, path, identity }) {
+    const cache = { identity, repository: config.repository, pending: true, value: previous?.value || {} };
     remote.set(flow.issueId, cache);
     cache.promise = Promise.resolve()
       .then(async () => {
-        const configPath = join(service.root, '.issues/issue-delivery-config.json');
-        if (!existsSync(configPath)) return;
-        const config = JSON.parse(readFileSync(configPath, 'utf8'));
         const provider = options.provider || new StrategyProvider(service.root, config);
         const pr = await lookupFlowPR(provider, branch, number);
         if (!pr) {
@@ -119,14 +137,13 @@ export function createFlowObserver(service, options = {}) {
       })
       .finally(() => {
         cache.pending = false;
+        cache.value.remoteAttemptedAt = new Date().toISOString();
+        mkdirSync(join(service.root, '.issues/store-runtime/github-observations'), { recursive: true });
+        writeJson(path, { identity, repository: config.repository, value: cache.value });
       });
     return cache.promise;
   }
   return { observe };
-}
-function expiredObservation(cached) {
-  if (!cached) return true;
-  return !cached.pending && Date.now() - cached.checkedAt > 15000;
 }
 async function observeStartingBranch(root, flow, result) {
   if (!result.worktreeExists) return;

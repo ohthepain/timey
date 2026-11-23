@@ -1,3 +1,4 @@
+import { githubFetch } from './github-http.mjs';
 import { execFile } from 'node:child_process';
 import { accessSync, constants, existsSync, lstatSync, readFileSync, realpathSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
@@ -146,7 +147,7 @@ export function readProjectSettingsOverview(service) {
   };
 }
 
-async function testGitConnection(root, request = fetch) {
+async function testGitConnection(root) {
   const view = connectionView(root);
   requireThat(view.repository, 'Configure a GitHub repository before testing its connection.');
   requireThat(/^[\w.-]+\/[\w.-]+$/.test(view.repository), 'Configure a valid GitHub owner/repository.');
@@ -154,7 +155,7 @@ async function testGitConnection(root, request = fetch) {
     const credentials = githubAppCredentials(root, view.repository);
     requireThat(credentials, 'Configure GitHub App credentials before testing its connection.');
     const session = await credentials.session();
-    const response = await request(`https://api.github.com/repos/${view.repository}`, {
+    const response = await githubFetch(view.repository, `https://api.github.com/repos/${view.repository}`, {
       headers: {
         Authorization: 'Bearer ' + session.token,
         Accept: 'application/vnd.github+json',

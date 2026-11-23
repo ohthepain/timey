@@ -1,10 +1,12 @@
+import { randomUUID } from 'node:crypto';
+import { resolveIssueStorage } from './stores/settings.mjs';
 import { readQueue } from './data.mjs';
 import { requireThat } from './common.mjs';
 import { setPriority } from './issue-priority.mjs';
 import { assignIssueFolder } from './issue-folders.mjs';
 import { createIssueFlows } from './flow-service.mjs';
 
-const editableFields = new Set(['folderId', 'priorityId', 'targetBranch', 'reusable', 'runRetro']);
+const editableFields = new Set(['folderId', 'priorityId', 'targetBranch', 'reusable', 'runRetro', 'storageProfile']);
 
 export async function editProjectIssues(service, input, projectHome) {
   service.ownServer();
@@ -41,7 +43,13 @@ export async function editProjectIssues(service, input, projectHome) {
     if (changes[field] !== undefined)
       requireThat(typeof changes[field] === 'boolean', `Choose whether ${field} is on or off.`);
 
-  const views = await editableIssueViews(flows, issueIds);
+  let storage;
+  if (changes.storageProfile !== undefined) {
+    requireThat(service.projectStores, 'Project storage is unavailable.');
+    storage = resolveIssueStorage(service.root, { profileId: changes.storageProfile });
+  }
+  const onlyStore = Object.keys(changes).every((key) => key === 'storageProfile');
+  const views = await editableIssueViews(flows, issueIds, onlyStore);
   if (changes.targetBranch !== undefined)
     requireThat(
       [...views.values()].every((view) => !view.destination.locked),
@@ -56,88 +64,106 @@ export async function editProjectIssues(service, input, projectHome) {
     );
 
   const results = [];
-  for (const issueId of issueIds) {
-    const result = { issueId, applied: [], errors: [] };
-    if (changes.folderId !== undefined) {
-      try {
-        const queue = readQueue(service.root);
-        assignIssueFolder(service.root, queue.issues, {
+  const operationId = input.operationId || 'bulk-' + randomUUID();
+  let moved = false;
+  if (storage) {
+    try {
+      await moveSelectedStores(service, issueIds, storage, operationId);
+      moved = true;
+    } catch (error) {
+      return {
+        results: issueIds.map((issueId) => ({
           issueId,
-          folderId: changes.folderId,
-          basis: queue.issueFolderBasis,
-        });
-        result.applied.push('folder');
-      } catch (error) {
-        result.errors.push(`Folder: ${error.message}`);
-      }
+          applied: [],
+          errors: ['Issue storage profile: ' + error.message],
+          success: false,
+        })),
+      };
     }
-    if (changes.priorityId !== undefined) {
-      try {
-        const queue = readQueue(service.root);
-        const issue = queue.issues.find((entry) => entry.id === issueId);
-        requireThat(issue?.priorityInfo.index >= 0, 'This issue has a priority that is not in the current list.');
-        setPriority(service, {
-          issueId,
-          priorityId: changes.priorityId,
-          basis: issue.priorityInfo.basis,
-        });
-        result.applied.push('priority');
-      } catch (error) {
-        result.errors.push(`Priority: ${error.message}`);
-      }
-    }
-    if (changes.targetBranch !== undefined) {
-      try {
-        const current = await flows.view(issueId);
-        await flows.action({
-          issueId,
-          action: 'destination',
-          revision: current.flow.revision,
-          branch: changes.targetBranch,
-        });
-        result.applied.push('target branch');
-      } catch (error) {
-        result.errors.push(`Target branch: ${error.message}`);
-      }
-    }
-    if (changes.reusable !== undefined) {
-      try {
-        const current = await flows.view(issueId);
-        requireThat(projectHome, 'Project settings are unavailable.');
-        await projectHome.action({
-          action: 'investigation-save',
-          issueId,
-          revision: current.flow.revision,
-          reusable: changes.reusable,
-        });
-        result.applied.push('reusable');
-      } catch (error) {
-        result.errors.push(`Reusable: ${error.message}`);
-      }
-    }
-    if (changes.runRetro !== undefined) {
-      try {
-        const current = await flows.view(issueId);
-        await flows.action({
-          issueId,
-          action: 'retro-setting',
-          revision: current.flow.revision,
-          enabled: changes.runRetro,
-        });
-        result.applied.push('retro');
-      } catch (error) {
-        result.errors.push(`Retro: ${error.message}`);
-      }
-    }
-    results.push({ ...result, success: result.errors.length === 0 });
   }
+  for (const issueId of issueIds)
+    results.push(await applyIssueChanges({ service, flows, projectHome, issueId, changes, moved }));
   return { results };
 }
 
-async function editableIssueViews(flows, issueIds) {
+async function applyIssueChanges(context) {
+  const result = { issueId: context.issueId, applied: context.moved ? ['issue storage profile'] : [], errors: [] };
+  for (const [field, change] of Object.entries(changeActions)) {
+    if (context.changes[field] === undefined) continue;
+    try {
+      await change.apply(context, context.changes[field]);
+      result.applied.push(change.label.toLowerCase());
+    } catch (error) {
+      result.errors.push(change.label + ': ' + error.message);
+    }
+  }
+  return { ...result, success: result.errors.length === 0 };
+}
+
+const changeActions = {
+  folderId: {
+    label: 'Folder',
+    async apply({ service, issueId }, folderId) {
+      const queue = readQueue(service.root);
+      await assignIssueFolder(service.root, queue.issues, { issueId, folderId, basis: queue.issueFolderBasis });
+    },
+  },
+  priorityId: {
+    label: 'Priority',
+    async apply({ service, issueId }, priorityId) {
+      const issue = readQueue(service.root).issues.find((entry) => entry.id === issueId);
+      requireThat(issue?.priorityInfo.index >= 0, 'This issue has a priority that is not in the current list.');
+      await setPriority(service, { issueId, priorityId, basis: issue.priorityInfo.basis });
+    },
+  },
+  targetBranch: {
+    label: 'Target branch',
+    async apply({ flows, issueId }, branch) {
+      const current = await flows.view(issueId);
+      await flows.action({ issueId, action: 'destination', revision: current.flow.revision, branch });
+    },
+  },
+  reusable: {
+    label: 'Reusable',
+    async apply({ flows, projectHome, issueId }, reusable) {
+      const current = await flows.view(issueId);
+      requireThat(projectHome, 'Project settings are unavailable.');
+      await projectHome.action({ issueId, action: 'investigation-save', revision: current.flow.revision, reusable });
+    },
+  },
+  runRetro: {
+    label: 'Retro',
+    async apply({ flows, issueId }, enabled) {
+      const current = await flows.view(issueId);
+      await flows.action({ issueId, action: 'retro-setting', revision: current.flow.revision, enabled });
+    },
+  },
+};
+
+function sameStorage(left, right) {
+  return left.storeId === right.storeId && left.artifactStoreId === right.artifactStoreId;
+}
+
+async function moveSelectedStores(service, issueIds, storage, operationId) {
+  const matching = (entry) =>
+    entry.value.status === 'pending' &&
+    entry.value.kind === 'move-issue' &&
+    sameStorage(entry.value.input, storage) &&
+    JSON.stringify([...entry.value.input.ids].sort()) === JSON.stringify([...issueIds].sort());
+  const pending = (await service.projectStores.coordination.list('operations/')).find(matching);
+  await service.projectStores.moveIssue({
+    issueIds,
+    storeId: storage.storeId,
+    artifactStoreId: storage.artifactStoreId,
+    operationId: pending?.value.id || operationId,
+  });
+  await service.projectStores.refresh();
+}
+
+async function editableIssueViews(flows, issueIds, onlyStore = false) {
   const views = new Map();
   for (const issueId of issueIds) {
-    await flows.requireEditableIssue(issueId);
+    if (!onlyStore) await flows.requireEditableIssue(issueId);
     views.set(issueId, await flows.view(issueId));
   }
   return views;

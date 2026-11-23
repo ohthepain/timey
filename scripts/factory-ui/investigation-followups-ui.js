@@ -15,6 +15,7 @@
     let source;
     let busy = false;
     const drafts = new Map();
+    const issueStores = window.createIssueStoreUI({});
     const post = (action, data = {}) => request('flow-action', { ...source, action, ...data });
 
     function selection() {
@@ -23,7 +24,7 @@
       );
     }
     function updateButton() {
-      submit.disabled = busy || selection().length === 0;
+      submit.disabled = busy || selection().length === 0 || !body.querySelector('[data-followups-store]')?.value;
       submit.textContent = `Create selected issues${selection().length ? ` (${selection().length})` : ''}`;
     }
     function collect() {
@@ -39,7 +40,7 @@
     }
     function render() {
       const choices = [...new Set([...folders(), review.folder])];
-      body.innerHTML = `<label class="field">Issue folder<select data-followups-folder>${choices.map((folder) => `<option${folder === review.folder ? ' selected' : ''}>${escape(folder)}</option>`).join('')}</select></label>${
+      body.innerHTML = `<label class="field">Issue folder<select data-followups-folder>${choices.map((folder) => `<option${folder === review.folder ? ' selected' : ''}>${escape(folder)}</option>`).join('')}</select></label><label class="field">Issue storage profile<select data-followups-store required></select></label>${
         review.proposals.length
           ? review.proposals
               .map((proposal) => {
@@ -61,6 +62,18 @@
           : '<p class="muted">No new follow-up work was identified. You can use the findings directly or create an issue from your own request.</p>'
       }`;
       updateButton();
+      void refreshStores();
+    }
+    async function refreshStores() {
+      try {
+        await issueStores.fill(body.querySelector('[data-followups-store]'), {
+          folder: body.querySelector('[data-followups-folder]').value,
+          selected: review.storageProfile,
+        });
+        updateButton();
+      } catch (error) {
+        message.textContent = error.message;
+      }
     }
     async function perform(operation) {
       if (busy) return;
@@ -81,13 +94,22 @@
       }
     }
     async function create(items, folder) {
-      review = await post('investigation-followups-create', { basis: review.source.basis, folder, items });
+      const storageProfile = body.querySelector('[data-followups-store]').value;
+      review = await post('investigation-followups-create', {
+        basis: review.source.basis,
+        folder,
+        storageProfile,
+        items,
+      });
       render();
       const created = review.proposals.filter((item) => item.result && !item.result.deleted).length;
       message.textContent = `${created} follow-up ${created === 1 ? 'issue' : 'issues'} created. Review and approve them before starting work.`;
       await changed();
     }
-    body.addEventListener('change', updateButton);
+    body.addEventListener('change', (event) => {
+      if (event.target.matches('[data-followups-folder]')) void refreshStores();
+      updateButton();
+    });
     body.addEventListener('click', (event) => {
       const retry = event.target.closest('[data-followups-retry]');
       if (!retry) return;

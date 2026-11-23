@@ -1,3 +1,7 @@
+import { readDiagnosticActivity, resetCodexActivity } from './diagnostic-activity.mjs';
+import { readCodexQuota } from './codex-quota.mjs';
+import { readGitHubCalls, resetGitHubCalls } from './github-call-history.mjs';
+import { readOwnership, recoverOwnership } from './stores/recovery.mjs';
 import { skillSetup } from './required-skills.mjs';
 import { simplifyAIText } from './ai-text-bro.mjs';
 import { flowOwnsIssue } from './flow-ownership.mjs';
@@ -21,7 +25,6 @@ import { readQueue } from './data.mjs';
 import { decisionBasis } from './recorded-result.mjs';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join, basename } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { randomBytes } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { requireThat } from './common.mjs';
@@ -51,12 +54,21 @@ import { ProjectWorktreeCleanup } from './project-worktree-cleanup.mjs';
 import { ProjectRemoteBranchCleanup } from './project-remote-branch-cleanup.mjs';
 import { ProjectLocalBranchCleanup } from './project-local-branch-cleanup.mjs';
 import { ProjectArchiveDeletion } from './project-archive-deletion.mjs';
-import { ProjectDiscuss, readClarificationSkills } from './project-discuss.mjs';
+import { ProjectDiscuss, readClarificationSkills, projectDiscussionSkills } from './project-discuss.mjs';
 import { InvestigationReports } from './investigation-reports.mjs';
 import { reportDiscussionView, reportDiscussionAction } from './report-discussion.mjs';
 import { LocalNotes } from './local-notes.mjs';
 import { localNoteAction } from './local-note-routes.mjs';
 import { controlServerAction } from './server-action.mjs';
+import {
+  ensureProjectStores,
+  testStoreConnection,
+  closeProjectStores,
+  hydrateProjectEvidence,
+} from './stores/runtime.mjs';
+import { issueStoresView, handleStoreAction } from './stores/routes.mjs';
+import { hydrateClassicSnapshot } from './stores/classic-snapshot.mjs';
+import { readSnapshot } from './stores/snapshots.mjs';
 import {
   deleteIssueWorktree,
   issueCleanupIdentities,
@@ -138,7 +150,8 @@ function authorize(request, token, port) {
   }
 }
 function requireClassicIdle(service, path, value) {
-  if (['/api/flow-action', '/api/issue-storage-move'].includes(path)) return;
+  if (localClassicControl(service, path, value)) return;
+  if (['/api/flow-action', '/api/issue-storage-move', '/api/issue-store-recovery'].includes(path)) return;
   if (value.issueId)
     requireThat(
       !flowOwnsIssue(service, value.issueId),
@@ -146,11 +159,40 @@ function requireClassicIdle(service, path, value) {
     );
 }
 
+function localClassicControl(service, path, value) {
+  if (existingLocalControl(service, path, value)) return true;
+  const control =
+    ['/api/issue-strategy-stop', '/api/lifecycle-pause', '/api/issue-chat-stop'].includes(path) ||
+    (path === '/api/server-action' && ['stop', 'pause'].includes(value.operation));
+  if (!control) return false;
+  return [...(service.flows?.active.values() || [])].some(
+    (active) =>
+      active.classicOperation &&
+      (active.storeOwner?.issueId === value.issueId || active.classicOperation.runIds.has(value.runId))
+  );
+}
+
+function existingLocalControl(service, path, value) {
+  if (path === '/api/issue-chat-stop') return Boolean(service.issueChats?.active?.has(value.issueId));
+  if (['/api/issue-strategy-stop', '/api/lifecycle-pause'].includes(path))
+    return Boolean(service.lifecycleTasks?.has(value.issueId));
+  if (path === '/api/server-action' && ['stop', 'pause'].includes(value.operation))
+    return Boolean(service.store.connected?.has(value.runId));
+  return false;
+}
+
 const pauseSafeActions = {
   '/api/local-notes-action': ['create', 'edit', 'complete', 'delete', 'move', 'discuss', 'link'],
   '/api/project-discuss-action': ['stop', 'answer', 'draft', 'settings', 'edit-queued', 'remove-queued', 'delete-note'],
   '/api/report-discuss-action': ['stop', 'answer', 'draft', 'settings', 'edit-queued', 'remove-queued'],
-  '/api/flow-action': ['stop', 'pause', 'cancel-confirmation', 'folder-night-stop', 'branch-repair-stop'],
+  '/api/flow-action': [
+    'stop',
+    'pause',
+    'cancel-confirmation',
+    'folder-night-stop',
+    'branch-repair-stop',
+    'agent-answer',
+  ],
   '/api/project-home-action': ['investigation-stop', 'automate-stop'],
 };
 function mayFinishWhilePaused(path, value) {
@@ -174,7 +216,12 @@ const mergedReadRoutes = new Set([
   '/api/shared-queue-recover',
 ]);
 function preservesMergedIssue(path, value) {
-  return mergedReadRoutes.has(path) || (path === '/api/issue-decision' && value.kind === 'close');
+  return (
+    mergedReadRoutes.has(path) ||
+    (path === '/api/issue-decision' && value.kind === 'close') ||
+    path === '/api/issue-store-action' ||
+    path === '/api/issue-store-recovery'
+  );
 }
 function savedMutationIssueIds(root, value) {
   return [...new Set([value.issueId, value.input?.issueId, ...(value.issueIds || [])].filter(Boolean))].filter(
@@ -204,8 +251,44 @@ function reportChatAction(service, value) {
   return reportDiscussionAction(projectDiscuss(service), projectHome(service).investigations, report, value);
 }
 
+async function prepareStoreMutation(service, path, value) {
+  if (['/api/server-pause', '/api/server-restart', '/api/server-cancel-restart'].includes(path)) return;
+  if (localClassicControl(service, path, value)) return;
+  if (
+    path === '/api/flow-action' &&
+    ['stop', 'pause'].includes(value.action) &&
+    service.flows?.active.has(value.issueId)
+  )
+    return;
+  if (path === '/api/issue-store-action' && ['configure', 'test'].includes(value.action)) return;
+  if (path === '/api/local-notes-action' && ['create', 'edit', 'complete', 'delete', 'move'].includes(value.action))
+    return;
+  await ensureProjectStores(service, {
+    fresh: path !== '/api/issue-store-action',
+    allowPending: path === '/api/issue-store-action',
+    ...(path === '/api/flow-action' && value.action === 'approve-issue' && { issueIds: [value.issueId] }),
+  });
+}
+
+function storeReadNeeded(path, query) {
+  if (path === '/api/issue-stores') return query.has('issueId');
+  return [
+    '/api/issue-store-recovery',
+    '/api/flow',
+    '/api/queue',
+    '/api/issue',
+    '/api/issue-report',
+    '/api/issue-storage',
+    '/api/issue-storage-report',
+    '/api/issue-closure',
+    '/api/project-home',
+    '/api/investigation-reports',
+  ].includes(path);
+}
+
 async function mutation(service, path, value, owner) {
   requireLiveMutation(service, path);
+  await prepareStoreMutation(service, path, value);
   requireClassicIdle(service, path, value);
   await requireEditableMutation(service, path, value);
   if (!mayFinishWhilePaused(path, value)) service.serverControl?.allow(path, value);
@@ -229,6 +312,13 @@ async function mutation(service, path, value, owner) {
   }
   if (Object.hasOwn(discussionRoutes, path)) return temporaryAction(discussionRoutes[path]);
   const routes = {
+    '/api/issue-store-recovery': () => recoverOwnership(service, value),
+    '/api/issue-store-action': async () => {
+      service.testStoreConnection ||= (storeId) => testStoreConnection(service, storeId);
+      const result = await handleStoreAction(service, value);
+      if (!['configure', 'test'].includes(value.action)) await ensureProjectStores(service, { fresh: true });
+      return result;
+    },
     '/api/ai-text-bro': () => simplifyAIText(service, value),
     '/api/local-notes-action': () => localNoteAction(service, value, () => projectDiscuss(service)),
     '/api/project-discuss-action': () => projectDiscuss(service).action(value),
@@ -252,7 +342,7 @@ async function mutation(service, path, value, owner) {
       service.ownServer();
       return viewSources(service).edit(value.id, value.revision, value.label);
     },
-    '/api/flow-action': () => flows(service).action(value),
+    '/api/flow-action': () => flows(service).action(value, { storesReady: true }),
     '/api/native-chat-prepare': () => {
       service.ownServer();
       return prepareNativeChat(service.root, value);
@@ -413,7 +503,10 @@ export function createFactoryServer(service, options = {}) {
       response.end(JSON.stringify({ error: error.message }));
     }
   });
-  server.once('close', () => service.serverControl.close());
+  server.once('close', () => {
+    service.serverControl.close();
+    void closeProjectStores(service);
+  });
   return server;
 }
 
@@ -436,11 +529,43 @@ function page(service, request, response, token, port) {
       : 'flow.html';
   response.end(readFileSync(join(uiDirectory(service), name)));
 }
+function displayRead(url) {
+  return url.pathname !== '/api/issue-store-recovery';
+}
+
+const classicDisplayLoads = new WeakMap();
+function hydrateClassicDisplay(service, id) {
+  const capturedAt = readSnapshot(service.root)?.capturedAt;
+  let cache = classicDisplayLoads.get(service);
+  if (!cache || cache.capturedAt !== capturedAt) {
+    cache = { capturedAt, issues: new Map() };
+    classicDisplayLoads.set(service, cache);
+  }
+  if (!cache.issues.has(id)) cache.issues.set(id, hydrateClassicSnapshot(service, [id]));
+  return cache.issues.get(id);
+}
+
 async function read(service, request, response, owner) {
   const url = new URL(request.url, 'http://127.0.0.1');
+  if (service.reviewMode !== 'preview' && storeReadNeeded(url.pathname, url.searchParams))
+    await ensureProjectStores(service, {
+      fresh: url.searchParams.get('refresh') === 'true' || !displayRead(url),
+      allowPending: url.pathname === '/api/issue-stores',
+      allowCached: true,
+      display: displayRead(url),
+    });
   const selectedIssue = url.searchParams.get('issue');
   const issue = (value) => resolveIssueNumber(service, value);
+  if (
+    selectedIssue &&
+    ['/api/issue', '/api/queue'].includes(url.pathname) &&
+    service.projectStores &&
+    !service.storeStatus?.unavailable
+  )
+    await hydrateClassicDisplay(service, issue(selectedIssue));
   const routes = {
+    '/api/issue-store-recovery': () => readOwnership(service, Object.fromEntries(url.searchParams)),
+    '/api/issue-stores': () => issueStoresView(service, Object.fromEntries(url.searchParams)),
     '/api/folder-settings': () => {
       flows(service);
       return folderSettingsView(service.root, Object.fromEntries(url.searchParams));
@@ -473,7 +598,7 @@ async function read(service, request, response, owner) {
     '/api/project-archive-deletion': () => archiveDeletion(service).preview(),
     '/api/project-discuss': () => projectDiscuss(service).view(url.searchParams.get('conversation')),
     '/api/project-discuss-skills': async () => {
-      const skills = await projectDiscuss(service).skills();
+      const skills = await projectDiscussionSkills(projectDiscuss(service), url.searchParams.get('model') || undefined);
       const choices = readClarificationSkills(service.root);
       return {
         skills,
@@ -502,19 +627,27 @@ async function read(service, request, response, owner) {
     '/api/flow': () =>
       flows(service).view(issue(selectedIssue), {
         requestOnly: url.searchParams.get('view') === 'request',
+        refresh: url.searchParams.get('refresh') === 'true',
       }),
     '/api/flow-files': () => flows(service).files(issue(selectedIssue)),
     '/api/flow-file': () => flows(service).file(issue(selectedIssue), url.searchParams.get('path')),
     '/api/native-chat': () => nativeChatStatus(service.root, issue(url.searchParams.get('issue'))),
     '/api/runtime': () => ({ ...runtimeInfo(service), server: service.serverControl.status() }),
     '/api/server-status': () => service.serverControl.status(),
+    '/api/github-calls': readGitHubCalls,
+    '/api/diagnostic-activity': readDiagnosticActivity,
+    '/api/codex-quota': () => readCodexQuota({ force: url.searchParams.has('refresh') }),
     '/api/server-actions': () => service.serverControl.actions(),
     '/api/coordinator': () => service.coordinator.view(),
     '/api/issue-chat': () =>
       service.issueChats.view(issue(url.searchParams.get('issue')), url.searchParams.get('before') || ''),
     '/api/issue-chat-skills': () => service.issueChats.skills(issue(url.searchParams.get('issue'))),
     '/api/document': () => service.readPlan(url.searchParams.get('path')),
-    '/api/shown-file': () => service.readShownFile(url.searchParams.get('path')),
+    '/api/shown-file': async () => {
+      const path = url.searchParams.get('path');
+      await hydrateProjectEvidence(service, null, { path });
+      return service.readShownFile(path);
+    },
     '/api/issue-storage': () => listIssueStorage(service, url.searchParams.get('location')),
     '/api/issue-storage-report': () =>
       readIssueStorageReport(service.root, issue(url.searchParams.get('issue')), url.searchParams.get('location')),
@@ -654,6 +787,10 @@ function readResource(service, request, response, owner) {
     '/flow-ui.js': 'flow-ui.js',
     '/branch-repair-ui.js': 'branch-repair-ui.js',
     '/project-home-ui.js': 'project-home-ui.js',
+    '/github-calls-ui.js': 'github-calls-ui.js',
+    '/github-calls.css': 'github-calls.css',
+    '/diagnostics-ui.js': 'diagnostics-ui.js',
+    '/diagnostics.css': 'diagnostics.css',
     '/project-settings-ui.js': 'project-settings-ui.js',
     '/project-settings.css': 'project-settings.css',
     '/hotkeys-ui.js': 'hotkeys-ui.js',
@@ -679,6 +816,8 @@ function readResource(service, request, response, owner) {
     '/site-review-ui.js': 'site-review-ui.js',
     '/discussion-ui.js': 'discussion-ui.js',
     '/issue-capture-ui.js': 'issue-capture-ui.js',
+    '/issue-store-ui.js': 'issue-store-ui.js',
+    '/issue-ownership-ui.js': 'issue-ownership-ui.js',
   };
   if (Object.hasOwn(scripts, request.url)) {
     response.setHeader(
@@ -766,6 +905,14 @@ async function postedAction(service, request, token) {
   if (request.url.startsWith('/api/deployment-')) return deploymentAction(service, request.url);
   requireThat(!service.deploymentDraining, 'The factory UI is restarting. Refresh when it is ready.');
   const value = await body(request);
+  if (request.url === '/api/codex-activity-reset') {
+    requireLiveMutation(service, request.url);
+    return resetCodexActivity();
+  }
+  if (request.url === '/api/github-calls-reset') {
+    requireLiveMutation(service, request.url);
+    return resetGitHubCalls();
+  }
   if (typeof value.issueId === 'string') value.issueId = resolveIssueNumber(service, value.issueId);
   return mutation(service, request.url, value, token);
 }

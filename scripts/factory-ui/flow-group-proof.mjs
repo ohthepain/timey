@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { digest, requireThat } from './common.mjs';
 import { latestCurrentAttempt, upstreamBlocks } from './flow-block-data.mjs';
 import { groupChildren } from './issue-group.mjs';
+import { evidencePath } from './stores/evidence.mjs';
 
 const supportedBlocks = new Set(['work', 'understand', 'advice', 'playbook']);
 const proofArtifact = { key: 'subIssueProof', kind: 'file', label: 'Sub-issue proof', type: 'file' };
@@ -21,10 +22,10 @@ export function groupProofRequest(issue) {
   };
 }
 
-function readProof(file) {
+function readProof(file, root) {
   if (!file?.sha256) return [];
   try {
-    const bytes = readFileSync(file.path);
+    const bytes = readFileSync(evidencePath(root, file.path, file.sha256));
     if (digest(bytes) !== file.sha256) return [];
     const entries = JSON.parse(bytes);
     if (!Array.isArray(entries) || new Set(entries.map((row) => row.id)).size !== entries.length) return [];
@@ -50,21 +51,21 @@ function groupProofAttempts(flow, tree, block) {
     .sort((left, right) => (left.endedAt ?? '').localeCompare(right.endedAt ?? ''));
 }
 
-function groupAttemptRows(attempt, tree) {
+function groupAttemptRows(attempt, tree, root) {
   const file = attempt.artifacts?.files?.subIssueProof;
-  return readProof(file)
+  return readProof(file, root)
     .filter(({ status }) => !tree || status !== 'passed' || attempt.status === 'completed')
     .map((entry) => [entry.id, { ...entry, file }]);
 }
 
-export function groupProofRows(flow, tree, block = {}) {
-  return new Map(groupProofAttempts(flow, tree, block).flatMap((attempt) => groupAttemptRows(attempt, tree)));
+export function groupProofRows(flow, tree, block = {}, root) {
+  return new Map(groupProofAttempts(flow, tree, block).flatMap((attempt) => groupAttemptRows(attempt, tree, root)));
 }
 
-export function requireGroupProof(issue, flow, candidateTree, block) {
+export function requireGroupProof(issue, flow, candidateTree, block, root) {
   const children = groupChildren(issue);
   if (!children.length) return [];
-  const proofs = groupProofRows(flow, candidateTree, block);
+  const proofs = groupProofRows(flow, candidateTree, block, root);
   const missing = children.filter(({ id }) => proofs.get(id)?.status !== 'passed');
   requireThat(
     !missing.length,

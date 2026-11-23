@@ -119,12 +119,18 @@
       return state.data?.automateMe?.sessions || [];
     }
 
-    async function refresh() {
+    async function refresh(remote = false) {
+      if (remote === true && projectTab === 'issues') {
+        document
+          .querySelector('#project-issues iframe')
+          ?.contentWindow?.postMessage({ type: 'factory-refresh' }, location.origin);
+        return;
+      }
       if (state.loading) return;
       state.loading = true;
       try {
-        state.data = await request('/api/project-home');
-        $('home-error').textContent = '';
+        state.data = await request('/api/project-home' + (remote === true ? '?refresh=true' : ''));
+        $('home-error').textContent = state.data.storeStatus?.warning || '';
         renderHome();
         updateSelected('automate', automateSessions());
       } catch (error) {
@@ -161,6 +167,11 @@
     function renderHome() {
       const { project, stats } = state.data;
       $('home-title').textContent = project.name;
+      $('home-freshness').textContent = state.data.storeStatus?.checkedAt
+        ? 'Shared data last checked ' +
+          new Date(state.data.storeStatus.checkedAt).toLocaleString() +
+          '. Refresh to check again.'
+        : 'Remote data refreshes on demand.';
       $('home-created').textContent = stats.created;
       $('home-closed').textContent = stats.closed;
       $('home-window').textContent = 'Through ' + new Date(stats.windowEnd).toLocaleString();
@@ -454,6 +465,7 @@
         void refresh();
     }, 2000);
     return {
+      isVisible: () => state.visible,
       setVisible(value) {
         const wasVisible = state.visible;
         state.visible = value;

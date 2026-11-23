@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { readQueue } from './data.mjs';
 import { appendCompletion } from '../factory-completion.mjs';
 import { digest, requireThat } from './common.mjs';
+import { afterReportWrite } from './stores/report-access.mjs';
 
 export function changePriority(service, input) {
   service.ownServer();
@@ -45,13 +46,15 @@ export function setPriority(service, input) {
     stage_records: [],
     priority_update: choice.id,
   };
-  appendCompletion(
-    service.root,
-    issue,
-    result,
-    run,
-    [{ path: join(service.root, '.issues', issue.id + '.md'), sha256: digest(issue.content) }],
-    null
+  return afterReportWrite(
+    appendCompletion(
+      service.root,
+      issue,
+      result,
+      run,
+      [{ path: join(service.root, '.issues', issue.id + '.md'), sha256: digest(issue.content) }],
+      null
+    ),
+    () => ({ priority: choice.id })
   );
-  return { priority: choice.id };
 }

@@ -1,4 +1,13 @@
+import { withDiagnosticContext } from './diagnostic-activity.mjs';
+import { inputDigest } from './stores/coordination.mjs';
 import { flowOwnsIssue } from './flow-ownership.mjs';
+import {
+  classicOperation,
+  bindClassicRun,
+  trackClassicTask,
+  recordClassicInput,
+  classicFailure,
+} from './stores/classic-operation.mjs';
 import { requireIndependentIssue } from './issue-group.mjs';
 import { queueReportPaths } from './shared-issue-config.mjs';
 import { factoryBoundary, factoryOperation } from './issue-operation.mjs';
@@ -41,14 +50,12 @@ function strategyConfig(service, record) {
 
 export function strategyBasis(service, issue) {
   const record = service.lifecycleRuns[issue.id];
-  return digest(
-    JSON.stringify({
-      report: issue.content,
-      plan: record?.plan,
-      work: record?.work,
-      config: strategyConfig(service, record),
-    })
-  );
+  return inputDigest({
+    report: issue.content,
+    plan: record?.plan,
+    work: record?.work,
+    config: strategyConfig(service, record),
+  });
 }
 
 const interruptedSummary =
@@ -125,6 +132,13 @@ export function strategyView(service, issue) {
 }
 
 export function verifyIssueStrategyAgain(service, input) {
+  return classicOperation(service, {
+    issueIds: [input.issueId],
+    label: 'Classic saved strategy verification',
+    run: (scoped) => verifyIssueStrategyOwned(scoped, input),
+  });
+}
+function verifyIssueStrategyOwned(service, input) {
   service.ownServer();
   const queue = readQueue(service.root);
   const issue = queue.issues.find((entry) => entry.id === input.issueId);
@@ -178,6 +192,8 @@ export function verifyIssueStrategyAgain(service, input) {
     })
     .finally(() => releaseStrategyTask(service, issue.id, run.id, task));
   service.lifecycleTasks.set(issue.id, task);
+  bindClassicRun(service, run);
+  trackClassicTask(service, task);
   service.store.connected.add(run.id);
   service.store.update(run, {
     status: 'checking',
@@ -229,6 +245,12 @@ async function rerunSavedStrategyChecks(service, record, run, work, head) {
 }
 
 export async function verifyExternalIssueDelivery(service, input) {
+  if (service.projectStores && !service.classicOperation)
+    return classicOperation(service, {
+      issueIds: [input.issueId],
+      label: 'Classic external delivery verification',
+      run: (scoped) => verifyExternalIssueDelivery(scoped, input),
+    });
   const issue = externalDeliveryIssue(service, input.issueId);
   const number = externalDeliveryNumber(input.number);
   const note = String(input.behaviorEvidence ?? '').trim();
@@ -521,7 +543,12 @@ function scheduleStrategyTask(service, record, run, issue, input, shared) {
   task = Promise.resolve()
     .then(() => executeStrategy(service, record, run, issue, input))
     .catch((error) => {
-      const status = record.stopRequested || record.pauseRequested ? 'paused' : 'blocked';
+      if (service.classicOperation) classicFailure(run, error);
+      const status = error.uncertain
+        ? 'uncertain'
+        : record.stopRequested || record.pauseRequested
+          ? 'paused'
+          : 'blocked';
       service.store.update(run, { status, summary: error.message, threadId: record.workThreadId || run.threadId });
       saveLifecycle(service, record, { status, summary: error.message });
       nameFailedExecution(service, record, run);
@@ -543,6 +570,7 @@ function scheduleStrategyTask(service, record, run, issue, input, shared) {
       }
     });
   service.lifecycleTasks.set(issue.id, task);
+  trackClassicTask(service, task);
 }
 function nameFailedExecution(service, record, run) {
   const threadId = record.workThreadId || run.threadId;
@@ -580,6 +608,14 @@ function selected(service, input) {
   return { queue, issue };
 }
 export function startIssueStrategy(service, input) {
+  return classicOperation(service, {
+    issueIds: [input.issueId],
+    label: 'Classic issue strategy',
+    shareSourceCheckpoint: true,
+    run: (scoped) => startIssueStrategyOwned(scoped, input),
+  });
+}
+function startIssueStrategyOwned(service, input) {
   service.ownServer();
   requireIndependentIssue(service.root, input.issueId);
   const { queue, issue } = selected(service, input);
@@ -590,6 +626,7 @@ export function startIssueStrategy(service, input) {
   const base = issueStartingRevision(service, queue, old, config);
   const shared = service.sharedIssues?.acquire(issue);
   const run = service.store.add({ id: 'issue-' + issue.id }, 'issue-work', base);
+  bindClassicRun(service, run);
   service.store.update(run, {
     issueId: issue.id,
     issueState: issue.state,
@@ -617,6 +654,13 @@ export function startIssueStrategy(service, input) {
   return { runId: run.id, issueId: issue.id, accepted: true };
 }
 export async function prepareIssueChatCheckout(service, issueId) {
+  if (service.projectStores && !service.classicOperation)
+    return classicOperation(service, {
+      issueIds: [issueId],
+      label: 'Classic issue checkout',
+      shareSourceCheckpoint: true,
+      run: (scoped) => prepareIssueChatCheckout(scoped, issueId),
+    });
   service.ownServer();
   const queue = readQueue(service.root);
   const issue = queue.issues.find((entry) => entry.id === issueId);
@@ -774,14 +818,19 @@ async function runOwnerTurn(service, record, run, issue, work, instruction) {
     summary: 'Working toward a merge-ready PR in the issue chat.',
   });
   assertStrategyActive(record, 'Stopped before the next turn. Saved work is retained.');
+  const prompt =
+    strategyPrompt(service.root, issue, work, instruction, conversationContext(service, issue.id)) +
+    (record.classicHistory?.path
+      ? '\nRetained shared execution history: ' +
+        record.classicHistory.path +
+        ' (SHA-256 ' +
+        record.classicHistory.sha256 +
+        '). Read relevant previous results before continuing; transport and workspace paths may belong to another runner.'
+      : '');
+  recordClassicInput(service, run, prompt);
   return JSON.parse(
-    await service.codex.turn(
-      threadId,
-      work.checkout,
-      strategyPrompt(service.root, issue, work, instruction, conversationContext(service, issue.id)),
-      strategyResultSchema,
-      [],
-      work.modelSettings
+    await withDiagnosticContext(service.root, { issueId: issue.id, step: 'Strategy work' }, () =>
+      service.codex.turn(threadId, work.checkout, prompt, strategyResultSchema, [], work.modelSettings)
     )
   );
 }
@@ -914,6 +963,12 @@ function strategyOutcome(work, readiness) {
 }
 
 export async function mergeIssueStrategyPR(service, input) {
+  if (service.projectStores && !service.classicOperation)
+    return classicOperation(service, {
+      issueIds: [input.issueId],
+      label: 'Classic protected merge',
+      run: (scoped) => mergeIssueStrategyPR(scoped, input),
+    });
   service.ownServer();
   mergeContext(service, input);
   return factoryOperation(
@@ -1019,6 +1074,12 @@ async function recordMergedStrategyPR(service, record, issue, merge) {
     return { issueId: issue.id, merge: work.merge, localDevUpdate: work.localDevUpdate };
   work.merge = merge;
   work.mergedAt = new Date().toISOString();
+  const operation = service.classicOperation;
+  if (operation) {
+    const receipt = { ...merge, mergedAt: work.mergedAt };
+    operation.mergedReceipts.set(issue.id, receipt);
+    operation.active.get(issue.id).mergedReceipt = receipt;
+  }
   record.events.push({ at: work.mergedAt, message: `Merged ${work.merge.url} on GitHub at ${work.merge.revision}.` });
   saveLifecycle(service, record, {
     status: 'merged',
@@ -1467,6 +1528,8 @@ export async function stopIssueStrategy(service, input) {
     turn || run.status !== 'checking',
     'This check cannot be interrupted. Pause after this operation instead.'
   );
+  const owned = service.flows?.active.get(input.issueId);
+  if (owned?.classicOperation) owned.controller.abort(Error('Stopped from the Classic strategy controls.'));
   saveLifecycle(service, record, { stopRequested: true, summary: 'Stopping. Saved work will be kept.' });
   return interruptStrategyTurn(service.codex, run.threadId, turn);
 }

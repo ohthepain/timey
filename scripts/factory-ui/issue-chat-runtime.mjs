@@ -1,5 +1,7 @@
 import { CodexConnection, interruptCodexTurn } from './codex.mjs';
 import { requireThat } from './common.mjs';
+import { agentModel, sessionProvider } from './agent-models.mjs';
+import { NativeAgentConnection } from './native-agent.mjs';
 
 class IssueChatConnection extends CodexConnection {
   interrupt(threadId) {
@@ -67,6 +69,11 @@ export async function attachIssueChat(connection, cwd, state, retain, sandbox = 
 }
 
 export function createIssueChatConnection(options) {
+  if (
+    agentModel(options?.model).provider !== 'codex' ||
+    (options?.threadId && sessionProvider(options.threadId) !== 'codex')
+  )
+    return new NativeAgentConnection(options);
   return new IssueChatConnection(options);
 }
 

@@ -69,7 +69,7 @@ export async function branchRepairBrowserChecks({ page, service, project, poll, 
       'Blocking check did not mark Fix Branch red'
     );
     await poll(() => openingBlock, Boolean, 'The initial inspector check did not start');
-    assert.equal(await button.isDisabled(), true, 'Fix Branch must wait for the pending inspector check');
+    assert.equal(await button.isEnabled(), true, 'Automatic inspector checks must not disable Fix Branch');
     opening.resolve();
     if (openingBlock) await openingHandled.promise;
     await page.unroute('**/api/flow-action', holdOpeningBlock);

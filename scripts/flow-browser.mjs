@@ -6,6 +6,7 @@ import { mergeStateBrowserChecks } from './flow-browser-merge-state.mjs';
 import { browserScenarioSelected } from './browser-scenario-policy.mjs';
 import { branchRepairBrowserChecks } from './flow-browser-branch-repair.mjs';
 import { blockSkillsBrowserChecks } from './flow-browser-block-skills.mjs';
+import { nativeAgentBrowserChecks } from './flow-browser-native-agents.mjs';
 import assert from 'node:assert/strict';
 import {
   copyFileSync,
@@ -52,6 +53,7 @@ import { mergedIssueBrowserChecks } from './flow-browser-merged-issue.mjs';
 import { manualCloseBrowserChecks } from './flow-browser-manual-close.mjs';
 import { noChangesBrowserChecks } from './flow-browser-no-changes.mjs';
 import { writeBrowserIssue } from './flow-browser-fixture.mjs';
+import { issueStoresBrowserChecks } from './flow-browser-stores.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const output = resolve(
@@ -92,11 +94,17 @@ const assets = [
   'flow.html',
   'flow.css',
   'flow-ui.js',
+  'issue-store-ui.js',
+  'issue-ownership-ui.js',
   'issue-folder-drag-ui.js',
   'sidebar-files-ui.js',
   'folder-settings-ui.js',
   'project-settings-ui.js',
   'project-settings.css',
+  'github-calls-ui.js',
+  'github-calls.css',
+  'diagnostics-ui.js',
+  'diagnostics.css',
   'hotkeys-ui.js',
   'investigation-followups-ui.js',
   'project-home-ui.js',
@@ -137,11 +145,18 @@ const reportsCheck = 'Investigation reports retain content, reading state and sh
 const investigationFlowsCheck = 'Investigations use ordinary flows and independent retained outputs';
 const discussCheck = 'Project Discuss retains independent conversations, settings and explicit controls';
 const settingsCheck = 'Project Settings addressable pages preserve drafts, sources and explicit saves';
+const storesCheck =
+  'Storage profiles preserve explicit destinations and perform checked moves without workspace updates';
 const aiTextCheck = 'AI text offers copy bro and caret-aware hovered dictation';
 const interfaceStateCheck = 'Refresh preserves expanded activity, editor size, drafts and copied selection';
 const issueResultsCheck = 'Issue results appear below the banner without replacing playback status';
 const humanInputCheck = 'Required PR review is visible and continues only after an explicit action';
 const mergeSettingsCheck = 'Request saves the regression choice and the block palette hides Verify';
+const requestSaveCheck = 'Saving Your words releases issue controls while Request clarification runs';
+const blockInspectionCheck =
+  'On-demand refresh preserves drafts; Codex popup resets history without moving the sidebar';
+const storageStatusCheck = 'Storage startup and recovery messages follow confirmed availability';
+let requestClarification;
 const pendingResponses = [];
 const logs = {
   console: [],
@@ -227,6 +242,7 @@ service.flows = createIssueFlows(service, {
   },
   clarify: async (_root, _definition, attempt) => {
     const wording = attempt.details.find((item) => item.key === 'wording').value;
+    if (requestClarification) await requestClarification.promise;
     const fields = Object.fromEntries(
       wording
         .split('\n')
@@ -299,6 +315,8 @@ function checkExcluded(name) {
     ['--project-navigation', navigationCheck],
     ['--project-discuss', discussCheck],
     ['--project-settings', settingsCheck],
+    ['--native-agents', 'Native Flow approvals and questions retain their exact attempt'],
+    ['--stores', storesCheck],
     ['--ai-text', aiTextCheck],
     ['--investigation-reports', reportsCheck],
     ['--investigation-flows', investigationFlowsCheck],
@@ -311,6 +329,9 @@ function checkExcluded(name) {
     ['--issue-results', issueResultsCheck],
     ['--human-input', humanInputCheck],
     ['--merge-settings', mergeSettingsCheck],
+    ['--request-save', requestSaveCheck],
+    ['--block-inspection', blockInspectionCheck],
+    ['--storage-status', storageStatusCheck],
   ];
   const selected = selections.filter(([flag]) => process.argv.includes(flag));
   return selected.length > 0 && !selected.some(([, scenario]) => name === scenario);
@@ -456,6 +477,7 @@ try {
   browser = await chromium.launch({ headless: true, channel: 'chrome', ignoreDefaultArgs: ['--hide-scrollbars'] });
   const context = await browser.newContext({ baseURL, viewport: { width: 1440, height: 960 } });
   page = await context.newPage();
+  if (process.env.NODE_V8_COVERAGE) await page.coverage.startJSCoverage({ resetOnNavigation: false });
   page.setDefaultTimeout(15000);
   page.on('console', (message) =>
     logs.console.push({ type: message.type(), text: message.text(), location: message.location() })
@@ -601,6 +623,7 @@ try {
       projectSettingsBrowserChecks({ page, project, service, logs, poll, screenshot, output, candidate })
     )
   );
+  await check(storesCheck, () => issueStoresBrowserChecks({ page, project, service, logs, poll, screenshot }));
   await check(aiTextCheck, () => aiTextBrowserChecks({ page, project, service, poll, screenshot }));
   await check(interfaceStateCheck, () => interfaceStateBrowserChecks({ page, project, service, poll, screenshot }));
   await check('Issues and Local notes use matching text styles', () =>
@@ -851,6 +874,232 @@ try {
     await dialog.getByRole('button', { name: 'Close', exact: true }).click();
     await dialog.waitFor({ state: 'hidden' });
     await count.and(page.locator('[aria-expanded="false"]')).waitFor();
+  });
+  await check(storageStatusCheck, async () => {
+    const id = '20261123-storage-status-fixture';
+    writeBrowserIssue(project, { id, title: 'Confirm storage recovery', body: 'Keep the local draft.' });
+    let storage = {
+      phase: 'refreshing',
+      available: false,
+      unavailable: true,
+      warning: 'Refreshing shared storage. The last saved snapshot is read-only until storage is confirmed.',
+    };
+    const projectStorage = async (route) => {
+      const response = await route.fetch();
+      const data = await response.json();
+      if (data.issue?.id === id) {
+        data.storeStatus = storage;
+        data.sharedQueueWarning = storage.warning || null;
+      }
+      await route.fulfill({ response, json: data });
+    };
+    await page.route('**/api/flow?**', projectStorage);
+    try {
+      await page.goto('/?issue=' + id);
+      const warning = page.locator('#shared-queue-message');
+      await warning.getByText(storage.warning, { exact: true }).waitFor();
+      assert.equal(
+        await page.locator('#error-banner').isVisible(),
+        false,
+        'Initial storage confirmation was presented as a storage failure.'
+      );
+      assert.equal(await page.locator('#run-block').isDisabled(), true);
+      const wording = page.locator('#request-form [name="wording"]');
+      await wording.fill('Draft retained through storage recovery.');
+      storage = { phase: 'ready', available: true, unavailable: false };
+      await page.locator('#refresh').click();
+      await poll(
+        () => warning.textContent(),
+        (value) => value === '',
+        'Recovery retained the startup warning.'
+      );
+      assert.equal(await page.locator('#run-block').isEnabled(), true);
+      storage = {
+        phase: 'unavailable',
+        available: false,
+        unavailable: true,
+        warning: 'Shared storage is unavailable. Cached data is read-only; local drafts are retained.',
+      };
+      await page.locator('#refresh').click();
+      await page.locator('#error-banner').waitFor({ state: 'visible' });
+      assert.match(await page.locator('#error-message').textContent(), /Shared storage is unavailable/);
+      assert.equal(await page.locator('#run-block').isDisabled(), true);
+      assert.equal(await wording.inputValue(), 'Draft retained through storage recovery.');
+      storage = { phase: 'ready', available: true, unavailable: false };
+      await page.locator('#refresh').click();
+      await poll(
+        () => warning.textContent(),
+        (value) => value === '',
+        'Recovery retained the failure warning.'
+      );
+      await page.locator('#error-banner').waitFor({ state: 'hidden' });
+      assert.equal(await page.locator('#run-block').isEnabled(), true);
+      await screenshot('storage-status-recovered');
+    } finally {
+      await page.unroute('**/api/flow?**', projectStorage);
+      await page.goto('about:blank');
+    }
+  });
+  await check(blockInspectionCheck, async () => {
+    const id = '20261123-block-inspection-fixture';
+    writeBrowserIssue(project, { id, title: 'Read saved state on demand', body: 'Keep navigation local.' });
+    const inspections = [];
+    const refreshes = [];
+    const observeRequest = (request) => {
+      const url = new URL(request.url());
+      if (url.pathname === '/api/flow-action' && request.postDataJSON()?.action === 'open-block')
+        inspections.push(request.postDataJSON());
+      if (url.pathname === '/api/flow' && url.searchParams.get('refresh') === 'true') refreshes.push(url.href);
+    };
+    page.on('request', observeRequest);
+    try {
+      await page.goto('/?issue=' + id);
+      const wording = page.locator('#request-form [name="wording"]');
+      await wording.fill('Unsaved wording survives on-demand refresh.');
+      for (const blockId of ['work', 'publish', 'request']) await selectBlock(blockId);
+      for (let i = 0; i < 2; i++)
+        await page.waitForResponse((response) => new URL(response.url()).pathname === '/api/flow');
+      assert.equal(inspections.length, 0, 'Navigation started automatic block mutation checks.');
+      assert.equal(refreshes.length, 0, 'Idle polling requested remote refresh.');
+      const refreshed = page.waitForResponse((response) => {
+        const url = new URL(response.url());
+        return url.pathname === '/api/flow' && url.searchParams.get('refresh') === 'true';
+      });
+      await page.locator('#refresh').click();
+      await refreshed;
+      await poll(
+        () => wording.inputValue(),
+        (value) => value === 'Unsaved wording survives on-demand refresh.',
+        'Refresh discarded the unsaved wording.'
+      );
+      assert.equal(refreshes.length, 1);
+      assert.equal(await page.locator('#run-block').isEnabled(), true);
+      assert.match(await page.locator('#connection-status').textContent(), /GitHub on demand/);
+      const pulse = page.locator('#diagnostics-trigger');
+      const panel = page.locator('#diagnostics-panel');
+      await pulse.scrollIntoViewIfNeeded();
+      const collapsed = await page.locator('#new-issue').boundingBox();
+      assert.equal(await panel.isVisible(), false);
+      const quotaResponse = async (route) => route.fulfill({ json: { status: 'unavailable' } });
+      await page.route('**/api/codex-quota*', quotaResponse);
+      let codexHistory = {
+        codexTotal: 3,
+        retained: 120,
+        rows: [
+          {
+            category: 'codex',
+            project: 'Popup fixture',
+            status: 'completed',
+            startedAt: Date.now(),
+            durationMs: 10,
+          },
+        ],
+      };
+      const activityResponse = (route) => route.fulfill({ json: codexHistory });
+      const resetResponse = (route) => {
+        assert.equal(route.request().method(), 'POST');
+        codexHistory = { codexTotal: 0, retained: 120, rows: [] };
+        return route.fulfill({ json: codexHistory });
+      };
+      await page.route('**/api/diagnostic-activity', activityResponse);
+      await page.route('**/api/codex-activity-reset', resetResponse);
+      let expanded;
+      try {
+        await pulse.click();
+        await panel.waitFor({ state: 'visible' });
+        await poll(() => page.locator('#diagnostics-content').textContent(), Boolean, 'Diagnostics did not render.');
+        assert.equal(await panel.evaluate((node) => node.matches(':popover-open')), true);
+        expanded = await page.locator('#new-issue').boundingBox();
+        const bounds = await panel.boundingBox();
+        const triggerBounds = await pulse.boundingBox();
+        assert.ok(bounds.y >= triggerBounds.y + triggerBounds.height, 'Codex popup covered its trigger.');
+        assert.equal(expanded.y, collapsed.y, 'Codex popup moved sidebar content.');
+        await screenshot('codex-requests-popup');
+        await poll(
+          () => page.locator('#codex-call-total').textContent(),
+          (value) => value === '3',
+          'Codex count missing.'
+        );
+        page.once('dialog', (dialog) => dialog.accept());
+        await page.locator('#diagnostics-reset').click();
+        await poll(
+          () => page.locator('#codex-call-total').textContent(),
+          (value) => value === '0',
+          'Codex reset kept its count.'
+        );
+        assert.match(await page.locator('#diagnostics-content').textContent(), /No Codex turns recorded yet/);
+        assert.equal(await page.locator('#diagnostics-reset').isDisabled(), true);
+        await pulse.click();
+        assert.equal(await panel.isVisible(), false);
+        assert.equal(await panel.evaluate((node) => node.matches(':popover-open')), false);
+        const hidden = await page.locator('#new-issue').boundingBox();
+        assert.equal(hidden.y, collapsed.y, 'Hiding Pulse left space in the column.');
+      } finally {
+        await page.unroute('**/api/codex-quota*', quotaResponse);
+        await page.unroute('**/api/diagnostic-activity', activityResponse);
+        await page.unroute('**/api/codex-activity-reset', resetResponse);
+      }
+      writeFileSync(join(output, 'pulse-sidebar.json'), JSON.stringify({ collapsed, expanded }, null, 2));
+      await screenshot('github-refresh-on-demand');
+      writeFileSync(join(output, 'github-refresh-on-demand.json'), JSON.stringify({ inspections, refreshes }, null, 2));
+    } finally {
+      page.off('request', observeRequest);
+      await page.goto('about:blank');
+    }
+  });
+  await check(requestSaveCheck, async () => {
+    const id = '20261123-request-save-fixture';
+    writeBrowserIssue(project, {
+      id,
+      title: 'Save an existing request',
+      body: 'Original request',
+    });
+    requestClarification = Promise.withResolvers();
+    try {
+      await page.goto('/?issue=' + id);
+      const wording = page.locator('#request-form [name="wording"]');
+      await wording.fill('Edited request\ntype: bug\ngoal: Keep controls usable');
+      const rejectSave = async (route) => {
+        if (route.request().postDataJSON().action !== 'request') return route.continue();
+        return route.fulfill({
+          status: 409,
+          contentType: 'application/json',
+          body: JSON.stringify({ error: 'Request admission rejected.' }),
+        });
+      };
+      await page.route('**/api/flow-action', rejectSave);
+      await page.locator('#request-form button[type="submit"]').click();
+      await page.locator('#error-message').filter({ hasText: 'Request admission rejected.' }).waitFor();
+      assert.equal(await wording.inputValue(), 'Edited request\ntype: bug\ngoal: Keep controls usable');
+      assert.equal(await wording.isEnabled(), true);
+      await page.unroute('**/api/flow-action', rejectSave);
+      const saved = await clickAction(page.locator('#request-form button[type="submit"]'));
+      assert.equal(saved.accepted, true);
+      await page.locator('#run-block[data-action="stop"]').waitFor();
+      await poll(() => page.locator('#rename-issue').isEnabled(), Boolean, 'Rename stayed disabled during Request.');
+      assert.equal(await page.locator('#close-with-reason').isEnabled(), true);
+      assert.equal(await page.locator('#run-block').isEnabled(), true);
+      assert.equal(await wording.isEnabled(), true);
+      await screenshot('request-save-running');
+      requestClarification.resolve();
+      await poll(
+        async () => {
+          const data = await (await page.request.get('/api/flow?issue=' + id)).json();
+          return data.flow.blocks.find((item) => item.kind === 'request').attempts.at(-1)?.status;
+        },
+        (value) => value === 'completed',
+        'Request did not finish.'
+      );
+      await page.reload();
+      await poll(() => page.locator('#rename-issue').isEnabled(), Boolean, 'Rename stayed disabled after Request.');
+      assert.equal(await wording.inputValue(), 'Edited request\ntype: bug\ngoal: Keep controls usable');
+      await screenshot('request-save-completed');
+    } finally {
+      requestClarification.resolve();
+      requestClarification = null;
+      await service.flows.active.get(id)?.task;
+      await page.goto('about:blank');
+    }
   });
   const description =
     'Understand why the save button loses text\nDone: The text survives a reload.\nProof: Retained saved text.\nKnown facts: The problem occurs after refresh.\nConstraints: Reproduce before changing code.';
@@ -1288,6 +1537,11 @@ try {
   await check('Saving Your words retains derived fields and applies the new type default', async () => {
     await page.locator('#request-form [name="wording"]').fill(savedWording);
     await clickAction(page.locator('#request-form button[type="submit"]'));
+    await poll(
+      view,
+      (value) => requestData(value.flow).fields?.type === 'bug',
+      'Request clarification did not finish.'
+    );
     await page.reload();
     await page.locator('#request-form').waitFor();
     assert.equal(await page.locator('#request-form [name="wording"]').inputValue(), savedWording);
@@ -2385,6 +2639,9 @@ try {
   await check('Block skill choices preserve defaults and offer missing-skill setup', async () => {
     await blockSkillsBrowserChecks({ page, service, project, poll });
   });
+  await check('Native Flow approvals and questions retain their exact attempt', () =>
+    nativeAgentBrowserChecks({ page, service, project, poll, screenshot })
+  );
   await check(blockDeletionCheck, async () => {
     const deletionIssueId = '20261117-block-deletion-fixture';
     writeFileSync(
@@ -2545,6 +2802,18 @@ try {
   process.exitCode = 1;
 } finally {
   await Promise.all(pendingResponses);
+  if (page && process.env.NODE_V8_COVERAGE) {
+    const scripts = await page.coverage.stopJSCoverage().catch(() => []);
+    const result = scripts.flatMap((script) => {
+      const filename = new URL(script.url).pathname;
+      if (!/^\/[\w-]+\.js$/.test(filename)) return [];
+      const path = join(dirname(fileURLToPath(import.meta.url)), 'factory-ui', filename.slice(1));
+      if (!existsSync(path) || readFileSync(path, 'utf8') !== script.source) return [];
+      return [{ ...script, url: pathToFileURL(path).href }];
+    });
+    mkdirSync(process.env.NODE_V8_COVERAGE, { recursive: true });
+    writeFileSync(join(process.env.NODE_V8_COVERAGE, 'browser-' + randomUUID() + '.json'), JSON.stringify({ result }));
+  }
   await browser?.close();
   server.closeAllConnections();
   if (server.listening) await new Promise((done) => server.close(done));

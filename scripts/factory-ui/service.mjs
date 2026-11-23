@@ -1,4 +1,13 @@
 import { sharedChatTools } from './shared-chat-tools.mjs';
+import {
+  classicOperation,
+  startClassicOperation,
+  trackClassicTask,
+  bindClassicRun,
+  recordClassicInput,
+  classicFailure,
+} from './stores/classic-operation.mjs';
+import { createIssueFlows } from './flow-service.mjs';
 import { factoryOperation } from './issue-operation.mjs';
 import { strategyView, prepareIssueChatCheckout } from './issue-strategy.mjs';
 import { readOnlyReviewTurn } from './review-recovery.mjs';
@@ -302,6 +311,10 @@ export class FactoryUI {
   startLifecycle(input) {
     return startLifecycle(this, input);
   }
+  ensureIssueFlows() {
+    this.flows ||= createIssueFlows(this);
+    return this.flows;
+  }
   answerLifecycle(input) {
     return answerLifecycle(this, input);
   }
@@ -393,15 +406,25 @@ export class FactoryUI {
     const selection = this.consume(token, humanApproved);
     return selection.kind === 'launch' ? this.launch(selection) : this.integrate(selection);
   }
-  launch({ queue, action }) {
+  launch(selection) {
+    return classicOperation(this, {
+      issueIds: selection.action.issues,
+      label: 'Classic worker',
+      shareSourceCheckpoint: true,
+      run: (service) => this.launchOwned.call(service, selection),
+    });
+  }
+  launchOwned({ queue, action }) {
     this.api.reserve(action.id, runAuthorization(this, action, 'worker'));
     const run = this.store.add(action, 'worker', action.start?.revision || action.basis.head);
+    bindClassicRun(this, run);
+    if (this.classicOperation) this.store.update(run, { issueId: action.issues[0], issueIds: action.issues });
     const issue = queue.issues.find((i) => i.id === action.issues[0]);
     this.store.update(run, {
       deliveryMode: action.issues.length === 1 ? deliveryMode(queue, issue, this.store.runs) : 'verified-delivery',
     });
     this.api.attach(action.id, { clientThreadId: `factory-ui:${run.id}` });
-    this.perform(run, () => this.prepareWorker(run, action, queue));
+    this.perform(run, (service) => service.prepareWorker(run, action, queue));
     return { runId: run.id };
   }
   async prepareWorker(run, action, queue) {
@@ -437,7 +460,14 @@ export class FactoryUI {
       )
     );
   }
-  integrate({ queue, action, humanApproved }) {
+  integrate(selection) {
+    return classicOperation(this, {
+      issueIds: selection.action.issues,
+      label: 'Classic integration',
+      run: (service) => this.integrateOwned.call(service, selection),
+    });
+  }
+  integrateOwned({ queue, action, humanApproved }) {
     const previous = this.store.runs.findLast(
       (r) =>
         r.kind === 'assembly' &&
@@ -447,6 +477,7 @@ export class FactoryUI {
         r.status === 'blocked'
     );
     const run = previous || this.store.add(action, 'assembly', queue.head);
+    bindClassicRun(this, run);
     this.store.connected.add(run.id);
     this.store.update(run, {
       status: 'checking',
@@ -463,12 +494,12 @@ export class FactoryUI {
           this.store.runs.findLast((r) => r.actionId === action.id && r.status === 'completed' && r.retainedArtifacts)
             ?.retainedArtifacts || null,
       });
-    this.perform(run, () =>
+    this.perform(run, (service) =>
       factoryOperation(
-        this,
+        service,
         action.issues[0],
         { kind: 'assembly', id: 'assembly:' + run.id, runId: run.id, cancellable: false },
-        () => this.assembleContribution(run, action, reviewPath)
+        () => this.assembleContribution.call(service, run, action, reviewPath)
       )
     );
     return { runId: run.id };
@@ -488,6 +519,7 @@ export class FactoryUI {
     });
   }
   async runTurn(run, prompt) {
+    recordClassicInput(this, run, prompt);
     const completed = run.issueId
       ? await factoryOperation(
           this,
@@ -568,7 +600,7 @@ export class FactoryUI {
             ? await checkHandoff(this.check, run.checkout, run.base, folder)
             : await this.check(run.checkout, run.base, folder, checkOptions);
       } catch (error) {
-        failedVerification(this, run, action, result, error);
+        await failedVerification(this, run, action, result, error);
         throw error;
       }
       git(run.checkout, 'merge-base', '--is-ancestor', run.base, checked.head);
@@ -587,11 +619,35 @@ export class FactoryUI {
     this.store.update(run, { status: 'completed', summary: result.summary, result });
   }
   perform(run, task) {
-    Promise.resolve()
-      .then(task)
+    let executed = false;
+    const execute = (service) => {
+      executed = true;
+      return task(service);
+    };
+    bindClassicRun(this, run);
+    const pending = Promise.resolve()
+      .then(async () => {
+        if (this.projectStores && !this.classicOperation && run.issueId) {
+          this.ensureIssueFlows();
+          const owned = await startClassicOperation(this, {
+            issueIds: [run.issueId],
+            label: 'Classic ' + run.kind,
+            runRecord: run,
+            shareSourceCheckpoint: ['worker', 'issue-work'].includes(run.kind),
+            run: (service) => {
+              bindClassicRun(service, run);
+              return execute(service);
+            },
+          });
+          return owned.task;
+        }
+        return execute(this);
+      })
       .catch((error) => {
+        if (!executed && this.projectStores) releaseUnstartedReviewLock(this.root, run);
+        if (this.projectStores) classicFailure(run, error);
         this.store.update(run, {
-          status: 'blocked',
+          status: error.uncertain ? 'uncertain' : 'blocked',
           summary: error.message,
           recovery: error.recovery || null,
           ...fileFailure(error),
@@ -613,6 +669,7 @@ export class FactoryUI {
         }
       })
       .finally(() => this.store.connected.delete(run.id));
+    return trackClassicTask(this, pending);
   }
   ownServer() {
     const lock = join(this.root, '.issues/factory-ui-server.lock');
@@ -644,8 +701,8 @@ export class FactoryUI {
     this.store.update(run, { authorization });
     this.recordResumed(run, action);
     this.store.connected.add(id);
-    this.perform(run, () =>
-      this.runTurn(
+    this.perform(run, (service) =>
+      service.runTurn(
         run,
         `Continue only the original saved assignment. No new scope, other launches, pushes, closure or acceptance. Recorded base remains ${run.base}. ${describeAuthorization(run.authorization)} ${workerPermissionGuidance} Follow-up: ${text}`
       )
@@ -704,43 +761,43 @@ export class FactoryUI {
     requireThat(!issueId || selected, 'This selected issue no longer exists.');
     const run = this.store.add({ id: 'queue-review' }, 'evaluation', queue.head);
     this.store.update(run, evaluationMetadata(queue, selected, basis));
-    this.perform(run, async () => {
+    this.perform(run, async (service) => {
       if (!issueId) {
-        const result = await selectNextIssue(this, run, queue);
-        this.store.update(run, { status: 'completed', summary: result.summary, result });
+        const result = await selectNextIssue(service, run, queue);
+        service.store.update(run, { status: 'completed', summary: result.summary, result });
         return;
       }
       const result = JSON.parse(
-        await this.reviewIssue(
+        await service.reviewIssue(
           run,
           conversationPrompt(
-            this,
+            service,
             run,
             evaluationPrompt({
-              sources: coordinatorContext(this, issueId),
+              sources: coordinatorContext(service, issueId),
               lifecycle: queue.lifecycle.map(({ state, name, role }) => ({ state, name, role })),
-              approved_lifecycle_plan: approvedLifecyclePlan(this, issueId)
+              approved_lifecycle_plan: approvedLifecyclePlan(service, issueId)
                 ? {
-                    source: join(this.root, '.issues/factory-ui/lifecycle.json'),
+                    source: join(service.root, '.issues/factory-ui/lifecycle.json'),
                     issue_id: issueId,
                   }
                 : null,
-              lifecycle_followup: lifecycleFollowup(this, issueId)?.summary || null,
+              lifecycle_followup: lifecycleFollowup(service, issueId)?.summary || null,
               focus_issue_ids: issueId ? [issueId] : null,
-              eligible_worker_continuations: issueId ? eligibleContinuations(this, queue, issueId) : [],
+              eligible_worker_continuations: issueId ? eligibleContinuations(service, queue, issueId) : [],
               continuation_rule:
                 'Use only an action_id from eligible_worker_continuations. If empty, no worker exists to continue: propose a new bounded assignment when authorized, never a lifecycle or stage-skip run ID.',
             }),
             true
           ),
-          continuationOutputSchema(this, queue, issueId)
+          continuationOutputSchema(service, queue, issueId)
         )
       );
       requireThat(
         Array.isArray(result.recommendations) && typeof result.summary === 'string',
         'Invalid queue review result.'
       );
-      this.store.update(run, { status: 'completed', summary: result.summary, result });
+      service.store.update(run, { status: 'completed', summary: result.summary, result });
       if (afterReview) await afterReview(result, queue, selected, run);
     });
     return { runId: run.id };
@@ -930,4 +987,10 @@ function permissionKey(id, request) {
 }
 function workerImplementation(run, action) {
   return run.kind === 'worker' && action.kind === 'implement';
+}
+
+function releaseUnstartedReviewLock(root, run) {
+  const lock = join(root, '.issues/factory-progress.lock');
+  const owner = join(lock, 'owner.json');
+  if (existsSync(owner) && JSON.parse(readFileSync(owner, 'utf8')).runId === run.id) rmSync(lock, { recursive: true });
 }

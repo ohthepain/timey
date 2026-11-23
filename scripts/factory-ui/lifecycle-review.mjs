@@ -1,3 +1,4 @@
+import { bindClassicRun } from './stores/classic-operation.mjs';
 import { factoryOperation } from './issue-operation.mjs';
 import { issueWorkChat } from './issue-work-chat.mjs';
 import { resumeReviewThread, readOnlyReviewTurn } from './review-recovery.mjs';
@@ -16,6 +17,7 @@ export async function lifecycleReview(service, record, message, schema, options 
     issueState: readQueue(service.root).issues.find((i) => i.id === record.issueId).state,
     checkout: service.root,
   });
+  bindClassicRun(service, run);
   saveLifecycle(service, record, { childRunId: run.id });
   return factoryOperation(
     service,

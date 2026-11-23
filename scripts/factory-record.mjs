@@ -14,6 +14,8 @@ import { appendCompletion } from './factory-completion.mjs';
 import { saveChecklistRecord } from './factory-checks.mjs';
 import { readProgress } from './factory-progress.mjs';
 import { digest, readJson, requireThat } from './factory-ui/common.mjs';
+import { afterReportWrite } from './factory-ui/stores/report-access.mjs';
+import { openProjectStores } from './factory-ui/stores/runtime.mjs';
 
 function context(root, input) {
   const queue = readQueue(root),
@@ -64,8 +66,11 @@ export function recordCompletion(root, input) {
   const policy = { root, guard: humanGuard, store: { list: () => [] }, codex: { requests: new Map() } };
   validateReconciliation(policy, queue, issue, result);
   requireCurrentInputs(root, queue, issue);
-  appendCompletion(root, issue, result, run, evidence, result.next_state);
-  return { issue_id: issue.id, state: result.next_state, completion_id: run.id };
+  return afterReportWrite(appendCompletion(root, issue, result, run, evidence, result.next_state), () => ({
+    issue_id: issue.id,
+    state: result.next_state,
+    completion_id: run.id,
+  }));
 }
 function requireCurrentInputs(root, queue, issue) {
   requireThat(
@@ -124,16 +129,21 @@ export function recordPlanChecks(root, input) {
     },
     record.evidence
   );
-  return { issue_id: issue.id, completion_id: receipt.id };
+  return afterReportWrite(receipt, (value) => ({ issue_id: issue.id, completion_id: value.id }));
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  let storage;
   try {
     const [operation, root, path] = process.argv.slice(2);
     requireThat(['complete', 'record-checks'].includes(operation), 'Unknown completion operation.');
     const handler = operation === 'complete' ? recordCompletion : recordPlanChecks;
-    console.log(JSON.stringify(handler(root, readJson(path))));
+    const input = readJson(path);
+    storage = await openProjectStores(root);
+    console.log(JSON.stringify(await handler(root, input)));
   } catch (error) {
     console.error(error.message);
     process.exitCode = 1;
+  } finally {
+    await storage?.close();
   }
 }

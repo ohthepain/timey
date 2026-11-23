@@ -6,23 +6,25 @@ import { checklistBasis } from './factory-ui/plan-checks.mjs';
 import { selectPlan } from './factory-ui/plan-outline.mjs';
 import { digest, requireThat } from './factory-ui/common.mjs';
 import { writeCheckReceipt } from './factory-progress.mjs';
+import { afterReportWrite } from './factory-ui/stores/report-access.mjs';
 
 export function saveChecklistRecord(root, issue, run, result, evidence = []) {
   const record = result.plan_verification;
   retainReportEvidence(root, issue, record);
-  appendCompletion(root, issue, result, run, evidence, null);
-  const queue = readQueue(root),
-    saved = queue.issues.find((i) => i.id === issue.id);
-  const receipt = {
-    id: run.id,
-    status: 'completed',
-    base: queue.head,
-    afterBasis: checklistBasis(queue, saved, selectPlan(queue, saved, record.path)),
-    record_sha256: digest(JSON.stringify(saved.plan_verification)),
-    authorization: run.authorization || null,
-  };
-  writeCheckReceipt(root, receipt);
-  return receipt;
+  return afterReportWrite(appendCompletion(root, issue, result, run, evidence, null), () => {
+    const queue = readQueue(root),
+      saved = queue.issues.find((i) => i.id === issue.id);
+    const receipt = {
+      id: run.id,
+      status: 'completed',
+      base: queue.head,
+      afterBasis: checklistBasis(queue, saved, selectPlan(queue, saved, record.path)),
+      record_sha256: digest(JSON.stringify(saved.plan_verification)),
+      authorization: run.authorization || null,
+    };
+    writeCheckReceipt(root, receipt);
+    return receipt;
+  });
 }
 function retainReportEvidence(root, issue, record) {
   const report = join(root, '.issues', issue.id + '.md');

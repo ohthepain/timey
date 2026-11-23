@@ -38,7 +38,7 @@ export function beginCompletionReview(service, issueId) {
   });
   writeJson(join(lock, 'owner.json'), { runId: run.id, pid: process.pid });
   const original = identity(context, delivery);
-  service.perform(run, async () => {
+  service.perform(run, async (service) => {
     try {
       if (handoff) {
         const result = await service.deliveries.operate('handoff', { issueId });

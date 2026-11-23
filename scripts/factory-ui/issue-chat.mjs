@@ -1,3 +1,5 @@
+import { withDiagnosticContext } from './diagnostic-activity.mjs';
+import { classicOperation, bindClassicRun, recordClassicInput, classicFailure } from './stores/classic-operation.mjs';
 import { effectiveProjectPrompt } from './project-preferences.mjs';
 import { investigationReport } from './investigation-records.mjs';
 import { sharedIssueChatBinding, sharedChatTools } from './shared-chat-tools.mjs';
@@ -20,6 +22,7 @@ import { conversationPage } from './conversation-view.mjs';
 import { createIssueChatConnection, attachIssueChat } from './issue-chat-runtime.mjs';
 import { saveLifecycle } from './lifecycle-store.mjs';
 import { newChatModelSettings } from './model-settings.mjs';
+import { agentRecovery, recoverAgentSession } from './agent-recovery.mjs';
 import { listAvailableSkills, publicSkills, selectedSkills, skillInputs } from './skills.mjs';
 import { setIssueChatTitle } from './chat-name.mjs';
 import { randomUUID } from 'node:crypto';
@@ -75,11 +78,20 @@ class IssueChats {
   }
   view(issueId, before) {
     const { queue, issue } = this.selected(issueId, true);
-    return { ...conversationPage(this.service, queue, issue, before), queue: this.scheduler.view(issueId) };
+    return {
+      ...conversationPage(this.service, queue, issue, before),
+      queue: this.scheduler.view(issueId),
+      agentRecovery: agentRecovery(this.service.root, conversationState(this.service.root, issueId).threadId),
+    };
   }
   async skills(issueId) {
     this.selected(issueId, true);
-    return publicSkills(await listAvailableSkills(this.service.codex, this.service.root));
+    const connection = this.responseConnection(issueId, conversationState(this.service.root, issueId).threadId);
+    try {
+      return publicSkills(await listAvailableSkills(connection, this.service.root));
+    } finally {
+      if (connection !== this.service.codex && !this.connections.has(issueId)) connection.close();
+    }
   }
   async retro(issueId) {
     this.selected(issueId, true);
@@ -120,6 +132,19 @@ class IssueChats {
     validateMessage(input);
   }
   control(input) {
+    if (input.operation === 'recover-agent') {
+      this.service.ownServer();
+      this.selected(input.issueId);
+      requireThat(!this.responseBusy(input.issueId), 'Stop the active response before recovering its session.');
+      recoverAgentSession(
+        this.service.root,
+        conversationState(this.service.root, input.issueId).threadId,
+        input.confirmed
+      );
+      this.connections.get(input.issueId)?.close();
+      this.connections.delete(input.issueId);
+      return this.view(input.issueId);
+    }
     return this.scheduler.control(input);
   }
   beforeFactory(issueId) {
@@ -181,7 +206,7 @@ class IssueChats {
         'The saved strategy changed. Refresh before replying and continuing.'
       );
       const { issue } = this.selected(input.issueId);
-      const started = startIssueStrategy(this.service, {
+      const started = await startIssueStrategy(this.service, {
         issueId: issue.id,
         basis: strategyBasis(this.service, issue),
         strategy: record.work.strategy,
@@ -285,6 +310,23 @@ class IssueChats {
     return interruptCodexTurn(active.connection, active.threadId);
   }
   async respond(issueId, input) {
+    if (input.mode === 'work' && this.service.projectStores && !this.service.classicOperation)
+      return classicOperation(this.service, {
+        issueIds: [issueId],
+        label: 'Classic queued work prompt',
+        shareSourceCheckpoint: true,
+        onStop: () => {
+          const current = this.active.get(issueId);
+          if (!current) return;
+          current.stopRequested = true;
+          return this.interrupt(current);
+        },
+        run: (service) => {
+          const scoped = Object.create(this);
+          scoped.service = service;
+          return scoped.respond(issueId, input);
+        },
+      });
     const active = { messageId: input.id, stopRequested: false };
     this.active.set(issueId, active);
     try {
@@ -296,9 +338,10 @@ class IssueChats {
     }
   }
   responseError(issueId, input, active, error) {
+    if (this.service.classicOperation) classicFailure(active.run, error);
     if (active.run)
       this.service.store.update(active.run, {
-        status: stoppedError(error) ? 'cancelled' : 'blocked',
+        status: error.uncertain ? 'uncertain' : stoppedError(error) ? 'cancelled' : 'blocked',
         summary: error.message,
       });
     if (!stoppedError(error)) throw error;
@@ -353,6 +396,7 @@ class IssueChats {
     }
     active.threadId = threadId;
     active.run = this.service.store.add({ id: 'prompt:' + input.id }, 'issue-chat', null);
+    bindClassicRun(this.service, active.run);
     this.service.store.update(active.run, {
       issueId,
       threadId,
@@ -364,6 +408,7 @@ class IssueChats {
   }
   async runResponse(issueId, input, active, { root, cwd, connection, threadId, retain }) {
     const prompt = responsePrompt(this.service, issueId, input);
+    recordClassicInput(this.service, active.run, prompt);
     const selected = await responseSkills(connection, root, input);
     const role = conversationRole(selected);
     await nameConversationTurn(connection, root, issueId, threadId, role, 'active');
@@ -372,23 +417,25 @@ class IssueChats {
       entry.status = 'dispatching';
       entry.attempt = attempt;
     });
-    const text = await connection.turn(
-      threadId,
-      cwd,
-      prompt,
-      input.outputSchema,
-      skillInputs(selected),
-      newChatModelSettings(root, issueId),
-      {
-        clientId: attempt.id,
-        accepted: (receipt) => {
-          changePrompt(root, issueId, input.id, (entry) => {
-            entry.status = 'accepted';
-            entry.receipt = receipt;
-          });
-          this.scheduler.signal(issueId);
-        },
-      }
+    const text = await withDiagnosticContext(root, { issueId, step: role }, () =>
+      connection.turn(
+        threadId,
+        cwd,
+        prompt,
+        input.outputSchema,
+        skillInputs(selected),
+        newChatModelSettings(root, issueId),
+        {
+          clientId: attempt.id,
+          accepted: (receipt) => {
+            changePrompt(root, issueId, input.id, (entry) => {
+              entry.status = 'accepted';
+              entry.receipt = receipt;
+            });
+            this.scheduler.signal(issueId);
+          },
+        }
+      )
     );
     this.completeResponse(issueId, input, active, text);
     await nameConversationTurn(connection, root, issueId, threadId, role, 'waiting');
@@ -418,6 +465,9 @@ class IssueChats {
     if (existing) return existing;
     if (ownsWorkThread(this.service, issueId, threadId)) return this.service.codex;
     return this.create({
+      root: this.service.root,
+      ...newChatModelSettings(this.service.root, issueId),
+      threadId,
       experimentalApi: true,
       mcpTools: () => sharedChatTools(this.service),
       onEvent: (message) => this.service.store.event(message),

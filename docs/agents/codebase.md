@@ -198,8 +198,11 @@ The header's running-action list is served by `scripts/factory-ui/server-control
 and `server-action.mjs`, rendered by `server-control-ui.js`, with focused output
 links routed by `scripts/factory-ui/index.html`. Active Flow entries come from
 `FlowService.active`, with saved block status and output links to the Flow issue.
-Flow controls remain on the issue page. The open list refreshes with server
-status and preserves cards when their content is unchanged. `issue-action-cancellation.mjs`
+Flow controls remain on the issue page. Cards name the operation, its triggering
+block or issue control, and its purpose separately from the linked issue. Flow
+building and branch repair also appear as operations outside blocks. The open
+list refreshes with server status at most every two seconds without overlapping
+requests. Refresh feedback retains its height and unchanged cards retain drafts. `issue-action-cancellation.mjs`
 cancels stopped actions directly or when an issue closes, preserving work history
 and leaving actions shared with another open issue untouched. It also cancels
 an exact disconnected strategy preparation with no saved worker thread.
@@ -368,11 +371,12 @@ terminal turns, preserving pending input, newer activity and unknown state.
 chats while keeping the sandbox. `approval-activity.mjs` projects public automatic
 approval results into live output; it never grants access or reports test success.
 `factory-ui/model-settings.mjs` exposes schema-validated tracked project defaults
-and per-issue overrides used for newly started Codex threads. It delegates inherited
+and per-issue overrides used for newly started agent conversations. It delegates inherited
 values to the folder settings owner and preserves legacy explicit issue preferences.
 `issue-execution-settings.mjs` resolves issue overrides and saved execution snapshots;
-`codex.mjs` applies the chosen model only to
-`thread/start`, so resumed threads keep their original settings. The issues-page
+`codex.mjs` applies the chosen model at `thread/start` and accepts model and effort
+on each explicitly configured turn. Native sessions keep their owning agent;
+project discussion provider changes use an explicit handoff. The issues-page
 gear and per-issue selectors live in `factory-ui/index.html`. Focused behavior is
 covered by `factory-model-settings.check.mjs` and
 `factory-browser-model-settings.mjs`.
@@ -408,6 +412,45 @@ full saved runs remain available through the authenticated on-demand endpoint.
 snapshot. Issue-specific readiness facts keep separate reads, and each new snapshot
 reads fresh state. Execution guards remain independent. This avoids per-issue
 synchronous helper launches starving the server's GitHub authentication requests.
+
+The Flow sidebar's GitHub counter reads installation-wide metadata from
+`github-call-history.mjs`. Its local SQLite store keeps totals and the latest
+30 requests. `github-http.mjs` observes Timey's direct requests, while
+`github-cli.mjs` reads individual attempts from GitHub CLI traces and discards
+the trace content. Saved history excludes headers, bodies, and query strings.
+
+The Pulse button opens **Codex API requests and usage** in a popup beside the header
+without moving sidebar content. Its count and recent Codex records can be reset
+independently of GitHub history, quota windows, and other diagnostic activity. The panel reads bounded local observations from
+`diagnostic-activity.mjs`. `codex-diagnostics.mjs` attributes the protocol's
+cumulative usage changes to the current turn and fingerprints supplied context.
+Store timing records are batched. Flow supplies issue, block, and attempt labels
+through the execution context. `codex-quota.mjs` reads usage windows through a
+separate read-only app-server connection and retains the latest snapshot in memory.
+
+Flow, Classic, and project Home display reads use the last confirmed store
+snapshot. `stores/runtime.mjs` performs initial synchronization when no snapshot
+exists, explicit refresh, and fresh mutation admission. Cached startup uses saved
+state and does not start a background refresh. Storage status retains its last
+confirmed check time and an explicit null warning after recovery. Failed refreshes
+retain saved data and do not restart from display polling. See
+[ADR 0024](../adr/0024-refresh-github-state-on-demand.md).
+The Close-menu context is also a display read
+from the saved snapshot; confirming closure still requires fresh state and the
+existing acceptance checks. Confirmed report publications use the existing scoped
+snapshot refresh for the affected issue; snapshot installation preserves other
+saved issues. `FlowService.storageView` consumes that status
+without repeating the project refresh. Selected-issue evidence loads once and
+can reload on explicit Refresh. Explicit file reads await evidence hydration.
+Selected Classic views reuse hydration for each confirmed snapshot generation. Flow persists
+observed PR changes in the background and shows merged issues read-only immediately.
+Flow actions reuse the fresh admission already performed by the authenticated
+HTTP handler; direct controller callers still perform their own admission.
+The Git record provider reads listing contents with `cat-file --batch` in groups
+of at most 128 records and reuses those raw records across prefixes within a pinned snapshot.
+Later snapshots rediscover the remote revision and read its records independently.
+Selecting another issue forces a display load even while an earlier block check
+is pending. That check retains the action lock and cannot replace another issue's view.
 
 `factory-ui/strategy-publication.mjs` creates new strategy PRs through the App-authenticated
 `StrategyProvider` after independent verification. Workers return the prepared
@@ -770,6 +813,10 @@ The project-wide queue iframe starts when the Issues tab is first opened;
 Request embeds do not start another hidden queue, and investigation routes retain
 the Request inspector inside that embed. Its selected-issue view skips the full
 project index and branch catalog while actions retain their existing checks.
+Saving Your words acknowledges the saved wording and admitted Request attempt
+before clarification finishes. The browser clears its global busy state and
+polls the retained attempt for progress and failure. Direct callers can still
+await the derived Request fields without selecting background completion.
 The [Issues tab
 design](../plans/project-issues.md) records the three-column workspace behavior.
 `project-discuss.mjs` owns independent project conversation persistence,
@@ -865,8 +912,68 @@ writes do not load the application's Vite plugins.
 `shared-issue-config.mjs` owns the metadata path allowlist.
 The [Issue, Coordination, and Artifact store specification](../plans/issue-stores.md)
 and [ADR 0022](../adr/0022-separate-issue-coordination-and-artifact-stores.md)
-describe the accepted future storage roles and shared-provider contracts. Their
-implementation is paused. The following modules describe the existing Git path.
+describe the storage roles and shared-provider contracts.
+[ADR 0023](../adr/0023-select-issue-and-artifact-storage-per-issue.md) defines
+per-issue storage profiles and project storage modes.
+`stores/config.mjs` validates the version-2 registry, named destination pairs,
+project mode, and secret references. Its legacy normalization preserves existing
+destinations without rewriting registry files. `stores/settings.mjs` resolves
+project and folder profile defaults into actual Issue and Artifact store IDs;
+`stores/runtime.mjs` opens providers lazily, imports verified legacy data, follows
+confirmed role migrations, backfills saved Artifact destinations through checked
+activation, and registers canonical report access.
+`stores/project-stores.mjs` owns the catalog, numbers, attempts, claims, logs,
+remote Stop requests, and migrations. Catalog entries retain `storeId` and
+`artifactStoreId`; mutable profile names do not route saved issues.
+Issue-bound artifact routers write to those saved destinations. Provider overflow
+and operation receipts use the project's Coordination artifact store, selected
+by the registry's `artifacts` field. `stores/migrations.mjs` verifies issue records
+and owned artifact copies before switching a complete group's catalog destinations.
+Issue moves preserve immutable proof JSON and do not install global digest
+redirects. Historical physical references remain readable. `stores/providers.mjs` supplies Issue and
+record contracts for files/Git, Postgres, and DynamoDB. `stores/artifacts.mjs`
+supplies files/Git, Postgres, and S3 bytes. `stores/snapshots.mjs` installs
+validated local display projections and preserves report drafts; report writers
+enter `stores/report-access.mjs` for authoritative checks. `stores/evidence.mjs`
+retains and resolves immutable evidence without rewriting hashed proof JSON.
+A view shares its observed folder catalogue and field choices across issue
+settings and folder forms. The next view reads a new snapshot; mutation helpers
+retain fresh discovery. Evidence display metadata is bounded by bytes so large
+issue histories can remain warm without retaining their file bodies.
+Flow and report display reads reuse bounded parsed file generations, returning
+isolated values and observing replacements, edits, and deletions. Evidence-list
+reuse also follows resolver registration changes; evidence actions retain fresh
+integrity checks. Git environment cleanup reuses executable-defined variable
+names while rebuilding and filtering the current environment for every command.
+`stores/providers/records.mjs` keeps overflow decoding within the active read
+snapshot for the exact record provider. Artifact relocation lookups reuse that
+Coordination snapshot across nested Issue snapshots. Ordinary reads and mutations
+retain fresh authority checks, and completed snapshot scopes cannot be reused.
+When the Issue and Coordination roles share a store, ordinary unowned report
+edits publish the report, its history, and the confirmed operation in one checked
+transaction. Catalog, flow, claim, migration, and report revisions guard the write.
+Other publications retain the existing claim and recovery protocol.
+Approval admission requests only its selected issue; the store runtime tracks
+full and selected refresh coverage so a narrow refresh cannot satisfy a broader
+authoritative read. Cold initialization retains a complete display snapshot.
+`stores/coordination.mjs` returns the exact records supplied by confirmed
+operation commits. Opening, updating, and confirming an operation do not reread
+those records over the network; admission reads, revision checks, and recovery
+after an uncertain commit retain their existing authority checks.
+`stores/classic-operation.mjs` admits Classic workers, lifecycle loops, strategy
+jobs, and queued work prompts through the same ownership and journal protocol.
+It acquires every issue claim before grouped work and retains RunStore events
+before display truncation. `stores/classic-snapshot.mjs` projects shared legacy
+history locally, removes foreign transport pointers, and restores committed
+source checkpoints after admission. A storage barrier keeps downstream Classic
+publication and merge waiting when shared confirmation is unavailable.
+`issue-store-ui.js` shares required profile choices, saved-destination readback,
+and checked moves across creation, follow-up, issue settings, destination, and
+bulk controls. `project-settings-ui.js` edits profile names, pairs, retirement,
+and defaults. Project mode is read-only. Retained move operations can resume their
+original pair after a profile edit or retirement. See the
+[setup and migration guide](issue-stores.md).
+The following modules support the legacy Git queue before verified bootstrap.
 `shared-issue-paths.mjs` validates claim documents and their canonical paths.
 `shared-issue-git.mjs` owns private-index commits, App pushes, and claim snapshots. `shared-issue-claims.mjs` stores version 2 claim files
 on the queue branch. Its expected-tip updates preserve unrelated metadata and
@@ -908,8 +1015,12 @@ preview-bound per-issue Start and Archive actions, retaining individual outcomes
 `flow-overnight.mjs` runs the approved folder selection to the Merge confirmation
 and retains the run report. After Request completes, its owning run can adopt
 the clarified route while manual route changes remain blocked. `flow-block-data.mjs` resolves block addresses, declared inputs and
-retained outputs. `flow-request.mjs` derives the Request fields through a
-temporary Codex discussion. `flow-executor.mjs` runs model blocks in their own
+retained outputs. `flow-request.mjs` derives the Request fields through
+`createTextDiscussionRuntime`, which uses an isolated temporary workspace,
+disables shell tools, and supplies context and wording inline. Repository-aware
+discussions retain their separate evidence-reading capability. Failed Request
+attempts retain bounded stage, transport, and item-count diagnostics without
+prompts or provider text. `flow-executor.mjs` runs model blocks in their own
 Codex conversations and uses the protected operation adapters for delivery.
 Command file artifacts select the latest evidence entry with the declared key.
 Merge selects the final delivery log while preserving earlier failed verification
@@ -969,6 +1080,13 @@ discussion to produce the block list. The controller applies the list or
 links an export through the existing revision-checked flow store.
 
 The shared Flow UI owns the card layout, inspector sections, and controls.
+Selecting a block renders its saved details without an automatic mutation
+request. Start and explicit definition updates retain their server-side freshness
+and ownership checks. `flow-observer.mjs` retains PR observations under the local
+store-runtime directory across navigation and restart. Explicit Refresh updates
+only the current view; missing observations can fetch once. Authentication
+sessions in `github-app.mjs` share token caching and in-flight authentication
+across providers with the same project, repository, and credential identity.
 `factory-ui/view-sources.mjs` exposes the catalog's source locations to
 **Inspect UI**, **View index**, and `pnpm run factory ui find`. It also compiles
 the editor's tab labels. See
@@ -988,3 +1106,25 @@ registry when an existing thread resumes, preserving its identity and history
 without changing global Codex configuration. Calls require an active native turn;
 closing the connection closes the adapter. Output blocks retain their separate
 dynamic tool registrations. Loading the application starts no conversation or turn.
+
+## Native coding agents
+
+`factory/system/folder.md` lists the supported Codex, Claude, and Gemini choices.
+`model-settings.mjs` exposes provider metadata through the existing inherited
+settings. `agent-models.mjs` resolves the supported native aliases and keeps
+native session identities distinct from Codex threads.
+
+`issue-chat-runtime.mjs` selects `NativeAgentConnection` for native models and
+retained native sessions. `native-agent.mjs` adapts Claude Code streaming control
+and Gemini CLI ACP into the chat and Flow event interface. `agent-process.mjs`
+owns JSON-line framing, request correlation, and the child process group. Native
+agents retain their own authentication, tools, and session history. The shared
+`chat-tool-mcp.mjs` bridge exposes guarded Timey tools only during an active turn.
+Selected skill content and applicable root project instructions reach each agent;
+ordinary Flow approvals remain attached to the running block and attempt.
+
+`agent-recovery.mjs` retains explicit recovery decisions after the original process
+group ends. Recovery sends no prompt. Project discussion provider changes retain
+the original conversation and supply a handoff with the history location. Existing
+issue execution settings remain frozen after execution starts. Background helpers
+and the explicitly named Sol reviewer retain their Codex execution path.

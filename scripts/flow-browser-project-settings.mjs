@@ -84,6 +84,16 @@ async function checkCreateDefaults({ page, project, observations }) {
   await dialog.getByRole('button', { name: 'Create project defaults', exact: true }).click();
   await dialog.locator('[name="branch"]').waitFor();
   assert.equal(readFolderSettings(project, project).kind, 'project');
+  const model = dialog.locator('[name="model"]');
+  const effort = dialog.locator('[name="effort"]');
+  const previous = await model.inputValue();
+  for (const value of ['anthropic:sonnet', 'anthropic:opus', 'google:pro', 'google:flash']) {
+    await model.selectOption(value);
+    assert.equal(await effort.isVisible(), false, 'Native agents hide the Codex effort control.');
+  }
+  await model.selectOption('gpt-6-luna');
+  assert.equal(await effort.isVisible(), true, 'Codex restores the effort control.');
+  await model.selectOption(previous);
   observations.push({
     check: 'A project without folder.md can create its project defaults from Settings',
     passed: true,

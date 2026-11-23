@@ -1,5 +1,9 @@
 # Codex owns each issue's conversation
 
+[ADR 0025](0025-integrate-native-coding-agents.md) revises the Codex-only ownership
+for Anthropic and Google conversations. Its explicit handoffs preserve the issue
+history while each agent retains its own native session.
+
 Once a conversation is needed, each issue has one native Codex chat for all
 lifecycle roles, human interaction, and retrospectives. Issue conversations follow this ownership decision. The shared queue coordinator
 is a narrow exception: its read-only server-managed conversation selects which eligible issue advances

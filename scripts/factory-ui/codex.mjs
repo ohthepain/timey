@@ -1,3 +1,4 @@
+import { meterCodexTurn } from './codex-diagnostics.mjs';
 import { createChatToolMcp } from './chat-tool-mcp.mjs';
 import { approvalReply } from './approval-options.mjs';
 import { turnFailure } from './turn-failure.mjs';
@@ -7,6 +8,7 @@ import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { cleanEnvironment, requireThat, digest } from './common.mjs';
 import { newChatModelSettings } from './model-settings.mjs';
+import { agentModel } from './agent-models.mjs';
 
 // One local RPC connection. It never starts a thread or turn on construction.
 export class CodexConnection {
@@ -16,15 +18,18 @@ export class CodexConnection {
     onEvent = () => {},
     experimentalApi = false,
     mcpTools,
+    model,
   } = {}) {
     this.command = command;
     this.args = args;
     this.onEvent = onEvent;
     this.experimentalApi = experimentalApi;
     this.mcpTools = mcpTools;
+    this.model = model;
     this.pending = new Map();
     this.requests = new Map();
     this.turns = new Map();
+    this.threadDiagnostics = new Map();
     this.approvalReviewers = new Map();
     this.serial = 0;
     this.phases = [];
@@ -167,8 +172,10 @@ export class CodexConnection {
   }
   turnEvent(message, turn) {
     const params = message.params;
+    turn.meter?.event(message);
     this.captureTurnProgress(message, turn);
     if (message.method !== 'turn/completed') return;
+    turn.meter?.finish(params.turn.status);
     this.phase('finished', 'turn/completed', params.threadId);
     this.turns.delete(params.threadId);
     this.clearRequests(params.threadId);
@@ -193,6 +200,10 @@ export class CodexConnection {
   clearRequests(threadId) {
     for (const [id, request] of this.requests) if (request.params.threadId === threadId) this.requests.delete(id);
   }
+  threadModelSettings(root, issueId) {
+    const settings = newChatModelSettings(root, issueId);
+    return { ...settings, model: this.model || settings.model };
+  }
   async start(
     cwd,
     sandbox = 'workspace-write',
@@ -204,7 +215,11 @@ export class CodexConnection {
   ) {
     await this.ready();
     onStartup({ status: 'starting' });
-    const settings = newChatModelSettings(settingsRoot, issueId);
+    const settings = this.threadModelSettings(settingsRoot, issueId);
+    requireThat(
+      agentModel(settings.model).provider === 'codex',
+      'This workflow requires a Codex model. Use a native-agent chat or ordinary Flow block for Claude and Gemini.'
+    );
     const result = await this.call(
       'thread/start',
       {
@@ -225,13 +240,14 @@ export class CodexConnection {
             'Codex is taking longer to open this chat. Waiting for the original request; no duplicate chat will be created.',
         })
     );
+    this.threadDiagnostics.set(result.thread.id, { issueId, model: result.model ?? settings.model });
     onStartup({ status: 'ready', threadId: result.thread.id });
     this.approvalReviewers.set(result.thread.id, sandbox === 'workspace-write' ? 'auto_review' : 'user');
     return result.thread.id;
   }
   async resume(threadId, cwd, sandbox = 'workspace-write', instructions) {
     await this.ready();
-    await this.call('thread/resume', {
+    const result = await this.call('thread/resume', {
       threadId,
       cwd,
       sandbox,
@@ -241,6 +257,7 @@ export class CodexConnection {
       ...(instructions === undefined ? {} : { developerInstructions: instructions }),
       excludeTurns: true,
     });
+    this.threadDiagnostics.set(threadId, { ...this.threadDiagnostics.get(threadId), model: result?.model });
     this.approvalReviewers.set(threadId, sandbox === 'workspace-write' ? 'auto_review' : 'user');
   }
   async unarchive(threadId) {
@@ -248,6 +265,10 @@ export class CodexConnection {
     await this.call('thread/unarchive', { threadId });
   }
   async turn(threadId, cwd, prompt, outputSchema, extraInput = [], settings = null, receipt = null) {
+    requireThat(
+      !settings || agentModel(settings.model).provider === 'codex',
+      'This workflow requires a Codex model. Use a native-agent chat or ordinary Flow block for Claude and Gemini.'
+    );
     validateTextInput(prompt);
     requireThat(!this.turns.has(threadId), 'This conversation already has running work.');
     let resolve, reject;
@@ -257,7 +278,15 @@ export class CodexConnection {
     });
     completion.catch(() => {}); // The RPC may fail before its completion is awaited.
     // Observe before the RPC reply, including very short turns.
-    const turn = { resolve, reject, text: '', id: null };
+    const meter = meterCodexTurn({
+      cwd,
+      prompt,
+      extraInput,
+      threadId,
+      thread: this.threadDiagnostics.get(threadId),
+      settings,
+    });
+    const turn = { resolve, reject, text: '', id: null, meter };
     this.turns.set(threadId, turn);
     try {
       const request = () =>
@@ -278,6 +307,7 @@ export class CodexConnection {
           break;
         } catch (error) {
           if (!/already has an active writer/i.test(error.message) || attempt >= 9) throw error;
+          meter.retry();
           await new Promise((resolve) => setTimeout(resolve, 500));
         }
       }
@@ -285,6 +315,7 @@ export class CodexConnection {
       receipt?.accepted({ threadId, turnId: started.turn.id });
     } catch (error) {
       this.turns.delete(threadId);
+      meter.finish('dispatch failed');
       reject(error);
     }
     return completion;
@@ -294,7 +325,10 @@ export class CodexConnection {
       clearTimeout(entry.timer);
       entry.reject(error);
     }
-    for (const entry of this.turns.values()) entry.reject(error);
+    for (const entry of this.turns.values()) {
+      entry.meter?.finish('disconnected');
+      entry.reject(error);
+    }
     this.pending.clear();
     this.turns.clear();
     this.requests.clear();

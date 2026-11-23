@@ -1,3 +1,4 @@
+import { restoreSourceCheckpoint } from './stores/source-checkpoints.mjs';
 import { retainMergeRepairEvidence } from './flow-repair-evidence.mjs';
 import { createWorkProgress } from './work-progress.mjs';
 import { executionPermissionInstructions } from './execution-permissions.mjs';
@@ -19,6 +20,7 @@ import {
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createIssueChatConnection, attachIssueChat } from './issue-chat-runtime.mjs';
+import { approvalOptions } from './approval-options.mjs';
 import { conversationState, saveConversationState, appendMessage } from './conversation-store.mjs';
 import { listAvailableSkills, selectedSkills, skillInputs } from './skills.mjs';
 import { readModelSettings } from './model-settings.mjs';
@@ -105,16 +107,17 @@ export function createFlowExecutor(service, options = {}) {
       const forward = () => controller.abort(ctx.signal?.reason);
       ctx.signal?.addEventListener('abort', forward, { once: true });
       if (ctx.signal?.aborted) forward();
-      const owned = { controller, connection: null };
+      const owned = { controller, connection: null, blockId: ctx.block.id, attemptId: ctx.attempt.id };
       active.set(ctx.issue.id, owned);
       const onStep = (text) => ctx.onStep?.(redactValue(String(text)).trim().slice(0, 500));
       const context = {
         ...ctx,
+        evidenceRoot: service.root,
         definition,
         signal: controller.signal,
         onProgress: (text, step = false) => {
           if (step) onStep(text);
-          ctx.onProgress?.(redactValue(String(text)).slice(-2000));
+          ctx.onProgress?.(redactValue(String(text)));
         },
         onStep,
       };
@@ -176,6 +179,30 @@ export function createFlowExecutor(service, options = {}) {
         active.delete(ctx.issue.id);
       }
     },
+    approvals(issueId) {
+      const owned = active.get(issueId);
+      if (!owned?.connection?.selection) return [];
+      return [...owned.connection.requests.values()].map((request) => ({
+        requestId: String(request.id),
+        blockId: owned.blockId,
+        attemptId: owned.attemptId,
+        params: request.params,
+        options:
+          request.method === 'item/tool/requestUserInput'
+            ? []
+            : approvalOptions(request).map(({ id, label, detail }) => ({ id, label, detail })),
+      }));
+    },
+    answer(issueId, blockId, attemptId, requestId, response) {
+      const owned = active.get(issueId);
+      requireThat(
+        owned?.blockId === blockId && owned.attemptId === attemptId && !owned.controller.signal.aborted,
+        'This approval no longer belongs to the running block. Refresh before deciding.'
+      );
+      const request = owned.connection?.requests.get(String(requestId));
+      requireThat(request, 'This permission request is no longer pending.');
+      return owned.connection.answer(requestId, request.params.threadId, response);
+    },
     close() {
       closed = true;
       for (const owned of active.values())
@@ -224,6 +251,59 @@ function assertIdle(service, issueId) {
   );
 }
 
+async function sharedSourceWorkspace(service, ctx, record) {
+  const legacy =
+    service.projectStores && !ctx.flow.sourceCheckpoint
+      ? (await service.projectStores.records.get('classic/' + ctx.issue.id))?.value
+      : null;
+  const checkpoint = ctx.flow.sourceCheckpoint || legacy?.sourceCheckpoint;
+  const unavailable = ctx.flow.sourceUnavailable || legacy?.sourceUnavailable;
+  const sourceRunner = ctx.flow.sourceUnavailableRunnerId || ctx.flow.workspaceRunnerId || legacy?.originRunnerId;
+  let saved = service.projectStores
+    ? ctx.flow.workspace ||
+      legacy?.lifecycle?.work ||
+      legacy?.lifecycle?.chatCheckout ||
+      record.work ||
+      record.chatCheckout
+    : record.work || ctx.flow.workspace || record.chatCheckout;
+  const outside = saved?.checkout && !resolve(saved.checkout).startsWith(join(service.root, '.issues') + sep);
+  const sourceIsLocal = sourceRunner
+    ? sourceRunner === service.projectStores?.runnerId
+    : saved?.checkout === ctx.flow.workspace?.checkout;
+  requireThat(
+    !unavailable || (sourceIsLocal && saved?.checkout && existsSync(saved.checkout) && !outside),
+    'The latest uncommitted source remains on its owning runner. Commit and synchronize it there before continuing on this runner.'
+  );
+  if (
+    service.projectStores &&
+    checkpoint &&
+    ((sourceRunner && sourceRunner !== service.projectStores.runnerId) ||
+      !saved?.checkout ||
+      !existsSync(saved.checkout) ||
+      !resolve(saved.checkout).startsWith(join(service.root, '.issues') + sep))
+  ) {
+    const checkout = join(service.root, '.issues/issue-work', ctx.issue.id + '-' + checkpoint.head.slice(0, 12));
+    const restored = existsSync(checkout)
+      ? { checkout, branch: git(checkout, 'branch', '--show-current'), base: checkpoint.base }
+      : await restoreSourceCheckpoint({
+          checkpoint,
+          artifacts: await service.projectStores.issueArtifacts(ctx.issue.id),
+          projectId: service.projectStores.projectId,
+          checkout,
+          repositoryRoot: service.root,
+          branch: 'codex/checkpoint-' + ctx.issue.id + '-' + checkpoint.head.slice(0, 8),
+        });
+    requireThat(
+      git(checkout, 'rev-parse', 'HEAD') === checkpoint.head &&
+        git(checkout, 'rev-parse', 'HEAD^{tree}') === checkpoint.tree &&
+        !git(checkout, 'status', '--porcelain', '--untracked-files=all'),
+      'The restored checkpoint changed. Reconcile its local edits.'
+    );
+    saved = restored;
+  }
+  return saved;
+}
+
 async function workspaceFor(service, ctx, prepare = true) {
   const record = service.lifecycleRuns[ctx.issue.id] || {
     id: randomUUID(),
@@ -232,7 +312,7 @@ async function workspaceFor(service, ctx, prepare = true) {
     attempts: [],
     retriedRuns: [],
   };
-  const saved = record.work || ctx.flow.workspace || record.chatCheckout;
+  const saved = await sharedSourceWorkspace(service, ctx, record);
   requireThat(prepare || saved?.checkout, 'The issue needs a saved checkout before accepting its result.');
   const workspace = saved?.checkout
     ? { checkout: saved.checkout, branch: saved.branch, base: saved.base }
@@ -291,6 +371,7 @@ async function workspaceFor(service, ctx, prepare = true) {
 export async function manualFlowClosureArtifact(service, issue, flow, options) {
   const ctx = {
     issue,
+    evidenceRoot: service.root,
     flow,
     block: {},
     attempt: { id: randomUUID() },
@@ -763,6 +844,7 @@ async function runModel(service, ctx, owned, options) {
   const source = retainSourceIssueEvidence(service.root, ctx.issue.source_issue, folder, ctx.issue.source_attempt);
   if (source) ctx = { ...ctx, sourceEvidence: source.promptValue };
   const outputPath = join(folder, options.repair ? 'repair-' + options.repair.round + '.txt' : 'output.txt');
+  writeFileSync(outputPath, '', { mode: 0o600 });
   let liveText = '';
   const progress = modelCommandProgress(ctx);
   let rejectInput;
@@ -770,19 +852,26 @@ async function runModel(service, ctx, owned, options) {
     rejectInput = reject;
   });
   inputRequired.catch(() => {});
+  const settings = executionModels(service, ctx);
   const connection = options.create({
+    root: service.root,
+    ...(ctx.block.kind === 'sol' ? {} : settings),
+    threadId: binding.threadId,
     experimentalApi: Boolean(outputExecution),
     onEvent(message) {
+      ctx.onEvent?.(message);
       const params = message.params || {};
       if (message.method === 'item/agentMessage/delta') {
         liveText = (liveText + redactValue(String(params.delta || ''))).slice(-32000);
-        writeFileSync(outputPath, liveText, { mode: 0o600 });
+        appendFileSync(outputPath, redactValue(String(params.delta || '')), { mode: 0o600 });
       }
       if (params.delta) ctx.onProgress(params.delta);
       else if (message.method === 'item/started')
-        ctx.onProgress(params.item?.command || params.item?.type || 'Working');
+        ctx.onProgress(params.item?.command || params.item?.tool || params.item?.type || 'Working');
       progress.event(message.method, params.item);
-      if (message.method === 'ui/approval' || message.method === 'ui/unsupportedRequest') {
+      if (message.method === 'ui/approval' && owned.connection?.selection) {
+        progress.inputRequired();
+      } else if (message.method === 'ui/approval' || message.method === 'ui/unsupportedRequest') {
         progress.inputRequired();
         const error = Error(
           'This block needs provider permission or human input. Its saved request requires attention before continuation.'
@@ -798,7 +887,6 @@ async function runModel(service, ctx, owned, options) {
     await listAvailableSkills(connection, workspace.temporary ? service.root : workspace.checkout),
     ctx.block.skill ? [ctx.block.skill] : []
   );
-  const settings = executionModels(service, ctx);
   let rounds = 1;
   if (ctx.block.kind === 'sol') {
     rounds = ctx.block.iterations;
@@ -810,6 +898,7 @@ async function runModel(service, ctx, owned, options) {
       'No Sol model is available. Install or enable a Sol model before running this block. No substitute was used.'
     );
     settings.model = model.id;
+    connection.model = model.id;
   }
   const retain = (changes) => {
     Object.assign(binding, changes);

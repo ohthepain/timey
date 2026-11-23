@@ -1,3 +1,5 @@
+import { readSnapshot } from './stores/snapshots.mjs';
+import { registeredProjectStores } from './stores/report-access.mjs';
 import { clarificationLifecycle } from './clarify-policy.mjs';
 import { validateAssembledStart } from '../issue-delivery-records.mjs';
 import { readPriorities, priorityView } from './priorities.mjs';
@@ -47,9 +49,19 @@ function relationships(report, ids) {
     related: references(report.content, 'Related(?: issues)?', ids),
   };
 }
+function issueHome(home = {}, issueNumber) {
+  return {
+    issueNumber: home.number ?? issueNumber,
+    storeId: home.storeId,
+    artifactStoreId: home.artifactStoreId,
+  };
+}
 export function readQueue(project, { location = 'open', issueId } = {}) {
   const root = realpathSync(project);
   const inspection = factory(root).inspect({ location, issueId });
+  const snapshot = registeredProjectStores(root) ? readSnapshot(root) : null;
+  const homes = new Map((snapshot?.issues || []).map((issue) => [issue.id, issue]));
+  if (snapshot) inspection.reports = inspection.reports.filter((report) => homes.has(report.metadata.id));
   const priorities = readPriorities(readFileSync(join(root, '.issues/triage-labels.md'), 'utf8'));
   const projected = clarificationLifecycle(root, lifecycle(root));
   const stages = projected.stages,
@@ -66,7 +78,7 @@ export function readQueue(project, { location = 'open', issueId } = {}) {
   const issues = inspection.reports.map((report) => ({
     ...report.metadata,
     reportLocation: location === 'open' ? undefined : location,
-    issueNumber: issueNumbers[report.metadata.id],
+    ...issueHome(homes.get(report.metadata.id), issueNumbers[report.metadata.id]),
     ...(projected.aliases[report.metadata.state]
       ? { state: projected.aliases[report.metadata.state], saved_state: report.metadata.state }
       : {}),

@@ -1,5 +1,9 @@
 # Explicit issue flows
 
+[ADR 0025](0025-integrate-native-coding-agents.md) extends ordinary model-driven
+blocks to native Claude Code and Gemini CLI sessions. The named Sol reviewer
+retains its Codex behavior.
+
 The `number_2` design makes each operation a visible block. The graph is the
 planned route. A person can run one block or use Start and Resume to run the route.
 This addresses the strategy runner's coupling of work, target synchronization,

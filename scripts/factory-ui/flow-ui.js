@@ -41,9 +41,11 @@
     error: '',
     connectionError: '',
     captureId: null,
-    checkedBlock: null,
     toastTimer: null,
+    storeSelection: null,
   };
+  const issueStoreUI = window.createIssueStoreUI({ request: json, post, changed: () => load(true) });
+  const issueOwnershipUI = window.createIssueOwnershipUI({ request: json, post, changed: () => load(true) });
   const kinds = {
     request: { icon: '💬', color: '#aaa49b', description: 'The goal and the evidence that will show it is done.' },
     sharpen: { icon: '◇', color: '#c6b66b', description: 'Refine the request and agree on what to do.' },
@@ -103,7 +105,13 @@
       void load(true);
     },
   });
-  const projectSettingsUI = window.createProjectSettingsUI({ request: json, changed: () => void load(true) });
+  const projectSettingsUI = window.createProjectSettingsUI({
+    request: json,
+    changed: () => {
+      state.storeSelection = null;
+      void load(true);
+    },
+  });
 
   function folderLocation() {
     return state.fileFolder ? { root: state.fileFolder.root, path: state.fileFolder.path } : { folder: state.folder };
@@ -257,7 +265,14 @@
 
   function renderErrors() {
     const waiting = serverControlUI.isWaitingForServer();
-    const message = waiting ? 'Waiting for server…' : state.error || state.connectionError;
+    const storage = state.index?.storeStatus || state.view?.storeStatus;
+    const message = waiting
+      ? 'Waiting for server…'
+      : state.error ||
+        state.connectionError ||
+        (storeUnavailable() && storage?.phase !== 'refreshing'
+          ? 'Shared storage is unavailable. Browse cached history and keep local drafts; shared changes and new runs are paused.'
+          : '');
     if (document.documentElement.dataset.projectIssueRequestEmbed === 'true') {
       $('request-embed-error').hidden = !message;
       view.text($('request-embed-error-message'), message);
@@ -265,7 +280,39 @@
     }
     $('error-banner').hidden = !message;
     view.text($('error-message'), message);
-    $('dismiss-error').hidden = waiting;
+    $('dismiss-error').hidden = waiting || storeUnavailable();
+  }
+
+  function storeUnavailable() {
+    return Boolean((state.index?.storeStatus || state.view?.storeStatus)?.unavailable);
+  }
+
+  function localStoreControl(action) {
+    return state.view?.issue?.localOwner && ['stop', 'pause'].includes(action);
+  }
+
+  function applyStoreAvailability() {
+    if (!storeUnavailable()) return;
+    document
+      .querySelectorAll(
+        '[data-action], [data-add-kind], #capture-submit, #export-flow-submit, #folder-form button[type="submit"], #rename-issue, #move-starting-branch, #starting-branch, #target-update-menu, #merge-state-menu, #issue-input-continue, #run-block, #inspector-body button[type="submit"]'
+      )
+      .forEach((button) => {
+        if (!localStoreControl(button.dataset.action)) button.disabled = true;
+      });
+    document
+      .querySelectorAll(
+        '#issue-flow-picker, #issue-settings-form, #issue-store-form, #rename-issue-form, #issue-grouping, [data-skill-picker]'
+      )
+      .forEach((element) => {
+        element.inert = true;
+      });
+    document.querySelectorAll('#inspector-body input, #inspector-body select').forEach((field) => {
+      field.disabled = true;
+    });
+    $('issue-playback').disabled ||= !localStoreControl(playbackAction(state.view?.flow?.blocks || []));
+    $('worktree-menu').querySelector('option[value="update"]').disabled = true;
+    updateIssueDecisionControls(true);
   }
 
   function toast(message) {
@@ -363,7 +410,7 @@
 
   async function load(force = false, announce = false) {
     if (serverControlUI.isWaitingForServer()) return;
-    if (state.pending || (state.loading && !force)) {
+    if (!force && (state.pending || state.loading)) {
       if (announce) toast('Wait for the current action before refreshing.');
       return;
     }
@@ -376,6 +423,7 @@
     try {
       const query = new URLSearchParams();
       if (selected) query.set('issue', selected);
+      if (announce) query.set('refresh', 'true');
       if (document.documentElement.dataset.projectIssueRequestEmbed === 'true') query.set('view', 'request');
       const params = query.toString();
       const result = await json(`/api/flow${params ? `?${params}` : ''}`, {
@@ -384,10 +432,19 @@
       if (sequence !== state.sequence || selected !== state.issueId || serverControlUI.isWaitingForServer()) return;
       state.connectionError = '';
       $('connection-status').className = 'connection';
-      $('connection-status').innerHTML = '<span class="connection-dot"></span> Live · 2s';
+      $('connection-status').innerHTML = '<span class="connection-dot"></span> Local updates · GitHub on demand';
+      $('connection-status').title = result.storeStatus?.checkedAt
+        ? `Shared data last checked ${date(result.storeStatus.checkedAt)}`
+        : 'Remote data refreshes on demand.';
       if (announce) state.error = '';
       applyView(result);
-      if (announce) toast('Saved flow refreshed.');
+      void refreshIssueStore();
+      if (announce)
+        toast(
+          result.environment?.remoteError || result.sharedQueueWarning
+            ? 'Refresh incomplete. Last saved values retained.'
+            : 'Current view refreshed.'
+        );
     } catch (error) {
       if (error.name === 'AbortError' || sequence !== state.sequence || serverControlUI.isWaitingForServer()) return;
       state.connectionError = `Unable to refresh. ${error.message} The last saved view remains visible.`;
@@ -397,7 +454,6 @@
     } finally {
       if (sequence === state.sequence) {
         state.loading = false;
-        void checkOpenBlock();
       }
     }
   }
@@ -422,6 +478,10 @@
 
   async function action(name, fields = {}, options = {}) {
     if (state.pending) return null;
+    if (storeUnavailable() && !localStoreControl(name)) {
+      renderErrors();
+      return null;
+    }
     if (!options.global && state.view?.issue?.readOnly && !state.view.issue.readOnlyActions.includes(name)) {
       showError(state.view.issue.readOnlyReason);
       return null;
@@ -520,11 +580,9 @@
     const inputBlock = state.view?.flow?.blocks.find((block) => block.id === state.view.humanInput?.blockId);
     $('issue-input-continue').disabled =
       busy ||
-      state.newActionsPaused ||
-      attached ||
       !inputBlock ||
-      operationPaused(inputBlock) ||
-      state.view.flow.blocks.some(isRunning);
+      (state.view?.humanInput?.kind !== 'agent' &&
+        (state.newActionsPaused || attached || operationPaused(inputBlock) || state.view.flow.blocks.some(isRunning)));
     updatePlaybackAvailability(busy);
     $('close-publish').disabled = busy;
     $('move-starting-branch').disabled = busy || frozen;
@@ -537,6 +595,8 @@
     $('worktree-menu').disabled = busy || state.view?.environment?.worktreeExists !== true;
     $('merge-state-menu').disabled = busy || frozen || Boolean(state.view?.flow?.blocks.some(isRunning));
     updateIssueDecisionControls(busy);
+    $('issue-store-form').inert = busy;
+    applyStoreAvailability();
   }
 
   function updateIssueDecisionControls(busy) {
@@ -1018,6 +1078,7 @@
       return;
     }
     $('issue-settings').hidden = false;
+    issueOwnershipUI.render(view.issue, view.storeStatus?.unavailable).catch((error) => showError(error.message));
     const fields = settings.fields || [];
     const values = settings.values || {};
     $('issue-settings-form').querySelector('button[type="submit"]').disabled = Boolean(settings.frozen);
@@ -1040,6 +1101,7 @@
         )
         .join('')
     );
+    window.factoryAgentOptions($('issue-settings-fields'));
   }
 
   function renderFolderWorkspace() {
@@ -1307,9 +1369,13 @@
     renderTargetUpdate(environment);
     if (environment.ahead > 0) chips.push(`<span class="environment-chip">↑ ${escape(environment.ahead)} ahead</span>`);
     renderPullRequest(state.view.destination?.pr);
+    if (environment.remoteObservedAt)
+      chips.push(
+        `<span class="environment-chip" title="Saved GitHub observation. Use Refresh to check again.">GitHub checked ${escape(date(environment.remoteObservedAt))}</span>`
+      );
     if (environment.error || environment.remoteError)
       chips.push(
-        `<span class="environment-chip warning" title="${escape(environment.error || environment.remoteError)}">Environment check incomplete</span>`
+        `<span class="environment-chip warning" title="${escape(environment.error || environment.remoteError)}">Check failed · Refresh to retry</span>`
       );
     $('environment-status').innerHTML = chips.join('');
     $('environment').title = environment.observedAt ? `Git observed ${date(environment.observedAt)}` : '';
@@ -1413,6 +1479,12 @@
   async function loadDestinationBranches() {
     const dialog = $('destination-dialog');
     const result = await action('destination-branches');
+    const store = await issueStoreUI.fill($('destination-issue-store'), {
+      issueId: state.issueId,
+    });
+    $('destination-issue-store').dataset.saved = store.selected;
+    $('destination-issue-store').required = false;
+    $('destination-store-source').textContent = issueStoreUI.savedLabel(store);
     if (!dialog.open) return;
     if (result) destinationChecks.set(state.issueId, result);
     renderGraph();
@@ -1931,23 +2003,6 @@
     return `<div class="block-actions definition-actions"><button class="small-button" type="button" data-action="refresh-definition" aria-label="Refresh block definition" title="Refresh block definition">🪄</button>${path?.bundled || path?.override ? `<details class="block-markdown-menu" data-preserve="block-markdown-menu"><summary class="small-button">Markdown</summary><div class="issue-flow-options"><button class="small-button" type="button" data-action="reveal-definition">Reveal Markdown in Finder</button><button class="small-button" type="button" data-action="open-block-extension">${path.extension ? 'Open extension' : 'Create extension'}</button></div></details>` : ''}</div>`;
   }
 
-  async function checkOpenBlock(force = false) {
-    const block = activeBlock();
-    if (serverControlUI.isWaitingForServer()) return;
-    if (!block || block.readOnly || state.pending || state.tab !== 'details' || state.view.flow.request) return;
-    const key = state.issueId + ':' + block.id;
-    if (key === state.checkedBlock && !force) return;
-    state.checkedBlock = key;
-    const result = await action('open-block', { blockId: block.id });
-    if (!result?.details || activeBlock() !== block) return;
-    if (result.revision < state.view.flow.revision) return;
-    state.view.flow.revision = result.revision;
-    if (JSON.stringify(block.details) !== JSON.stringify(result.details)) {
-      block.details = result.details;
-      renderInspector();
-    }
-  }
-
   function retiredHistory() {
     const blocks = (state.view.flow.retiredBlocks || []).filter((block) => block.attempts.length);
     if (!blocks.length) return '';
@@ -2105,6 +2160,25 @@
     const ids = block.historicalCompletion.issueIds || [];
     return `<p class="detail-copy">Completed by an earlier investigation run.</p><ul>${ids.map(historicalIssueLink).join('')}</ul>`;
   }
+  const agentQuestionDrafts = new Map();
+  const questionDraftKey = (request, id) => `${state.issueId}/${request.attemptId}/${request.requestId}/${id}`;
+  document.addEventListener('input', (event) => {
+    if (event.target.dataset.agentQuestionKey)
+      agentQuestionDrafts.set(event.target.dataset.agentQuestionKey, event.target.value);
+  });
+  function agentApprovalCard(request) {
+    const questions = request.params.questions || [];
+    const content = questions.length
+      ? questions
+          .map((question) => {
+            const key = questionDraftKey(request, question.id);
+            const options = (question.options || []).map(({ label }) => label).join(', ');
+            return `<label class="field">${escape(question.question)}<input data-agent-question="${escape(question.id)}" data-agent-question-key="${escape(key)}" value="${escape(agentQuestionDrafts.get(key) || '')}" placeholder="${escape(options)}" /><small>You can also enter your own answer.</small></label>`;
+          })
+          .join('') + '<button class="small-button" data-action="agent-answer">Send answers</button>'
+      : `<pre class="attempt-output">${escape(request.params.command)}\n${escape(request.params.reason)}</pre>${request.options.map((option) => `<button class="small-button" data-action="agent-answer" data-decision="${escape(option.id)}">${escape(option.label)}</button>`).join('')}`;
+    return `<section class="detail-section" data-agent-approval="${escape(request.requestId)}" data-attempt-id="${escape(request.attemptId)}"><p>Agent input required</p>${content}</section>`;
+  }
   function blockProgress(block, last, attempts, published) {
     if (last) return attemptCard(last, attempts.length - 1);
     if (block.historicallyCompleted) return historicalOutputProgress(block);
@@ -2123,6 +2197,7 @@
     const last = latest(block);
     const previousAttempts = last ? attempts.slice(0, -1) : attempts;
     const published = attempts.at(-1)?.supersededByPR;
+    const permissions = (state.view.agentApprovals || []).filter((request) => request.blockId === block.id);
     const progress = blockProgress(block, last, attempts, published);
     const running = isRunning(block);
     if (['retro', 'cleanup'].includes(block.kind))
@@ -2135,7 +2210,11 @@
       notes: comments(block),
     };
     return (
-      investigationActions(block) + definitionActions(block) + Object.values(sections).join('') + contentSection(block)
+      permissions.map(agentApprovalCard).join('') +
+      investigationActions(block) +
+      definitionActions(block) +
+      Object.values(sections).join('') +
+      contentSection(block)
     );
   }
 
@@ -2299,6 +2378,7 @@
     $('issue-results').classList.toggle('needs-input', Boolean(input));
     $('issue-results-message').textContent = result;
     $('issue-input-actions').hidden = !input;
+    $('issue-input-continue').textContent = input?.kind === 'agent' ? 'Open request' : 'Continue';
     const url = safeUrl(input?.url);
     $('issue-input-link').hidden = !url;
     $('issue-input-link').href = url || '';
@@ -2481,8 +2561,9 @@
     path.textContent = path.dataset.directory + '/' + ($('export-flow-id').value || 'flow-name') + '.md';
   }
 
-  function openCapture(folder) {
+  async function openCapture(folder) {
     state.captureNote = null;
+    if (!state.index.folders.length) await load(true);
     const selected =
       typeof folder === 'string'
         ? folder
@@ -2499,8 +2580,67 @@
     $('capture-error').textContent = !selected ? state.index.defaultFolderError || '' : '';
     $('capture-error').hidden = !$('capture-error').textContent;
     $('capture-dialog').showModal();
+    void loadCaptureStore();
     if (!$('capture-folder').value) $('capture-folder').focus();
     else $('capture-description').focus();
+  }
+
+  async function loadCaptureStore() {
+    const submit = $('capture-submit');
+    submit.disabled = true;
+    try {
+      await issueStoreUI.fill($('capture-issue-store'), { folder: $('capture-folder').value });
+      submit.disabled = !$('capture-issue-store').value;
+    } catch (error) {
+      $('capture-error').textContent = error.message;
+      $('capture-error').hidden = false;
+    }
+  }
+
+  async function refreshIssueStore(force = false) {
+    const id = state.issueId;
+    if (!id || (!force && state.storeSelection === id)) return;
+    state.storeSelection = id;
+    try {
+      const data = await issueStoreUI.fill($('issue-store'), { issueId: id });
+      if (id !== state.issueId) return;
+      $('issue-store').dataset.saved = data.selected;
+      $('issue-store-source').textContent = issueStoreUI.savedLabel(data);
+      const pendingMove = data.pendingMigrations?.find(
+        (item) => item.kind === 'move-issue' && item.issueIds.includes(id)
+      );
+      $('resume-issue-store').hidden = !pendingMove;
+      $('resume-issue-store').dataset.operation = pendingMove?.operationId || '';
+      $('move-issue-store').disabled = true;
+    } catch (error) {
+      state.storeSelection = null;
+      $('issue-store-error').textContent = error.message;
+      $('issue-store-error').hidden = false;
+    }
+  }
+
+  async function moveIssueStore(storeId) {
+    const options = await issueStoreUI.read({ issueId: state.issueId, migrationStorageProfile: storeId });
+    const issueIds = options.moveGroup?.issueIds || [state.issueId];
+    const subject =
+      issueIds.length > 1
+        ? options.moveGroup?.masterId
+          ? `the master issue and its ${issueIds.length - 1} attached sub-issues (${issueIds.length} issues)`
+          : `${issueIds.length} issues in the pending storage move`
+        : 'this issue';
+    const storeName = (id) => options.stores.find((store) => store.id === id)?.label || id;
+    const target = options.targetStorage;
+    if (!target) throw Error('Choose a valid Issue storage profile.');
+    if (
+      !confirm(
+        `Move ${subject}? Issue records: ${storeName(target.storeId)}. Artifacts: ${storeName(target.artifactStoreId)}. Existing history and references are retained.`
+      )
+    )
+      return false;
+    await issueStoreUI.move(state.issueId, storeId, { issueIds, expectedStorage: target });
+    await refreshIssueStore(true);
+    toast('Issue storage profile move confirmed.');
+    return true;
   }
 
   function openPalette() {
@@ -2538,11 +2678,12 @@
     const values = new FormData(event.target);
     const wording = String(values.get('wording') || '');
     toast('Clarifying the request…');
-    const result = await action('request', { wording });
+    const result = await action('request', { wording, background: true });
     if (!result) return;
     state.drafts.delete(key);
     persistDrafts();
     renderInspector();
+    if (result.accepted) await load(true);
   }
 
   function blockSkillChanges(values, promptMode) {
@@ -2720,6 +2861,15 @@
   }
 
   async function startBlock(name, block) {
+    const nativeRecovery =
+      name === 'continue' && /^(anthropic|google):/.test(state.view.issueSettings?.values?.model || '');
+    if (
+      nativeRecovery &&
+      !confirm(
+        'Inspect completed file changes, command results, and retained output before continuing. Confirm that you reviewed the partial work and the original agent has stopped.'
+      )
+    )
+      return;
     const unsaved = Object.keys(draft()).filter((key) => !['comment', 'newEdit'].includes(key));
     if (unsaved.length) {
       showError('Save your block settings before starting. Your draft is still here.');
@@ -2742,6 +2892,7 @@
     }
     const result = await action(block.kind === 'request' ? 'run-request' : name, {
       blockId: block.id,
+      confirmedAgentRecovery: nativeRecovery,
       ...investigationRunInput(block),
       ...(confirmed ? { confirmed: true } : {}),
       ...(approval ? { mergeToken: approval.token } : {}),
@@ -2770,6 +2921,21 @@
     const block = activeBlock();
     if (!block) return;
     const name = button.dataset.action;
+    if (name === 'agent-answer') {
+      const card = button.closest('[data-agent-approval]');
+      const inputs = [...card.querySelectorAll('[data-agent-question]')];
+      const response = inputs.length
+        ? { answers: Object.fromEntries(inputs.map((input) => [input.dataset.agentQuestion, input.value])) }
+        : { decision: button.dataset.decision };
+      const result = await action(name, {
+        blockId: block.id,
+        requestId: card.dataset.agentApproval,
+        attemptId: card.dataset.attemptId,
+        response,
+      });
+      if (result) for (const input of inputs) agentQuestionDrafts.delete(input.dataset.agentQuestionKey);
+      return result;
+    }
     if (['start', 'continue'].includes(name)) return startBlock(name, block);
     if (['refresh-definition', 'open-block-extension', 'reveal-definition'].includes(name)) {
       await action(name, { blockId: block.id });
@@ -3067,13 +3233,11 @@
       renderGraph();
       renderInspector();
       setBusy(state.pending);
-      void checkOpenBlock(true);
       return;
     }
     if (button.dataset.tab) {
       state.tab = button.dataset.tab;
       renderInspector();
-      void checkOpenBlock(true);
       return;
     }
     if (button.dataset.closeDialog) return $(button.dataset.closeDialog).close();
@@ -3350,6 +3514,15 @@
       if (event.submitter?.id !== 'save-destination') return;
       event.preventDefault();
       const branch = $('destination-branch').value || null;
+      const storeId = $('destination-issue-store').value;
+      if (storeId && storeId !== $('destination-issue-store').dataset.saved) {
+        try {
+          if (!(await moveIssueStore(storeId))) return;
+        } catch (error) {
+          $('destination-message').textContent = error.message;
+          return;
+        }
+      }
       if (await action('destination', { branch })) $('destination-dialog').close();
       else await loadDestinationBranches();
     });
@@ -3559,10 +3732,19 @@
     const block = state.view?.flow.blocks.find((block) => block.id === state.view.humanInput?.blockId);
     if (!block) return;
     state.blockId = block.id;
+    if (state.view.humanInput.kind === 'agent') {
+      state.tab = 'details';
+      render();
+      return;
+    }
     render();
     void startBlock('continue', block);
   });
   $('refresh').addEventListener('click', () => {
+    if (projectHome.isVisible()) {
+      void projectHome.refresh(true);
+      return;
+    }
     void load(true, true);
     if (state.folder || state.fileFolder)
       void folderSettingsUI.refresh().catch((failure) => showError(failure.message));
@@ -3583,10 +3765,45 @@
     $('folder-name').focus();
   });
 
+  $('capture-folder').addEventListener('change', () => void loadCaptureStore());
+  $('resume-issue-store').addEventListener('click', async () => {
+    if (state.pending) return;
+    $('issue-store-error').hidden = true;
+    try {
+      $('issue-store-form').inert = true;
+      await issueStoreUI.resumeMove(state.issueId, $('resume-issue-store').dataset.operation);
+      await refreshIssueStore(true);
+      toast('Issue storage move confirmed.');
+    } catch (error) {
+      $('issue-store-error').textContent = error.message;
+      $('issue-store-error').hidden = false;
+    } finally {
+      $('issue-store-form').inert = false;
+    }
+  });
+  $('issue-store').addEventListener('change', () => {
+    $('move-issue-store').disabled =
+      !$('issue-store').value || $('issue-store').value === $('issue-store').dataset.saved;
+  });
+  $('issue-store-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (state.pending || !$('issue-store').value) return;
+    $('issue-store-error').hidden = true;
+    try {
+      $('issue-store-form').inert = true;
+      await moveIssueStore($('issue-store').value);
+    } catch (error) {
+      $('issue-store-error').textContent = error.message;
+      $('issue-store-error').hidden = false;
+    } finally {
+      $('issue-store-form').inert = false;
+    }
+  });
+
   $('capture-form').addEventListener('submit', async (event) => {
     event.preventDefault();
     const description = $('capture-description').value.trim();
-    if (!description || !$('capture-folder').value || state.pending) return;
+    if (!description || !$('capture-folder').value || !$('capture-issue-store').value || state.pending) return;
     state.captureId ||= crypto.randomUUID();
     $('capture-error').hidden = true;
     const result = await action(
@@ -3596,6 +3813,7 @@
         description,
         type: $('capture-type').value,
         folder: $('capture-folder').value,
+        storageProfile: $('capture-issue-store').value,
         needsApproval: $('capture-needs-approval').checked,
         runRetro: $('capture-retro').checked,
       },

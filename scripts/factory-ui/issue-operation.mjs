@@ -1,6 +1,7 @@
 import { flowOwnsIssue } from './flow-ownership.mjs';
 import { requireIndependentIssue } from './issue-group.mjs';
 import { requireThat } from './common.mjs';
+import { classicBarrier } from './stores/classic-operation.mjs';
 
 const leased = new WeakMap();
 
@@ -15,6 +16,7 @@ export async function factoryBoundary(service, issueId) {
 }
 
 export async function factoryOperation(service, issueId, operation, perform) {
+  await classicBarrier(service, issueId);
   requireIndependentIssue(service.root, issueId);
   requireThat(
     !flowOwnsIssue(service, issueId),

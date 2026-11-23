@@ -6,6 +6,7 @@ import test from 'node:test';
 import { CodexConnection } from './factory-ui/codex.mjs';
 import {
   newChatModelSettings,
+  codexHelperModelSettings,
   readIssueModelSettings,
   readModelSettings,
   saveDefaultModelSettings,
@@ -22,16 +23,53 @@ function project(t) {
   return { root, service };
 }
 
-test('model settings default to GPT-6 Luna and medium and expose the four requested models and efforts', (t) => {
+test('model settings retain Codex defaults and expose the supported native agent models', (t) => {
   const { root } = project(t);
   const settings = readModelSettings(root);
   assert.deepEqual(settings.defaults, { model: 'gpt-6-luna', effort: 'medium' });
   assert.deepEqual(
     settings.models.map(({ id }) => id),
-    ['gpt-6-luna', 'gpt-6.1-sol', 'gpt-6.1-terra', 'gpt-6-astra']
+    [
+      'gpt-6-luna',
+      'gpt-6.1-sol',
+      'gpt-6.1-terra',
+      'gpt-6-astra',
+      'anthropic:sonnet',
+      'anthropic:opus',
+      'google:pro',
+      'google:flash',
+    ]
   );
   assert.deepEqual(settings.efforts, ['low', 'medium', 'high', 'max']);
   assert.ok(settings.models.every(({ description }) => description.length > 0));
+  assert.ok(
+    settings.models.filter(({ provider }) => provider !== 'codex').every(({ supportsEffort }) => !supportsEffort)
+  );
+});
+
+test('native model defaults and issue overrides use existing inheritance', (t) => {
+  const { root, service } = project(t);
+  saveDefaultModelSettings(service, { model: 'anthropic:sonnet', effort: 'medium' });
+  assert.equal(newChatModelSettings(root, 'issue-one').model, 'anthropic:sonnet');
+  assert.deepEqual(codexHelperModelSettings(root), { model: 'gpt-6-luna', effort: 'medium' });
+  saveIssueModelSettings(service, { issueId: 'issue-one', model: 'google:flash', effort: '' });
+  assert.equal(newChatModelSettings(root, 'issue-one').model, 'google:flash');
+  saveIssueModelSettings(service, { issueId: 'issue-one', model: '', effort: '' });
+  assert.equal(newChatModelSettings(root, 'issue-one').model, 'anthropic:sonnet');
+});
+
+test('the named Codex reviewer opens with its explicit model when project defaults use another agent', async (t) => {
+  const { root, service } = project(t);
+  saveDefaultModelSettings(service, { model: 'google:pro', effort: 'medium' });
+  const connection = new CodexConnection({ model: 'gpt-6.1-sol' });
+  connection.ready = async () => {};
+  const calls = [];
+  connection.call = async (method, params) => {
+    calls.push({ method, params });
+    return { thread: { id: 'reviewer' } };
+  };
+  await connection.start(root);
+  assert.equal(calls[0].params.model, 'gpt-6.1-sol');
 });
 
 test('project model defaults are saved in root folder.md while preserving factory configuration', (t) => {

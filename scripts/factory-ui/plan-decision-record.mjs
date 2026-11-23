@@ -2,6 +2,7 @@ import { saveChecklistRecord } from '../factory-checks.mjs';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { requireThat } from './common.mjs';
+import { afterReportWrite } from './stores/report-access.mjs';
 
 export function requireIdlePlanDecision(service) {
   requireThat(!service.store.connected.size, 'Wait for the current action to finish.');
@@ -13,7 +14,17 @@ export function requireIdlePlanDecision(service) {
 }
 export function savePlanDecision(service, issue, run, result, evidence = []) {
   try {
-    recordPlanResult(service, issue, run, result, evidence);
+    return afterReportWrite(recordPlanResult(service, issue, run, result, evidence), (value) => value, {
+      onFailure: (error) => {
+        service.store.update(run, {
+          issueId: issue.id,
+          issueState: issue.state,
+          status: 'blocked',
+          summary: error.message,
+        });
+        throw error;
+      },
+    });
   } catch (error) {
     service.store.update(run, {
       issueId: issue.id,
@@ -26,13 +37,15 @@ export function savePlanDecision(service, issue, run, result, evidence = []) {
 }
 function recordPlanResult(service, issue, run, result, evidence) {
   const receipt = saveChecklistRecord(service.root, issue, run, result, evidence);
-  service.store.update(run, {
-    issueId: issue.id,
-    issueState: issue.state,
-    status: 'completed',
-    summary: result.summary,
-    result: result.plan_verification,
-    afterBasis: receipt.afterBasis,
+  return afterReportWrite(receipt, (receipt) => {
+    service.store.update(run, {
+      issueId: issue.id,
+      issueState: issue.state,
+      status: 'completed',
+      summary: result.summary,
+      result: result.plan_verification,
+      afterBasis: receipt.afterBasis,
+    });
   });
 }
 

@@ -3,6 +3,7 @@ import { progressBasis, progressIssue } from './next-action.mjs';
 import { checklistView } from './plan-checks.mjs';
 import { requireIdlePlanDecision, savePlanDecision, remainingPlanChecks } from './plan-decision-record.mjs';
 import { requireThat } from './common.mjs';
+import { afterReportWrite } from './stores/report-access.mjs';
 
 export function skipPlanChecks(service, input) {
   service.ownServer();
@@ -68,14 +69,18 @@ function recordSkips(service, queue, issue, record, selected, reason) {
   record.run_id = run.id;
   const summary = `${count} implementation check${count === 1 ? '' : 's'} skipped by the user.`;
   try {
-    savePlanDecision(service, issue, run, {
-      summary,
-      notes: reason + '\n\nChecks skipped:\n' + selected.map((c) => '- ' + c.name).join('\n'),
-      remaining: remainingPlanChecks(record),
-      plan_verification: record,
-    });
-  } finally {
+    return afterReportWrite(
+      savePlanDecision(service, issue, run, {
+        summary,
+        notes: reason + '\n\nChecks skipped:\n' + selected.map((c) => '- ' + c.name).join('\n'),
+        remaining: remainingPlanChecks(record),
+        plan_verification: record,
+      }),
+      () => ({ skipped: count }),
+      { onSettled: () => service.store.connected.delete(run.id) }
+    );
+  } catch (error) {
     service.store.connected.delete(run.id);
+    throw error;
   }
-  return { skipped: count };
 }

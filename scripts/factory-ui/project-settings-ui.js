@@ -49,8 +49,12 @@
         headers: { 'Content-Type': 'application/json', 'X-Factory-Action': 'manual' },
         body: JSON.stringify(value),
       });
+    const issueStoreUI = window.createIssueStoreUI({ request });
     const form = () => content.querySelector('[data-settings-form]');
-    const values = () => (form() ? Object.fromEntries(new FormData(form())) : {});
+    const values = () =>
+      Object.fromEntries(
+        [...content.querySelectorAll('[data-settings-form]')].flatMap((element) => [...new FormData(element)])
+      );
     const snapshot = () => JSON.stringify([values(), [...resetPrompts]]);
     const dirty = () => baseline !== snapshot();
     function showError(message = '') {
@@ -80,7 +84,9 @@
       if (data.kind === 'plain')
         return '<p>No project folder.md exists yet.</p><button type="button" data-settings-create>Create project defaults</button>';
       return `<p>Project defaults are inherited by folders and issues unless overridden.</p><form data-settings-form><div class="folder-settings-fields">${data.fields
-        .filter(({ key }) => ['branch', 'skill', 'model', 'effort', 'selection_strategy'].includes(key))
+        .filter(({ key }) =>
+          ['storage_profile', 'branch', 'skill', 'model', 'effort', 'selection_strategy'].includes(key)
+        )
         .map((field) => window.factorySettingField(field, data.settings[field.key], 'settings'))
         .join('')}</div>${source(data.path || 'folder.md')}${saveButton}</form>`;
     }
@@ -114,6 +120,220 @@
         )
         .join('')}</div><a href="/?projectTab=admin" data-settings-admin>Open Admin</a>`;
     }
+    function storeField(store, key, label) {
+      const readonly = key === 'schema' || (key !== 'label' && !store.unsaved);
+      return `<label class="field">${esc(label)}<input name="store:${esc(store.id)}:${key}" value="${esc(store[key] || '')}"${readonly ? ' readonly' : ''} /></label>`;
+    }
+    function configuredStore(store) {
+      const fields = {
+        postgres: [['schema', 'Schema']],
+        dynamodb: [
+          ['table', 'Table'],
+          ['region', 'Region'],
+        ],
+        s3: [
+          ['bucket', 'Bucket override'],
+          ['region', 'Region override'],
+          ['prefix', 'Prefix'],
+        ],
+        git: [
+          ['remote', 'Remote'],
+          ['branch', 'Queue branch'],
+        ],
+        files: [],
+      }[store.kind];
+      return `<fieldset><legend>${esc(store.label)} · ${esc(store.kind)}</legend>${storeField(store, 'label', 'Name')}${fields.map(([key, label]) => storeField(store, key, label)).join('')}${store.references ? references(store) : '<p>Connection references are checked after saving.</p>'}<button type="button" class="small-button" data-store-test="${esc(store.id)}"${store.unsaved ? ' disabled' : ''}>Test store connection</button><p data-store-result="${esc(store.id)}" role="status"></p></fieldset>`;
+    }
+    function storeOptions(role, selected) {
+      const registry = data.storeRegistry;
+      return registry.stores
+        .filter(
+          (store) =>
+            store.roles.includes(role) && (registry.mode === 'local' ? store.kind === 'files' : store.kind !== 'files')
+        )
+        .map(
+          (store) =>
+            `<option value="${esc(store.id)}"${store.id === selected ? ' selected' : ''}>${esc(store.label)} · ${esc(store.kind === 'files' ? 'Local files' : store.kind)}</option>`
+        )
+        .join('');
+    }
+    function roleChoice(role, label, selected) {
+      const key = role === 'artifact' ? 'artifacts' : role;
+      return `<label class="field">${label}<select name="role:${key}" required><option value="">Choose a store</option>${storeOptions(role, selected)}</select></label>`;
+    }
+    function configuredProfile(profile) {
+      return `<fieldset data-storage-profile="${esc(profile.id)}"><legend>${esc(profile.label)}</legend><label class="field">Profile name<input name="profile:${esc(profile.id)}:label" value="${esc(profile.label)}" required maxlength="100" /></label><label class="field">Issue store<select name="profile:${esc(profile.id)}:issueStore" required><option value="">Choose a store</option>${storeOptions('issue', profile.issueStore)}</select></label><label class="field">Artifact store<select name="profile:${esc(profile.id)}:artifactStore" required><option value="">Choose a store</option>${storeOptions('artifact', profile.artifactStore)}</select></label><label class="field">Available for new selections<select name="profile:${esc(profile.id)}:retired"><option value="false"${profile.retired ? '' : ' selected'}>Available</option><option value="true"${profile.retired ? ' selected' : ''}>Retired</option></select></label></fieldset>`;
+    }
+    function renderStoreSettings() {
+      const registry = data.storeRegistry;
+      if (!registry) return '<p>Store configuration is unavailable.</p>';
+      const kinds = registry.mode === 'local' ? ['files'] : ['git', 'postgres', 'dynamodb', 's3'];
+      return `<h3>Project storage</h3><p>Profiles select Issue and Artifact destinations for new issues. Existing issues keep their saved destinations. Changing project Coordination storage performs a checked migration.</p>${pendingDeletions(registry)}<form data-settings-form data-store-settings><p>Project storage mode · ${registry.mode === 'local' ? 'Local' : 'Remote'}</p><p>Changing modes requires preparing a compatible project configuration before startup.</p>${roleChoice('coordination', 'Coordination store', registry.coordination)}${roleChoice('artifact', 'Coordination artifact store', registry.artifacts)}<h3>Issue storage profiles</h3><label class="field">Project profile default<select name="profileDefault" required><option value="">Choose a profile</option>${registry.profiles
+        .filter((profile) => !profile.retired)
+        .map(
+          (profile) =>
+            `<option value="${esc(profile.id)}"${profile.id === registry.profileDefault ? ' selected' : ''}>${esc(profile.label)}</option>`
+        )
+        .join(
+          ''
+        )}</select></label><p>Folders can override the profile default on the Issues page. Editing or retiring a profile never moves existing issues.</p>${registry.profiles.map(configuredProfile).join('')}<button type="button" class="small-button" data-profile-add>Add profile</button><h3>Configured destinations</h3><p>To change an existing connection, add a destination and perform a checked move.</p>${registry.stores.map(configuredStore).join('')}<label class="field">Add a configured store<select data-store-kind>${kinds.map((kind) => `<option value="add-${kind}">${kind === 'files' ? 'Local files' : kind}</option>`).join('')}</select></label><button type="button" class="small-button" data-store-add>Add store</button>${saveButton}</form>`;
+    }
+    function pendingDeletions(registry) {
+      return (registry.pendingDeletions || [])
+        .map(
+          ({ operationId }) =>
+            `<section data-pending-deletion><p>Issue deletion needs to finish. Shared changes wait until cleanup completes.</p><button type="button" class="small-button" data-store-resume-delete="${esc(operationId)}"${registry.unavailable ? ' disabled' : ''}>Resume deletion</button></section>`
+        )
+        .join('');
+    }
+    function addedStore(kind) {
+      const roles =
+        kind === 's3'
+          ? ['artifact']
+          : kind === 'dynamodb'
+            ? ['issue', 'coordination']
+            : ['issue', 'coordination', 'artifact'];
+      return {
+        id: 'store-' + crypto.randomUUID(),
+        label: 'New ' + kind + ' store',
+        kind,
+        roles,
+        unsaved: true,
+        ...(kind === 'postgres' && {
+          schema: 'factory',
+          urlEnv: 'FACTORY_ISSUES_DB_URL',
+          userEnv: 'FACTORY_DB_USER',
+          passwordEnv: 'FACTORY_DB_PASSWORD',
+        }),
+        ...(kind === 'dynamodb' && { table: '', regionEnv: 'AWS_REGION' }),
+        ...(kind === 's3' && { bucketEnv: 'FACTORY_ARTIFACTS_BUCKET', regionEnv: 'FACTORY_ARTIFACTS_BUCKET_REGION' }),
+        ...(kind === 'git' && { remote: 'origin', branch: 'issue-queue' }),
+      };
+    }
+    function addStore() {
+      const original = baseline;
+      retainStoreFields(values());
+      retainProfileFields(values());
+      data.storeRegistry.stores.push(addedStore(content.querySelector('[data-store-kind]').value.replace(/^add-/, '')));
+      render();
+      baseline = original;
+    }
+    function retainStoreFields(fields) {
+      for (const store of data.storeRegistry.stores)
+        for (const [name, value] of Object.entries(fields)) {
+          const prefix = `store:${store.id}:`;
+          if (!name.startsWith(prefix)) continue;
+          const key = name.slice(prefix.length);
+          if (value.trim()) store[key] = value.trim();
+          else delete store[key];
+        }
+    }
+    function retainProfile(profile, fields) {
+      const prefix = `profile:${profile.id}:`;
+      for (const key of ['label', 'issueStore', 'artifactStore'])
+        if (Object.hasOwn(fields, prefix + key)) profile[key] = fields[prefix + key].trim();
+      if (Object.hasOwn(fields, prefix + 'retired')) profile.retired = fields[prefix + 'retired'] === 'true';
+    }
+    function retainProfileFields(fields) {
+      const registry = data.storeRegistry;
+      registry.profileDefault = fields.profileDefault || registry.profileDefault;
+      for (const profile of registry.profiles) retainProfile(profile, fields);
+    }
+    function addProfile() {
+      const original = baseline;
+      const fields = values();
+      retainStoreFields(fields);
+      retainProfileFields(fields);
+      data.storeRegistry.profiles.push({
+        id: 'profile-' + crypto.randomUUID(),
+        label: 'New profile',
+        issueStore: '',
+        artifactStore: '',
+        retired: false,
+      });
+      render();
+      baseline = original;
+    }
+    async function saveStoreSettings(fields) {
+      retainStoreFields(fields);
+      retainProfileFields(fields);
+      const registry = data.storeRegistry;
+      const next = Object.fromEntries(
+        ['version', 'projectId', 'mode', 'profileDefault', 'coordination', 'artifacts', 'profiles', 'stores'].map(
+          (key) => [key, registry[key]]
+        )
+      );
+      next.stores = next.stores.map(({ unsaved: _unsaved, ...store }) => store);
+      const saved = await post('/api/issue-store-action', {
+        action: 'configure',
+        revision: registry.revision,
+        config: next,
+      });
+      Object.assign(registry, saved);
+      const changes = Object.fromEntries(
+        data.storage.editableFields
+          .filter((key) => fields[key] !== String(data.storage.configuration[key]))
+          .map((key) => [key, fields[key] === 'true'])
+      );
+      if (Object.keys(changes).length)
+        data.storage = await post('/api/project-settings', {
+          action: 'save-storage',
+          revision: data.storage.revision,
+          changes,
+        });
+      for (const role of ['coordination', 'artifacts']) {
+        const storeId = fields['role:' + role];
+        if (!storeId || storeId === registry[role]) continue;
+        const input = { role, storeId };
+        const options = await issueStoreUI.read({ migrationStoreId: storeId });
+        const result = await post('/api/issue-store-action', {
+          action: 'move-role',
+          role,
+          storeId,
+          operationId: issueStoreUI.migrationId(options, input),
+        });
+        const confirmed = await request('/api/issue-stores');
+        Object.assign(registry, confirmed);
+        if (result.status !== 'confirmed' || confirmed[role] !== storeId)
+          throw Error('Project storage move is pending reconciliation. Refresh its status before continuing.');
+        issueStoreUI.finishMigration(confirmed, input);
+      }
+    }
+    async function testStore(button) {
+      button.disabled = true;
+      try {
+        const store = data.storeRegistry.stores.find(({ id }) => id === button.dataset.storeTest);
+        const result = await post('/api/issue-store-action', {
+          action: 'test',
+          storeId: store.id,
+          role: store.roles[0],
+        });
+        content.querySelector(`[data-store-result="${store.id}"]`).textContent =
+          result.message || 'Connection verified.';
+      } catch (failure) {
+        showError(failure.message);
+      } finally {
+        button.disabled = false;
+      }
+    }
+    async function resumeDeletion(button) {
+      button.disabled = true;
+      showError();
+      try {
+        const result = await post('/api/issue-store-action', {
+          action: 'resume-delete',
+          operationId: button.dataset.storeResumeDelete,
+        });
+        if (result.status !== 'confirmed')
+          throw Error('Issue deletion is still pending. Retry after storage is available.');
+        Object.assign(data.storeRegistry, await request('/api/issue-stores'));
+        render();
+      } catch (failure) {
+        showError(failure.message);
+      } finally {
+        button.disabled = false;
+      }
+    }
     function renderStorage() {
       const storage = data.storage;
       const fields = Object.entries(storage.configuration)
@@ -123,7 +343,7 @@
             : `<p>${esc(key)} · ${esc(value)}</p>`
         )
         .join('');
-      return `<p>Current provider · ${esc(storage.provider)}</p><p>Existing providers · ${storage.providers.map(esc).join(', ')}</p><p>${esc(storage.status)}</p><form data-settings-form>${fields}${source(storage.source)}<p>${esc(storage.migration)}</p>${storage.restartRequired ? '<p>Publication options take effect when Factory starts. Restart Factory after saving.</p>' : ''}${storage.editableFields.length ? saveButton : ''}</form>${storage.provider === 'github' ? `<h3>Connection references</h3>${references(data.git)}` : ''}<button class="small-button" type="button" data-settings-action="test-storage">Test connection</button><p data-connection-result role="status"></p>`;
+      return `${renderStoreSettings()}<h3>Existing Git publication</h3><p>Provider · ${esc(storage.provider)}</p><p>${esc(storage.status)}</p><form data-settings-form>${fields}${source(storage.source)}<p>${esc(storage.migration)}</p>${storage.restartRequired ? '<p>Publication options take effect when Factory starts. Restart Factory after saving.</p>' : ''}</form>${storage.provider === 'github' ? `<h3>Connection references</h3>${references(data.git)}` : ''}<button class="small-button" type="button" data-settings-action="test-storage">Test connection</button><p data-connection-result role="status"></p>`;
     }
     function renderSkills() {
       return `<h3>Installed skills</h3><ul>${data.skills.map((skill) => `<li>${esc(skill.name)}${source(skill.path || skill.source || 'Installed project skill catalogue')}</li>`).join('')}</ul><h3>Required skill libraries</h3>${data.setup.sets.map((set) => `<p>${esc(set.name)} · ${set.missing.length ? 'Missing ' + esc(set.missing.join(', ')) : 'Available'}${source(set.source || 'user/skills/requirements.json')}</p>`).join('') || '<p>No required libraries configured.</p>'}`;
@@ -161,6 +381,7 @@
       navigation();
       document.getElementById('settings-page-title').textContent = pages.find(([id]) => id === page)[1];
       content.innerHTML = renderers[page]();
+      window.factoryAgentOptions(content);
       baseline = snapshot();
     }
     async function load(value) {
@@ -181,6 +402,8 @@
         const result = await request(endpoints[value] || '/api/project-settings');
         if (ticket !== sequence) return;
         data = result;
+        if (value === 'storage') data.storeRegistry = await request('/api/issue-stores');
+        if (ticket !== sequence) return;
         render();
       } catch (failure) {
         showCurrentError(ticket, failure);
@@ -215,12 +438,7 @@
               ),
             }),
           hotkeys: () => post('/api/project-preferences', { revision: data.revision, hotkeys: fields }),
-          storage: () =>
-            post('/api/project-settings', {
-              action: 'save-storage',
-              revision: data.storage.revision,
-              changes: Object.fromEntries(Object.entries(fields).map(([key, value]) => [key, value === 'true'])),
-            }),
+          storage: () => saveStoreSettings(fields),
         };
         await saves[page]();
         resetPrompts.clear();
@@ -303,6 +521,10 @@
       ['[data-settings-maintenance]', openMaintenance],
       ['[data-settings-initialize]', initialize],
       ['[data-settings-create]', createDefaults],
+      ['[data-store-add]', addStore],
+      ['[data-profile-add]', addProfile],
+      ['[data-store-test]', testStore],
+      ['[data-store-resume-delete]', (button) => leave(() => void resumeDeletion(button))],
       [
         '[data-settings-admin]',
         (button) =>

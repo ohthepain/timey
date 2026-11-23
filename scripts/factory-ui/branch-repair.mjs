@@ -1,3 +1,4 @@
+import { runOwnedOperation } from './stores/owned-operation.mjs';
 import { existsSync, mkdirSync, readFileSync, writeFileSync, realpathSync } from 'node:fs';
 import { join, relative, isAbsolute } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -217,55 +218,40 @@ export class BranchRepairs {
       .catch((error) => console.warn('Could not retain branch repair: ' + redactValue(error.message)));
   }
   async execute(record, definition, controller) {
-    const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(2700000)]);
-    const retain = (changes) => this.save(record, changes);
-    const progress = (value) =>
-      retain({
-        output: (record.output + redactValue(String(value))).slice(-64000),
-        lastActiveAt: new Date().toISOString(),
-      });
-    try {
-      record.snapshotBase = prepareBranchRepair(record.original, record.source, record.checkout);
-      this.save(record);
-      await this.run({
-        run: record,
-        definition,
-        signal,
-        retain,
-        progress,
-        step: (step) =>
-          retain({ step: redactValue(String(step)).slice(0, 500), lastActiveAt: new Date().toISOString() }),
-      });
-      signal.throwIfAborted();
-      const candidate = branchRepairSource(record.checkout);
-      const diff = branchRepairPatch(record.checkout, record.snapshotBase, candidate.tree);
-      requireThat(
-        diff.length <= 1024 * 1024,
-        'The repair diff is too large for review. Narrow the repair before approval.'
-      );
-      const checks = (record.checks || []).map((check) => ({
-        ...check,
-        sha256: check.path ? digest(readFileSync(check.path)) : null,
-      }));
-      writeFileSync(join(record.folder, 'repair.patch'), diff, { mode: 0o600 });
-      retain({
-        candidateTree: candidate.tree,
-        patchHash: digest(diff),
-        diff,
-        checks,
-        status: diff ? 'ready' : 'passed',
-        step: diff ? 'Branch fix is ready for approval' : 'Branch checks passed without repairs',
-        endedAt: new Date().toISOString(),
-      });
-    } catch (error) {
-      retain({
-        status: error.uncertain ? 'uncertain' : signal.aborted ? 'stopped' : 'failed',
-        error: redactValue(error.message),
-        step: signal.aborted ? 'Branch repair stopped' : 'Branch repair failed',
-        endedAt: new Date().toISOString(),
-      });
-    }
+    if (!this.flows.service.projectStores) return executeRepair(this, record, definition, controller);
+    const issue = this.flows.selected(record.issueId);
+    return runOwnedOperation(this.flows, {
+      issue,
+      flow: this.flows.read(issue),
+      label: 'Prepare isolated branch repair',
+      operation: 'prepare-branch-repair',
+      controller,
+      run: async ({ onProgress }) => {
+        await executeRepair(this, record, definition, controller, onProgress);
+        return {
+          status: ['ready', 'passed'].includes(record.status)
+            ? 'completed'
+            : record.status === 'failed'
+              ? 'blocked'
+              : record.status,
+          summary: record.step,
+          evidence: [
+            ...(record.checks || []),
+            {
+              path: join(record.folder, 'run.json'),
+              label: 'Branch repair history',
+              sha256: digest(readFileSync(join(record.folder, 'run.json'))),
+            },
+            ...(existsSync(join(record.folder, 'repair.patch'))
+              ? [{ path: join(record.folder, 'repair.patch'), label: 'Branch repair patch', sha256: record.patchHash }]
+              : []),
+          ],
+          result: { repairId: record.id, status: record.status, candidateTree: record.candidateTree || null },
+        };
+      },
+    });
   }
+
   approve(issue, flow, input) {
     requireThat(!this.active.has(issue.id), 'Wait for branch repair to finish.');
     const record = this.read(issue.id);
@@ -288,13 +274,29 @@ export class BranchRepairs {
         !check.path || digest(readFileSync(check.path)) === check.sha256,
         'The retained check evidence changed. Recheck before approving.'
       );
-    applyBranchRepair(record.original, patch);
-    this.save(record, {
-      status: 'applied',
-      step: 'Branch fix applied as uncommitted changes',
-      endedAt: new Date().toISOString(),
-    });
-    this.flows.pauseAutoplay(issue.id, 'Branch fix applied. Continue issue work explicitly.');
+    const apply = () => {
+      requireThat(this.current(record, flow), 'The issue checkout changed before shared ownership was confirmed.');
+      applyBranchRepair(record.original, patch);
+      this.save(record, {
+        status: 'applied',
+        step: 'Branch fix applied as uncommitted changes',
+        endedAt: new Date().toISOString(),
+      });
+      this.flows.pauseAutoplay(issue.id, 'Branch fix applied. Continue issue work explicitly.');
+      return {
+        summary: 'The reviewed branch repair was applied.',
+        result: { repairId: record.id, candidateTree: record.candidateTree },
+      };
+    };
+    if (this.flows.service.projectStores)
+      return runOwnedOperation(this.flows, {
+        issue,
+        flow,
+        label: 'Apply reviewed branch repair',
+        operation: 'apply-branch-repair',
+        run: async () => apply(),
+      });
+    apply();
   }
   async reconcile(issue) {
     requireThat(!this.active.has(issue.id), 'Stop the active repair before reconciling it.');
@@ -309,5 +311,57 @@ export class BranchRepairs {
   }
   close() {
     for (const active of this.active.values()) active.controller.abort();
+  }
+}
+
+async function executeRepair(repairs, record, definition, controller, onProgress) {
+  const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(2700000)]);
+  const retain = (changes) => repairs.save(record, changes);
+  const progress = (value) => {
+    onProgress?.(value);
+    retain({
+      output: (record.output + redactValue(String(value))).slice(-64000),
+      lastActiveAt: new Date().toISOString(),
+    });
+  };
+  try {
+    record.snapshotBase = prepareBranchRepair(record.original, record.source, record.checkout);
+    repairs.save(record);
+    await repairs.run({
+      run: record,
+      definition,
+      signal,
+      retain,
+      progress,
+      step: (step) => retain({ step: redactValue(String(step)).slice(0, 500), lastActiveAt: new Date().toISOString() }),
+    });
+    signal.throwIfAborted();
+    const candidate = branchRepairSource(record.checkout);
+    const diff = branchRepairPatch(record.checkout, record.snapshotBase, candidate.tree);
+    requireThat(
+      diff.length <= 1024 * 1024,
+      'The repair diff is too large for review. Narrow the repair before approval.'
+    );
+    const checks = (record.checks || []).map((check) => ({
+      ...check,
+      sha256: check.path ? digest(readFileSync(check.path)) : null,
+    }));
+    writeFileSync(join(record.folder, 'repair.patch'), diff, { mode: 0o600 });
+    retain({
+      candidateTree: candidate.tree,
+      patchHash: digest(diff),
+      diff,
+      checks,
+      status: diff ? 'ready' : 'passed',
+      step: diff ? 'Branch fix is ready for approval' : 'Branch checks passed without repairs',
+      endedAt: new Date().toISOString(),
+    });
+  } catch (error) {
+    retain({
+      status: error.uncertain ? 'uncertain' : signal.aborted ? 'stopped' : 'failed',
+      error: redactValue(error.message),
+      step: signal.aborted ? 'Branch repair stopped' : 'Branch repair failed',
+      endedAt: new Date().toISOString(),
+    });
   }
 }

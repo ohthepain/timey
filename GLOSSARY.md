@@ -146,6 +146,10 @@ through closure, including human messages, lifecycle contributions, decisions,
 outcomes, and retrospectives.
 _Avoid_: Temporary chat, worker chat
 
+**Conversation handoff**:
+An explicit move to another agent through a fresh conversation and a summary of
+prior context. The original conversation's history remains available.
+
 **Revision request**:
 An explicit request to reconsider an issue's agreed work, retained for review
 before continuing under an approved plan. It is separate from a comment or approval.
@@ -203,15 +207,32 @@ The authoritative home of an issue's report, lifecycle status, metadata, and
 issue history. Each issue belongs to one configured Issue store.
 _Avoid_: Adaptor, adapter as a user-facing storage destination
 
+**Issue storage profile**:
+A named pairing of an Issue store and an Artifact store used to select an issue's
+storage destinations. Coordination storage belongs to the project.
+
+**Local issue storage**:
+Issue records and artifacts retained on the person's local machine.
+It excludes files on a remote Factory server.
+
+**Project storage mode**:
+The project's choice of local or remote storage operation, which determines
+the storage destinations its issues can select.
+
 **Coordination store**:
 The project's shared authority for execution ownership, flows, attempt history,
 and pending operations. Each project selects one Coordination store across its
 Issue stores.
 
 **Artifact store**:
-The project's home for retained file contents, including logs, evidence,
+The home for retained file contents, including logs, evidence,
 attachments, and committed source checkpoints. Shared records identify artifacts
 independently of a runner's local file paths.
+
+**Coordination artifact store**:
+The project's selected Artifact store for retained coordination data, including
+project records and operation receipts. It is separate from each issue's selected
+Artifact store.
 
 **Issue delivery**:
 One issue's contributions retained on a stable branch and published through one

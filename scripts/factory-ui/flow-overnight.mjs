@@ -12,7 +12,14 @@ import { listStoredIssues } from './issue-report-storage.mjs';
 
 const finishLine = 'Verified, merge-ready pull requests';
 const protectionOnly = new Set(['close', 'retro', 'cleanup', 'delete-worktree']);
-const inspectionActions = new Set(['open-block', 'comment', 'open-worktree', 'stop', 'branch-repair-stop']);
+const inspectionActions = new Set([
+  'open-block',
+  'comment',
+  'open-worktree',
+  'stop',
+  'branch-repair-stop',
+  'agent-answer',
+]);
 const end = (row, status, summary, nextAction) => Object.assign(row, { status, summary, nextAction });
 const identity = ({ issue, flow }) => digest(JSON.stringify([issue.content, flow.revision]));
 const publicIssue = ({ id, title, issueNumber }) => ({ id, title, issueNumber });
@@ -350,7 +357,7 @@ export class FlowOvernight {
 
   async runBlock(run, issue, flow, block, catalog) {
     requireThat(
-      !this.flows.checkDefinition(issue, flow, block.id, catalog),
+      !(await this.flows.checkDefinition(issue, flow, block.id, catalog)),
       `${block.label} changed. Review its definition.`
     );
     if (block.kind === 'request') {

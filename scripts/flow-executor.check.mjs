@@ -695,6 +695,43 @@ test('provider input stops the block and preserves its request instead of hangin
   assert.equal(conversationState(f.root, f.issue.id).flowBlocks['block-understand'].status, 'attention');
 });
 
+test('native Flow approvals wait for a decision bound to the current block and attempt', async (t) => {
+  const f = fixture(t);
+  const requested = Promise.withResolvers();
+  const approved = Promise.withResolvers();
+  f.connection.selection = { provider: 'anthropic' };
+  f.connection.requests = new Map();
+  f.connection.turn = async () => {
+    const request = {
+      id: 'permission',
+      method: 'item/commandExecution/requestApproval',
+      params: { threadId: 'the-one-issue-chat', command: 'Edit fixture', availableDecisions: ['accept', 'decline'] },
+    };
+    f.connection.requests.set(request.id, request);
+    f.emit({ method: 'ui/approval', params: { requestId: request.id, ...request.params } });
+    requested.resolve();
+    return approved.promise;
+  };
+  f.connection.answer = (id, threadId, response) => {
+    assert.equal(threadId, 'the-one-issue-chat');
+    assert.equal(response.decision, 'option:0');
+    f.connection.requests.delete(id);
+    approved.resolve('Approved result.');
+  };
+  const running = f.run('understand');
+  await requested.promise;
+  const [request] = f.executor.approvals(f.issue.id);
+  assert.equal(request.blockId, 'block-understand');
+  assert.equal(request.options[0].label, 'Allow once');
+  assert.throws(
+    () => f.executor.answer(f.issue.id, request.blockId, 'stale-attempt', request.requestId, {}),
+    /no longer belongs/
+  );
+  f.executor.answer(f.issue.id, request.blockId, request.attemptId, request.requestId, { decision: 'option:0' });
+  await running;
+  assert.deepEqual(f.executor.approvals(f.issue.id), []);
+});
+
 test('protected merge and delete block without saved delivery evidence and start no model', async (t) => {
   const f = fixture(t);
   await assert.rejects(f.run('merge'), /No protected PR candidate or managed/);
@@ -2116,4 +2153,65 @@ test('Retry replaces a conversation whose oversized first input was never accept
     ],
   });
   assert.equal(f.calls.filter(({ method }) => method === 'start').length, 2);
+});
+
+test('shared source ownership rejects an older local checkout when another runner retains uncommitted work', async (t) => {
+  const f = fixture(t);
+  await f.run();
+  const before = f.calls.filter((call) => call.method === 'connection').length;
+  f.service.projectStores = { runnerId: 'receiver', records: { get: async () => null } };
+  f.flow.sourceUnavailable = 'Newer uncommitted source remains on the sender.';
+  f.flow.sourceUnavailableRunnerId = 'sender';
+  await assert.rejects(f.run(), /owning runner/);
+  assert.equal(f.calls.filter((call) => call.method === 'connection').length, before);
+});
+
+test('shared execution uses its canonical workspace ahead of stale local lifecycle source', async (t) => {
+  const f = fixture(t);
+  const original = await f.run();
+  const checkout = join(f.root, '.issues/issue-work/peer-commit');
+  f.git('worktree', 'add', '-b', 'codex/peer-commit', checkout, 'HEAD');
+  writeFileSync(join(checkout, 'source.txt'), 'Peer committed source.\n');
+  f.git('-C', checkout, 'add', 'source.txt');
+  f.git('-C', checkout, 'commit', '-m', 'Peer commit');
+  f.service.lifecycleRuns[f.issue.id].work = original.workspace;
+  f.flow.workspace = { checkout, branch: 'codex/peer-commit', base: original.workspace.base };
+  f.service.projectStores = { runnerId: 'receiver', records: { get: async () => null } };
+  const result = await f.run();
+  assert.equal(result.workspace.checkout, realpathSync(checkout));
+  assert.equal(readFileSync(join(result.workspace.checkout, 'source.txt'), 'utf8'), 'Peer committed source.\n');
+});
+
+test('a peer checkpoint replaces a stale same-path workspace without changing its local source', async (t) => {
+  const f = fixture(t);
+  const original = await f.run();
+  const staleBytes = readFileSync(join(original.workspace.checkout, 'source.txt'));
+  const sender = join(f.root, '.issues/issue-work/sender');
+  f.git('worktree', 'add', '-b', 'codex/sender', sender, 'HEAD');
+  writeFileSync(join(sender, 'source.txt'), 'New shared checkpoint.\n');
+  f.git('-C', sender, 'add', 'source.txt');
+  f.git('-C', sender, 'commit', '-m', 'Shared checkpoint');
+  const { openArtifactStore } = await import('./factory-ui/stores/artifacts.mjs');
+  const { createSourceCheckpoint } = await import('./factory-ui/stores/source-checkpoints.mjs');
+  const artifacts = await openArtifactStore(
+    { id: 'files', kind: 'files' },
+    { root: f.root, projectId: 'source-fixture' }
+  );
+  f.flow.sourceCheckpoint = await createSourceCheckpoint({
+    checkout: sender,
+    artifacts,
+    projectId: 'source-fixture',
+    base: original.workspace.base,
+  });
+  f.flow.workspaceRunnerId = 'sender';
+  f.service.projectStores = {
+    runnerId: 'receiver',
+    projectId: 'source-fixture',
+    artifacts,
+    issueArtifacts: async () => artifacts,
+  };
+  const result = await f.run();
+  assert.notEqual(result.workspace.checkout, original.workspace.checkout);
+  assert.equal(readFileSync(join(result.workspace.checkout, 'source.txt'), 'utf8'), 'New shared checkpoint.\n');
+  assert.deepEqual(readFileSync(join(original.workspace.checkout, 'source.txt')), staleBytes);
 });

@@ -1,3 +1,4 @@
+import { blockDefinitionId } from './flow-block-data.mjs';
 import { resumeIssue } from './restart-process.mjs';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -182,7 +183,9 @@ function actionItems(service) {
   const recent = runs.filter((item) => !item.active && item.currentStrategy);
   const cleanup = activeCleanups(service).map((record) => ({
     id: `cleanup:${record.issueId}`,
-    title: `Cleanup: ${record.title || record.issueId}`,
+    title: 'Cleanup',
+    trigger: 'Issue cleanup',
+    purpose: 'Remove the selected issue resources while retaining its history.',
     kind: 'cleanup',
     status: record.status,
     summary: cleanupSummary(record),
@@ -200,19 +203,25 @@ function actionItems(service) {
 }
 
 function flowActionItems(service, queue) {
-  return [...(service.flows?.active || [])].map(([issueId, active]) => {
+  const flows = service.flows;
+  const operations = [
+    ...(flows?.active || []),
+    ...[...(flows?.branchRepairs?.active.keys() || [])].map((id) => [id, { blockId: 'fix-the-branch' }]),
+    ...[...(flows?.flowBuilds || [])].map((id) => [id, { blockId: 'build-flow' }]),
+  ];
+  return operations.map(([issueId, active]) => {
     const issue = service.flows.selected(issueId);
     const flow = service.flows.read(issue);
     const block = flow.blocks.find((item) => item.id === active.blockId);
-    const label = block?.label || active.blockId.replaceAll('-', ' ');
+    const operation = flowOperation(service.flows, block, active);
     return {
       id: `flow:${issueId}:${active.attemptId || active.blockId}`,
-      title: `${issue.title} · ${label}`,
+      ...operation,
       kind: 'flow',
       active: true,
       ...flowActionProgress(block, active.attemptId),
       issues: [issueLink(queue, issueId)],
-      outputHref: `/?issue=${encodeURIComponent(issueId)}&block=${encodeURIComponent(active.blockId)}`,
+      outputHref: `/?issue=${encodeURIComponent(issueId)}${block ? `&block=${encodeURIComponent(block.id)}` : ''}`,
       canStop: false,
       canRestart: false,
       canSkip: false,
@@ -223,8 +232,40 @@ function flowActionItems(service, queue) {
   });
 }
 
+function flowOperation(flows, block, active) {
+  if (block) {
+    const definition = flows.catalog.read().entries.find((item) => item.id === blockDefinitionId(block));
+    return {
+      title: block.label,
+      trigger: `Block: ${block.label}`,
+      purpose: definition?.description || `Run ${block.label} for the linked issue.`,
+    };
+  }
+  const operations = {
+    'fix-the-branch': ['Fix Branch', 'Branch repair request', 'Repair the issue branch so its work can continue.'],
+    'build-flow': ['Build flow', 'Flow structure request', 'Build the blocks and dependencies for the linked issue.'],
+    'abort-merge': ['Abort merge', 'Branch menu: Abort merge', 'Discard the pending merge so issue work can continue.'],
+    'move-starting-point': [
+      'Move starting point',
+      'Starting point change',
+      'Move saved issue work onto the selected starting branch.',
+    ],
+    'update-branch': [
+      'Update Branch',
+      'Branch menu: Update Branch',
+      'Bring the latest starting branch changes into the issue branch.',
+    ],
+  };
+  const [title, trigger, purpose] = operations[active.blockId] || [
+    active.blockId.replaceAll('-', ' '),
+    'Issue operation outside a flow block',
+    'Apply the selected operation to the linked issue.',
+  ];
+  return { title, trigger, purpose };
+}
+
 function flowActionProgress(block = { attempts: [] }, attemptId) {
-  const attempt = block.attempts.find((item) => item.id === attemptId) || {
+  const attempt = (block.attempts || []).find((item) => item.id === attemptId) || {
     status: 'running',
     summary: 'Action is running.',
   };
@@ -232,7 +273,7 @@ function flowActionProgress(block = { attempts: [] }, attemptId) {
   return {
     status: attempt.status,
     summary,
-    details: `${attempt.step || summary} Open the issue for controls.`,
+    details: attempt.step || summary,
   };
 }
 
@@ -292,6 +333,8 @@ function actionEntry(run, service, queue) {
     id: run.id,
     title: actionTitle(action, run),
     kind: run.kind,
+    trigger: action ? 'Factory assignment' : run.kind === 'issue-work' ? 'Issue strategy' : 'Issue conversation',
+    purpose: action?.scope || run.summary || 'Continue the saved assignment for the linked issue.',
     status: run.status,
     active: connected || isActiveRun(run),
     summary: actionSummary(run),
