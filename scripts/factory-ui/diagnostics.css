@@ -15,7 +15,7 @@
   border-color: var(--line);
   color: #f0f3f8;
 }
-.diagnostics-trigger[aria-expanded='true'] {
+body:has(#diagnostics-panel:popover-open) .diagnostics-trigger {
   color: var(--green);
   border-color: var(--line);
   background: #ffffff0a;
@@ -24,7 +24,7 @@
   position: fixed;
   inset: var(--diagnostics-top, 40px) auto auto var(--diagnostics-left, 8px);
   width: min(420px, calc(100vw - 16px));
-  max-height: calc(100dvh - var(--diagnostics-top, 40px) - 8px);
+  max-height: min(560px, calc(100dvh - var(--diagnostics-top, 40px) - 8px));
   overflow: auto;
   overscroll-behavior: contain;
   margin: 0;

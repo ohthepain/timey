@@ -42,7 +42,8 @@ credential exclusion. It checks the 30-entry limit, durable totals across
 processes, and a reset while a call is running, using disposable state.
 
 `node --test scripts/diagnostic-activity.check.mjs` checks attribution across a
-resumed Codex conversation, repeated inputs, failure and store timings, and quota
+resumed Codex conversation, repeated inputs, failure and store timings, durable
+counts beyond retention, reset with a turn in flight, and quota
 windows for ChatGPT versus API key sessions. It starts no model turn.
 
 ## Commands and evidence
@@ -113,9 +114,9 @@ use disposable stores and injected GitHub responses, with no production requests
 `node scripts/flow-browser.mjs --block-inspection` checks that navigation and idle
 polling send no automatic block mutation or explicit remote refresh request.
 Clicking Refresh sends one explicit refresh, preserves the request draft, and
-leaves controls usable. It also checks that Pulse expands within the first column
-below Restart server, moves New issue down, and removes its space when hidden.
-It saves `github-refresh-on-demand.png`, `pulse-sidebar-expanded.png`, and JSON evidence.
+leaves controls usable. It also checks that the Codex request popup opens below its trigger without
+moving New issue and closes when toggled.
+It saves `github-refresh-on-demand.png`, `codex-requests-popup.png`, and JSON evidence.
 The `--storage-status` browser scenario separately checks unavailable storage,
 explicit recovery, and preserved drafts through injected responses.
 `node --test scripts/store-records.check.mjs` also traces Git process launches

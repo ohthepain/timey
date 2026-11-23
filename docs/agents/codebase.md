@@ -420,8 +420,8 @@ The Flow sidebar's GitHub counter reads installation-wide metadata from
 the trace content. Saved history excludes headers, bodies, and query strings.
 
 The Pulse button opens **Codex API requests and usage** in a popup beside the header
-in the first sidebar column. Opening it moves the remaining sidebar content down;
-hiding it removes that space. The panel reads bounded local observations from
+without moving sidebar content. Its count and recent Codex records can be reset
+independently of GitHub history, quota windows, and other diagnostic activity. The panel reads bounded local observations from
 `diagnostic-activity.mjs`. `codex-diagnostics.mjs` attributes the protocol's
 cumulative usage changes to the current turn and fingerprints supplied context.
 Store timing records are batched. Flow supplies issue, block, and attempt labels

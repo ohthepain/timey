@@ -152,7 +152,8 @@ const issueResultsCheck = 'Issue results appear below the banner without replaci
 const humanInputCheck = 'Required PR review is visible and continues only after an explicit action';
 const mergeSettingsCheck = 'Request saves the regression choice and the block palette hides Verify';
 const requestSaveCheck = 'Saving Your words releases issue controls while Request clarification runs';
-const blockInspectionCheck = 'On-demand refresh preserves drafts and Pulse expands inside the sidebar';
+const blockInspectionCheck =
+  'On-demand refresh preserves drafts; Codex popup resets history without moving the sidebar';
 const storageStatusCheck = 'Storage startup and recovery messages follow confirmed availability';
 let requestClarification;
 const pendingResponses = [];
@@ -976,30 +977,62 @@ try {
       assert.equal(await panel.isVisible(), false);
       const quotaResponse = async (route) => route.fulfill({ json: { status: 'unavailable' } });
       await page.route('**/api/codex-quota*', quotaResponse);
+      let codexHistory = {
+        codexTotal: 3,
+        retained: 120,
+        rows: [
+          {
+            category: 'codex',
+            project: 'Popup fixture',
+            status: 'completed',
+            startedAt: Date.now(),
+            durationMs: 10,
+          },
+        ],
+      };
+      const activityResponse = (route) => route.fulfill({ json: codexHistory });
+      const resetResponse = (route) => {
+        assert.equal(route.request().method(), 'POST');
+        codexHistory = { codexTotal: 0, retained: 120, rows: [] };
+        return route.fulfill({ json: codexHistory });
+      };
+      await page.route('**/api/diagnostic-activity', activityResponse);
+      await page.route('**/api/codex-activity-reset', resetResponse);
       let expanded;
       try {
         await pulse.click();
         await panel.waitFor({ state: 'visible' });
         await poll(() => page.locator('#diagnostics-content').textContent(), Boolean, 'Diagnostics did not render.');
-        assert.equal(await pulse.getAttribute('aria-expanded'), 'true');
+        assert.equal(await panel.evaluate((node) => node.matches(':popover-open')), true);
         expanded = await page.locator('#new-issue').boundingBox();
         const bounds = await panel.boundingBox();
-        const sidebar = await page.locator('.sidebar').boundingBox();
-        const restart = await page.locator('.project-actions-row').boundingBox();
-        assert.ok(bounds.y >= restart.y + restart.height, 'Pulse panel appeared above Restart server.');
-        assert.ok(
-          bounds.x >= sidebar.x && bounds.x + bounds.width <= sidebar.x + sidebar.width,
-          'Pulse panel escaped the first column.'
+        const triggerBounds = await pulse.boundingBox();
+        assert.ok(bounds.y >= triggerBounds.y + triggerBounds.height, 'Codex popup covered its trigger.');
+        assert.equal(expanded.y, collapsed.y, 'Codex popup moved sidebar content.');
+        await screenshot('codex-requests-popup');
+        await poll(
+          () => page.locator('#codex-call-total').textContent(),
+          (value) => value === '3',
+          'Codex count missing.'
         );
-        assert.ok(expanded.y > collapsed.y + 50, 'Pulse panel overlaid the content instead of moving it down.');
-        await screenshot('pulse-sidebar-expanded');
+        page.once('dialog', (dialog) => dialog.accept());
+        await page.locator('#diagnostics-reset').click();
+        await poll(
+          () => page.locator('#codex-call-total').textContent(),
+          (value) => value === '0',
+          'Codex reset kept its count.'
+        );
+        assert.match(await page.locator('#diagnostics-content').textContent(), /No Codex turns recorded yet/);
+        assert.equal(await page.locator('#diagnostics-reset').isDisabled(), true);
         await pulse.click();
         assert.equal(await panel.isVisible(), false);
-        assert.equal(await pulse.getAttribute('aria-expanded'), 'false');
+        assert.equal(await panel.evaluate((node) => node.matches(':popover-open')), false);
         const hidden = await page.locator('#new-issue').boundingBox();
         assert.equal(hidden.y, collapsed.y, 'Hiding Pulse left space in the column.');
       } finally {
         await page.unroute('**/api/codex-quota*', quotaResponse);
+        await page.unroute('**/api/diagnostic-activity', activityResponse);
+        await page.unroute('**/api/codex-activity-reset', resetResponse);
       }
       writeFileSync(join(output, 'pulse-sidebar.json'), JSON.stringify({ collapsed, expanded }, null, 2));
       await screenshot('github-refresh-on-demand');
