@@ -4,7 +4,12 @@
 protocol configuration, complete context/input references above the provider
 limit, small follow-up messages, and cleanup that preserves the project. It uses
 a disposable provider process; it establishes read-only/never-approve settings,
-not actual OS sandbox enforcement or live model availability.
+not actual OS sandbox enforcement or live model availability. The same suite
+checks that Request clarification disables shell tools, starts outside the
+project, and retains complete wording above 16,000 characters inline. It checks
+oversized-input rejection before dispatch and bounded failure diagnostics for
+provider startup and generation timeouts, without retaining prompt or provider
+text. The timeout fixture advances a mock clock; it measures no live latency.
 `node --test --test-name-pattern="Retro reads|Retro links" scripts/flow.check.mjs`
 checks linked-thread ordering, unavailable history and complete oversized retro
 evidence. The initial message stays below 16,000 characters; the referenced files
@@ -31,13 +36,51 @@ the bounded request retains the full report in a file with a matching digest.
 The Retry scenario verifies a new conversation is created for a confirmed
 rejected first input instead of resuming a thread with no persisted history.
 
+`node --test scripts/github-call-history.check.mjs` checks individual GitHub
+CLI request traces, including pagination, failed status, pending state, and
+credential exclusion. It checks the 30-entry limit, durable totals across
+processes, and a reset while a call is running, using disposable state.
+
+`node --test scripts/diagnostic-activity.check.mjs` checks attribution across a
+resumed Codex conversation, repeated inputs, failure and store timings, and quota
+windows for ChatGPT versus API key sessions. It starts no model turn.
+
 ## Commands and evidence
+
+`node scripts/flow-browser.mjs --request-save` holds Request clarification after
+saving Your words on an existing issue. Rename, Close, Stop, and the editor remain
+usable while clarification runs, and the wording survives completion and reload.
+A rejected save retains the editable draft. The focused `flow.check.mjs` tests
+check acknowledgement after admission, synchronous input validation, retained
+background failure, and the existing awaited Request result.
 
 `node --test --test-name-pattern='confirmed coordination writes' scripts/project-stores.check.mjs`
 uses the real record provider and makes subsequent reads of each written operation
 unavailable. Opening, updating, and confirming must still return the committed
 records, and confirmation must release its claim. This checks unnecessary remote
 read dependencies, not live Git latency.
+
+`node --test scripts/artifact-working-set.check.mjs scripts/folder-view-snapshot.check.mjs`
+checks an artifact working set above the former entry limit and shared folder
+discovery within one view, with fresh discovery on the following view.
+
+`node --test scripts/idle-view-work.check.mjs scripts/clean-environment.check.mjs`
+checks unchanged display reads, changed file generations, staged flow priority,
+caller isolation, evidence resolver changes, and fresh evidence actions. Environment
+checks retain per-command filtering while avoiding repeated Git-name discovery.
+
+`node --test scripts/store-snapshot-scope.check.mjs` checks overflow decoding
+through pinned Coordination and Issue readers, artifact relocation identity,
+concurrent scope isolation, scope completion, and fresh mutation authority. Its
+disposable Git fixture counts remote lookups while decoding several overflow
+records. It makes no production requests.
+
+`node --test scripts/store-atomic-publication.check.mjs` checks the single-store
+report transaction, retained history and confirmation, replay, ownership, migration,
+concurrent revisions, and uncertain replies with disposable stores.
+`node --test scripts/approval-refresh.check.mjs` checks selected approval admission,
+full and selected refresh overlap, cold initialization, and direct controller
+freshness. Its HTTP fixture checks a peer update without reading unrelated reports.
 
 `node --test scripts/closure-menu.check.mjs` holds a shared-store refresh while
 opening the Close menu through the real HTTP route. The menu must return saved
@@ -61,13 +104,20 @@ deleting a child can release its exclusive evidence while preserving shared proo
 destination readback, settings, bulk moves, interrupted moves, outages and recovery
 using disposable stores. These checks use no live model or cloud publication.
 
-`node --test scripts/store-runtime.check.mjs scripts/project-stores-flow.check.mjs`
-checks cached display reads during a held shared refresh, coalesced polling,
-read-only cached startup, missing-cache waits, background failure warnings, and
-fresh mutation admission after an earlier nonfresh request. The Flow checks hold
-evidence and observed-PR saves while the selected issue remains readable. Explicit
-file reads await hydration, and failed authoritative saves still block editing.
-These fixtures use disposable stores and start no live issue work.
+`node --test scripts/github-refresh.check.mjs scripts/store-runtime.check.mjs scripts/project-stores-flow.check.mjs scripts/factory-env.check.mjs`
+checks idle reads after a simulated day without remote refresh, explicit refresh,
+retained observations across observer recreation, failed refresh without automatic
+retry, operation-time rejection after an external merge, and credential reuse.
+Shared-store checks retain fresh mutation admission and coalescing. The fixtures
+use disposable stores and injected GitHub responses, with no production requests.
+`node scripts/flow-browser.mjs --block-inspection` checks that navigation and idle
+polling send no automatic block mutation or explicit remote refresh request.
+Clicking Refresh sends one explicit refresh, preserves the request draft, and
+leaves controls usable. It also checks that Pulse expands within the first column
+below Restart server, moves New issue down, and removes its space when hidden.
+It saves `github-refresh-on-demand.png`, `pulse-sidebar-expanded.png`, and JSON evidence.
+The `--storage-status` browser scenario separately checks unavailable storage,
+explicit recovery, and preserved drafts through injected responses.
 `node --test scripts/store-records.check.mjs` also traces Git process launches
 while reading several prefixes from one pinned snapshot. It checks one tree
 listing and bounded content batches, Unicode values, sorted results and caller isolation.
@@ -169,7 +219,8 @@ injected model and check responses. It preserves staged and uncommitted edits.
 `node scripts/flow-browser.mjs --branch-repair` drives the real issue-page button,
 red check-failure state, progress after reload, candidate diff, and explicit
 approval in a disposable checkout. It holds the initial inspector request and
-checks that repair controls wait for it before accepting a command. It injects
+checks that repair controls remain available while it waits, then releases the
+inspection before accepting a repair command. It injects
 the repair worker and does not run
 a live model or repair a production issue.
 
@@ -966,3 +1017,36 @@ scrollbar. It verifies that wheel scrolling moves the flow and shows its thumb,
 then the thumb hides after scrolling stops. The flow width and scroll position
 remain stable. It saves `issue-scrollbar.json` and screenshots of the idle,
 scrolling and stopped states in the reported evidence directory.
+
+`node --test scripts/actions-menu.check.mjs scripts/factory-server-control.check.mjs`
+checks two-second action-list admission, no overlapping requests, preserved feedback
+and drafts, block purposes, and named triggers for operations outside blocks.
+`node scripts/flow-browser.mjs --actions-menu` checks the rendered action headings,
+linked issues and stable feedback height while two disposable Flow blocks run.
+
+## Native agent integration
+
+`pnpm run test:native-agents` checks model inheritance and the Claude Code and
+Gemini CLI adapters against disposable protocol processes. The checks exercise
+approval-gated file edits, denial, Stop, continuation, uncertain operations,
+explicit recovery, missing installation, human questions, and guarded MCP tool
+calls. These fixtures do not establish live model access or vendor sandbox
+behavior. `scripts/project-discuss-provider.check.mjs` additionally checks provider
+handoffs and native skill discovery without a Codex process.
+
+`node --test --test-name-pattern='native Flow approvals' scripts/flow-executor.check.mjs`
+checks a permission decision against the owning issue, block, attempt, and request.
+`node scripts/flow-browser.mjs --project-settings` checks native model choices and
+hiding and restoring the effort control in the actual Settings UI.
+`node scripts/flow-browser.mjs --native-agents` drives the real Flow input cards,
+checks **Needs your input** and **Open request**, retains a typed answer through
+Refresh, and submits decisions bound to the running attempt. It uses a disposable
+held executor, not a live vendor model.
+
+`node scripts/native-agent-probe.mjs` initializes both installed vendor protocols
+without sending a model prompt. Optional `--claude PATH` and `--gemini PATH` select
+binaries for a disposable installation. It uses temporary configuration directories,
+retains no credentials, and reports only supported protocol metadata. A passing
+handshake does not prove login, billing, coding, approval pauses, or continuation
+against a live model. The authenticated workflow checks remain listed in the
+[native agent plan](../plans/anthropic-google-model-support.md).

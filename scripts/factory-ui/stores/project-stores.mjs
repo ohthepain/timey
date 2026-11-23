@@ -361,6 +361,100 @@ export function createProjectStores({
         }
         await this.coordination.commit(op.value.id + '/activate', expected, writes);
       },
+      async atomicIssueSave(request) {
+        const { issueId, operationId, owner, flow, purpose } = request;
+        const kind = purpose === 'closure' ? 'close' : purpose === 'storage' ? 'storage' : (request.kind ?? 'edit');
+        if (owner || flow !== undefined || kind !== 'edit') return null;
+        const coordinationId = this.records.id;
+        const state = await this.pinnedRead(async (view) => {
+          const catalog = await view.catalog(issueId);
+          const provider = this.issueStore(catalog.value.storeId);
+          if (catalog.value.storeId !== coordinationId || !provider.supportsCoordinatedCommit) return null;
+          const current = await view.readCatalogIssue(catalog, provider);
+          const key = 'operations/' + encodeURIComponent(operationId);
+          const [operation, claim, gate] = await Promise.all([
+            view.coordination.get(key),
+            view.coordination.get('claims/' + issueId),
+            view.coordination.get('project/migration'),
+          ]);
+          const text = reportText(request.report);
+          validateReport(issueId, text);
+          const groups = await view.assertGroupStore(text, current.storeId, current.artifactStoreId);
+          return { catalog, provider, current, key, operation, claim, gate, groups, text };
+        });
+        if (!state) return null;
+        const { catalog, provider, current, key, operation, claim, gate, groups, text } = state;
+        const input = {
+          issueId,
+          report: text,
+          location: request.location || current.location,
+          expectedRevision: request.expectedRevision,
+          storeId: current.storeId,
+          homeEpoch: current.homeEpoch,
+          kind,
+          owner: null,
+        };
+        const inputHash = inputDigest({ kind: 'save-issue', input });
+        if (operation) {
+          this.coordination.matchOperation(operation, inputHash);
+          return operation.value.status === 'confirmed' ? { status: 'confirmed', ...current } : null;
+        }
+        assertStoreState(
+          typeof operationId === 'string' && operationId.length > 0 && operationId.length < 500,
+          'STORE_INVALID_OPERATION',
+          'Supply a stable operation identity.'
+        );
+        assertStoreState(!claim, 'STORE_CLAIMED', 'Another runner or attempt owns this issue.');
+        assertStoreState(!merged(current.flow), 'STORE_MERGED', 'This merged issue is read-only.');
+        this.coordination.requireGate(gate);
+        const expected = new Map([
+          [catalog.key, { key: catalog.key, revision: catalog.revision }],
+          [flowKey(issueId), { key: flowKey(issueId), revision: current.flowRevision }],
+          ['claims/' + issueId, { key: 'claims/' + issueId, revision: null }],
+          ['project/migration', { key: 'project/migration', revision: gate?.revision ?? null }],
+          [key, { key, revision: null }],
+          ...groups.map((record) => [record.key, { key: record.key, revision: record.revision }]),
+        ]);
+        if (expected.size > 97) return null;
+        const at = now();
+        const value = {
+          id: operationId,
+          kind: 'save-issue',
+          input,
+          inputHash,
+          status: 'confirmed',
+          createdAt: at,
+          confirmedAt: at,
+          runnerId: this.runnerId,
+          token: randomUUID(),
+          claimAdmission: true,
+          publicationStarted: true,
+        };
+        let issue;
+        try {
+          issue = await provider.commit({
+            issueId,
+            report: text,
+            location: input.location,
+            expectedRevision: request.expectedRevision,
+            operationId: operationId + '/atomic',
+            coordination: { expected: [...expected.values()], writes: [{ key, value }] },
+          });
+        } catch (error) {
+          let saved;
+          try {
+            saved = await this.coordination.get(key);
+          } catch {
+            throw Object.assign(error, { operationId, pending: true });
+          }
+          if (saved) {
+            this.coordination.matchOperation(saved, inputHash);
+            if (saved.value.status === 'confirmed') return { status: 'confirmed', ...(await this.readIssue(issueId)) };
+          }
+          throw Object.assign(error, { operationId, pending: error.code !== 'STORE_CONFLICT' });
+        }
+        return { status: 'confirmed', ...current, ...issue, report: reportText(issue.report), issue };
+      },
       async saveIssue({
         issueId,
         report,
@@ -372,6 +466,18 @@ export function createProjectStores({
         purpose,
         owner,
       }) {
+        const atomic = await this.atomicIssueSave({
+          issueId,
+          report,
+          location,
+          expectedRevision,
+          operationId,
+          flow,
+          kind,
+          purpose,
+          owner,
+        });
+        if (atomic) return atomic;
         const current = await this.readIssue(issueId);
         const text = reportText(report);
         validateReport(issueId, text);
@@ -710,6 +816,7 @@ export function createProjectStores({
       async assertGroupStore(report, storeId, artifactStoreId) {
         const header = report.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/)?.[1];
         const children = parse(header || '')?.issue_group?.children || [];
+        const catalogs = [];
         for (const child of children.filter((entry) => !entry.detachedAt)) {
           const catalog = await this.catalog(child.id);
           assertStoreState(
@@ -717,7 +824,9 @@ export function createProjectStores({
             'STORE_GROUP_MISMATCH',
             'A master and its sub-issues must use the same Issue and Artifact stores.'
           );
+          catalogs.push(catalog);
         }
+        return catalogs;
       },
       async assertSameStorage(issueIds) {
         const states = await Promise.all(issueIds.map((id) => this.catalog(id)));

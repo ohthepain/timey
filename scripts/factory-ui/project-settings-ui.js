@@ -381,6 +381,7 @@
       navigation();
       document.getElementById('settings-page-title').textContent = pages.find(([id]) => id === page)[1];
       content.innerHTML = renderers[page]();
+      window.factoryAgentOptions(content);
       baseline = snapshot();
     }
     async function load(value) {

@@ -248,10 +248,11 @@ function metadataErrors(record, folder, folders, project) {
   return errors;
 }
 
-export function readFolderSettings(project, directory, { branchChoices = true } = {}) {
+export function readFolderSettings(project, directory, { branchChoices = true, snapshot } = {}) {
   const location = scope(project, directory);
   const { root, canConfigure } = location;
-  const fields = folderSettingsFields(root, { branchChoices });
+  requireThat(!snapshot || snapshot.root === root, 'The folder snapshot belongs to another project.');
+  const fields = snapshot?.fields ?? folderSettingsFields(root, { branchChoices });
   const record = canConfigure ? readDocument(location.directory) : { exists: false, source: '', errors: [] };
   const basic = record.exists ? basicSettings(location.directory) : null;
   const folder = descriptor(root, location.directory, basic?.id);
@@ -270,7 +271,7 @@ export function readFolderSettings(project, directory, { branchChoices = true } 
       repairable: false,
     };
   const inherited = inheritedSettings(root, location.directory, record, fields);
-  const folders = readIssueFolderSettings(root, { includeCopies: true, includeBroken: true });
+  const folders = snapshot?.folders ?? readIssueFolderSettings(root, { includeCopies: true, includeBroken: true });
   const errors = [
     ...record.errors,
     ...fieldErrors(record.data || {}, fields),
@@ -461,9 +462,11 @@ export function giveIssueFolderCopyNewId(project, name) {
   });
 }
 
-export function requireIssueFolder(project, name) {
+export function requireIssueFolder(project, name, folders) {
   requireThat(typeof name === 'string' && name.trim(), 'Choose a folder for the issue.');
-  const folder = readIssueFolderSettings(project).find((entry) => entry.name === name);
+  const folder = (folders ?? readIssueFolderSettings(project)).find(
+    (entry) => entry.id && !entry.duplicate && entry.name === name
+  );
   requireThat(folder, 'Choose an existing issue folder.');
   requireAvailableDirectory(folder.directory);
   return folder;
@@ -478,8 +481,10 @@ export function ensureInboxFolder(project) {
   );
 }
 
-export function defaultIssueFolder(project) {
-  const folders = readIssueFolderSettings(project, { includeCopies: true, includeBroken: true });
+export function defaultIssueFolder(
+  project,
+  { folders = readIssueFolderSettings(project, { includeCopies: true, includeBroken: true }) } = {}
+) {
   const defaults = folders.filter((folder) => folder.isDefaultFolder);
   requireThat(
     defaults.length === 1 && defaults[0].id && !defaults[0].duplicate && !defaults[0].settingsErrors.length,
@@ -528,11 +533,15 @@ export function initializeFolderSettings(project) {
   return readFolderSettings(root, root);
 }
 
-export function resolveFolderSettings(project, name) {
-  const directory = name ? requireIssueFolder(project, name).directory : realpathSync(project);
-  const view = readFolderSettings(project, directory, { branchChoices: false });
+export function resolveFolderSettings(project, name, { snapshot } = {}) {
+  const root = realpathSync(project);
+  requireThat(!snapshot || snapshot.root === root, 'The folder snapshot belongs to another project.');
+  const directory = name ? requireIssueFolder(project, name, snapshot?.folders).directory : root;
+  const view = snapshot?.read
+    ? snapshot.read(directory)
+    : readFolderSettings(project, directory, { branchChoices: false });
   if (view.kind === 'plain') {
-    const fields = folderSettingsFields(project);
+    const fields = snapshot?.fields ?? folderSettingsFields(project);
     return {
       values: initialProjectValues(project, fields),
       sources: Object.fromEntries(fields.map((field) => [field.key, 'Factory built-in'])),
@@ -545,5 +554,33 @@ export function resolveFolderSettings(project, name) {
     sources: Object.fromEntries(Object.entries(view.settings).map(([key, entry]) => [key, entry.source])),
     errors: view.errors.filter((error) => view.fields.some((field) => field.key === error.key) || error.key === 'file'),
     basis: digest(JSON.stringify([view.revision, view.settings])),
+  };
+}
+
+export function createFolderSettingsSnapshot(project) {
+  const root = realpathSync(project);
+  const snapshot = {
+    root,
+    folders: readIssueFolderSettings(root, { includeCopies: true, includeBroken: true }),
+    fields: folderSettingsFields(root, { branchChoices: false }),
+  };
+  const views = new Map();
+  const settings = new Map();
+  snapshot.read = (directory) => {
+    const requested = resolve(root, directory);
+    const key = stat(requested)?.isDirectory() ? realpathSync(requested) : requested;
+    if (!views.has(key)) views.set(key, readFolderSettings(root, key, { snapshot }));
+    return structuredClone(views.get(key));
+  };
+  return {
+    folders: structuredClone(snapshot.folders),
+    read: snapshot.read,
+    resolve(projectRoot, name) {
+      requireThat(realpathSync(projectRoot) === root, 'The folder snapshot belongs to another project.');
+      const key = name || null;
+      if (!settings.has(key)) settings.set(key, resolveFolderSettings(root, name, { snapshot }));
+      return { ...structuredClone(settings.get(key)), fields: structuredClone(snapshot.fields) };
+    },
+    defaultFolder: () => structuredClone(defaultIssueFolder(root, snapshot)),
   };
 }

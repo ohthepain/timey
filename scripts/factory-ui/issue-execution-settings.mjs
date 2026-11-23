@@ -39,13 +39,13 @@ function explicitOverrides(overrides) {
   return fields.filter((key) => overrides[key] && overrides[key] !== 'default');
 }
 
-function applyOverrides(root, resolved, overrides) {
+function applyOverrides(root, resolved, overrides, observedFields) {
   const explicit = explicitOverrides(overrides);
   const errors = resolved.errors.filter(({ key }) => !explicit.includes(key));
   for (const key of explicit) {
     resolved.values[key] = overrides[key];
     resolved.sources[key] = 'Issue override';
-    const message = validateSettingValue(root, key, overrides[key]);
+    const message = validateSettingValue(root, key, overrides[key], observedFields);
     if (message) errors.push({ key, message });
   }
   resolved.errors = errors;
@@ -62,7 +62,7 @@ function retainExistingWork(root, flow, resolved, overrides, resolveFolder = res
     resolved.sources[key] = project.sources[key];
   }
   resolved.errors = [];
-  applyOverrides(root, resolved, overrides);
+  applyOverrides(root, resolved, overrides, project.fields);
 }
 
 function applyDestination(flow, resolved) {
@@ -80,7 +80,7 @@ export function resolveIssueExecutionSettings(root, issue, flow, { started = fal
     sources: { ...inherited.sources },
     errors: [...inherited.errors],
   };
-  applyOverrides(root, resolved, overrides);
+  applyOverrides(root, resolved, overrides, inherited.fields);
   if (flow.executionSettings) {
     resolved.values = { ...flow.executionSettings.values };
     resolved.sources = { ...flow.executionSettings.sources };

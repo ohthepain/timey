@@ -154,7 +154,7 @@ export function createSharedIssueQueue(service, options = {}) {
   }
 
   function refreshInBackground(wait = false) {
-    if (!backgroundRefresh && Date.now() - lastRefresh >= 30_000) backgroundRefresh = startRefresh();
+    if (!backgroundRefresh && (wait || !lastRefresh)) backgroundRefresh = startRefresh();
     return wait ? Promise.resolve(backgroundRefresh).then(() => syncWarning) : syncWarning;
   }
 

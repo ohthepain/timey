@@ -41,7 +41,6 @@
     error: '',
     connectionError: '',
     captureId: null,
-    checkedBlock: null,
     toastTimer: null,
     storeSelection: null,
   };
@@ -266,11 +265,12 @@
 
   function renderErrors() {
     const waiting = serverControlUI.isWaitingForServer();
+    const storage = state.index?.storeStatus || state.view?.storeStatus;
     const message = waiting
       ? 'Waiting for server…'
       : state.error ||
         state.connectionError ||
-        (storeUnavailable()
+        (storeUnavailable() && storage?.phase !== 'refreshing'
           ? 'Shared storage is unavailable. Browse cached history and keep local drafts; shared changes and new runs are paused.'
           : '');
     if (document.documentElement.dataset.projectIssueRequestEmbed === 'true') {
@@ -423,6 +423,7 @@
     try {
       const query = new URLSearchParams();
       if (selected) query.set('issue', selected);
+      if (announce) query.set('refresh', 'true');
       if (document.documentElement.dataset.projectIssueRequestEmbed === 'true') query.set('view', 'request');
       const params = query.toString();
       const result = await json(`/api/flow${params ? `?${params}` : ''}`, {
@@ -431,11 +432,19 @@
       if (sequence !== state.sequence || selected !== state.issueId || serverControlUI.isWaitingForServer()) return;
       state.connectionError = '';
       $('connection-status').className = 'connection';
-      $('connection-status').innerHTML = '<span class="connection-dot"></span> Live · 2s';
+      $('connection-status').innerHTML = '<span class="connection-dot"></span> Local updates · GitHub on demand';
+      $('connection-status').title = result.storeStatus?.checkedAt
+        ? `Shared data last checked ${date(result.storeStatus.checkedAt)}`
+        : 'Remote data refreshes on demand.';
       if (announce) state.error = '';
       applyView(result);
       void refreshIssueStore();
-      if (announce) toast('Saved flow refreshed.');
+      if (announce)
+        toast(
+          result.environment?.remoteError || result.sharedQueueWarning
+            ? 'Refresh incomplete. Last saved values retained.'
+            : 'Current view refreshed.'
+        );
     } catch (error) {
       if (error.name === 'AbortError' || sequence !== state.sequence || serverControlUI.isWaitingForServer()) return;
       state.connectionError = `Unable to refresh. ${error.message} The last saved view remains visible.`;
@@ -445,7 +454,6 @@
     } finally {
       if (sequence === state.sequence) {
         state.loading = false;
-        void checkOpenBlock();
       }
     }
   }
@@ -572,11 +580,9 @@
     const inputBlock = state.view?.flow?.blocks.find((block) => block.id === state.view.humanInput?.blockId);
     $('issue-input-continue').disabled =
       busy ||
-      state.newActionsPaused ||
-      attached ||
       !inputBlock ||
-      operationPaused(inputBlock) ||
-      state.view.flow.blocks.some(isRunning);
+      (state.view?.humanInput?.kind !== 'agent' &&
+        (state.newActionsPaused || attached || operationPaused(inputBlock) || state.view.flow.blocks.some(isRunning)));
     updatePlaybackAvailability(busy);
     $('close-publish').disabled = busy;
     $('move-starting-branch').disabled = busy || frozen;
@@ -1092,6 +1098,7 @@
         )
         .join('')
     );
+    window.factoryAgentOptions($('issue-settings-fields'));
   }
 
   function renderFolderWorkspace() {
@@ -1359,9 +1366,13 @@
     renderTargetUpdate(environment);
     if (environment.ahead > 0) chips.push(`<span class="environment-chip">↑ ${escape(environment.ahead)} ahead</span>`);
     renderPullRequest(state.view.destination?.pr);
+    if (environment.remoteObservedAt)
+      chips.push(
+        `<span class="environment-chip" title="Saved GitHub observation. Use Refresh to check again.">GitHub checked ${escape(date(environment.remoteObservedAt))}</span>`
+      );
     if (environment.error || environment.remoteError)
       chips.push(
-        `<span class="environment-chip warning" title="${escape(environment.error || environment.remoteError)}">Environment check incomplete</span>`
+        `<span class="environment-chip warning" title="${escape(environment.error || environment.remoteError)}">Check failed · Refresh to retry</span>`
       );
     $('environment-status').innerHTML = chips.join('');
     $('environment').title = environment.observedAt ? `Git observed ${date(environment.observedAt)}` : '';
@@ -1968,23 +1979,6 @@
     return `<div class="block-actions definition-actions"><button class="small-button" type="button" data-action="refresh-definition" aria-label="Refresh block definition" title="Refresh block definition">🪄</button>${path?.bundled || path?.override ? `<details class="block-markdown-menu" data-preserve="block-markdown-menu"><summary class="small-button">Markdown</summary><div class="issue-flow-options"><button class="small-button" type="button" data-action="reveal-definition">Reveal Markdown in Finder</button><button class="small-button" type="button" data-action="open-block-extension">${path.extension ? 'Open extension' : 'Create extension'}</button></div></details>` : ''}</div>`;
   }
 
-  async function checkOpenBlock(force = false) {
-    const block = activeBlock();
-    if (serverControlUI.isWaitingForServer()) return;
-    if (!block || block.readOnly || state.pending || state.tab !== 'details' || state.view.flow.request) return;
-    const key = state.issueId + ':' + block.id;
-    if (key === state.checkedBlock && !force) return;
-    state.checkedBlock = key;
-    const result = await action('open-block', { blockId: block.id });
-    if (!result?.details || activeBlock() !== block) return;
-    if (result.revision < state.view.flow.revision) return;
-    state.view.flow.revision = result.revision;
-    if (JSON.stringify(block.details) !== JSON.stringify(result.details)) {
-      block.details = result.details;
-      renderInspector();
-    }
-  }
-
   function retiredHistory() {
     const blocks = (state.view.flow.retiredBlocks || []).filter((block) => block.attempts.length);
     if (!blocks.length) return '';
@@ -2142,6 +2136,25 @@
     const ids = block.historicalCompletion.issueIds || [];
     return `<p class="detail-copy">Completed by an earlier investigation run.</p><ul>${ids.map(historicalIssueLink).join('')}</ul>`;
   }
+  const agentQuestionDrafts = new Map();
+  const questionDraftKey = (request, id) => `${state.issueId}/${request.attemptId}/${request.requestId}/${id}`;
+  document.addEventListener('input', (event) => {
+    if (event.target.dataset.agentQuestionKey)
+      agentQuestionDrafts.set(event.target.dataset.agentQuestionKey, event.target.value);
+  });
+  function agentApprovalCard(request) {
+    const questions = request.params.questions || [];
+    const content = questions.length
+      ? questions
+          .map((question) => {
+            const key = questionDraftKey(request, question.id);
+            const options = (question.options || []).map(({ label }) => label).join(', ');
+            return `<label class="field">${escape(question.question)}<input data-agent-question="${escape(question.id)}" data-agent-question-key="${escape(key)}" value="${escape(agentQuestionDrafts.get(key) || '')}" placeholder="${escape(options)}" /><small>You can also enter your own answer.</small></label>`;
+          })
+          .join('') + '<button class="small-button" data-action="agent-answer">Send answers</button>'
+      : `<pre class="attempt-output">${escape(request.params.command)}\n${escape(request.params.reason)}</pre>${request.options.map((option) => `<button class="small-button" data-action="agent-answer" data-decision="${escape(option.id)}">${escape(option.label)}</button>`).join('')}`;
+    return `<section class="detail-section" data-agent-approval="${escape(request.requestId)}" data-attempt-id="${escape(request.attemptId)}"><p>Agent input required</p>${content}</section>`;
+  }
   function blockProgress(block, last, attempts, published) {
     if (last) return attemptCard(last, attempts.length - 1);
     if (block.historicallyCompleted) return historicalOutputProgress(block);
@@ -2160,6 +2173,7 @@
     const last = latest(block);
     const previousAttempts = last ? attempts.slice(0, -1) : attempts;
     const published = attempts.at(-1)?.supersededByPR;
+    const permissions = (state.view.agentApprovals || []).filter((request) => request.blockId === block.id);
     const progress = blockProgress(block, last, attempts, published);
     const running = isRunning(block);
     if (['retro', 'cleanup'].includes(block.kind))
@@ -2172,7 +2186,11 @@
       notes: comments(block),
     };
     return (
-      investigationActions(block) + definitionActions(block) + Object.values(sections).join('') + contentSection(block)
+      permissions.map(agentApprovalCard).join('') +
+      investigationActions(block) +
+      definitionActions(block) +
+      Object.values(sections).join('') +
+      contentSection(block)
     );
   }
 
@@ -2336,6 +2354,7 @@
     $('issue-results').classList.toggle('needs-input', Boolean(input));
     $('issue-results-message').textContent = result;
     $('issue-input-actions').hidden = !input;
+    $('issue-input-continue').textContent = input?.kind === 'agent' ? 'Open request' : 'Continue';
     const url = safeUrl(input?.url);
     $('issue-input-link').hidden = !url;
     $('issue-input-link').href = url || '';
@@ -2635,11 +2654,12 @@
     const values = new FormData(event.target);
     const wording = String(values.get('wording') || '');
     toast('Clarifying the request…');
-    const result = await action('request', { wording });
+    const result = await action('request', { wording, background: true });
     if (!result) return;
     state.drafts.delete(key);
     persistDrafts();
     renderInspector();
+    if (result.accepted) await load(true);
   }
 
   function blockSkillChanges(values, promptMode) {
@@ -2817,6 +2837,15 @@
   }
 
   async function startBlock(name, block) {
+    const nativeRecovery =
+      name === 'continue' && /^(anthropic|google):/.test(state.view.issueSettings?.values?.model || '');
+    if (
+      nativeRecovery &&
+      !confirm(
+        'Inspect completed file changes, command results, and retained output before continuing. Confirm that you reviewed the partial work and the original agent has stopped.'
+      )
+    )
+      return;
     const unsaved = Object.keys(draft()).filter((key) => !['comment', 'newEdit'].includes(key));
     if (unsaved.length) {
       showError('Save your block settings before starting. Your draft is still here.');
@@ -2839,6 +2868,7 @@
     }
     const result = await action(block.kind === 'request' ? 'run-request' : name, {
       blockId: block.id,
+      confirmedAgentRecovery: nativeRecovery,
       ...investigationRunInput(block),
       ...(confirmed ? { confirmed: true } : {}),
       ...(approval ? { mergeToken: approval.token } : {}),
@@ -2867,6 +2897,21 @@
     const block = activeBlock();
     if (!block) return;
     const name = button.dataset.action;
+    if (name === 'agent-answer') {
+      const card = button.closest('[data-agent-approval]');
+      const inputs = [...card.querySelectorAll('[data-agent-question]')];
+      const response = inputs.length
+        ? { answers: Object.fromEntries(inputs.map((input) => [input.dataset.agentQuestion, input.value])) }
+        : { decision: button.dataset.decision };
+      const result = await action(name, {
+        blockId: block.id,
+        requestId: card.dataset.agentApproval,
+        attemptId: card.dataset.attemptId,
+        response,
+      });
+      if (result) for (const input of inputs) agentQuestionDrafts.delete(input.dataset.agentQuestionKey);
+      return result;
+    }
     if (['start', 'continue'].includes(name)) return startBlock(name, block);
     if (['refresh-definition', 'open-block-extension', 'reveal-definition'].includes(name)) {
       await action(name, { blockId: block.id });
@@ -3163,13 +3208,11 @@
       renderGraph();
       renderInspector();
       setBusy(state.pending);
-      void checkOpenBlock(true);
       return;
     }
     if (button.dataset.tab) {
       state.tab = button.dataset.tab;
       renderInspector();
-      void checkOpenBlock(true);
       return;
     }
     if (button.dataset.closeDialog) return $(button.dataset.closeDialog).close();
@@ -3664,10 +3707,19 @@
     const block = state.view?.flow.blocks.find((block) => block.id === state.view.humanInput?.blockId);
     if (!block) return;
     state.blockId = block.id;
+    if (state.view.humanInput.kind === 'agent') {
+      state.tab = 'details';
+      render();
+      return;
+    }
     render();
     void startBlock('continue', block);
   });
   $('refresh').addEventListener('click', () => {
+    if (projectHome.isVisible()) {
+      void projectHome.refresh(true);
+      return;
+    }
     void load(true, true);
     if (state.folder || state.fileFolder)
       void folderSettingsUI.refresh().catch((failure) => showError(failure.message));

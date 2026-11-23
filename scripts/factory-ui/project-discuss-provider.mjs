@@ -5,6 +5,9 @@ import { approvalOptions } from './approval-options.mjs';
 import { listAvailableSkills, selectedSkills, skillInputs } from './skills.mjs';
 import { createProjectDiscussTools } from './project-discuss-tools.mjs';
 import { digest, requireThat } from './common.mjs';
+import { agentModel, sessionProvider } from './agent-models.mjs';
+import { NativeAgentConnection } from './native-agent.mjs';
+import { agentRecovery } from './agent-recovery.mjs';
 
 function conversationPromptKind(message) {
   return message.reportContext ? 'report' : 'project';
@@ -59,6 +62,7 @@ export function createProjectDiscussProvider(service, options = {}) {
 class ProjectDiscussProvider {
   constructor(service, options) {
     this.service = service;
+    this.injectedConnection = Boolean(options.connection);
     this.tools =
       options.tools ||
       createProjectDiscussTools(service, { ...options, reportContext: () => this.active?.message.reportContext });
@@ -67,8 +71,15 @@ class ProjectDiscussProvider {
     this.connection.onEvent = (event) => this.event(event);
     this.active = null;
   }
-  skills() {
-    return listAvailableSkills(this.connection, this.service.root);
+  async skills(model) {
+    if (!model || agentModel(model).provider === 'codex')
+      return listAvailableSkills(this.connection, this.service.root);
+    const connection = new NativeAgentConnection({ root: this.service.root, model });
+    try {
+      return await listAvailableSkills(connection, this.service.root);
+    } finally {
+      connection.close();
+    }
   }
   event(event) {
     const active = this.active;
@@ -99,28 +110,19 @@ class ProjectDiscussProvider {
   async turn(session, message, context) {
     requireThat(!this.active, 'This project conversation already has a response running.');
     this.active = { ...context, session, message };
-    const connection = this.connection;
     const abort = () => {
       void this.stop(session).catch(() => {});
     };
     context.signal.addEventListener('abort', abort, { once: true });
     try {
       context.signal.throwIfAborted();
-      const available = await this.skills();
-      const selected = selectedSkills(available, message.settings.skills || []);
-      const clarification = available.find((skill) => skill.name === message.settings.clarificationSkill);
-      requireThat(
-        message.settings.clarificationSkill === 'none' || clarification,
-        'The selected clarification skill is unavailable. Choose No Grilling or set up skills.'
-      );
-      const instructions = this.instructions(available, clarification, conversationPromptKind(message));
-      await this.attach(session, message.settings, instructions);
+      const input = await this.prepareConversation(session, message);
+      const connection = this.connection;
       context.signal.throwIfAborted();
-      const input = [...skillInputs(selected), ...attachmentInputs(message.attachments || [])];
       const output = await connection.turn(
         session.threadId,
         this.service.root,
-        discussionPrompt(session, message),
+        discussionPrompt(session, this.active.message),
         undefined,
         input,
         message.settings,
@@ -130,10 +132,93 @@ class ProjectDiscussProvider {
         }
       );
       return parseResponse(output);
+    } catch (error) {
+      this.resetRejectedStartup(error, session);
+      throw error;
     } finally {
       context.signal.removeEventListener('abort', abort);
       this.active = null;
     }
+  }
+  resetRejectedStartup(error, session) {
+    if (!error.turnRejected) return;
+    if (session.threadId) return;
+    this.retain({ startup: null });
+  }
+  async selectedInputs(message) {
+    const available = await this.skills();
+    const selected = selectedSkills(available, message.settings.skills || []);
+    const clarification = available.find((skill) => skill.name === message.settings.clarificationSkill);
+    requireThat(
+      message.settings.clarificationSkill === 'none' || clarification,
+      'The selected clarification skill is unavailable. Choose No Grilling or set up skills.'
+    );
+    return {
+      inputs: skillInputs(selected),
+      instructions: this.instructions(available, clarification, conversationPromptKind(message)),
+    };
+  }
+  async prepareConversation(session, message) {
+    if (!this.injectedConnection) await this.selectAgent(session, message.settings);
+    const { inputs, instructions } = await this.selectedInputs(message);
+    this.active.signal.throwIfAborted();
+    await this.attach(session, message.settings, instructions);
+    return [...inputs, ...attachmentInputs(message.attachments || [])];
+  }
+  async selectAgent(session, settings) {
+    const target = agentModel(settings.model).provider;
+    await this.handoff(session, target);
+    if ((this.connection.selection?.provider || 'codex') === target) return;
+    this.connectAgent(target, settings);
+  }
+  async requireHandoffIdle(session) {
+    requireThat(
+      !agentRecovery(this.service.root, session.threadId),
+      'Recover the original agent session before handing off its work to another agent.'
+    );
+    if (sessionProvider(session.threadId) === 'codex') {
+      await this.connection.ready();
+      const { thread } = await this.connection.call('thread/read', { threadId: session.threadId, includeTurns: false });
+      requireThat(thread.status?.type === 'idle', 'Stop or reconcile the original conversation before handing off.');
+    }
+  }
+  async handoff(session, target) {
+    if (!session.threadId) return;
+    if (sessionProvider(session.threadId) === target) return;
+    await this.requireHandoffIdle(session);
+    const handoff = {
+      threadId: session.threadId,
+      at: new Date().toISOString(),
+      summary:
+        `Full retained history: ${this.service.root}/.issues/factory-ui/project-discuss/${session.id}/conversation.json\nRecent conversation excerpt:\n` +
+        session.messages
+          .map(({ role, text }) => `${role}: ${text}`)
+          .join('\n\n')
+          .slice(-24000),
+    };
+    this.retain({
+      priorConversations: [...(session.priorConversations || []), handoff],
+      threadId: null,
+      turnId: null,
+      startup: null,
+    });
+    this.active.message = {
+      ...this.active.message,
+      text: `Conversation handoff from ${handoff.threadId}. Retained context:\n${handoff.summary}\n\nCurrent request:\n${this.active.message.text}`,
+    };
+  }
+  connectAgent(target, settings) {
+    this.connection.close();
+    this.connection =
+      target === 'codex'
+        ? new DiscussConnection({ experimentalApi: true })
+        : new NativeAgentConnection({
+            root: this.service.root,
+            model: settings.model,
+            toolDefinitions: this.tools.definitions,
+          });
+    this.connection.toolHandler = (params) => this.invokeTool(params);
+    this.connection.onEvent = (event) => this.event(event);
   }
   instructions(available, clarification, kind = 'project') {
     const catalogue = available

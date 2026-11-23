@@ -1,13 +1,14 @@
+import { githubFetch } from './github-http.mjs';
 import { githubAppEnvironment } from './project-env.mjs';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, statSync } from 'node:fs';
 import { join, isAbsolute } from 'node:path';
-import { sign } from 'node:crypto';
+import { sign, createHash } from 'node:crypto';
 import { requireThat } from './common.mjs';
 import { infrastructureFailure, permissionFailure } from './strategy-repair.mjs';
 
 // Only paths and public IDs live on disk. Installation tokens stay in memory.
 export class GitHubAppCredentials {
-  constructor(config, repository, { request = fetch, now = Date.now } = {}) {
+  constructor(config, repository, { request = githubFetch.bind(null, repository), now = Date.now } = {}) {
     requireThat(Number.isSafeInteger(config.appId) && config.appId > 0, 'Invalid GitHub App ID.');
     requireThat(
       typeof config.privateKey === 'string' || isAbsolute(config.privateKeyPath || ''),
@@ -188,7 +189,8 @@ export function githubAppCredentials(root, repository) {
       Number.isSafeInteger(parsedInstallationId) && parsedInstallationId > 0,
       'Invalid GitHub App installation ID environment setting.'
     );
-    return new GitHubAppCredentials(
+    return sharedCredentials(
+      root,
       {
         appId: parsedAppId,
         repository,
@@ -199,5 +201,19 @@ export function githubAppCredentials(root, repository) {
     );
   }
   const path = join(root, '.issues/github-app.json');
-  return existsSync(path) ? new GitHubAppCredentials(JSON.parse(readFileSync(path, 'utf8')), repository) : null;
+  if (existsSync(path)) return sharedCredentials(root, JSON.parse(readFileSync(path, 'utf8')), repository);
+  credentials.delete(JSON.stringify([root, repository]));
+  return null;
+}
+
+const credentials = new Map();
+function sharedCredentials(root, config, repository) {
+  const key = JSON.stringify([root, repository]);
+  const file = config.privateKeyPath && statSync(config.privateKeyPath, { throwIfNoEntry: false });
+  const fingerprint = createHash('sha256')
+    .update(JSON.stringify([config, file && [file.ino, file.size, file.mtimeMs, file.ctimeMs]]))
+    .digest('hex');
+  if (credentials.get(key)?.fingerprint !== fingerprint)
+    credentials.set(key, { fingerprint, value: new GitHubAppCredentials(config, repository) });
+  return credentials.get(key).value;
 }

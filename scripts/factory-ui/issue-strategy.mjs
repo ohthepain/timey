@@ -1,3 +1,4 @@
+import { withDiagnosticContext } from './diagnostic-activity.mjs';
 import { inputDigest } from './stores/coordination.mjs';
 import { flowOwnsIssue } from './flow-ownership.mjs';
 import {
@@ -828,7 +829,9 @@ async function runOwnerTurn(service, record, run, issue, work, instruction) {
       : '');
   recordClassicInput(service, run, prompt);
   return JSON.parse(
-    await service.codex.turn(threadId, work.checkout, prompt, strategyResultSchema, [], work.modelSettings)
+    await withDiagnosticContext(service.root, { issueId: issue.id, step: 'Strategy work' }, () =>
+      service.codex.turn(threadId, work.checkout, prompt, strategyResultSchema, [], work.modelSettings)
+    )
   );
 }
 

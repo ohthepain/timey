@@ -1,3 +1,4 @@
+import { withDiagnosticContext } from './diagnostic-activity.mjs';
 import { classicOperation, bindClassicRun, recordClassicInput, classicFailure } from './stores/classic-operation.mjs';
 import { effectiveProjectPrompt } from './project-preferences.mjs';
 import { investigationReport } from './investigation-records.mjs';
@@ -21,6 +22,7 @@ import { conversationPage } from './conversation-view.mjs';
 import { createIssueChatConnection, attachIssueChat } from './issue-chat-runtime.mjs';
 import { saveLifecycle } from './lifecycle-store.mjs';
 import { newChatModelSettings } from './model-settings.mjs';
+import { agentRecovery, recoverAgentSession } from './agent-recovery.mjs';
 import { listAvailableSkills, publicSkills, selectedSkills, skillInputs } from './skills.mjs';
 import { setIssueChatTitle } from './chat-name.mjs';
 import { randomUUID } from 'node:crypto';
@@ -76,11 +78,20 @@ class IssueChats {
   }
   view(issueId, before) {
     const { queue, issue } = this.selected(issueId, true);
-    return { ...conversationPage(this.service, queue, issue, before), queue: this.scheduler.view(issueId) };
+    return {
+      ...conversationPage(this.service, queue, issue, before),
+      queue: this.scheduler.view(issueId),
+      agentRecovery: agentRecovery(this.service.root, conversationState(this.service.root, issueId).threadId),
+    };
   }
   async skills(issueId) {
     this.selected(issueId, true);
-    return publicSkills(await listAvailableSkills(this.service.codex, this.service.root));
+    const connection = this.responseConnection(issueId, conversationState(this.service.root, issueId).threadId);
+    try {
+      return publicSkills(await listAvailableSkills(connection, this.service.root));
+    } finally {
+      if (connection !== this.service.codex && !this.connections.has(issueId)) connection.close();
+    }
   }
   async retro(issueId) {
     this.selected(issueId, true);
@@ -121,6 +132,19 @@ class IssueChats {
     validateMessage(input);
   }
   control(input) {
+    if (input.operation === 'recover-agent') {
+      this.service.ownServer();
+      this.selected(input.issueId);
+      requireThat(!this.responseBusy(input.issueId), 'Stop the active response before recovering its session.');
+      recoverAgentSession(
+        this.service.root,
+        conversationState(this.service.root, input.issueId).threadId,
+        input.confirmed
+      );
+      this.connections.get(input.issueId)?.close();
+      this.connections.delete(input.issueId);
+      return this.view(input.issueId);
+    }
     return this.scheduler.control(input);
   }
   beforeFactory(issueId) {
@@ -393,23 +417,25 @@ class IssueChats {
       entry.status = 'dispatching';
       entry.attempt = attempt;
     });
-    const text = await connection.turn(
-      threadId,
-      cwd,
-      prompt,
-      input.outputSchema,
-      skillInputs(selected),
-      newChatModelSettings(root, issueId),
-      {
-        clientId: attempt.id,
-        accepted: (receipt) => {
-          changePrompt(root, issueId, input.id, (entry) => {
-            entry.status = 'accepted';
-            entry.receipt = receipt;
-          });
-          this.scheduler.signal(issueId);
-        },
-      }
+    const text = await withDiagnosticContext(root, { issueId, step: role }, () =>
+      connection.turn(
+        threadId,
+        cwd,
+        prompt,
+        input.outputSchema,
+        skillInputs(selected),
+        newChatModelSettings(root, issueId),
+        {
+          clientId: attempt.id,
+          accepted: (receipt) => {
+            changePrompt(root, issueId, input.id, (entry) => {
+              entry.status = 'accepted';
+              entry.receipt = receipt;
+            });
+            this.scheduler.signal(issueId);
+          },
+        }
+      )
     );
     this.completeResponse(issueId, input, active, text);
     await nameConversationTurn(connection, root, issueId, threadId, role, 'waiting');
@@ -439,6 +465,9 @@ class IssueChats {
     if (existing) return existing;
     if (ownsWorkThread(this.service, issueId, threadId)) return this.service.codex;
     return this.create({
+      root: this.service.root,
+      ...newChatModelSettings(this.service.root, issueId),
+      threadId,
       experimentalApi: true,
       mcpTools: () => sharedChatTools(this.service),
       onEvent: (message) => this.service.store.event(message),

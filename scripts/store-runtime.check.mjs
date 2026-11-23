@@ -33,13 +33,13 @@ function fixture(t, flow = null) {
 }
 
 void test(
-  'cached display returns while one shared refresh is held, but authoritative reads wait',
+  'cached display never refreshes on a timer; explicit refresh coalesces and authoritative reads wait',
   { timeout: 5_000 },
   async (t) => {
     const f = fixture(t);
     const stores = await ensureProjectStores(f.service, { fresh: true });
     const originalNow = Date.now;
-    t.mock.method(Date, 'now', () => originalNow() + 31_000);
+    t.mock.method(Date, 'now', () => originalNow() + 86_400_000);
     const entered = Promise.withResolvers();
     const release = Promise.withResolvers();
     const get = stores.records.get.bind(stores.records);
@@ -52,6 +52,8 @@ void test(
     };
     t.after(() => release.resolve());
     assert.equal(await ensureProjectStores(f.service, { display: true }), stores);
+    assert.equal(reads, 0, 'An old display snapshot does no remote work.');
+    const explicit = ensureProjectStores(f.service, { display: true, fresh: true });
     await entered.promise;
     await Promise.all(Array.from({ length: 10 }, () => ensureProjectStores(f.service, { display: true })));
     assert.equal(reads, 1, 'Concurrent display polls share the held refresh.');
@@ -63,7 +65,7 @@ void test(
     assert.equal(admitted, false, 'Authoritative admission cannot use the display cache.');
     assert.equal(readSnapshot(f.root).issues[0].report, f.report);
     release.resolve();
-    await admission;
+    await Promise.all([explicit, admission]);
     assert.equal(admitted, true);
     const before = reads;
     await ensureProjectStores(f.service, { display: true });
@@ -71,7 +73,7 @@ void test(
   }
 );
 
-void test('cached display preserves background failure and authoritative admission rejects it', async (t) => {
+void test('cached display preserves explicit refresh failure without background retries', async (t) => {
   const f = fixture(t);
   const stores = await ensureProjectStores(f.service, { fresh: true });
   const originalNow = Date.now;
@@ -84,14 +86,21 @@ void test('cached display preserves background failure and authoritative admissi
     throw Object.assign(Error('Store unreachable'), { code: 'STORE_UNAVAILABLE' });
   };
   t.after(() => release.resolve());
-  await ensureProjectStores(f.service, { display: true });
-  await entered.promise;
   const rejection = assert.rejects(ensureProjectStores(f.service, { fresh: true }), /Store unreachable/);
+  await entered.promise;
   release.resolve();
   await rejection;
   assert.equal(await ensureProjectStores(f.service, { display: true }), stores);
   assert.equal(f.service.storeStatus.unavailable, true);
+  assert.equal(f.service.storeStatus.phase, 'unavailable');
   assert.match(f.service.storeStatus.warning, /read-only/);
+  let retries = 0;
+  stores.records.get = async () => {
+    retries++;
+    throw Error('Unexpected retry');
+  };
+  await Promise.all(Array.from({ length: 10 }, () => ensureProjectStores(f.service, { display: true })));
+  assert.equal(retries, 0);
 });
 
 void test('authoritative admission upgrades an in-flight non-fresh initialization', async (t) => {
@@ -145,17 +154,45 @@ void test('display without a confirmed snapshot waits for shared storage', async
   assert.equal(readSnapshot(f.root).issues[0].report, f.report);
 });
 
-void test('a restarted display registers the confirmed cache before shared storage is confirmed', async (t) => {
+void test('a restarted display uses the confirmed cache until refresh or operation admission', async (t) => {
   const f = fixture(t);
   await ensureProjectStores(f.service, { fresh: true });
   await closeProjectStores(f.service);
   delete f.service.storeStatus;
   const stores = await ensureProjectStores(f.service, { display: true });
   assert.equal(registeredProjectStores(f.root), stores);
-  assert.equal(f.service.storeStatus.unavailable, true);
-  assert.match(f.service.storeStatus.warning, /read-only until storage is confirmed/);
+  assert.equal(f.service.storeStatus.unavailable, false);
+  assert.equal(f.service.storeStatus.phase, 'cached');
+  assert.equal(f.service.storeStatus.checkedAt, readSnapshot(f.root).capturedAt);
   await ensureProjectStores(f.service, { fresh: true });
   assert.equal(f.service.storeStatus.available, true);
+  assert.equal(f.service.storeStatus.phase, 'ready');
+});
+
+void test('confirmed storage clears a startup warning through serialized polling updates', async (t) => {
+  const f = fixture(t);
+  await ensureProjectStores(f.service, { fresh: true });
+  const flows = createIssueFlows(f.service, { executor: { close() {} }, observer: { observe: async () => ({}) } });
+  t.after(() => flows.close());
+  f.service.storeStatus = {
+    available: false,
+    unavailable: true,
+    warning: 'Refreshing shared storage. The last saved snapshot is read-only until storage is confirmed.',
+  };
+  const displayed = JSON.parse(JSON.stringify(await flows.storageView()));
+  assert.match(displayed.sharedQueueWarning, /read-only until storage is confirmed/);
+  f.service.storeStatus = { available: true, unavailable: false };
+  Object.assign(displayed, JSON.parse(JSON.stringify(await flows.storageView())));
+  assert.deepEqual(displayed.storeStatus, { available: true, unavailable: false });
+  assert.equal(displayed.sharedQueueWarning, null, 'Confirmed storage retained its stale read-only warning.');
+  f.service.storeStatus = {
+    available: false,
+    unavailable: true,
+    warning: 'Shared storage is unavailable. Cached data is read-only; local drafts are retained.',
+  };
+  Object.assign(displayed, JSON.parse(JSON.stringify(await flows.storageView())));
+  assert.equal(displayed.storeStatus.unavailable, true);
+  assert.match(displayed.sharedQueueWarning, /Shared storage is unavailable/);
 });
 
 void test('selected issue display does not wait for evidence hydration or refresh the entire store again', async (t) => {

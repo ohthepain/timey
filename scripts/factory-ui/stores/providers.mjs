@@ -51,6 +51,7 @@ function issueProvider(records) {
   }
   return {
     id: records.id,
+    supportsCoordinatedCommit: true,
     ...(records.readSnapshot && {
       readSnapshot: (read) =>
         records.readSnapshot((pinned) => {
@@ -66,7 +67,7 @@ function issueProvider(records) {
         .filter((item) => item.key.endsWith('/head') && (!location || item.value.location === location))
         .map(issue);
     },
-    async commit({ issueId, expectedRevision, operationId, report, location }) {
+    async commit({ issueId, expectedRevision, operationId, report, location, coordination }) {
       assertStore(
         typeof operationId === 'string' && operationId.length > 0,
         'An issue write requires its operation identity.'
@@ -76,6 +77,16 @@ function issueProvider(records) {
         typeof report === 'string' || Buffer.isBuffer(report) || report instanceof Uint8Array,
         'An issue report must contain exact text or bytes.'
       );
+      if (coordination) {
+        assertStore(
+          Array.isArray(coordination.expected) &&
+            Array.isArray(coordination.writes) &&
+            [...coordination.expected, ...coordination.writes].every(
+              (entry) => typeof entry.key === 'string' && !entry.key.startsWith('issues/')
+            ),
+          'Coordinated publication cannot replace Issue records.'
+        );
+      }
       const head = prefix(issueId) + 'head';
       const history = prefix(issueId) + 'history/' + hash(operationId);
       const value = { id: issueId, report: Buffer.from(report).toString('base64'), location };
@@ -84,6 +95,7 @@ function issueProvider(records) {
         expected: [
           { key: head, revision: expectedRevision },
           { key: history, revision: null },
+          ...(coordination?.expected || []),
         ],
         writes: [
           { key: head, value },
@@ -91,6 +103,7 @@ function issueProvider(records) {
             key: history,
             value: { ...value, previousRevision: expectedRevision, headRevision: revisionFor(operationId, head) },
           },
+          ...(coordination?.writes || []),
         ],
       });
       return issue(result.records.find((item) => item.key === head));

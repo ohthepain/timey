@@ -24,6 +24,8 @@ const media = {
   '.html': 'text/html',
 };
 const resolvers = new Map();
+const resolverGenerations = new WeakMap();
+let nextResolverGeneration = 0;
 
 function evidenceError(message) {
   return Object.assign(Error(message), { code: 'STORE_EVIDENCE_GAP' });
@@ -215,13 +217,23 @@ export async function hydrateEvidence({ manifest, artifacts, directory }) {
   };
 }
 
+export function evidenceResolverGeneration(root) {
+  return resolverGenerations.get(resolvers.get(resolve(root))) || 0;
+}
+
 export function registerEvidenceResolver(root, resolver, { originId = resolver.manifest.originId } = {}) {
   const key = resolve(root);
   if (!resolvers.has(key)) resolvers.set(key, new Map());
   const project = resolvers.get(key);
-  project.set(originId, resolver);
+  if (project.get(originId) !== resolver) {
+    project.set(originId, resolver);
+    resolverGenerations.set(project, ++nextResolverGeneration);
+  }
   return () => {
-    if (project.get(originId) === resolver) project.delete(originId);
+    if (project.get(originId) === resolver) {
+      project.delete(originId);
+      resolverGenerations.set(project, ++nextResolverGeneration);
+    }
     if (!project.size && resolvers.get(key) === project) resolvers.delete(key);
   };
 }

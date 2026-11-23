@@ -146,6 +146,10 @@ through closure, including human messages, lifecycle contributions, decisions,
 outcomes, and retrospectives.
 _Avoid_: Temporary chat, worker chat
 
+**Conversation handoff**:
+An explicit move to another agent through a fresh conversation and a summary of
+prior context. The original conversation's history remains available.
+
 **Revision request**:
 An explicit request to reconsider an issue's agreed work, retained for review
 before continuing under an approved plan. It is separate from a comment or approval.

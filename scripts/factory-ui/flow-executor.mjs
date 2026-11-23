@@ -20,6 +20,7 @@ import {
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createIssueChatConnection, attachIssueChat } from './issue-chat-runtime.mjs';
+import { approvalOptions } from './approval-options.mjs';
 import { conversationState, saveConversationState, appendMessage } from './conversation-store.mjs';
 import { listAvailableSkills, selectedSkills, skillInputs } from './skills.mjs';
 import { readModelSettings } from './model-settings.mjs';
@@ -106,7 +107,7 @@ export function createFlowExecutor(service, options = {}) {
       const forward = () => controller.abort(ctx.signal?.reason);
       ctx.signal?.addEventListener('abort', forward, { once: true });
       if (ctx.signal?.aborted) forward();
-      const owned = { controller, connection: null };
+      const owned = { controller, connection: null, blockId: ctx.block.id, attemptId: ctx.attempt.id };
       active.set(ctx.issue.id, owned);
       const onStep = (text) => ctx.onStep?.(redactValue(String(text)).trim().slice(0, 500));
       const context = {
@@ -177,6 +178,30 @@ export function createFlowExecutor(service, options = {}) {
         removeInvestigationSnapshot(owned.snapshot);
         active.delete(ctx.issue.id);
       }
+    },
+    approvals(issueId) {
+      const owned = active.get(issueId);
+      if (!owned?.connection?.selection) return [];
+      return [...owned.connection.requests.values()].map((request) => ({
+        requestId: String(request.id),
+        blockId: owned.blockId,
+        attemptId: owned.attemptId,
+        params: request.params,
+        options:
+          request.method === 'item/tool/requestUserInput'
+            ? []
+            : approvalOptions(request).map(({ id, label, detail }) => ({ id, label, detail })),
+      }));
+    },
+    answer(issueId, blockId, attemptId, requestId, response) {
+      const owned = active.get(issueId);
+      requireThat(
+        owned?.blockId === blockId && owned.attemptId === attemptId && !owned.controller.signal.aborted,
+        'This approval no longer belongs to the running block. Refresh before deciding.'
+      );
+      const request = owned.connection?.requests.get(String(requestId));
+      requireThat(request, 'This permission request is no longer pending.');
+      return owned.connection.answer(requestId, request.params.threadId, response);
     },
     close() {
       closed = true;
@@ -827,7 +852,11 @@ async function runModel(service, ctx, owned, options) {
     rejectInput = reject;
   });
   inputRequired.catch(() => {});
+  const settings = executionModels(service, ctx);
   const connection = options.create({
+    root: service.root,
+    ...(ctx.block.kind === 'sol' ? {} : settings),
+    threadId: binding.threadId,
     experimentalApi: Boolean(outputExecution),
     onEvent(message) {
       ctx.onEvent?.(message);
@@ -838,9 +867,11 @@ async function runModel(service, ctx, owned, options) {
       }
       if (params.delta) ctx.onProgress(params.delta);
       else if (message.method === 'item/started')
-        ctx.onProgress(params.item?.command || params.item?.type || 'Working');
+        ctx.onProgress(params.item?.command || params.item?.tool || params.item?.type || 'Working');
       progress.event(message.method, params.item);
-      if (message.method === 'ui/approval' || message.method === 'ui/unsupportedRequest') {
+      if (message.method === 'ui/approval' && owned.connection?.selection) {
+        progress.inputRequired();
+      } else if (message.method === 'ui/approval' || message.method === 'ui/unsupportedRequest') {
         progress.inputRequired();
         const error = Error(
           'This block needs provider permission or human input. Its saved request requires attention before continuation.'
@@ -856,7 +887,6 @@ async function runModel(service, ctx, owned, options) {
     await listAvailableSkills(connection, workspace.temporary ? service.root : workspace.checkout),
     ctx.block.skill ? [ctx.block.skill] : []
   );
-  const settings = executionModels(service, ctx);
   let rounds = 1;
   if (ctx.block.kind === 'sol') {
     rounds = ctx.block.iterations;
@@ -868,6 +898,7 @@ async function runModel(service, ctx, owned, options) {
       'No Sol model is available. Install or enable a Sol model before running this block. No substitute was used.'
     );
     settings.model = model.id;
+    connection.model = model.id;
   }
   const retain = (changes) => {
     Object.assign(binding, changes);

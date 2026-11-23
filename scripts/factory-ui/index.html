@@ -1631,6 +1631,11 @@
         box-shadow: 0 18px 50px #17211e40;
         padding: 20px;
       }
+      #server-actions-dialog [data-actions-empty] {
+        height: 1.5em;
+        line-height: 1.5;
+        overflow: auto;
+      }
       #server-actions-dialog::backdrop {
         background: #17211e70;
       }
@@ -2208,7 +2213,10 @@
           const projectIssuesEmbed = document.documentElement.dataset.projectIssuesEmbed === 'true';
           const storage = issueStorageLocation();
           const [snapshot, runtime, conversation, stored] = await Promise.all([
-            request(issueQueueEndpoint(issueId, projectIssuesEmbed)),
+            request(
+              issueQueueEndpoint(issueId, projectIssuesEmbed) +
+                (manualRefreshPending ? (issueId || projectIssuesEmbed ? '&' : '?') + 'refresh=true' : '')
+            ),
             request('runtime'),
             issueId && !projectIssuesEmbed ? request('issue-chat?issue=' + encodeURIComponent(issueId)) : null,
             storage ? loadStoredIssues(storage) : null,
@@ -2225,7 +2233,7 @@
           coordinatorUI.update(data);
           showRuntime(runtime);
           if (runtime.server) serverControlUI.show(runtime.server, request);
-          $('connection').textContent = 'Live local queue · refreshed ' + new Date().toLocaleTimeString();
+          $('connection').textContent = 'Local updates · remote data refreshes on demand';
           updateLiveOutput();
           issueStorageReadOnly = runtime.mode === 'preview';
           refreshPending ||= previous !== JSON.stringify(data) || stored;
@@ -2504,6 +2512,14 @@
         }
         void refresh();
       }
+      document.defaultView.addEventListener('message', (event) => {
+        if (
+          event.origin === location.origin &&
+          event.source === document.defaultView.parent &&
+          event.data?.type === 'factory-refresh'
+        )
+          refreshProgress();
+      });
       function showRuntime(runtime) {
         const sourceChangeBanner = $('source-change-banner');
         if (sourceChangedAtPageLoad === null) sourceChangedAtPageLoad = Boolean(runtime.sourceChanged);

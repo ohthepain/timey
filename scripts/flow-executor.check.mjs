@@ -695,6 +695,43 @@ test('provider input stops the block and preserves its request instead of hangin
   assert.equal(conversationState(f.root, f.issue.id).flowBlocks['block-understand'].status, 'attention');
 });
 
+test('native Flow approvals wait for a decision bound to the current block and attempt', async (t) => {
+  const f = fixture(t);
+  const requested = Promise.withResolvers();
+  const approved = Promise.withResolvers();
+  f.connection.selection = { provider: 'anthropic' };
+  f.connection.requests = new Map();
+  f.connection.turn = async () => {
+    const request = {
+      id: 'permission',
+      method: 'item/commandExecution/requestApproval',
+      params: { threadId: 'the-one-issue-chat', command: 'Edit fixture', availableDecisions: ['accept', 'decline'] },
+    };
+    f.connection.requests.set(request.id, request);
+    f.emit({ method: 'ui/approval', params: { requestId: request.id, ...request.params } });
+    requested.resolve();
+    return approved.promise;
+  };
+  f.connection.answer = (id, threadId, response) => {
+    assert.equal(threadId, 'the-one-issue-chat');
+    assert.equal(response.decision, 'option:0');
+    f.connection.requests.delete(id);
+    approved.resolve('Approved result.');
+  };
+  const running = f.run('understand');
+  await requested.promise;
+  const [request] = f.executor.approvals(f.issue.id);
+  assert.equal(request.blockId, 'block-understand');
+  assert.equal(request.options[0].label, 'Allow once');
+  assert.throws(
+    () => f.executor.answer(f.issue.id, request.blockId, 'stale-attempt', request.requestId, {}),
+    /no longer belongs/
+  );
+  f.executor.answer(f.issue.id, request.blockId, request.attemptId, request.requestId, { decision: 'option:0' });
+  await running;
+  assert.deepEqual(f.executor.approvals(f.issue.id), []);
+});
+
 test('protected merge and delete block without saved delivery evidence and start no model', async (t) => {
   const f = fixture(t);
   await assert.rejects(f.run('merge'), /No protected PR candidate or managed/);

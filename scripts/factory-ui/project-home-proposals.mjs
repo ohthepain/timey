@@ -1,5 +1,5 @@
 import { createIssueChatConnection } from './issue-chat-runtime.mjs';
-import { newChatModelSettings } from './model-settings.mjs';
+import { codexHelperModelSettings } from './model-settings.mjs';
 import { redactValue } from './activity.mjs';
 import { requireThat } from './common.mjs';
 
@@ -47,7 +47,9 @@ export async function proposeProjectFollowups(root, context, signal, create = cr
       JSON.stringify(redactValue(context)),
       schema,
       [],
-      context.settings ? { model: context.settings.model, effort: context.settings.effort } : newChatModelSettings(root)
+      context.settings
+        ? { model: context.settings.model, effort: context.settings.effort }
+        : codexHelperModelSettings(root)
     );
     signal.throwIfAborted();
     const result = JSON.parse(output);

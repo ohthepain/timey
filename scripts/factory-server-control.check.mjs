@@ -589,6 +589,8 @@ test('old disconnected preparations appear in the count and Action list and can 
 
 test('an open Action list drops cleanup when the running count falls', async () => {
   const dom = loadServerControlDom();
+  let now = 0;
+  dom.window.Date.now = () => now;
   const { document, controls } = dom.window;
   const active = { ...idleServerControl(), actions: 1 };
   controls.show(active, async () => [
@@ -598,6 +600,7 @@ test('an open Action list drops cleanup when the running count falls', async () 
   await delay(0);
   const dialog = document.querySelector('#server-actions-dialog');
   assert.match(dialog.textContent, /Cleanup: Example/);
+  now = 2000;
   controls.show({ ...active, actions: 0 }, async () => []);
   await delay(0);
   assert.match(dialog.textContent, /No issue-linked actions are running/);
@@ -896,4 +899,63 @@ test('local pause and restart controls stay available during a required store ou
   assert.match(shared.value.error, /coordination store is unavailable/);
   assert.ok(reads > 0, 'Shared issue operations must still check their configured authority.');
   assert.equal(writes, 0);
+});
+
+test('Flow actions describe their block purpose and operations outside blocks', (t) => {
+  const root = project(t);
+  const issueId = '20261101T000000000-0123456789abcdef';
+  writeFileSync(
+    join(root, '.issues', issueId + '.md'),
+    `---\nid: ${issueId}\ntitle: Explain manual closure\nstate: investigate\n---\n\n## Original request\n\nClarify Close.\n`
+  );
+  const service = new FactoryUI(root);
+  const control = serverControl(service);
+  const originalFlows = service.flows;
+  service.flows = {
+    active: new Map([[issueId, { blockId: 'publish', attemptId: 'attempt-one' }]]),
+    selected: () => ({ id: issueId, title: 'Explain manual closure' }),
+    read: () => ({
+      blocks: [
+        {
+          id: 'publish',
+          kind: 'publish',
+          label: 'Publish PR',
+          attempts: [{ id: 'attempt-one', status: 'running', step: 'Checking the destination branch' }],
+        },
+      ],
+    }),
+    catalog: {
+      read: () => ({
+        entries: [{ id: 'publish', description: 'Publish the checked issue changes as a pull request.' }],
+      }),
+    },
+  };
+  try {
+    const action = control.actions()[0];
+    assert.equal(action.title, 'Publish PR');
+    assert.equal(action.trigger, 'Block: Publish PR');
+    assert.equal(action.purpose, 'Publish the checked issue changes as a pull request.');
+    assert.equal(action.details, 'Checking the destination branch');
+    assert.equal(action.issues[0].title, 'Explain manual closure');
+    service.flows.active.set(issueId, { blockId: 'abort-merge' });
+    const outside = control.actions()[0];
+    assert.equal(outside.title, 'Abort merge');
+    assert.equal(outside.trigger, 'Branch menu: Abort merge');
+    assert.match(outside.purpose, /Discard the pending merge/);
+    assert.doesNotMatch(outside.details, /undefined/);
+    assert.equal(outside.outputHref, `/?issue=${issueId}`);
+    service.flows.active.clear();
+    service.flows.flowBuilds = new Set([issueId]);
+    service.flows.branchRepairs = { active: new Map([[issueId, {}]]) };
+    const background = control.actions();
+    assert.deepEqual(
+      background.map((item) => item.title),
+      ['Fix Branch', 'Build flow']
+    );
+    assert.ok(background.every((item) => item.trigger && item.purpose && item.issues[0].id === issueId));
+  } finally {
+    service.flows = originalFlows;
+    control.close();
+    service.close();
+  }
 });

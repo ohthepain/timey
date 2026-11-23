@@ -1,3 +1,4 @@
+import { withDiagnosticContext } from './diagnostic-activity.mjs';
 import { storeUnavailable } from './stores/availability.mjs';
 import { abortOwnedMerge, moveOwnedStartingPoint, updateOwnedWorktree } from './stores/manual-operations.mjs';
 import { prepareAttemptCommit } from './stores/flow-evidence.mjs';
@@ -5,7 +6,8 @@ import { readSnapshot } from './stores/snapshots.mjs';
 import { resolveIssueStorage } from './stores/settings.mjs';
 import { registeredProjectStores } from './stores/report-access.mjs';
 import { ensureProjectStores, hydrateProjectEvidence } from './stores/runtime.mjs';
-import { evidencePath } from './stores/evidence.mjs';
+import { evidencePath, evidenceResolverGeneration } from './stores/evidence.mjs';
+import { fileGeneration } from './file-read-cache.mjs';
 import { mergedDelivery, mergedIssueMessage, allowsMergedAction, mergedIssueState } from './merged-issue.mjs';
 import { pendingIssueMerge } from './flow-merge-state.mjs';
 import { abortPendingMerge } from './flow-update-branch.mjs';
@@ -36,7 +38,8 @@ import {
   updateStoredIssueMetadata,
 } from './issue-report-storage.mjs';
 import { queueIssueNumbers } from './issue-numbers.mjs';
-import { appendMessage, conversationMessages } from './conversation-store.mjs';
+import { appendMessage, conversationMessages, conversationState } from './conversation-store.mjs';
+import { recoverAgentSession } from './agent-recovery.mjs';
 import { createDiscussionRuntime } from './discussion-codex.mjs';
 import { redactValue } from './activity.mjs';
 import { digest, git, requireThat, writeJson } from './common.mjs';
@@ -66,6 +69,7 @@ import { executionBlockSkill, executionStarted, resolveIssueExecutionSettings } 
 import { folderSettingsFields, validateSettingValue } from './folder-settings-schema.mjs';
 import {
   createIssueFolderSettings,
+  createFolderSettingsSnapshot,
   defaultIssueFolder,
   ensureInboxFolder,
   initializeFolderSettings,
@@ -129,14 +133,6 @@ import { deleteIssueWorktree, issueHasActiveWork, worktreeCleanupService } from 
 import { branchStartingPoint, captureStartingPoint, flowBranches } from './flow-branches.mjs';
 import { FlowFolderSelection } from './flow-folder-selection.mjs';
 import { FlowOvernight } from './flow-overnight.mjs';
-
-function folderSettingsSnapshot() {
-  const settings = new Map();
-  return (root, folder) => {
-    if (!settings.has(folder)) settings.set(folder, resolveFolderSettings(root, folder));
-    return settings.get(folder);
-  };
-}
 
 const hiddenRepoFolders = new Set(['.git', '.issues', 'node_modules', '.next', '.turbo', 'coverage', 'dist', 'build']);
 const confirmationBlocks = new Set(['close', 'delete-worktree']);
@@ -340,6 +336,8 @@ class IssueFlows {
     this.executor = options.executor || createFlowExecutor(service, this.deliveryOptions);
     this.active = new Map();
     this.evidenceLoads = new Map();
+    this.artifactReads = new Map();
+    this.artifactReadBytes = 0;
     this.deliveryObservations = new Map();
     this.branchRepairs = new BranchRepairs(this, options.branchRepairs);
     this.autoplay = new Map();
@@ -481,8 +479,10 @@ class IssueFlows {
       return false;
     }
   }
-  folderSettingsView(folder) {
-    const view = readFolderSettings(this.service.root, folder.directory, { branchChoices: false });
+  folderSettingsView(folder, snapshot) {
+    const view = snapshot
+      ? snapshot.read(folder.directory)
+      : readFolderSettings(this.service.root, folder.directory, { branchChoices: false });
     return {
       ...folder,
       values: Object.fromEntries(Object.entries(view.settings).map(([key, entry]) => [key, entry.value])),
@@ -535,17 +535,17 @@ class IssueFlows {
       storeId: issue.storeId,
       resolvedBranch: deliveryTarget(flow).branch,
       activeBlock: activeBlock ? { id: activeBlock.id, kind: activeBlock.kind } : null,
-      humanInput: availableHumanInput(issue, flow),
+      humanInput: availableHumanInput(issue, flow, this.agentApprovals(issue.id)[0]),
       paused: Boolean(this.autoplay.get(issue.id)?.userPaused),
       waitingForApproval: this.autoplay.get(issue.id)?.mode === 'waiting',
       status: flowStatus(flow, issue, active),
     };
   }
-  async storageView(id) {
+  async storageView(id, { refresh = false } = {}) {
     if (!this.service.projectStores)
       return { sharedQueueWarning: await this.refreshSharedQueue(id), storeStatus: this.service.storeStatus };
     let evidence = this.evidenceLoads.get(id);
-    if (id && !evidence?.pending && (!evidence || Date.now() - evidence.checkedAt >= 30_000)) {
+    if (id && !evidence?.pending && (!evidence || refresh)) {
       evidence ||= {};
       this.evidenceLoads.set(id, evidence);
       evidence.pending = hydrateProjectEvidence(this.service, id)
@@ -563,14 +563,17 @@ class IssueFlows {
     }
     return {
       sharedQueueWarning:
-        this.service.storeStatus?.warning || this.deliveryObservations.get(id)?.warning || evidence?.warning,
+        this.service.storeStatus?.warning || this.deliveryObservations.get(id)?.warning || evidence?.warning || null,
       storeStatus: this.service.storeStatus,
       ...(evidence?.status ? { evidenceStatus: evidence.status } : {}),
       ownership: readSnapshot(this.service.root)?.claims?.find((claim) => claim.issueId === id),
     };
   }
-  async view(id, { requestOnly = false } = {}) {
-    const { ownership, ...storage } = await this.storageView(id);
+  agentApprovals(issueId) {
+    return this.executor.approvals ? this.executor.approvals(issueId) : [];
+  }
+  async view(id, { requestOnly = false, refresh = false } = {}) {
+    const { ownership, ...storage } = await this.storageView(id, { refresh });
     const issues = this.issues();
     const { entries: catalog, errors: catalogErrors } = this.catalog.read();
     let branches = [];
@@ -582,11 +585,11 @@ class IssueFlows {
         branchCatalogError = error.message;
       }
     }
-    const folderSettings = readIssueFolderSettings(
-      this.service.root,
-      requestOnly ? {} : { includeCopies: true, includeBroken: true }
-    );
-    const resolveFolder = folderSettingsSnapshot();
+    const folderSnapshot = createFolderSettingsSnapshot(this.service.root);
+    const folderSettings = requestOnly
+      ? folderSnapshot.folders.filter((folder) => folder.id && !folder.duplicate)
+      : folderSnapshot.folders;
+    const resolveFolder = folderSnapshot.resolve;
     const index = requestOnly
       ? []
       : issues.map((issue) =>
@@ -606,7 +609,9 @@ class IssueFlows {
         ]),
       ],
       issueFolders: folderSettings.map(({ name }) => name),
-      folderSettings: requestOnly ? [] : folderSettings.map((folder) => this.folderSettingsView(folder)),
+      folderSettings: requestOnly
+        ? []
+        : folderSettings.map((folder) => this.folderSettingsView(folder, folderSnapshot)),
       legacyFolders: this.legacyFolders(),
       folderRuns: requestOnly ? {} : this.overnight.reports(),
       catalog,
@@ -615,15 +620,16 @@ class IssueFlows {
     };
     if (!requestOnly) {
       try {
-        data.defaultFolder = defaultIssueFolder(this.service.root).name;
+        data.defaultFolder = folderSnapshot.defaultFolder().name;
       } catch (error) {
         data.defaultFolderError = error.message;
       }
     }
     if (!id) return data;
     const issue = this.selected(id);
-    const observedFlow = this.read(issue, catalog, undefined, resolveFolder);
-    const environment = await this.observer.observe(observedFlow);
+    const agentApprovals = this.agentApprovals(id);
+    const observedFlow = this.read(issue, catalog, folderSettings, resolveFolder);
+    const environment = await this.observer.observe(observedFlow, { refresh });
     const savedFlow = await this.observedDelivery(issue, observedFlow, environment, catalog, {
       background: Boolean(this.service.projectStores),
     });
@@ -686,7 +692,8 @@ class IssueFlows {
         closure: issue.closure,
       },
       flow,
-      humanInput: availableHumanInput(issue, flow),
+      humanInput: availableHumanInput(issue, flow, agentApprovals[0]),
+      agentApprovals,
       issueSettings: {
         ...issueSettings,
         fields: folderSettingsFields(this.service.root).filter(({ key }) =>
@@ -715,7 +722,7 @@ class IssueFlows {
       startingPointEditable: !branchCatalogError && this.startingPointEditable(issue, flow, environment.pr),
       environment,
       branchRepair: this.branchRepairs.view(issue, savedFlow, environment.merge),
-      artifacts: this.artifacts(flow),
+      artifacts: this.artifacts(flow, { fresh: false }),
       conversation: conversationMessages(this.service.root, id).slice(-100),
     };
   }
@@ -1160,7 +1167,7 @@ class IssueFlows {
       }
       if (await this.checkDefinition(issue, flow, next.id, catalog)) return;
       if (next.kind === 'request') {
-        await this.refreshRequest(issue, flow, next.data.wording, catalog, true);
+        await this.refreshRequest(issue, flow, next.data.wording, catalog, { keepPlaying: true });
         return;
       }
       await this.start(issue, flow, { blockId: next.id, action: needsRetry ? 'continue' : 'start' }, catalog, 'play');
@@ -1190,16 +1197,26 @@ class IssueFlows {
     );
   }
   async prepareActionStores(input, storesReady) {
-    if (!storesReady && this.actionNeedsFreshStore(input)) await ensureProjectStores(this.service, { fresh: true });
+    if (!storesReady && this.actionNeedsFreshStore(input))
+      await ensureProjectStores(this.service, {
+        fresh: true,
+        ...(input.action === 'approve-issue' && { issueIds: [input.issueId] }),
+      });
   }
   async action(input, { storesReady = false } = {}) {
     await this.prepareActionStores(input, storesReady);
     if (
       this.service.projectStores &&
       input.issueId &&
-      !['stop', 'pause', 'cancel-confirmation', 'branch-repair-stop', 'open-block', 'open-worktree'].includes(
-        input.action
-      )
+      ![
+        'stop',
+        'pause',
+        'cancel-confirmation',
+        'branch-repair-stop',
+        'open-block',
+        'open-worktree',
+        'agent-answer',
+      ].includes(input.action)
     ) {
       const claim = await this.service.projectStores.coordination.get('claims/' + input.issueId);
       requireThat(!claim, 'Stop or explicitly recover the owning attempt before editing or starting this issue.');
@@ -1364,6 +1381,14 @@ class IssueFlows {
     if (branchActions.has(input.action)) return this.branchOperation(issue, flow, input);
     if (input.action === 'restate-artifact') return this.restateArtifact(flow, input);
     if (input.action === 'stop') return this.stop(flow, input);
+    if (input.action === 'agent-answer') {
+      requireThat(this.active.has(issue.id), 'This issue has no running block on this runner.');
+      this.executor.answer(issue.id, input.blockId, input.attemptId, input.requestId, input.response);
+      this.changeAttempt(issue, input.blockId, input.attemptId, (attempt) => {
+        delete attempt.inputRequestedAt;
+      });
+      return this.view(issue.id);
+    }
     requireThat(!this.flowBuilds.has(issue.id), 'Wait for the flow structure to finish building.');
     if (input.action === 'destination-branches') return this.destinationBranches(flow);
     if (input.action === 'preview-publish' || input.action === 'confirm-publish')
@@ -1413,7 +1438,7 @@ class IssueFlows {
         );
         return { accepted: true, issueId: issue.id, blockId: request.id };
       }
-      return this.refreshRequest(issue, flow, wording, catalog);
+      return this.refreshRequest(issue, flow, wording, catalog, { background: input.background === true });
     }
     if (['rebuild-flow', 'select-flow'].includes(input.action))
       return this.applyFlowDefinition(issue, flow, catalog, input);
@@ -1923,7 +1948,7 @@ class IssueFlows {
       }
     return update.dirty.size > 0;
   }
-  async refreshRequest(issue, flow, wording, catalog, keepPlaying = false) {
+  async refreshRequest(issue, flow, wording, catalog, { keepPlaying = false, background = false } = {}) {
     const block = requestBlock(flow);
     const priorFields = block.data.fields;
     const wordingChanged = block.data.wording !== wording;
@@ -1952,18 +1977,28 @@ class IssueFlows {
     flow = admitted.flow;
     const owned = admitted.owned;
     owned.task = this.execute(issue, flow, current.id, attempt.id, controller, {}, definition);
-    await owned.task;
-    const saved = this.read(issue, catalog);
-    const type = requestData(saved).fields?.type;
-    try {
-      if (type && type !== saved.routeType)
-        await this.applyFlowDefinition(issue, saved, catalog, { action: 'rebuild-flow', afterClarification: true });
-      this.autoplayFinished(issue.id, current, latestCurrentAttempt(requestBlock(this.read(issue, catalog))));
-      return this.view(issue.id);
-    } catch (error) {
-      this.pauseAutoplay(issue.id, redactValue(error.message));
-      throw error;
+    const finish = async () => {
+      await owned.task;
+      const saved = this.read(issue, catalog);
+      const type = requestData(saved).fields?.type;
+      try {
+        if (type && type !== saved.routeType)
+          await this.applyFlowDefinition(issue, saved, catalog, {
+            action: 'rebuild-flow',
+            afterClarification: true,
+          });
+        this.autoplayFinished(issue.id, current, latestCurrentAttempt(requestBlock(this.read(issue, catalog))));
+        return this.view(issue.id);
+      } catch (error) {
+        this.pauseAutoplay(issue.id, redactValue(error.message));
+        throw error;
+      }
+    };
+    if (background) {
+      void finish().catch((error) => this.pause(issue.id, redactValue(error.message)));
+      return { accepted: true, issueId: issue.id, blockId: current.id };
     }
+    return finish();
   }
   lockedDestination(pr) {
     return { branch: pr.branch, pr: pr.number, url: pr.url, title: pr.title };
@@ -2223,6 +2258,10 @@ class IssueFlows {
     );
     const block = flow.blocks.find((item) => item.id === input.blockId);
     requireThat(block, 'Choose a saved block.');
+    if (input.action === 'continue') {
+      const binding = conversationState(this.service.root, issue.id).flowBlocks?.[block.id];
+      if (binding?.threadId) recoverAgentSession(this.service.root, binding.threadId, input.confirmedAgentRecovery);
+    }
     requireBranchUpdate(flow, block);
     const unresolved = flow.blocks.find((item) => item.attempts.some(unresolvedAttempt));
     requireThat(
@@ -2333,6 +2372,12 @@ class IssueFlows {
   }
   async execute(issue, flow, blockId, attemptId, controller, input, definition) {
     const block = flow.blocks.find((item) => item.id === blockId);
+    return withDiagnosticContext(this.service.root, { issueId: issue.id, step: block.kind, attemptId, blockId }, () =>
+      this.executeBlock(issue, flow, block, attemptId, controller, input, definition)
+    );
+  }
+  async executeBlock(issue, flow, block, attemptId, controller, input, definition) {
+    const blockId = block.id;
     const attempt = block.attempts.at(-1);
     const owner = this.active.get(issue.id)?.storeOwner;
     let synchronizing = false;
@@ -2881,21 +2926,53 @@ class IssueFlows {
     if (point) flow.startingPoint = point;
     return flow;
   }
-  artifacts(flow) {
+  artifacts(flow, { fresh = true } = {}) {
+    const maximumBytes = 32 * 1024 * 1024;
     const root = realpathSync(this.service.root);
+    const resolver = evidenceResolverGeneration(this.service.root);
+    const forget = (key) => {
+      const previous = this.artifactReads.get(key);
+      if (previous) this.artifactReadBytes -= previous.bytes;
+      this.artifactReads.delete(key);
+    };
     return [...flow.blocks, ...(flow.retiredBlocks ?? [])].flatMap((block) => {
       const listed = new Set();
       return block.attempts.toReversed().flatMap((attempt) =>
         (attempt.evidence || []).flatMap(({ path: originalPath, label, sha256 }) => {
           if (!originalPath || listed.has(originalPath)) return [];
           let path;
+          const key = JSON.stringify([originalPath, sha256]);
+          const cached = !fresh && this.artifactReads.get(key);
           try {
-            path = evidencePath(this.service.root, originalPath, sha256);
-            if (!lstatSync(path, { throwIfNoEntry: false })?.isFile()) return [];
-            const child = relative(root, realpathSync(path));
-            if (!child || child === '..' || child.startsWith('..' + sep) || isAbsolute(child)) return [];
-            if (sha256 && digest(readFileSync(path)) !== sha256) return [];
+            const unchanged =
+              cached &&
+              cached.resolver === resolver &&
+              cached.root === root &&
+              fileGeneration(cached.path) === cached.generation &&
+              realpathSync(cached.path) === cached.actual;
+            if (unchanged) {
+              path = cached.path;
+              this.artifactReads.delete(key);
+              this.artifactReads.set(key, cached);
+            } else {
+              forget(key);
+              path = evidencePath(this.service.root, originalPath, sha256);
+              const generation = fileGeneration(path);
+              if (!generation || !lstatSync(path, { throwIfNoEntry: false })?.isFile()) return [];
+              const actual = realpathSync(path);
+              const child = relative(root, actual);
+              if (!child || child === '..' || child.startsWith('..' + sep) || isAbsolute(child)) return [];
+              if (sha256 && digest(readFileSync(path)) !== sha256) return [];
+              if (fileGeneration(path) !== generation || realpathSync(path) !== actual) return [];
+              const bytes = Buffer.byteLength(key + path + actual + generation + root) + 128;
+              if (bytes <= maximumBytes) {
+                this.artifactReads.set(key, { path, actual, generation, resolver, root, bytes });
+                this.artifactReadBytes += bytes;
+                while (this.artifactReadBytes > maximumBytes) forget(this.artifactReads.keys().next().value);
+              }
+            }
           } catch {
+            forget(key);
             return [];
           }
           listed.add(originalPath);
@@ -2971,8 +3048,15 @@ class IssueFlows {
     this.executor.close();
   }
 }
-function availableHumanInput(issue, flow) {
-  return issue.closed || mergedDelivery(flow) ? null : flowHumanInput(flow);
+function availableHumanInput(issue, flow, agentApproval) {
+  if (issue.closed || mergedDelivery(flow)) return null;
+  if (agentApproval)
+    return {
+      kind: 'agent',
+      blockId: agentApproval.blockId,
+      message: 'The agent is waiting for your permission decision or answer. Open the running block to respond.',
+    };
+  return flowHumanInput(flow);
 }
 
 function flowStatus(flow, issue, active) {

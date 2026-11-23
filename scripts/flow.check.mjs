@@ -544,6 +544,90 @@ test('issue route Resume pauses on failure and Stop, retries once, and does not 
   await lastRun;
 });
 
+test('saving Your words acknowledges the admitted Request without waiting for clarification', async (t) => {
+  const { id, service } = fixture(t);
+  const entered = Promise.withResolvers();
+  const completion = Promise.withResolvers();
+  const flows = createIssueFlows(service, {
+    executor: executor(async () => ({ summary: 'Unused' })),
+    async clarify() {
+      entered.resolve();
+      await completion.promise;
+      return { artifacts: { values: { type: 'bug', goal: 'Saved request' } } };
+    },
+  });
+  t.after(() => flows.close());
+  const view = await flows.view(id);
+  await assert.rejects(
+    flows.action({
+      action: 'request',
+      issueId: id,
+      revision: view.flow.revision,
+      wording: ' ',
+      background: true,
+    }),
+    /Enter Your words/
+  );
+  let settled = false;
+  const saving = flows
+    .action({
+      action: 'request',
+      issueId: id,
+      revision: view.flow.revision,
+      wording: 'Changed request wording',
+      background: true,
+    })
+    .then((result) => {
+      settled = true;
+      return result;
+    });
+  await entered.promise;
+  await delay(20);
+  try {
+    assert.equal(settled, true, 'Save changes waited for the entire Request clarification.');
+    assert.equal((await saving).accepted, true);
+    const running = await flows.view(id);
+    assert.equal(requestData(running.flow).wording, 'Changed request wording');
+    assert.equal(running.flow.blocks.find((block) => block.kind === 'request').attempts.at(-1).status, 'running');
+  } finally {
+    completion.resolve();
+    await saving;
+    await flows.active.get(id)?.task;
+  }
+  assert.equal(requestData((await flows.view(id)).flow).fields.goal, 'Saved request');
+});
+
+test('background Request clarification retains its failure after Save changes returns', async (t) => {
+  const { id, service } = fixture(t);
+  const completion = Promise.withResolvers();
+  const flows = createIssueFlows(service, {
+    executor: executor(async () => ({ summary: 'Unused' })),
+    async clarify() {
+      await completion.promise;
+      throw Error('Request clarification fixture failed.');
+    },
+  });
+  t.after(() => flows.close());
+  const view = await flows.view(id);
+  const accepted = await flows.action({
+    action: 'request',
+    issueId: id,
+    revision: view.flow.revision,
+    wording: 'Keep the failed request',
+    background: true,
+  });
+  assert.equal(accepted.accepted, true);
+  const task = flows.active.get(id).task;
+  completion.resolve();
+  await task;
+  const saved = await flows.view(id);
+  assert.equal(requestData(saved.flow).wording, 'Keep the failed request');
+  const attempt = saved.flow.blocks.find((block) => block.kind === 'request').attempts.at(-1);
+  assert.equal(attempt.status, 'blocked');
+  assert.match(attempt.summary, /Request clarification fixture failed/);
+  assert.equal(flows.active.has(id), false);
+});
+
 test('the issue pencil preserves results while changing Your words invalidates verification', async (t) => {
   const { root, id, service } = fixture(t);
   let fields = {

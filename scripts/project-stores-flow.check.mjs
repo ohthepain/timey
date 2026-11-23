@@ -259,7 +259,9 @@ test('report publication resolves a lost committed response using the original o
   const next = issue.content.replace('title: Understand storage', 'title: Confirmed report update');
   const commit = f.issues.commit.bind(f.issues);
   let fail = true;
+  let publications = 0;
   f.issues.commit = async (input) => {
+    publications++;
     const result = await commit(input);
     if (fail) {
       fail = false;
@@ -267,8 +269,17 @@ test('report publication resolves a lost committed response using the original o
     }
     return result;
   };
-  await assert.rejects(commitStoredReport(f.root, issue, next), { code: 'STORE_UNAVAILABLE' });
-  await commitStoredReport(f.root, issue, next);
+  const saved = await commitStoredReport(f.root, issue, next);
+  assert.equal(saved.status, 'confirmed');
+  assert.equal(saved.report, next);
+  const operations = (await f.records.list('operations/')).filter((entry) => entry.value.kind === 'save-issue');
+  assert.equal(operations.length, 1);
+  assert.equal(operations[0].value.status, 'confirmed');
+  const replay = await commitStoredReport(f.root, issue, next);
+  assert.equal(replay.revision, saved.revision);
+  assert.equal(publications, 1, 'Replay must reuse the confirmed publication rather than commit again.');
+  assert.equal((await f.issues.history(f.id)).length, 2);
+  assert.deepEqual(await f.records.get(operations[0].key), operations[0]);
   assert.equal((await f.project.readIssue(f.id)).report, next);
   assert.equal(await f.records.get('claims/' + f.id), null);
 });

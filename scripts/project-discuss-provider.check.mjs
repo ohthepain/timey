@@ -97,6 +97,34 @@ test('project provider uses current folder, writable permission guards, conditio
   assert.equal(skills.find(({ name }) => name === 'grill-with-docs').allowImplicitInvocation, false);
 });
 
+test('an explicit provider change retains the old conversation and supplies handoff context', async (t) => {
+  const f = fixture(t);
+  f.session.threadId = 'original-codex';
+  f.session.messages = [{ role: 'user', text: 'Keep the existing public API.' }];
+  f.provider.active = { ...f.context, session: f.session, message: f.message };
+  await f.provider.selectAgent(f.session, { model: 'anthropic:sonnet' });
+  assert.equal(f.session.threadId, null);
+  assert.equal(f.session.priorConversations[0].threadId, 'original-codex');
+  assert.match(f.provider.active.message.text, /Keep the existing public API/);
+  assert.match(f.provider.active.message.text, /Full retained history/);
+  assert.equal(f.provider.connection.selection.provider, 'anthropic');
+  assert.equal(f.provider.connection.process, undefined, 'Choosing an agent alone starts no model turn.');
+  f.provider.close();
+});
+
+test('handoff refuses an active original conversation and native skill discovery needs no Codex process', async (t) => {
+  const f = fixture(t);
+  const before = f.calls.length;
+  await f.provider.skills('google:pro');
+  assert.equal(f.calls.length, before);
+  f.session.threadId = 'original-codex';
+  f.connection.status = 'active';
+  f.provider.active = { ...f.context, session: f.session, message: f.message };
+  await assert.rejects(f.provider.selectAgent(f.session, { model: 'google:pro' }), /Stop or reconcile/);
+  assert.equal(f.session.threadId, 'original-codex');
+  assert.equal(f.session.priorConversations, undefined);
+});
+
 test('a prepared local note reaches the provider only with the later explicit prompt', async (t) => {
   const f = fixture(t);
   f.session.noteContext = { id: 'note', text: 'Keep this thought', issueId: '20261120-note' };

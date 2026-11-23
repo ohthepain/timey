@@ -103,7 +103,9 @@
     const session = () => data?.selected;
     let setup = null;
     async function discoverSkills() {
-      const value = await request('/api/project-discuss-skills');
+      const value = await request(
+        '/api/project-discuss-skills?model=' + encodeURIComponent(byId('discuss-model').value)
+      );
       setup = value.setup;
       clarificationSelect.discovered(value.skills || value);
       return value.skills || value;
@@ -350,6 +352,8 @@
         selectedSettings?.effort || data?.defaults?.effort
       );
       clarificationSelect.update(data?.clarificationSkills || [], selectedSettings?.clarificationSkill || 'none');
+      byId('discuss-effort').closest('label').hidden =
+        data?.models?.find(({ id }) => id === byId('discuss-model').value)?.supportsEffort === false;
       const html =
         (current?.messages || [])
           .map(
@@ -650,8 +654,21 @@
           draft.focus();
         }
       }
-      if (button.dataset.discussRetry)
-        void action('retry', { messageId: button.dataset.discussRetry, clientId: crypto.randomUUID() });
+      if (button.dataset.discussRetry) {
+        const native = /^(anthropic|google):/.test(session()?.threadId || '');
+        if (
+          native &&
+          !confirm(
+            'Inspect completed file changes and command results before retrying. Confirm that you reviewed the partial work and the original agent has stopped. The original session will be continued.'
+          )
+        )
+          return;
+        void action('retry', {
+          messageId: button.dataset.discussRetry,
+          clientId: crypto.randomUUID(),
+          confirmedAgentRecovery: native,
+        });
+      }
       if (button.dataset.discussQueueRemove)
         void action('remove-queued', { messageId: button.dataset.discussQueueRemove });
       if (button.dataset.discussSteer) void action('steer', { messageId: button.dataset.discussSteer });

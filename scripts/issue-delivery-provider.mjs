@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { runGitHubCliSync } from './factory-ui/github-cli.mjs';
 import { cleanEnvironment, digest, git, requireThat } from './factory-ui/common.mjs';
 
 // GitHub's documented merge APIs condition only on head SHA. No expected-base
@@ -9,7 +9,7 @@ export class GitHubDeliveryProvider {
   }
   api(path, method = 'GET', input) {
     return JSON.parse(
-      execFileSync('gh', ['api', path, '--method', method, ...(input ? ['--input', '-'] : [])], {
+      runGitHubCliSync(['api', path, '--method', method, ...(input ? ['--input', '-'] : [])], {
         encoding: 'utf8',
         input: input ? JSON.stringify(input) : undefined,
         env: cleanEnvironment(),
@@ -63,8 +63,7 @@ export class GitHubDeliveryProvider {
   findPullRequests(request) {
     const [owner] = request.repository.split('/');
     const pages = JSON.parse(
-      execFileSync(
-        'gh',
+      runGitHubCliSync(
         [
           'api',
           '--paginate',

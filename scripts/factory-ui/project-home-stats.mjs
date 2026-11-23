@@ -1,17 +1,28 @@
-import { readFileSync } from 'node:fs';
+import { FileReadCache } from './file-read-cache.mjs';
 import { basename } from 'node:path';
 import { parse } from 'yaml';
 import { listStoredIssues } from './issue-report-storage.mjs';
 
+const reportCaches = new Map();
+
+function reportContent(content, path) {
+  const header = content.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/)?.[1];
+  if (!header) throw Error('The issue report ' + basename(path) + ' needs valid metadata.');
+  return { ...parse(header), content };
+}
+
 export function projectIssueRecords(root) {
-  return ['open', 'closed', 'archive'].flatMap((location) =>
-    listStoredIssues(root, location).map((path) => {
-      const content = readFileSync(path, 'utf8');
-      const header = content.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/)?.[1];
-      if (!header) throw Error('The issue report ' + basename(path) + ' needs valid metadata.');
-      return { ...parse(header), id: basename(path, '.md'), content, location };
-    })
+  let cache = reportCaches.get(root);
+  if (!cache) {
+    cache = new FileReadCache(reportContent, 8 * 1024 * 1024);
+    reportCaches.set(root, cache);
+    while (reportCaches.size > 4) reportCaches.delete(reportCaches.keys().next().value);
+  }
+  const paths = ['open', 'closed', 'archive'].flatMap((location) =>
+    listStoredIssues(root, location).map((path) => ({ path, location }))
   );
+  cache.retain(paths.map(({ path }) => path));
+  return paths.map(({ path, location }) => ({ ...cache.read(path), id: basename(path, '.md'), location }));
 }
 
 function timestamp(value) {

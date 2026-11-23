@@ -1,3 +1,4 @@
+import { diagnosticContext } from './diagnostic-activity.mjs';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -208,11 +209,15 @@ export async function runFlowVerification(ctx, workspace, folder, execute) {
   const explicit = ctx.block.kind === 'verify';
   const script = `
     import { checkCandidate } from ${JSON.stringify(new URL('./checks.mjs', import.meta.url).href)};
+    import { withDiagnosticContext } from ${JSON.stringify(new URL('./diagnostic-activity.mjs', import.meta.url).href)};
     try {
-      const result = await checkCandidate(...${args}, {
+      const result = await withDiagnosticContext(
+        ${JSON.stringify(checkout)},
+        ${JSON.stringify(diagnosticContext(checkout))},
+        () => checkCandidate(...${args}, {
         ...${JSON.stringify(flowVerificationOptions(ctx))}, force: ${explicit}, retryFailed: true, allowUncommitted: ${explicit},
         onProgress: text => process.stdout.write(text)
-      });
+      }));
       console.log('\\nFLOW_RESULT ' + JSON.stringify(result));
     } catch (error) {
       console.log('\\nFLOW_FAILURE ' + JSON.stringify({

@@ -1,6 +1,6 @@
 import { CodexConnection } from './codex.mjs';
 import { listAvailableSkills, skillInputs } from './skills.mjs';
-import { newChatModelSettings } from './model-settings.mjs';
+import { codexHelperModelSettings } from './model-settings.mjs';
 import { requireThat } from './common.mjs';
 
 class RewriteConnection extends CodexConnection {
@@ -20,7 +20,7 @@ function rewriteConnection(options) {
 }
 
 function rewriteSettings(service, options) {
-  return options.modelSettings?.() || newChatModelSettings(service.root);
+  return options.modelSettings?.() || codexHelperModelSettings(service.root);
 }
 
 export async function simplifyAIText(service, input, options = service.aiTextOptions || {}) {

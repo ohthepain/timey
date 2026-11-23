@@ -3,10 +3,11 @@ import assert from 'node:assert/strict';
 import { mkdirSync, writeFileSync, readFileSync, existsSync, realpathSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { gitFixture } from './git-fixture.mjs';
-import { createDiscussionRuntime } from './factory-ui/discussion-codex.mjs';
+import { createDiscussionRuntime, createTextDiscussionRuntime } from './factory-ui/discussion-codex.mjs';
 import { digest } from './factory-ui/common.mjs';
+import { clarifyRequest } from './factory-ui/flow-request.mjs';
 
-function provider(t) {
+function provider(t, answer = 'Reviewed.') {
   const { root, git } = gitFixture(t, 'discussion-evidence-');
   const home = join(root, 'provider');
   const bin = join(root, 'bin');
@@ -30,7 +31,7 @@ createInterface({input: process.stdin}).on('line', line => {
   if (request.method === 'thread/start') return send({id: request.id, result: {thread: {id: 'fixture', ephemeral: true, path: null}}});
   if (request.method === 'turn/start') {
     send({id: request.id, result: {turn: {id: 'turn'}}});
-    send({method: 'item/completed', params: {threadId: 'fixture', item: {id: 'answer', type: 'agentMessage', text: 'Reviewed.'}}});
+    send({method: 'item/completed', params: {threadId: 'fixture', item: {id: 'answer', type: 'agentMessage', text: ${JSON.stringify(answer)}}}});
     return send({method: 'turn/completed', params: {threadId: 'fixture', turn: {id: 'turn', status: 'completed'}}});
   }
   send({id: request.id, result: {}});
@@ -96,4 +97,123 @@ test('temporary discussions link complete large inputs and context while permitt
     await new Promise((resolve) => setTimeout(resolve, 10));
   assert.equal(existsSync(dirname(contextFile.path)), false);
   assert.equal(readFileSync(join(f.root, 'recent.txt'), 'utf8'), 'recent project work');
+});
+
+test('Request clarification uses only supplied text without repository tools or instructions', async (t) => {
+  const fields = { type: 'feature', goal: 'Keep the explicit request' };
+  const f = provider(t, JSON.stringify(fields));
+  writeFileSync(join(f.root, 'AGENTS.md'), 'Repository instructions must not enter Request clarification.');
+  const wording = 'Keep this full request.\n' + 'x'.repeat(23000);
+  const result = await clarifyRequest(
+    f.root,
+    {
+      usable: true,
+      prompt: 'Derive the fields from Your words.',
+      artifacts: [
+        { key: 'type', kind: 'value' },
+        { key: 'goal', kind: 'value' },
+        { key: 'wording', kind: 'value' },
+      ],
+    },
+    { id: 'request-fixture', details: [{ key: 'wording', value: wording }] },
+    new AbortController().signal
+  );
+  const records = f.records();
+  assert.match(records[0].config, /shell_tool = false/, 'Request must not start a repository inspection runtime.');
+  const start = records.find(({ method }) => method === 'thread/start').params;
+  assert.notEqual(start.cwd, realpathSync(f.root));
+  assert.equal(start.sandbox, 'read-only');
+  assert.equal(start.approvalPolicy, 'never');
+  assert.doesNotMatch(
+    start.developerInstructions,
+    /Project checkout:|Complete context is available|git status|Repository instructions/
+  );
+  assert.match(start.developerInstructions, /Clarify the request in the supplied fields/);
+  const turn = records.find(({ method }) => method === 'turn/start').params;
+  assert.deepEqual(JSON.parse(turn.input[0].text), { wording });
+  assert.deepEqual(result.artifacts.values, { ...fields, wording });
+});
+
+test('text discussions reject oversized input before dispatch instead of linking an unreadable file', async (t) => {
+  const f = provider(t);
+  const runtime = createTextDiscussionRuntime(undefined, { root: f.root });
+  t.after(() => runtime.close());
+  await runtime.begin({ task: 'Use supplied text' });
+  await assert.rejects(runtime.ask('x'.repeat(1048577)), /Input exceeds the maximum length/);
+  assert.equal(f.records().filter(({ method }) => method === 'turn/start').length, 0);
+});
+
+test('Request timeout retains bounded generation diagnostics without supplied or provider text', async (t) => {
+  const { root } = gitFixture(t, 'request-timeout-');
+  const entered = Promise.withResolvers();
+  let closed = false;
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const pending = clarifyRequest(
+    root,
+    { usable: true, prompt: 'Private instructions', artifacts: [{ key: 'type', kind: 'value' }] },
+    { id: 'timeout-fixture', details: [{ key: 'wording', value: 'Private wording' }] },
+    new AbortController().signal,
+    (_end, { onEvent }) => ({
+      async begin() {
+        for (let index = 0; index < 40; index++)
+          onEvent({
+            method: 'ui/transportPhase',
+            params: { method: 'initialize', phase: 'replied', threadId: 'private-thread-id' },
+          });
+        onEvent({
+          method: 'ui/transportPhase',
+          params: { method: 'private-provider-text', phase: 'private-provider-text' },
+        });
+      },
+      async ask() {
+        onEvent({ method: 'item/started', params: { item: { type: 'reasoning', text: 'Private provider text' } } });
+        entered.resolve();
+        return new Promise(() => {});
+      },
+      close() {
+        closed = true;
+      },
+    })
+  );
+  await entered.promise;
+  const failure = assert.rejects(pending, (error) => {
+    assert.match(error.message, /Request clarification timed out/);
+    const proof = error.evidence.at(-1);
+    const body = readFileSync(proof.path, 'utf8');
+    const diagnostic = JSON.parse(body);
+    assert.equal(proof.sha256, digest(body));
+    assert.equal(diagnostic.stage, 'generating-fields');
+    assert.equal(diagnostic.elapsedMs >= 0, true);
+    assert.equal(diagnostic.transport.length, 32);
+    assert.deepEqual(diagnostic.items, { reasoning: 1 });
+    assert.doesNotMatch(body, /Private|private-/);
+    return true;
+  });
+  t.mock.timers.tick(90000);
+  await failure;
+  assert.equal(closed, true);
+});
+
+test('Request startup failure retains its provider stage and original error', async (t) => {
+  const { root } = gitFixture(t, 'request-startup-');
+  await assert.rejects(
+    clarifyRequest(
+      root,
+      { usable: true, prompt: 'Derive fields', artifacts: [{ key: 'type', kind: 'value' }] },
+      { id: 'startup-fixture', details: [] },
+      new AbortController().signal,
+      () => ({
+        async begin() {
+          throw Error('Provider startup failed');
+        },
+        close() {},
+      })
+    ),
+    (error) => {
+      assert.equal(error.message, 'Provider startup failed');
+      const diagnostic = JSON.parse(readFileSync(error.evidence[0].path, 'utf8'));
+      assert.equal(diagnostic.stage, 'starting-provider');
+      return true;
+    }
+  );
 });

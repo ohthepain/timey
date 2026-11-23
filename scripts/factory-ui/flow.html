@@ -11,6 +11,10 @@
     <script src="/ai-text-ui.js" defer></script>
     <link rel="stylesheet" href="/project-home.css" />
     <link rel="stylesheet" href="/project-settings.css" />
+    <link rel="stylesheet" href="/github-calls.css" />
+    <script src="/github-calls-ui.js" defer></script>
+    <link rel="stylesheet" href="/diagnostics.css" />
+    <script src="/diagnostics-ui.js" defer></script>
     <script src="/project-settings-ui.js" defer></script>
     <link rel="stylesheet" href="/project-discuss.css" />
     <link rel="stylesheet" href="/project-reports.css" />
@@ -51,6 +55,43 @@
               ><span class="brand-mark" aria-hidden="true">⌘</span> <span id="project-name">Factory</span
               ><span class="brand-tag">FLOW</span></a
             >
+            <button
+              class="diagnostics-trigger"
+              id="diagnostics-trigger"
+              type="button"
+              popovertarget="diagnostics-panel"
+              aria-label="Performance and usage"
+              title="Codex API requests and usage"
+            >
+              <svg
+                width="17"
+                height="17"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.7"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                aria-hidden="true"
+              >
+                <path d="M2 12h5l3-7 4 14 3-7h5" />
+              </svg>
+              <span id="codex-call-total">–</span>
+            </button>
+            <button
+              class="github-calls-button"
+              id="github-calls-button"
+              popovertarget="github-calls"
+              aria-label="GitHub API calls"
+            >
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path
+                  d="M12 .75a11.25 11.25 0 0 0-3.56 21.92c.56.1.77-.24.77-.54v-2.09c-3.13.68-3.79-1.33-3.79-1.33-.51-1.3-1.25-1.65-1.25-1.65-1.02-.7.08-.69.08-.69 1.13.08 1.72 1.16 1.72 1.16 1.01 1.72 2.64 1.22 3.28.94.1-.73.39-1.22.71-1.5-2.5-.28-5.13-1.25-5.13-5.56 0-1.23.44-2.23 1.16-3.02-.12-.28-.5-1.43.11-2.98 0 0 .95-.3 3.09 1.15a10.77 10.77 0 0 1 5.63 0c2.15-1.45 3.09-1.15 3.09-1.15.62 1.55.23 2.7.12 2.98.72.79 1.15 1.79 1.15 3.02 0 4.32-2.63 5.27-5.14 5.55.4.35.76 1.03.76 2.08v3.09c0 .3.21.65.78.54A11.25 11.25 0 0 0 12 .75Z"
+                />
+              </svg>
+              <span id="github-call-total">–</span>
+              <span class="github-call-failed" id="github-call-failed" hidden></span>
+            </button>
             <button class="icon-button" id="project-settings" aria-label="Project settings" title="Project settings">
               <svg
                 width="18"
@@ -93,6 +134,7 @@
             </button>
           </div>
           <small class="project-actions-message" data-server-message role="status"></small>
+
           <button class="new-issue" id="new-issue"><span aria-hidden="true">＋</span> New issue <kbd>N</kbd></button>
           <label class="search-box"
             ><span aria-hidden="true">⌕</span
@@ -558,6 +600,7 @@
             <div class="home-intro">
               <p class="home-eyebrow">PROJECT OVERVIEW</p>
               <h1 id="home-title">Project home</h1>
+              <p id="home-freshness" role="status"></p>
               <p>Understand the codebase. Improve how work gets done.</p>
             </div>
             <div class="home-operations">
@@ -1033,6 +1076,33 @@
       </label>
       <pre id="file-content" class="file-content" aria-live="polite"></pre>
     </dialog>
+    <section popover id="diagnostics-panel" aria-labelledby="diagnostics-title">
+      <div class="diagnostics-heading">
+        <h2 id="diagnostics-title">Codex API requests and usage</h2>
+        <button type="button" id="diagnostics-refresh">Refresh</button>
+        <button type="button" id="diagnostics-reset" disabled>Reset history and count</button>
+      </div>
+      <div class="diagnostics-view-label">
+        <label for="diagnostics-view">View</label>
+        <select id="diagnostics-view">
+          <option value="codex">Recent Codex turns</option>
+          <option value="issues">Codex by issue</option>
+          <option value="repeats">Repeated work</option>
+          <option value="stores">Shared stores</option>
+          <option value="git">Git and verification</option>
+        </select>
+      </div>
+      <div id="diagnostics-quota" aria-live="polite"></div>
+      <div id="diagnostics-content"></div>
+    </section>
+    <section popover id="github-calls" aria-labelledby="github-calls-title">
+      <div class="github-calls-heading">
+        <h2 id="github-calls-title">GitHub API calls</h2>
+        <button type="button" id="github-calls-reset" disabled>Reset history and counts</button>
+      </div>
+      <p id="github-calls-message" role="status">Loading…</p>
+      <ol id="github-calls-list"></ol>
+    </section>
     <dialog id="project-settings-dialog" class="modal" aria-labelledby="project-settings-title">
       <div class="modal-heading">
         <h2 id="project-settings-title">Project settings</h2>

@@ -1,6 +1,4 @@
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
-const exec = promisify(execFile);
+import { runGitHubCli } from './github-cli.mjs';
 import { cleanEnvironment, requireThat } from './common.mjs';
 import { githubAppCredentials } from './github-app.mjs';
 import { assertChecks, inspectReadiness, inspectRequiredPRChecks, latestChecks } from './strategy-readiness.mjs';
@@ -20,17 +18,20 @@ export class StrategyProvider {
     if (session) {
       env.GH_TOKEN = session.token;
       env.GH_HOST = 'github.com';
-      delete env.GH_DEBUG;
       delete env.GITHUB_TOKEN;
     }
     try {
-      const { stdout } = await exec('gh', args, {
-        cwd: this.root,
-        env,
-        encoding: 'utf8',
-        timeout: 30000,
-        maxBuffer: 8 * 1024 * 1024,
-      });
+      const stdout = await runGitHubCli(
+        args,
+        {
+          cwd: this.root,
+          env,
+          encoding: 'utf8',
+          timeout: 30000,
+          maxBuffer: 8 * 1024 * 1024,
+        },
+        this.config.repository
+      );
       return stdout.trim();
     } catch (error) {
       throw githubFailure(error, session);

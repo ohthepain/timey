@@ -9,11 +9,16 @@ import { requireThat, writeJson } from './common.mjs';
 import { readModelSettings } from './model-settings.mjs';
 import { createProjectDiscussProvider } from './project-discuss-provider.mjs';
 import { LocalNotes } from './local-notes.mjs';
+import { agentRecovery, recoverAgentSession } from './agent-recovery.mjs';
 import { retainReportConversation } from './report-conversation.mjs';
 
 const idPattern = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/;
 const stamp = () => new Date().toISOString();
 const copy = (value) => structuredClone(value);
+export async function projectDiscussionSkills(discussions, model = discussions.choices().defaults.model) {
+  if (discussions.options.skills) return discussions.options.skills();
+  return discussions.provider('_discovery').skills(model);
+}
 export function readClarificationSkills(root) {
   const paths = [
     fileURLToPath(new URL('../../factory/system/chat/grilling.md', import.meta.url)),
@@ -220,11 +225,6 @@ export class ProjectDiscuss {
       );
     return this.providers.get(id);
   }
-  async skills() {
-    if (this.options.skills) return this.options.skills();
-    const provider = this.provider('_discovery');
-    return provider.skills();
-  }
   envelope(session, input) {
     return {
       id: checkedId(input.clientId || randomUUID()),
@@ -390,6 +390,8 @@ export class ProjectDiscuss {
       });
     } else if (operation === 'retry') {
       requireThat(!this.active.has(id), 'Stop the active response before retrying.');
+      if (agentRecovery(this.service.root, session.threadId))
+        recoverAgentSession(this.service.root, session.threadId, input.confirmedAgentRecovery);
       const selected = session.messages.find((m) => m.id === input.messageId);
       const original =
         selected?.role === 'assistant' ? session.messages.find((m) => m.id === selected.replyTo) : selected;

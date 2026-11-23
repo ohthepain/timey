@@ -1,3 +1,4 @@
+import { runGitHubCliSync } from './github-cli.mjs';
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
@@ -149,24 +150,22 @@ export function createSharedIssuePublication({
   delete environment.TIMEY_QUEUE_GITHUB_TOKEN;
   delete environment.GH_TOKEN;
   delete environment.GITHUB_TOKEN;
-  delete environment.GH_DEBUG;
   Object.assign(environment, { GH_HOST: 'github.com', GH_PROMPT_DISABLED: '1', GIT_TERMINAL_PROMPT: '0' });
+
+  const githubEnvironment = { ...environment, GH_TOKEN: queueToken };
 
   function command(program, args, { input, env = {} } = {}) {
     try {
-      return execFileSync(program, args, {
+      const options = {
         cwd: root,
         encoding: 'utf8',
         input,
-        env: {
-          ...environment,
-          ...(program === 'gh' && queueToken ? { GH_TOKEN: queueToken } : {}),
-          ...env,
-        },
+        env: { ...(program === 'gh' ? githubEnvironment : environment), ...env },
         stdio: ['pipe', 'pipe', 'pipe'],
         timeout: 30000,
         maxBuffer: 8 * 1024 * 1024,
-      });
+      };
+      return program === 'gh' ? runGitHubCliSync(args, options, repository) : execFileSync(program, args, options);
     } catch (error) {
       throw Error(`Shared issue publication: ${program} ${args[0]} failed.`, { cause: error });
     }

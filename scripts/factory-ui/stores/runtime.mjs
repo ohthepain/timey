@@ -1,3 +1,4 @@
+import { beginActivity, observeActivity, diagnosticContext, countStoreRead } from '../diagnostic-activity.mjs';
 import { mergedDelivery } from '../merged-issue.mjs';
 import { existsSync, readFileSync, readdirSync, mkdirSync, writeFileSync, renameSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
@@ -19,7 +20,6 @@ import { activateStorageProfiles, persistStorageProfiles } from './profile-activ
 
 const runtimes = new WeakMap();
 const bootstrapKey = 'project/bootstrap';
-const displayRefreshInterval = 30_000;
 const methods = {
   issue: ['read', 'list', 'commit', 'history', 'retainedPayloads', 'retireReceipts', 'removeRecords'],
   records: ['get', 'list', 'commit', 'retainedPayloads', 'retireReceipts', 'removeRecords'],
@@ -43,7 +43,7 @@ function lazyProvider(runtime, kind, config) {
     });
     return pending;
   };
-  const proxy = { id: config.id };
+  const proxy = { id: config.id, ...(kind === 'issue' && { supportsCoordinatedCommit: true }) };
   const names = [...methods[kind], ...(kind !== 'artifact' && config.kind !== 'dynamodb' ? ['readSnapshot'] : [])];
   for (const name of names)
     proxy[name] = async (...args) => {
@@ -406,28 +406,39 @@ function activate(runtime) {
   runtime.registeredProject = runtime.project;
 }
 
-async function synchronize(runtime, fresh, allowPending) {
+async function synchronize(runtime, fresh, allowPending, scope) {
   await followProjectRoles(runtime);
   await importLegacy(runtime);
   await activateStorageProfiles(runtime.project, runtime.config);
   persistStorageProfiles(runtime.service.root);
   if (runtime.registeredProject !== runtime.project) activate(runtime);
-  if (fresh || (!runtime.ready && !allowPending)) await runtime.project.refresh();
+  if (fresh || (!runtime.ready && !allowPending))
+    await runtime.project.refresh(scope ? { issueIds: [...scope] } : undefined);
   runtime.ready = true;
-  runtime.service.storeStatus = { available: true, unavailable: false };
+  runtime.service.storeStatus = {
+    phase: 'ready',
+    available: true,
+    unavailable: false,
+    checkedAt: readSnapshot(runtime.service.root)?.capturedAt,
+  };
   return runtime.project;
 }
 
-function synchronizeOnce(runtime, fresh, allowPending) {
+function synchronizeOnce(runtime, fresh, allowPending, scope) {
   if (!runtime.pending) {
     runtime.pendingFresh = fresh || (!runtime.ready && !allowPending);
+    runtime.pendingScope = scope;
     runtime.lastRefresh = Date.now();
-    runtime.pending = synchronize(runtime, fresh, allowPending)
+    runtime.pending = observeActivity('stores', 'Refresh stores', diagnosticContext(runtime.service.root), () =>
+      synchronize(runtime, fresh, allowPending, scope)
+    )
       .catch((error) => {
         runtime.service.storeStatus = {
+          phase: 'unavailable',
           available: false,
           unavailable: true,
           warning: 'Shared storage is unavailable. Cached data is read-only; local drafts are retained.',
+          checkedAt: readSnapshot(runtime.service.root)?.capturedAt,
         };
         throw error;
       })
@@ -441,7 +452,7 @@ function synchronizeOnce(runtime, fresh, allowPending) {
 
 export async function ensureProjectStores(
   service,
-  { fresh = false, allowCached = false, allowPending = false, display = false } = {}
+  { fresh = false, allowCached = false, allowPending = false, display = false, issueIds } = {}
 ) {
   if (service.reviewMode === 'preview') return service.projectStores || null;
   let runtime = runtimes.get(service);
@@ -453,26 +464,39 @@ export async function ensureProjectStores(
   }
   const config = readStoreConfig(service.root, { persistIdentity: true });
   if (runtime.config?.revision !== config.revision) buildProject(runtime, config);
-  const snapshot = display && readSnapshot(service.root);
-  if (snapshot?.projectId === config.projectId) {
+  const snapshot = ((display && !fresh) || issueIds?.length) && readSnapshot(service.root);
+  if (display && !fresh && snapshot?.projectId === config.projectId) {
     if (runtime.registeredProject !== runtime.project) activate(runtime);
     if (!runtime.ready && !service.storeStatus)
       service.storeStatus = {
-        available: false,
-        unavailable: true,
-        warning: 'Refreshing shared storage. The last saved snapshot is read-only until storage is confirmed.',
+        phase: 'cached',
+        available: true,
+        unavailable: false,
+        checkedAt: snapshot.capturedAt,
       };
-    if (!runtime.pending && (!runtime.lastRefresh || Date.now() - runtime.lastRefresh >= displayRefreshInterval))
-      void synchronizeOnce(runtime, true, false).catch(() => {});
+    countStoreRead(service.root, 'Cached views');
     return runtime.project;
   }
+  if (display && !fresh && runtime.lastRefresh && !runtime.pending && !runtime.ready) return runtime.project;
   if (display) fresh = true;
+  const scope = issueIds?.length && snapshot?.projectId === config.projectId ? new Set(issueIds) : null;
   try {
-    const pending = synchronizeOnce(runtime, fresh, allowPending);
-    const pendingFresh = runtime.pendingFresh;
-    await pending;
-    if (fresh && !pendingFresh) await synchronizeOnce(runtime, true, allowPending);
-    return runtime.project;
+    for (;;) {
+      if (runtime.pending) countStoreRead(service.root, 'Joined refreshes');
+      const pending = synchronizeOnce(runtime, fresh, allowPending, scope);
+      const wait = beginActivity('stores', 'Wait for stores', diagnosticContext(service.root));
+      const pendingFresh = runtime.pendingFresh;
+      const pendingScope = runtime.pendingScope;
+      await pending.then(
+        () => wait('Completed'),
+        (error) => {
+          wait('Failed');
+          throw error;
+        }
+      );
+      const coversScope = !pendingScope || (scope && [...scope].every((id) => pendingScope.has(id)));
+      if (!fresh || (pendingFresh && coversScope)) return runtime.project;
+    }
   } catch (error) {
     if (allowCached && readSnapshot(service.root)) return runtime.project;
     throw error;

@@ -1,4 +1,8 @@
+import { observeActivity } from '../../diagnostic-activity.mjs';
 import { createHash } from 'node:crypto';
+import { AsyncLocalStorage } from 'node:async_hooks';
+
+const readScopes = new AsyncLocalStorage();
 
 export function storeError(code, message) {
   return Object.assign(new Error(message), { code });
@@ -225,75 +229,131 @@ function retirementRequest(input) {
 }
 
 export function recordStore(backend, artifacts, { allowInlineLarge = false, storeId } = {}) {
-  const decode = async (record) => record && { ...record, value: await unpack(record.value, artifacts) };
+  const identity = {};
+  const decode = async (record) => {
+    if (!record) return record;
+    const scope = readScopes.getStore();
+    const value = await readScopes.run({ readers: scope?.readers, decoding: true }, () =>
+      unpack(record.value, artifacts)
+    );
+    return { ...record, value };
+  };
+  function reader() {
+    const scope = readScopes.getStore();
+    const selected = scope?.decoding && scope.readers?.get(identity);
+    return selected?.active ? selected.reader : backend;
+  }
+  function readCurrent(work) {
+    return readScopes.getStore()?.decoding ? work() : readScopes.exit(work);
+  }
   return {
     id: storeId,
     ...(backend.readSnapshot && {
       async readSnapshot(read) {
-        return backend.readSnapshot((pinned) =>
-          read({
-            get: async (key) => decode(await pinned.get(key)),
-            list: async (prefix) => Promise.all((await pinned.list(prefix || '')).map(decode)),
+        return observeActivity('stores', 'Read snapshot', { store: storeId }, () =>
+          backend.readSnapshot(async (pinned) => {
+            const readers = new Map(readScopes.getStore()?.readers);
+            const entry = { reader: pinned, active: true };
+            readers.set(identity, entry);
+            try {
+              return await readScopes.run({ readers, decoding: false }, () =>
+                read({
+                  get: async (key) => decode(await pinned.get(key)),
+                  list: async (prefix) => Promise.all((await pinned.list(prefix || '')).map(decode)),
+                })
+              );
+            } finally {
+              entry.active = false;
+            }
           })
         );
       },
     }),
     async get(key) {
       assertStore(validKey(key), 'A bounded record key is required.');
-      return decode(await backend.get(key));
+      return readCurrent(() =>
+        observeActivity('stores', 'Read record', { store: storeId }, async () => decode(await reader().get(key)))
+      );
     },
     async list(prefix = '') {
       assertStore(typeof prefix === 'string' && !prefix.includes('\0'), 'A record prefix is required.');
-      return Promise.all((await backend.list(prefix)).map(decode));
+      return readCurrent(() =>
+        observeActivity('stores', 'List records', { store: storeId }, async () =>
+          Promise.all((await reader().list(prefix)).map(decode))
+        )
+      );
     },
     async removeRecords({ operationId, expected }) {
       assertStore(Array.isArray(expected), 'Checked record revisions are required for deletion.');
-      return this.commit({ operationId, expected, writes: expected.map(({ key }) => ({ key, value: null })) });
+      return this.commit({
+        operationId,
+        expected,
+        writes: expected.map(({ key }) => ({ key, value: null })),
+      });
     },
     async retainedPayloads({ excludeArtifactInventory = false } = {}) {
-      return retainedPayloads(backend, artifacts, { excludeArtifactInventory, storeId });
+      return retainedPayloads(backend, artifacts, {
+        excludeArtifactInventory,
+        storeId,
+      });
     },
     async artifactReceipts(ref) {
       assertStore(artifactReference(ref) && ref.storeId === storeId, 'Choose an Artifact reference in this store.');
       const raw = await backend.retainedPayloads();
       return raw.receipts
         .filter((entry) => artifactReceipt(entry, ref, storeId))
-        .map(({ id, receipt }) => ({ id, inputDigest: receipt.inputDigest, identity: receiptIdentity(receipt) }));
+        .map(({ id, receipt }) => ({
+          id,
+          inputDigest: receipt.inputDigest,
+          identity: receiptIdentity(receipt),
+        }));
     },
     async retireReceipts(input) {
-      const receipt = await backend.retireReceipts(retirementRequest(input));
-      const result = await unpack(receipt.result, artifacts);
-      return { operationId: result.operationId, retired: result.retired };
+      return readScopes.exit(async () => {
+        const receipt = await backend.retireReceipts(retirementRequest(input));
+        const result = await unpack(receipt.result, artifacts);
+        return { operationId: result.operationId, retired: result.retired };
+      });
     },
     async commit(input) {
-      const request = normalizeRequest(input);
-      const prior = await backend.receipt(request.operationId);
-      if (prior) {
-        verifyReceipt(prior, request.inputDigest);
-        const result = await unpack(prior.result, artifacts);
-        return { ...result, records: await Promise.all(result.records.map(decode)) };
-      }
-      const writes = await Promise.all(
-        request.writes.map(async ({ key, value }) => ({
-          key,
-          record:
-            value === null
-              ? null
-              : {
-                  key,
-                  revision: revisionFor(request.operationId, key),
-                  value: await pack(value, artifacts, allowInlineLarge),
-                },
-        }))
-      );
-      const records = writes.flatMap((item) => (item.record ? [item.record] : []));
-      const receipt = {
-        inputDigest: request.inputDigest,
-        result: await pack({ operationId: request.operationId, records }, artifacts, allowInlineLarge),
-      };
-      const committed = await backend.commit({ ...request, writes, receipt });
-      const result = await unpack(committed.result, artifacts);
-      return { ...result, records: await Promise.all(result.records.map(decode)) };
+      return readScopes.exit(async () => {
+        const request = normalizeRequest(input);
+        const prior = await backend.receipt(request.operationId);
+        if (prior) {
+          verifyReceipt(prior, request.inputDigest);
+          const result = await unpack(prior.result, artifacts);
+          return {
+            ...result,
+            records: await Promise.all(result.records.map(decode)),
+          };
+        }
+        const writes = await Promise.all(
+          request.writes.map(async ({ key, value }) => ({
+            key,
+            record:
+              value === null
+                ? null
+                : {
+                    key,
+                    revision: revisionFor(request.operationId, key),
+                    value: await pack(value, artifacts, allowInlineLarge),
+                  },
+          }))
+        );
+        const records = writes.flatMap((item) => (item.record ? [item.record] : []));
+        const receipt = {
+          inputDigest: request.inputDigest,
+          result: await pack({ operationId: request.operationId, records }, artifacts, allowInlineLarge),
+        };
+        const committed = await observeActivity('stores', 'Write records', { store: storeId }, () =>
+          backend.commit({ ...request, writes, receipt })
+        );
+        const result = await unpack(committed.result, artifacts);
+        return {
+          ...result,
+          records: await Promise.all(result.records.map(decode)),
+        };
+      });
     },
     async close() {
       await backend.close?.();

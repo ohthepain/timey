@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { CodexConnection, interruptCodexTurn } from './codex.mjs';
 import { listAvailableSkills, skillInputs } from './skills.mjs';
-import { newChatModelSettings } from './model-settings.mjs';
+import { codexHelperModelSettings } from './model-settings.mjs';
 import { digest, requireThat } from './common.mjs';
 
 const responseSchema = {
@@ -75,7 +75,7 @@ export class AutomateProvider {
       'The automate-me skill changed before running.'
     );
     if (!session.skill) input.retain({ skill: selected });
-    const settings = newChatModelSettings(this.service.root);
+    const settings = codexHelperModelSettings(this.service.root);
     await this.attach(session, input, settings);
     input.signal.throwIfAborted();
     return connection.turn(

@@ -77,3 +77,41 @@ test('invalid setup never writes a partial credential file', (t) => {
   );
   assert.equal(readFileSync(join(root, '.env'), 'utf8'), 'UNCHANGED=yes\n');
 });
+
+test('providers share authentication requests until credentials change', async (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'factory-auth-reuse-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const { privateKey } = generateKeyPairSync('rsa', {
+    modulusLength: 1024,
+    privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+    publicKeyEncoding: { type: 'spki', format: 'pem' },
+  });
+  setupFactoryEnv(root, { appId: '123', installationId: '456', privateKey });
+  let calls = 0,
+    installationId = 456;
+  const request = async (url) => {
+    calls++;
+    const body = url.endsWith('/app')
+      ? { id: 123, slug: 'fixture' }
+      : url.endsWith('/installation')
+        ? { id: installationId, app_id: 123 }
+        : { token: 'fixture-token-' + installationId, expires_at: new Date(Date.now() + 3_600_000).toISOString() };
+    return { ok: true, json: async () => body };
+  };
+  githubAppCredentials(root, 'fixture/repo').request = request;
+  const [first, second] = await Promise.all([
+    githubAppCredentials(root, 'fixture/repo').session(),
+    githubAppCredentials(root, 'fixture/repo').session(),
+  ]);
+  assert.equal(first.token, 'fixture-token-456');
+  assert.equal(second.token, first.token);
+  assert.equal(calls, 3, 'Concurrent providers repeated authentication.');
+  await githubAppCredentials(root, 'fixture/repo').session();
+  assert.equal(calls, 3, 'A valid token was minted again.');
+  installationId = 457;
+  const path = join(root, '.env');
+  writeFileSync(path, readFileSync(path, 'utf8').replace(/INSTALL_ID="?456"?/, 'INSTALL_ID=457'));
+  githubAppCredentials(root, 'fixture/repo').request = request;
+  assert.equal((await githubAppCredentials(root, 'fixture/repo').session()).token, 'fixture-token-457');
+  assert.equal(calls, 6, 'Changed credentials reused the old token.');
+});

@@ -1,3 +1,4 @@
+import { FileReadCache } from './file-read-cache.mjs';
 import { registeredProjectStores } from './stores/report-access.mjs';
 import { blockDefinitionId, missingMergePR, requestBlock, withoutTarget } from './flow-block-data.mjs';
 import { BlockCatalog } from './block-catalog.mjs';
@@ -203,6 +204,7 @@ export class FlowStore {
     this.ownerForIssue = ownerForIssue;
     this.staged = new Map();
     this.flushes = new Map();
+    this.readCache = new FileReadCache((content) => JSON.parse(content));
     this.directory = join(root, '.issues/flows');
   }
   path(id) {
@@ -213,8 +215,11 @@ export class FlowStore {
     const pending = this.pendingFlow(issue.id);
     if (pending) return structuredClone(pending.flow);
     const path = this.path(issue.id);
-    if (!existsSync(path)) return newFlow(issue, target, catalog);
-    const record = JSON.parse(readFileSync(path, 'utf8'));
+    if (!existsSync(path)) {
+      this.readCache.forget(path);
+      return newFlow(issue, target, catalog);
+    }
+    const record = this.readCache.read(path);
     requireThat(
       record.version === 1 && record.issueId === issue.id && Array.isArray(record.blocks),
       'The saved flow needs reconciliation. It was not reset.'
