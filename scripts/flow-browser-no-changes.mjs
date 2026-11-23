@@ -2,15 +2,19 @@ import assert from 'node:assert/strict';
 import { copyFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { git } from './factory-ui/common.mjs';
-import { writeBrowserIssue } from './flow-browser-fixture.mjs';
 import { withBrowserScenarioFixture } from './flow-browser-scenario-fixture.mjs';
+import { importBrowserIssue } from './flow-browser-fixture.mjs';
 
 export async function noChangesBrowserChecks({ page, service, project, output, root, poll }) {
   return withBrowserScenarioFixture({ project, service }, async () => {
     const id = '20261121-no-changes-fixture';
     const lifecyclePath = join(project, '.issues/triage-labels.md');
     if (!existsSync(lifecyclePath)) copyFileSync(join(root, '.issues/triage-labels.md'), lifecyclePath);
-    writeBrowserIssue(project, { id, title: 'No changes required', body: 'The reported behavior already works.' });
+    await importBrowserIssue(service, {
+      id,
+      title: 'No changes required',
+      body: 'The reported behavior already works.',
+    });
     const issue = service.flows.selected(id);
     const flow = service.flows.read(issue);
     const checkout = join(project, '.issues/issue-work', id);
@@ -22,7 +26,7 @@ export async function noChangesBrowserChecks({ page, service, project, output, r
     request.data.fields = { type: 'bug', goal: 'Check the reported behavior' };
     const publish = flow.blocks.find((block) => block.kind === 'publish');
     publish.after = [];
-    service.flows.store.save(flow, flow.revision);
+    await service.flows.store.save(flow, flow.revision);
     if (!git(project, 'remote').split('\n').includes('origin'))
       git(project, 'remote', 'add', 'origin', 'git@github.com:test/fixture.git');
     git(project, 'remote', 'set-url', '--push', 'origin', 'git@github.com:test/fixture.git');
@@ -57,7 +61,10 @@ export async function noChangesBrowserChecks({ page, service, project, output, r
       assert.ok(!service.flows.selected(id).closed);
       await screen.locator('#run-block').click();
       await screen.getByRole('button', { name: 'Close as Cannot Reproduce…' }).click();
+      const decision = screen.waitForResponse((response) => new URL(response.url()).pathname === '/api/issue-decision');
       await screen.locator('#confirm-issue-closure:not(:disabled)').click();
+      const response = await decision;
+      assert.equal(response.status(), 200, await response.text());
       await screen.locator('#issue-closure-dialog').waitFor({ state: 'hidden' });
       await screen.locator('#close-with-reason').waitFor({ state: 'hidden' });
       await poll(() => !service.flows.closureBusy(id), Boolean, 'No-change fixture cleanup did not finish.');

@@ -2246,7 +2246,7 @@ class IssueFlows {
     if (preview.status === 'blocked' && this.autoplay.get(issue.id)?.blockId === block.id)
       this.pause(issue.id, preview.message);
     if (input.action === 'preview-publish' || preview.status === 'blocked' || preview.token !== input.previewToken)
-      return { publication: preview };
+      return { publication: preview, flowRevision: flow.revision };
     if (this.read(issue, catalog).revision !== flow.revision || this.selected(issue.id).title !== issue.title)
       return { previewChanged: true };
     return this.start(

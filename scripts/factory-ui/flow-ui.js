@@ -2855,6 +2855,7 @@
       $('publish-preview').replaceChildren();
       return;
     }
+    review.flowRevision = result.flowRevision;
     const changed =
       confirming && preview.token !== token && preview.status === 'confirm'
         ? '<p>The publication changed. Review the updated preview.</p>'
@@ -2894,8 +2895,9 @@
 
   $('publish-preview').addEventListener('click', (event) => {
     if (!event.target.closest('[data-close-no-changes]')) return;
+    const revision = publishReview.flowRevision;
     $('publish-dialog').close();
-    openClosure('cannot-reproduce');
+    openClosure('cannot-reproduce', revision);
   });
 
   function closeRename() {
@@ -3676,12 +3678,12 @@
     }
   });
 
-  function openClosure(suggestedResolution) {
+  function openClosure(suggestedResolution, revision = state.view.flow.revision) {
     const { issue, flow } = state.view;
     void closureDialog.open(async () => ({
       ...(await json('/api/issue-closure?issue=' + encodeURIComponent(issue.id))),
       kind: 'close',
-      flowRevision: flow.revision,
+      flowRevision: revision,
       offerClosureRetro: flow.blocks.some((block) => block.kind === 'retro'),
       suggestedResolution,
     }));

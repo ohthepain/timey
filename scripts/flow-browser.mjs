@@ -59,7 +59,7 @@ import { localNotesBrowserChecks } from './flow-browser-local-notes.mjs';
 import { actionsMenuBrowserChecks } from './flow-browser-actions-menu.mjs';
 import { mergedIssueBrowserChecks } from './flow-browser-merged-issue.mjs';
 import { noChangesBrowserChecks } from './flow-browser-no-changes.mjs';
-import { writeBrowserIssue } from './flow-browser-fixture.mjs';
+import { importBrowserIssues, removeBrowserIssues, writeBrowserIssue } from './flow-browser-fixture.mjs';
 import { issueStoresBrowserChecks } from './flow-browser-stores.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -533,15 +533,11 @@ try {
     );
   if (!process.argv.includes('--reverse-fixture-scenarios')) await noChangesCheck();
   await check('The whole sidebar scrolls over every section', async () => {
-    const issuePaths = Array.from({ length: 24 }, (_, index) =>
-      join(project, '.issues', '20261120-sidebar-overflow-' + index + '.md')
-    );
-    issuePaths.forEach((path, index) =>
-      writeFileSync(
-        path,
-        `---\nid: 20261120-sidebar-overflow-${index}\ntitle: Overflowing issue ${index}\nstate: backlog\n---\n\nSidebar scrolling fixture.\n`
-      )
-    );
+    const issues = Array.from({ length: 24 }, (_, index) => ({
+      id: '20261120-sidebar-overflow-' + index,
+      report: `---\nid: 20261120-sidebar-overflow-${index}\ntitle: Overflowing issue ${index}\nstate: backlog\n---\n\nSidebar scrolling fixture.\n`,
+    }));
+    await importBrowserIssues(service, issues);
     await page.goto('/');
     await page.locator('#sidebar-file-tree details').first().waitFor();
     await page.evaluate(() => {
@@ -607,7 +603,10 @@ try {
       await screenshot('sidebar-scroll-' + viewport.width);
     }
     writeFileSync(join(output, 'sidebar-scroll.json'), JSON.stringify({ candidate, observations }, null, 2));
-    issuePaths.forEach((path) => rmSync(path));
+    await removeBrowserIssues(
+      service,
+      issues.map(({ id }) => id)
+    );
     await page.setViewportSize({ width: 1440, height: 960 });
     await page.reload();
   });
@@ -615,7 +614,7 @@ try {
     issueStatusFoldersBrowserChecks({ page, project, service, poll, screenshot, output, root })
   );
   await check('Closed issue selections archive together and issue links open the normal view', () =>
-    projectIssuesBrowserChecks({ page, project, root, output })
+    projectIssuesBrowserChecks({ page, project, root, output, service })
   );
   await check(navigationCheck, () =>
     withQueueConfiguration({ page, project, root }, () => projectNavigationBrowserChecks({ page, screenshot }))
@@ -1267,7 +1266,7 @@ try {
     await page.keyboard.press('Escape');
     await page.getByRole('button', { name: 'Inspect UI' }).click();
     await page.locator('#refresh').click();
-    await page.locator('#toast').filter({ hasText: 'Saved flow refreshed.' }).waitFor();
+    await page.locator('#toast').filter({ hasText: 'Current view refreshed.' }).waitFor();
     await tab.hover();
     await page.getByRole('tooltip').filter({ hasText: 'Inherited' }).waitFor();
     await tab.click({ button: 'right' });

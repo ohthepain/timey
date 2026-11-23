@@ -191,6 +191,8 @@ empty commits. `node scripts/flow-browser.mjs --no-changes` drives the no-change
 Publish preview, Cannot Reproduce suggestion, cancellation and explicit closure
 in a disposable project. It saves `no-changes-close-offer.png`; no live issue is
 closed and no GitHub publication occurs.
+The scenario closes directly from the Publish preview and verifies that the
+closure uses the Flow revision saved by that preview.
 The no-change and folder-settings scenarios use `withBrowserScenarioFixture`.
 It snapshots executor and provider state, Git configuration, and lifecycle files.
 It waits for execution and cleanup tasks, including tasks spawned by completion,
@@ -338,6 +340,8 @@ the project menu, Notes, Files and Issues with overflowing content at desktop an
 narrow widths. The fixture adds rows to the real page and checks that each wheel
 moves content outside the hovered section. It retains screenshots and
 `sidebar-scroll.json`, and checks that resizing remains available after scrolling.
+The sidebar scroll, status folder and Project Issues fixtures seed their reports
+through the disposable project's local Issue store and remove them after checking.
 For the isolated investigation follow-up review, run
 `node scripts/flow-browser.mjs --investigation-followups`.
 `node --test scripts/flow-followups.check.mjs` checks reviewed creation, lineage,
@@ -1129,9 +1133,9 @@ retain their existing checks.
 `node scripts/flow-browser.mjs --investigation-toolbar` checks the investigation
 controls above the graph and their removal for an ordinary flow. It uses a saved
 fixture flow, starts no investigation, and does not archive an issue.
-The geometry assertion also runs in the full investigation browser scenario;
-that broader scenario currently stops earlier at an investigation-creation HTTP
-400 and therefore does not establish coverage of the remaining workflow.
+The geometry assertion also runs in the full investigation browser scenario.
+That scenario stops before the graph opens because Project Home submits no Issue
+storage profile and creation rejects the request with HTTP 400.
 
 ## Block models and blocking errors
 

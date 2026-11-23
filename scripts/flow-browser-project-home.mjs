@@ -1,4 +1,4 @@
-import { writeBrowserIssue } from './flow-browser-fixture.mjs';
+import { importBrowserIssue } from './flow-browser-fixture.mjs';
 import assert from 'node:assert/strict';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -211,7 +211,7 @@ async function prepareHome(page, service) {
 }
 export async function investigationToolbarBrowserChecks({ page, service, screenshot }) {
   const id = '20261123-investigation-toolbar';
-  writeBrowserIssue(service.root, {
+  await importBrowserIssue(service, {
     id,
     title: 'Investigation toolbar layout',
     body: 'Check layout without running an investigation.',

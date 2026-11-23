@@ -61,6 +61,7 @@ export default async function captureStartChecks(page) {
       return select && !select.disabled && select.options.length > 1;
     });
     await page.locator('#capture-folder').selectOption('Inbox');
+    await page.locator('#capture-issue-store:enabled > option[value="files"]:checked').waitFor({ state: 'attached' });
   }
 
   async function verifyDefaultCapture(page, captures, starts) {
@@ -90,6 +91,7 @@ export default async function captureStartChecks(page) {
         (await page.locator('#capture-status').textContent())
     );
     expect(captures.length === 1, 'Capture request was not received.');
+    expect(captures[0].storageProfile === 'files', 'The default storage profile was not submitted.');
     expect(captures[0].model === 'gpt-6-astra', 'Model not retained');
     expect(starts.length === 0, 'Save without selected operations started work.');
   }
