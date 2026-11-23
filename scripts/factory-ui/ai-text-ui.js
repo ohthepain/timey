@@ -70,10 +70,12 @@
   function createTextView(block, state) {
     const original = document.createElement('div');
     original.className = 'ai-text-original';
+    original.dataset.aiContent = '';
     original.dataset.aiOriginal = '';
     original.append(...block.childNodes);
     const simplified = document.createElement('div');
     simplified.className = 'ai-text-simplified';
+    simplified.dataset.aiContent = '';
     simplified.dataset.aiSimplified = '';
     simplified.hidden = true;
     block.append(original, simplified);
@@ -109,8 +111,6 @@
     const bro = view.toolbar.querySelector('[data-ai-action="bro"]');
     bro.setAttribute('aria-pressed', String(view.state.enabled));
     bro.textContent = view.state.pending ? 'Bro…' : 'Bro';
-    view.block.classList.toggle('ai-text-bro-on', view.state.enabled);
-    view.block.dataset.aiBroOn = String(view.state.enabled);
     paintText(view);
   }
   function hasSimplified(state) {
@@ -188,6 +188,7 @@
     if (!view.editor) {
       const label = document.createElement('label');
       label.className = 'ai-text-edit-label';
+      label.dataset.aiContent = '';
       label.dataset.aiEditLabel = '';
       label.textContent = 'Local text edit';
       const editor = document.createElement('textarea');
@@ -197,7 +198,7 @@
       editor.rows = 5;
       editor.value = displayed(view);
       label.append(editor);
-      view.block.append(label);
+      view.toolbar.before(label);
       view.editor = editor;
       view.state.editing = true;
       editor.addEventListener('input', () => {

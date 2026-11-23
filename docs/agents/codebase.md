@@ -852,8 +852,10 @@ controls. Flow conversation entries reuse the same message envelope.
 Open conversation tabs stay in creation order; closing a tab marks its conversation
 closed and retains its saved history.
 
-`ai-text-ui.js` and `ai-text.css` provide shared top-right Copy, Bro and Dictate
-controls for AI text. Renderers mark AI content with `data-ai-text`, a stable
+`ai-text-ui.js` and `ai-text.css` provide shared Copy, Bro and Dictate controls
+beneath AI text. The row takes up space while the text or controls are hovered,
+while a control has keyboard focus, or on devices without hover.
+Renderers mark AI content with `data-ai-text`, a stable
 `data-ai-key` and its exact `data-ai-source`. Bro preserves the original and shows
 the simplified version until toggled off. `ai-text-bro.mjs` loads the installed bro
 skill and rewrites in a separate read-only model conversation. Dictating into an
