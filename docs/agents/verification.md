@@ -499,9 +499,12 @@ explicit selection.
 Before Merge invokes its repair worker, it copies the verification summaries,
 command output and each failed check log into the issue checkout. The prompt
 identifies failed checks separately from successful checks and references the
-local copies. Original records remain unchanged. The regression in
-`scripts/flow-executor.check.mjs` covers a passing build followed by a browser
-failure whose original logs are outside the worker checkout.
+local copies. Each repair round has its own directory for the worker response,
+declared artifacts, and the Merge log captured when the repair starts. The
+Merge repair index links each failure to its committed candidate, verification
+summaries, and ordered conversation entries. The regression in
+`scripts/flow-executor.check.mjs` checks three rounds with repeated artifact
+names and verifies the retained hashes after the final round.
 GitHub artifact downloads have a two-minute transfer deadline; ordinary GitHub
 CLI requests retain their 30-second deadline. This lets large failure evidence
 finish transferring before the repair worker is invoked.
@@ -1011,12 +1014,14 @@ a disposable browser fixture and checks skill selection in the submitted request
 failed-save retry and retained draft. It saves a screenshot and request JSON under
 `.issues/evidence/`. Provider execution is covered separately from this UI fixture.
 
-Flow browser verification writes under `TIMEY_BROWSER_OUTPUT/flow` when run by
-the aggregate verifier. An explicit `TIMEY_FLOW_BROWSER_OUTPUT` still overrides
-that location. This keeps its logs, response diagnostics and screenshots inside
-the retained verification artifacts after the exported checkout is removed.
-HTTP error records include the response body and originating request; unexpected
-browser errors continue to fail verification.
+The aggregate verifier runs both browser runners in its disposable checkout.
+`verify-browser-evidence.mjs` lists the screenshot, result, log, and measurement
+outputs to copy into `.issues/evidence/`. It reads direct files in the Classic
+and Flow output directories and records their SHA-256 hashes in the verification
+summary. Fixture repositories and browser runner internals stay in the disposable
+checkout. Standalone Flow runs can still set `TIMEY_FLOW_BROWSER_OUTPUT`.
+HTTP error records include the response body and originating request. Unexpected
+browser errors fail verification.
 
 Work All Night fixtures create the folders they assign, so execution reaches the
 injected worker through the same settings validation as a real issue. Start/stop

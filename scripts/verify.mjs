@@ -3,6 +3,7 @@ import { formatArgs, formattingFiles } from './format-files.mjs';
 import { fallowAuditScope } from './verify-scope.mjs';
 import { runVerificationProcess } from './verify-process.mjs';
 import { factoryCheckCommand, focusedCheckName, mergeCheckPlan, mergeCheckTimeoutMs } from './verify-merge-checks.mjs';
+import { retainBrowserEvidence } from './verify-browser-evidence.mjs';
 import { execFileSync } from 'node:child_process';
 import {
   cpSync,
@@ -12,14 +13,13 @@ import {
   mkdtempSync,
   readFileSync,
   readlinkSync,
-  readdirSync,
   rmSync,
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { randomUUID, createHash } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { assessAudit } from './audit-result.mjs';
 
 // Analyze an exported snapshot: unstaged edits cannot mask a staged audit finding,
@@ -54,6 +54,7 @@ const snapshot = mkdtempSync(join(tmpdir(), 'timey-verify-'));
 const reportDir = join(root, '.issues', 'evidence');
 mkdirSync(reportDir, { recursive: true });
 const stamp = new Date().toISOString().replaceAll(':', '-') + '-' + randomUUID();
+const browserOutput = join(snapshot, '.issues/evidence', stamp + '-browser');
 const report = {
   revision: head,
   checkpoint: workChecks ? 'work' : staged ? 'commit' : step ? 'step' : 'verification',
@@ -68,17 +69,6 @@ const cancellation = new AbortController();
 const cancel = () => cancellation.abort();
 process.on('SIGINT', cancel);
 process.on('SIGTERM', cancel);
-function browserArtifacts(directory) {
-  if (!existsSync(directory)) return [];
-  return readdirSync(directory, { recursive: true })
-    .filter((name) => lstatSync(join(directory, name)).isFile())
-    .map((name) => ({
-      path: join(directory, name),
-      sha256: createHash('sha256')
-        .update(readFileSync(join(directory, name)))
-        .digest('hex'),
-    }));
-}
 function fallowEnforced(env = isolatedEnv) {
   const value = env.TIMEY_FALLOW_ENFORCE;
   return workChecks || value === '1' || value === 'true';
@@ -125,7 +115,9 @@ function recordCheck(name, command, result) {
     command,
     cwd: snapshot,
     log,
-    ...(name === 'browser' ? { artifacts: browserArtifacts(join(reportDir, stamp + '-browser')) } : {}),
+    ...(name === 'browser'
+      ? { artifacts: retainBrowserEvidence(browserOutput, join(reportDir, stamp + '-browser')) }
+      : {}),
     pid: result.pid,
     startedAt: result.startedAt,
     finishedAt: result.finishedAt,
@@ -163,7 +155,11 @@ async function run(name, command, commandArgs) {
       encoding: 'utf8',
       env:
         name === 'browser'
-          ? { ...isolatedEnv, TIMEY_BROWSER_OUTPUT: join(reportDir, stamp + '-browser') }
+          ? {
+              ...isolatedEnv,
+              TIMEY_BROWSER_OUTPUT: browserOutput,
+              TIMEY_FLOW_BROWSER_OUTPUT: join(browserOutput, 'flow'),
+            }
           : isolatedEnv,
     },
     join(reportDir, `${stamp}-${name}.log`)

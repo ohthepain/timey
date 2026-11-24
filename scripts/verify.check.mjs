@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import {
   mkdirSync,
   mkdtempSync,
@@ -11,9 +11,10 @@ import {
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { join, relative, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { gitFixture } from './git-fixture.mjs';
+import { retainBrowserEvidence } from './verify-browser-evidence.mjs';
 import { fallowAuditScope } from './verify-scope.mjs';
 import { factoryCheckCommand, normalizeFocusedTests } from './verify-merge-checks.mjs';
 import { flowMergeChecks } from './factory-ui/flow-verification.mjs';
@@ -97,6 +98,54 @@ test('Merge evidence checks the regression scope and the exact focused commands'
   validateSummary(summary, 'base', 'tree');
   checks[1].command = factoryCheckCommand('full');
   assert.throws(() => validateSummary(summary, 'base', 'tree'), /different regression suite/);
+});
+
+test('browser evidence retains declared proof with valid hashes and excludes nested Git repositories', (t) => {
+  const { root } = gitFixture(t, 'verify-browser-evidence-');
+  const output = join(root, 'browser-output');
+  const repository = join(output, 'flow/project');
+  mkdirSync(repository, { recursive: true });
+  execFileSync('git', ['init', '-q', repository]);
+  const object = execFileSync('git', ['-C', repository, 'hash-object', '-w', '--stdin'], { input: 'fixture only' })
+    .toString()
+    .trim();
+  const objectPath = join(repository, '.git/objects', object.slice(0, 2), object.slice(2));
+  assert.ok(readFileSync(objectPath).length);
+  const screenshot = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jR1sAAAAASUVORK5CYII=',
+    'base64'
+  );
+  const declared = {
+    'queue.png': screenshot,
+    'results.json': '{"passed":true}',
+    'flow/project-discuss-styles.json': '{"messageBorderWidth":"0px"}',
+    'flow/project-discuss.png': screenshot,
+  };
+  for (const [file, bytes] of Object.entries(declared)) writeFileSync(join(output, file), bytes);
+  writeFileSync(join(repository, 'fixture.png'), screenshot);
+  writeFileSync(join(output, 'flow/fixture-state.json'), '{"temporary":true}');
+  symlinkSync(objectPath, join(output, 'flow/internal.png'));
+  const retained = join(root, '.issues/evidence/browser');
+  const linkedOutput = join(root, 'symlinked-output');
+  symlinkSync(output, linkedOutput, 'dir');
+  assert.deepEqual(retainBrowserEvidence(linkedOutput, retained), []);
+  const artifacts = retainBrowserEvidence(output, retained);
+  const files = Object.fromEntries(artifacts.map(({ path, sha256 }) => [relative(retained, path), sha256]));
+  assert.deepEqual(files, Object.fromEntries(Object.entries(declared).map(([file, bytes]) => [file, digest(bytes)])));
+  const retainedFiles = readdirSync(retained, { recursive: true, withFileTypes: true })
+    .filter((entry) => !entry.isDirectory())
+    .map((entry) => relative(retained, join(entry.parentPath, entry.name)))
+    .sort();
+  assert.deepEqual(retainedFiles, Object.keys(declared).sort());
+
+  const log = join(root, '.issues/evidence/browser.log');
+  writeFileSync(log, 'PASS browser scenario: proof collection fixture\n');
+  const browser = { name: 'browser', passed: true, exit: 0, log, artifacts };
+  const summary = { base: 'base', snapshot_tree: 'tree', passed: true, checks: [browser] };
+  validateSummary(summary, 'base', 'tree');
+  t.diagnostic(JSON.stringify({ retained: files, nestedGitObject: object, evidenceValidation: 'passed' }));
+  writeFileSync(artifacts[0].path, 'tampered proof');
+  assert.throws(() => validateSummary(summary, 'base', 'tree'), /Browser evidence changed/);
 });
 
 test('a hung verification command reports its deadline as a timeout', async (t) => {
@@ -212,6 +261,7 @@ function auditFixture(t, extraFiles = {}) {
     'format-staged.mjs',
     'format-files.mjs',
     'verify.mjs',
+    'verify-browser-evidence.mjs',
     'verify-scope.mjs',
     'verify-process.mjs',
     'verify-merge-checks.mjs',
