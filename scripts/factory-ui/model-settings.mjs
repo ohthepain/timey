@@ -8,7 +8,7 @@ import {
   resolveFolderSettings,
   updateFolderSettings,
 } from './issue-folder-settings.mjs';
-import { savedIssueExecutionSettings } from './issue-execution-settings.mjs';
+import { savedIssueExecutionSettings, requireValidExecutionSettings } from './issue-execution-settings.mjs';
 import { FlowStore } from './flow-store.mjs';
 import { folderSettingsFields } from './folder-settings-schema.mjs';
 import { afterReportWrite } from './stores/report-access.mjs';
@@ -56,10 +56,7 @@ export function readIssueModelSettings(root, issueId) {
 export function newChatModelSettings(root, issueId = null) {
   const project = readModelSettings(root);
   const resolved = issueId ? savedIssueExecutionSettings(root, issueId) : null;
-  requireThat(
-    !(resolved?.errors || project.errors).length,
-    'Fix project or folder settings before starting this issue.'
-  );
+  requireValidExecutionSettings(resolved || project);
   const defaults = resolved?.values || project.defaults;
   return {
     model: defaults.model,

@@ -33,9 +33,9 @@ function groupedHumanChecks(issue) {
   }));
 }
 
-function childRecord({ id, title, requestedProof, humanChecks }) {
+function childRecord({ id, title, requestedProof, humanChecks, previousState }) {
   const links = humanChecks.map(({ originalId, check }) => ({ originalId, masterId: check.id }));
-  return { id, title, requestedProof, ...(links.length && { humanChecks: links }) };
+  return { id, title, requestedProof, previousState, ...(links.length && { humanChecks: links }) };
 }
 
 function detachedGroupMetadata(master, target) {
@@ -92,18 +92,13 @@ export class FlowGrouping {
   }
 
   candidate(issue, flow, issues) {
-    const lifecycle = this.service.lifecycleRuns?.[issue.id];
     const chatQueue = this.service.issueChats?.scheduler?.view(issue.id);
     return (
-      this.flows.groupEligible(issue, flow) &&
-      issue.state !== 'needs-approval' &&
+      this.flows.folderSelection.idle(issue, flow) &&
       !issue.issue_group &&
       !this.masterId(issue.id, issues) &&
       !this.flows.overnight?.owns(issue.id) &&
-      !lifecycle?.work &&
-      !lifecycle?.chatCheckout &&
-      !hasQueuedChat(chatQueue) &&
-      !flow.destination?.pr
+      !hasQueuedChat(chatQueue)
     );
   }
 
@@ -116,7 +111,7 @@ export class FlowGrouping {
     const registryPath = join(this.service.root, '.issues/factory.json');
     const scheduled = existsSync(registryPath)
       ? JSON.parse(readFileSync(registryPath, 'utf8')).actions.filter((action) =>
-          ['reserved', 'setup', 'running', 'blocked', 'completed'].includes(action.status)
+          ['reserved', 'setup', 'running', 'blocked'].includes(action.status)
         )
       : [];
     return ids.map((id) => {
@@ -125,13 +120,14 @@ export class FlowGrouping {
       const flow = this.flows.read(issue);
       requireThat(
         flow.folder === folder &&
-          this.candidate(issue, flow, issues) &&
+          this.flows.groupEligible(issue, flow, undefined, issues) &&
           !scheduled.some((action) => action.issues.includes(id)),
-        `${issue.title} is no longer an unstarted issue in this folder. Review the group again.`
+        `${issue.title} cannot join this master. It must be open, idle, independent, and use this folder’s target branch. Review the group again.`
       );
       const request = requestData(flow);
       return {
         ...issueLink(issue),
+        previousState: issue.state,
         wording: request.wording,
         requestedProof: request.fields?.requestedProof || 'Demonstrate the behavior requested in the original issue.',
         humanChecks: groupedHumanChecks(issue),
@@ -223,8 +219,8 @@ export class FlowGrouping {
     const stores = registeredProjectStores(this.service.root);
     const ids = preview.grouping.children.map((child) => child.id);
     await stores?.refresh({ issueIds: ids });
-    return afterReportWrite(stores?.assertSameStorage(ids), (storage) =>
-      this.flows.capture(
+    return afterReportWrite(stores?.assertSameStorage(ids), async (storage) => {
+      const result = await this.flows.capture(
         {
           requestId,
           description: wording,
@@ -233,8 +229,29 @@ export class FlowGrouping {
         },
         preview.grouping,
         storage
-      )
-    );
+      );
+      if (result.deleted) return result;
+      await this.resetChildren(result.issue.id);
+      return this.flows.view(result.issue.id);
+    });
+  }
+
+  async resetChildren(masterId) {
+    const master = this.flows.selected(masterId);
+    for (const child of groupChildren(master)) {
+      const issue = this.flows.selected(child.id);
+      if (issue.state === 'backlog') continue;
+      requireThat(
+        !issue.closed && !issueHasActiveWork(this.service, issue.id),
+        `Wait for ${issue.title} to be idle before resetting its status.`
+      );
+      const shared = this.service.sharedIssues?.acquire(issue, true);
+      await updateStoredIssueMetadata(this.service.root, issue, {
+        state: 'backlog',
+        updated: new Date().toISOString(),
+      });
+      if (shared) this.service.sharedIssues.checkpoint(issue.id, 'Moved into master issue', shared);
+    }
   }
 
   async removeMaster({ issueId, subIssueId, revision, masterId, masterRevision }) {

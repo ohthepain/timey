@@ -82,6 +82,7 @@ async function verifyRetainedCopies(target, sources) {
 export async function prepareIssueArtifactMove(project, operation) {
   const { artifactStoreId, ids } = operation.value.input;
   const target = destination(project, artifactStoreId);
+  if (operation.value.sources.every((source) => source.artifactStoreId === artifactStoreId)) return operation;
   if (operation.value.artifactsVerified) {
     await verifyRetainedCopies(target, operation.value.sources);
     return operation;

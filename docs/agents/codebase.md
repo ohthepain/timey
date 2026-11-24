@@ -858,6 +858,12 @@ type's default flow. To start an issue's saved route from Discuss, query it with
 `issues_list` and call `issue_control` with `action: play`. `action: start` is
 for an explicitly selected runnable block and cannot start Request directly.
 Issue activity is not streamed back into Discuss.
+`scripts/factory-issue-create.mjs` provides `factory issue-create` for external
+chats without registered tools. It validates a saved request and the live server's
+project identity, then calls the existing guarded Flow capture route. The returned
+issue remains idle and can be continued in the server UI. Caller-owned request
+UUIDs preserve capture idempotency across retries and server replacement. See
+[external chat creation](factory.md#create-an-issue-from-an-external-chat).
 `project-discuss-ui.js` and
 `project-discuss.css` own the composer, single-visible-conversation history,
 horizontal conversation tabs, message alignment and hover actions, settings,
@@ -974,6 +980,8 @@ Issue-bound artifact routers write to those saved destinations. Provider overflo
 and operation receipts use the project's Coordination artifact store, selected
 by the registry's `artifacts` field. `stores/migrations.mjs` verifies issue records
 and owned artifact copies before switching a complete group's catalog destinations.
+`stores/issue-artifact-move.mjs` skips artifact enumeration and copying when all
+source issues already use the destination Artifact store.
 Issue moves preserve immutable proof JSON and do not install global digest
 redirects. Historical physical references remain readable. `stores/providers.mjs` supplies Issue and
 record contracts for files/Git, Postgres, and DynamoDB. `stores/artifacts.mjs`

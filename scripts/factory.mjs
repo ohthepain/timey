@@ -1,3 +1,4 @@
+import { runIssueCreate } from './factory-issue-create.mjs';
 import { exportIssueReports } from './factory-ui/issue-storage-export.mjs';
 import { migrateClosedIssues } from './factory-ui/issue-report-storage.mjs';
 import { IssueDelivery } from './issue-delivery.mjs';
@@ -13,7 +14,8 @@ import { runViewCommand } from './factory-ui/view-command.mjs';
 export { factory };
 
 export async function runCommand(project, argv, delivery = new IssueDelivery(project)) {
-  const [command, ...args] = argv;
+  const [command, ...args] = argv[0] === '--' ? argv.slice(1) : argv;
+  if (command === 'issue-create') return runIssueCreate(project, args);
   if (command === 'ui') return runViewCommand(project, args);
   if (command === 'issue-storage-export') return exportIssueReports(project, args[0]);
   if (command === 'issue-storage-migrate') return migrateClosedIssues(project);

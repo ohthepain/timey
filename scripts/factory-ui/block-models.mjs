@@ -1,5 +1,9 @@
 import { readModelSettings } from './model-settings.mjs';
-import { resolveIssueExecutionSettings, executionStarted } from './issue-execution-settings.mjs';
+import {
+  resolveIssueExecutionSettings,
+  executionStarted,
+  requireValidExecutionSettings,
+} from './issue-execution-settings.mjs';
 import { modelAvailability, providerCatalogs, refreshProviderQuota } from './provider-runtime.mjs';
 import { readProviderConfig, providerForModel } from './provider-config.mjs';
 import { configuredCodexSettings } from './native-codex-settings.mjs';
@@ -17,11 +21,7 @@ export function blockExecutionSettings(service, issue, flow, block, { validate =
   const resolved = resolveIssueExecutionSettings(service.root, issue, flow, {
     started: executionStarted(service, flow),
   });
-  if (validate)
-    requireThat(
-      !resolved.errors.some((error) => error.key !== 'model' || !block.model),
-      'Fix project or folder settings before starting this issue.'
-    );
+  if (validate) requireValidExecutionSettings(resolved, block.model);
   return { model: block.model || resolved.values.model, effort: resolved.values.effort };
 }
 function fixedModel(root, block, defaults, choices) {

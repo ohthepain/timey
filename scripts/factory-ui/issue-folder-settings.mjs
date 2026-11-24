@@ -180,7 +180,7 @@ function fieldErrors(data, fields) {
     const { key } = field;
     if (!Object.hasOwn(data, key)) continue;
     const message = validateFieldValue(field, data[key]);
-    if (message) errors.push({ key, message });
+    if (message) errors.push({ key, message, value: data[key] });
   }
   return errors;
 }
@@ -194,7 +194,8 @@ function inheritedField(root, chain, field) {
         ...fallback,
         error: {
           key: field.key,
-          message: `Repair ${relative(root, record.path)} before inheriting ${field.label.toLowerCase()}.`,
+          source: relative(root, record.path).split(sep).join('/'),
+          message: `Repair ${relative(root, record.path)} before inheriting ${field.label.toLowerCase()}: ${record.errors.map((error) => error.message).join(' ')}`,
         },
       };
     const value = record.data[field.key];
@@ -203,7 +204,7 @@ function inheritedField(root, chain, field) {
     if (message)
       return {
         ...(field.key === 'model' ? { value, source: relative(root, record.path) } : fallback),
-        error: { key: field.key, message },
+        error: { key: field.key, message, value, source: relative(root, record.path).split(sep).join('/') },
       };
     return { value, source: relative(root, record.path).split(sep).join('/') };
   }
@@ -289,10 +290,15 @@ export function readFolderSettings(project, directory, { branchChoices = true, s
     fields,
     settings: inherited.settings,
     missing: fields.filter(({ key }) => !Object.hasOwn(record.data || {}, key)).map(({ key }) => key),
-    errors: errors.filter(
-      (error, index) =>
-        errors.findIndex((entry) => entry.key === error.key && entry.message === error.message) === index
-    ),
+    errors: errors
+      .map((error) => ({
+        ...error,
+        source: error.source || relative(root, join(location.directory, settingsName)).split(sep).join('/'),
+      }))
+      .filter(
+        (error, index) =>
+          errors.findIndex((entry) => entry.key === error.key && entry.message === error.message) === index
+      ),
     isDefaultFolder: basic?.isDefaultFolder || false,
     canConfigure,
     repairable: !record.errors.length && Boolean(record.doc),

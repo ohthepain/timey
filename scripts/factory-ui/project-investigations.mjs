@@ -14,7 +14,7 @@ import { FlowFollowups } from './flow-followups.mjs';
 import { proposeProjectFollowups } from './project-home-proposals.mjs';
 import { projectIssueRecords } from './project-home-stats.mjs';
 import { updateStoredIssueMetadata } from './issue-report-storage.mjs';
-import { resolveIssueExecutionSettings } from './issue-execution-settings.mjs';
+import { resolveIssueExecutionSettings, requireValidExecutionSettings } from './issue-execution-settings.mjs';
 import { investigationIssueView, investigationConfiguration } from './investigation-history.mjs';
 import { isInvestigation } from './investigation-records.mjs';
 import { inquiryKinds } from './investigation-flow.mjs';
@@ -141,7 +141,7 @@ export class ProjectInvestigations {
   }
   async configuration(input, previous = {}) {
     const settings = resolveFolderSettings(this.service.root, null);
-    requireThat(!settings.errors.length, 'Fix project settings before starting an investigation.');
+    requireValidExecutionSettings(settings);
     const branches = await flowBranches(this.service.root);
     const defaultBranch = projectDefaultBranch(branches, settings.values.branch, flowTarget(this.service.root).remote);
     const defaults = {
@@ -408,7 +408,7 @@ export class ProjectInvestigations {
       destination: undefined,
     };
     const settings = resolveIssueExecutionSettings(this.service.root, issue, fresh, { started: false });
-    requireThat(!settings.errors.length, 'Fix investigation or folder settings before running.');
+    requireValidExecutionSettings(settings);
     session.settings = settings.values;
     flow.executionSettings = { values: settings.values, sources: settings.sources, basis: settings.basis };
     const catalog = this.flows.catalog.read().entries;

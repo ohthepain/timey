@@ -2679,6 +2679,10 @@
   async function refreshIssueStore(force = false) {
     const id = state.issueId;
     if (!id || (!force && state.storeSelection === id)) return;
+    if (state.storeSelection !== id) {
+      $('issue-store-error').textContent = '';
+      $('issue-store-error').hidden = true;
+    }
     state.storeSelection = id;
     try {
       const data = await issueStoreUI.fill($('issue-store'), { issueId: id });
@@ -2692,6 +2696,7 @@
       $('resume-issue-store').dataset.operation = pendingMove?.operationId || '';
       if (state.storageMove !== id) $('issue-store-progress').textContent = '';
     } catch (error) {
+      if (id !== state.issueId) return;
       state.storeSelection = null;
       $('issue-store-error').textContent = error.message;
       $('issue-store-error').hidden = false;
@@ -3887,33 +3892,16 @@
     $('folder-name').focus();
   });
 
-  $('capture-folder').addEventListener('change', () => void loadCaptureStore());
-  $('resume-issue-store').addEventListener('click', async () => {
-    if (state.pending) return;
-    $('issue-store-error').hidden = true;
-    try {
-      $('issue-store-form').inert = true;
-      await issueStoreUI.resumeMove(state.issueId, $('resume-issue-store').dataset.operation);
-      await refreshIssueStore(true);
-      toast('Issue storage move confirmed.');
-    } catch (error) {
-      $('issue-store-error').textContent = error.message;
-      $('issue-store-error').hidden = false;
-    } finally {
-      $('issue-store-form').inert = false;
-    }
-  });
-  $('issue-store-form').addEventListener('submit', (event) => event.preventDefault());
-  $('issue-store').addEventListener('change', async () => {
+  async function runIssueStorageMove(move) {
+    if (state.pending || state.storageMove) return;
     const select = $('issue-store');
-    if (state.pending || state.storageMove || !select.value || select.value === select.dataset.saved) return;
     const issueId = state.issueId;
     state.storageMove = issueId;
     $('issue-store-error').hidden = true;
     $('issue-store-progress').textContent = 'Moving issue storage…';
     try {
       $('issue-store-form').inert = true;
-      if (!(await moveIssueStore(select.value)) && issueId === state.issueId) select.value = select.dataset.saved;
+      if ((await move(issueId)) === false && issueId === state.issueId) select.value = select.dataset.saved;
     } catch (error) {
       if (issueId === state.issueId) {
         select.value = select.dataset.saved;
@@ -3925,6 +3913,24 @@
       $('issue-store-form').inert = state.pending;
       if (issueId === state.issueId) $('issue-store-progress').textContent = '';
     }
+  }
+
+  $('capture-folder').addEventListener('change', () => void loadCaptureStore());
+  $('resume-issue-store').addEventListener('click', () => {
+    const operationId = $('resume-issue-store').dataset.operation;
+    void runIssueStorageMove(async (issueId) => {
+      await issueStoreUI.resumeMove(issueId, operationId);
+      if (issueId !== state.issueId) return;
+      await refreshIssueStore(true);
+      if (issueId === state.issueId) toast('Issue storage move confirmed.');
+    });
+  });
+  $('issue-store-form').addEventListener('submit', (event) => event.preventDefault());
+  $('issue-store').addEventListener('change', () => {
+    const select = $('issue-store');
+    if (!select.value || select.value === select.dataset.saved) return;
+    const profile = select.value;
+    void runIssueStorageMove(() => moveIssueStore(profile));
   });
 
   $('capture-form').addEventListener('submit', async (event) => {

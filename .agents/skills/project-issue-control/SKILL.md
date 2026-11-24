@@ -16,5 +16,15 @@ issue records yourself, duplicate its work, poll completion, import transcripts,
 or treat archiving as closure. A rejected operation remains rejected; explain its
 reason and point to the issue's existing controls.
 
-If these registered tools are unavailable, explain that and direct the person
-to the project's Discuss tab rather than using shell or HTTP to bypass guards.
+When `issue_create` is unavailable in an external chat, use the supported
+`pnpm run factory -- issue-create REQUEST.json --url LIVE_SERVER_URL` command.
+Read [external chat creation](../../../docs/agents/factory.md#create-an-issue-from-an-external-chat)
+for its request format. Save a request file with one UUID before sending; reuse
+it on retries. Put the agreed problem, scope, constraints, decisions, acceptance
+criteria and requested proof in `description`. Keep instructions about this
+creation operation outside the saved work description. Report the returned issue
+link; creation leaves it idle for the server to continue. Use the user's actual
+live server URL; the command verifies project identity and retains server guards.
+
+For other unavailable controls, direct the person to the project's Discuss tab.
+Do not use ad hoc shell or HTTP calls or edit issue records to bypass guards.

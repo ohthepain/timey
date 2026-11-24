@@ -62,7 +62,10 @@ export async function attachIssueChat(connection, cwd, state, retain, sandbox = 
     cwd,
     sandbox,
     (startup) => retain({ startup, threadId: startup.threadId }),
-    ...(instructions === undefined && !tools ? [] : [null, cwd, instructions, tools?.definitions])
+    null,
+    connection.root || cwd,
+    instructions,
+    tools?.definitions
   );
   connection.issueChatSandboxes.set(threadId, sandbox);
   return threadId;

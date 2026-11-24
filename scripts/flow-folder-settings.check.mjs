@@ -106,7 +106,7 @@ test('Grouping requires the resolved folder destination and rejects a settings c
   assert.equal(index.issues.find(({ id }) => id === ids[0]).groupEligible, false);
   await assert.rejects(
     flows.action({ action: 'folder-group-preview', folder: 'Inbox', issueIds: ids }),
-    /unstarted issue/
+    /cannot join this master/
   );
   view = await flows.view(ids[0]);
   await flows.action({

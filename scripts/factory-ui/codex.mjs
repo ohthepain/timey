@@ -237,12 +237,12 @@ export class CodexConnection {
   ) {
     this.root ||= settingsRoot;
     await this.ready();
-    onStartup({ status: 'starting' });
     const settings = this.threadModelSettings(settingsRoot, issueId);
     requireThat(
       agentModel(settings.model).provider === 'codex',
       'This workflow requires a Codex model. Use a native-agent chat or ordinary Flow block for Claude and Gemini.'
     );
+    onStartup({ status: 'starting' });
     const result = await this.call(
       'thread/start',
       {
