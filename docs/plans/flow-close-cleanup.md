@@ -19,7 +19,7 @@ Agreed design for the Factory issue flow.
   With auto-close off, the delivery sequence ends at Merge. The flow shows a
   **Close issue…** button before the Close block and explains that closing is
   manual. The button opens the existing closure confirmation and remains
-  available after Merge. With auto-close on, this manual prompt is hidden.
+  available after Merge. With auto-close on, this manual prompt is hidden. After closure, the merged notice no longer asks for Close.
   The opt-in covers
   one delivery and includes removal of the eligible worktree. Later Cleanup
   can remove either branch with explicit selection. You can revoke the opt-in

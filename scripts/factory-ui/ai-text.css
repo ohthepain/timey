@@ -1,5 +1,4 @@
-[data-ai-text],
-[data-ai-floating] {
+[data-ai-text] {
   position: relative;
   min-width: 0;
 }
@@ -9,23 +8,50 @@
   right: 0;
   z-index: 3;
   display: flex;
-  align-items: center;
   gap: 4px;
   max-width: 100%;
-  padding: 3px;
-  border-radius: 6px;
-  background: #151a24;
-  box-shadow: 0 1px 5px #0006;
   opacity: 0;
   pointer-events: none;
 }
-[data-ai-text]:hover > [data-ai-controls],
-[data-ai-text]:focus-within > [data-ai-controls],
-[data-ai-bro-on='true'] > [data-ai-controls],
-[data-ai-floating]:hover > [data-ai-controls],
-[data-ai-floating]:focus-within > [data-ai-controls] {
+[data-ai-text] > [data-ai-controls] {
+  align-items: flex-start;
+  flex-wrap: wrap;
+  width: fit-content;
+}
+[data-ai-content]:hover ~ [data-ai-controls],
+[data-ai-text] > [data-ai-controls]:hover,
+[data-ai-text] > [data-ai-controls]:focus-within {
+  position: static;
   opacity: 1;
   pointer-events: auto;
+}
+[data-ai-original] {
+  display: flow-root;
+}
+[data-ai-original] > :last-child {
+  margin-block-end: 0;
+}
+[data-ai-original] > input,
+[data-ai-original] > textarea,
+[data-ai-original] > select,
+[data-ai-editor] {
+  display: block;
+}
+.home-dialog [data-ai-text] {
+  row-gap: 0;
+}
+.home-review-columns [data-ai-original] {
+  display: grid;
+  gap: 7px;
+}
+[data-ai-original][hidden] {
+  display: none;
+}
+[data-home-message] > div[data-ai-text] {
+  min-height: 0;
+}
+[data-home-message] [data-ai-controls] {
+  margin-top: 0;
 }
 [data-ai-action] {
   border: 1px solid #465065;
@@ -57,11 +83,10 @@
 [data-ai-edit-label] {
   display: block;
   font-size: 12px;
-  padding-top: 28px;
 }
 @media (hover: none) {
-  [data-ai-text] > [data-ai-controls],
-  [data-ai-floating] > [data-ai-controls] {
+  [data-ai-text] > [data-ai-controls] {
+    position: static;
     opacity: 1;
     pointer-events: auto;
   }
@@ -72,6 +97,11 @@
   z-index: 20;
 }
 [data-ai-floating] > [data-ai-controls] {
+  align-items: center;
+  padding: 3px;
+  border-radius: 6px;
+  background: #151a24;
+  box-shadow: 0 1px 5px #0006;
   opacity: 1;
   pointer-events: auto;
 }

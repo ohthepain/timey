@@ -1,87 +1,30 @@
 {
   "version": 1,
-  "sourceRun": "Issue 203 approval latency repair",
+  "sourceRun": "https://github.com/ohthepain/timey/actions/runs/45240464918",
   "tests": [
     {
-      "name": "Approval admission, Git publication, and selected snapshot integrity",
-      "command": [
-        "node",
-        "--test",
-        "scripts/approval-refresh.check.mjs",
-        "scripts/store-git-transaction.check.mjs",
-        "scripts/store-git-github.check.mjs",
-        "scripts/store-snapshot-files.check.mjs",
-        "scripts/store-snapshot-scope.check.mjs"
-      ]
+      "name": "Named browser selection and focused-command guards",
+      "command": ["node", "--test", "scripts/browser-scenario-policy.check.mjs"]
     },
     {
-      "name": "Atomic flow saves, native payloads, and delayed display races",
-      "command": [
-        "node",
-        "--test",
-        "scripts/project-stores-flow.check.mjs",
-        "scripts/store-records.check.mjs",
-        "scripts/store-atomic-flow.check.mjs",
-        "scripts/flow-save-git.check.mjs",
-        "scripts/store-runtime.check.mjs"
-      ]
+      "name": "Previously failing capture chooses the configured Issue storage profile",
+      "command": ["node", "scripts/factory-browser.mjs", "--scenario=factory-browser-capture-start.mjs"]
     },
     {
-      "name": "Close imports the exact successful CI candidate and rejects invalid evidence",
-      "command": ["node", "--test", "scripts/github-closure-proof.check.mjs"]
+      "name": "Previously blocked Project Home and archive deletion workflow",
+      "command": ["node", "scripts/flow-browser.mjs", "--project-home"]
     },
     {
-      "name": "Cleanup recovers after an unavailable retry without losing resource identity",
-      "command": [
-        "node",
-        "--test",
-        "--test-name-pattern=cleanup retains the selected identity",
-        "scripts/factory-cleanup.check.mjs"
-      ]
+      "name": "Copy and Bro sit flush below text and remain visible across pointer transitions",
+      "command": ["node", "scripts/flow-browser.mjs", "--ai-text"]
     },
     {
-      "name": "Existing closure guards and cleanup actions remain enforced",
-      "command": ["node", "--test", "scripts/flow-delivery.check.mjs", "scripts/factory-cleanup.check.mjs"]
-    },
-    {
-      "name": "GitHub provider download transport and diagnostics",
-      "command": [
-        "node",
-        "--test",
-        "scripts/strategy-provider-diagnostics.check.mjs",
-        "scripts/github-call-history.check.mjs"
-      ]
-    },
-    {
-      "name": "Publish waits only for its own pushed candidate and preserves concurrent-change guards",
-      "command": [
-        "node",
-        "--test",
-        "--test-name-pattern=publication waits only|repeat publication|publication rejects|publication refuses|publication preserves",
-        "scripts/flow-delivery.check.mjs"
-      ]
-    },
-    {
-      "name": "Manual Close stays before Close and uses the existing confirmation",
+      "name": "Closed issues stop asking for Close after manual or automatic delivery",
       "command": ["node", "scripts/flow-browser.mjs", "--manual-close"]
     },
     {
-      "name": "Automatic Close requires the unrevoked opt-in",
-      "command": [
-        "node",
-        "--test",
-        "--test-name-pattern=automatic closure requires an unrevoked opt-in",
-        "scripts/flow.check.mjs"
-      ]
-    },
-    {
-      "name": "Folder assignment preserves IDs and rejects unavailable destinations",
-      "command": [
-        "node",
-        "--test",
-        "--test-name-pattern=folder scans|issue creation uses the default folder|folder deletion|folder migration|moving an existing issue folder",
-        "scripts/flow.check.mjs"
-      ]
+      "name": "Closure validates the merged PR base while preserving the original workspace base",
+      "command": ["node", "--test", "scripts/github-closure-proof.check.mjs"]
     }
   ]
 }

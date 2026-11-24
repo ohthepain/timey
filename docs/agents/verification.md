@@ -184,13 +184,14 @@ must retain its text; `report-draft-restore.json` records the observed value.
 
 `node --test scripts/ai-text-bro.check.mjs` checks bro skill loading, a separate
 read-only rewrite, invalid input and provider failure.
-`node scripts/flow-browser.mjs --ai-text` checks top-right hover controls, real
-clipboard contents, the persistent
-blue bro toggle, restoring original text, caret/end insertion and hovered-field
-hotkey routing. It also checks that short Automate me messages contain their
-hover toolbar so the conversation scroller cannot clip its buttons or interrupt Copy.
-It saves `ai-text-controls.png` and `ai-text-controls.json` in its
-evidence directory. The fixture injects model output and speech recognition.
+`node scripts/flow-browser.mjs --ai-text` checks that Copy and Bro appear flush
+beneath the AI text, stay visible as the pointer moves onto either button, and
+give back their layout space when the pointer leaves. It also checks clipboard
+contents, the blue active Bro toggle, restoring original text, caret and end
+insertion, and hovered-field hotkey routing. Automate me coverage checks a short
+message inside its scroller and an editable draft. The evidence directory contains
+`ai-text-controls.json` and screenshots of the hover and collapsed states.
+The fixture injects model output and speech recognition.
 Live model quality and physical microphone recognition are not measured by it.
 The Factory refresh browser scenario checks that incoming AI text still follows
 the reader at the bottom. View rendering mounts text controls before restoring
@@ -1237,3 +1238,13 @@ it checks selected and unrelated issue values and never changes shared records.
 reproduces a successful push followed by a stale GitHub PR head. Publish briefly
 waits only for that exact previous head, while another head, a changed title and
 a persistently stale response remain blocking. Retries never repeat the push.
+
+`node scripts/factory-browser.mjs --scenario=factory-browser-capture-start.mjs`
+runs the capture-profile scenario on its own. PR repair accepts named Factory
+browser scenarios and rejects aggregate runs, duplicate selections, and path
+traversal. The ordinary and drag-only suites retain their existing selection rules.
+
+Closure recovery checks the merged PR comparison base from GitHub, its ancestry,
+and both the CI report and local step audit for that base and exact candidate
+tree. It retains the original workspace base. The proof suite covers target
+updates, changed PR identity and invalid comparison bases.
