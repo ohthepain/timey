@@ -125,9 +125,14 @@ issue-owned artifact routing, failed and resumed group moves, nested immutable
 snapshots after source storage becomes unavailable, and bounded catalog cutover
 with long histories. Move receipts retain copied artifact ownership per issue so
 deleting a child can release its exclusive evidence while preserving shared proof.
+The Issue-store-only move regression makes unrelated retained payloads unavailable
+and forbids artifact reads and writes when the Artifact destination stays fixed.
+It checks report history, destination readback, released claims, and same-ID retry.
 `node scripts/flow-browser.mjs --stores` drives the profile selectors, saved
 destination readback, settings, bulk moves, interrupted moves, outages and recovery
-using disposable stores. These checks use no live model or cloud publication.
+using disposable stores. It also checks progress during resumed moves and clears
+storage errors when navigating to a different issue. These checks use no live model
+or cloud publication.
 
 `node --test scripts/github-refresh.check.mjs scripts/store-runtime.check.mjs scripts/project-stores-flow.check.mjs scripts/factory-env.check.mjs`
 checks idle reads after a simulated day without remote refresh, explicit refresh,

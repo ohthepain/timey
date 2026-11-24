@@ -974,6 +974,8 @@ Issue-bound artifact routers write to those saved destinations. Provider overflo
 and operation receipts use the project's Coordination artifact store, selected
 by the registry's `artifacts` field. `stores/migrations.mjs` verifies issue records
 and owned artifact copies before switching a complete group's catalog destinations.
+`stores/issue-artifact-move.mjs` skips artifact enumeration and copying when all
+source issues already use the destination Artifact store.
 Issue moves preserve immutable proof JSON and do not install global digest
 redirects. Historical physical references remain readable. `stores/providers.mjs` supplies Issue and
 record contracts for files/Git, Postgres, and DynamoDB. `stores/artifacts.mjs`

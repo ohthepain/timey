@@ -103,6 +103,44 @@ test('failed artifact copy preserves source destinations and resumes without rer
   assert.equal((await f.artifacts.get(shared)).toString(), 'shared proof');
 });
 
+test('an Issue-store-only move preserves artifact homes without reading unrelated retained payloads', async (t) => {
+  const f = await fixture(t);
+  await f.create('one');
+  const source = f.artifactStores.get('a');
+  const proof = await source.put({ body: 'retained issue proof' });
+  await f.project.coordination.commit(
+    'evidence-one',
+    [{ key: 'evidence/one', revision: null }],
+    [{ key: 'evidence/one', value: { artifact: proof } }]
+  );
+  await f.records.commit({
+    operationId: 'unrelated-overflow',
+    expected: [{ key: 'project/unrelated-history', revision: null }],
+    writes: [{ key: 'project/unrelated-history', value: { text: 'unrelated'.repeat(8000) } }],
+  });
+  const system = f.artifactStores.get('system');
+  const unrelated = new Set((await system.list()).map(({ sha256 }) => sha256));
+  const readSystem = system.get.bind(system);
+  system.get = async (ref) => {
+    assert.ok(!unrelated.has(ref.sha256), 'An Issue-store-only move must not read unrelated retained payloads.');
+    return readSystem(ref);
+  };
+  const readProof = source.get.bind(source);
+  source.get = source.put = async () => {
+    assert.fail('An unchanged Artifact store must not copy or reread its existing artifacts.');
+  };
+  const move = { issueId: 'one', storeId: 'other', artifactStoreId: 'a', operationId: 'move-records-only' };
+  assert.equal((await f.project.moveIssue(move)).status, 'confirmed');
+  assert.equal((await f.project.moveIssue(move)).status, 'confirmed');
+  const moved = await f.project.readIssue('one');
+  assert.equal(moved.storeId, 'other');
+  assert.equal(moved.artifactStoreId, 'a');
+  assert.equal((await f.records.get('evidence/one')).value.artifact.storeId, 'a');
+  assert.equal((await readProof(proof)).toString(), 'retained issue proof');
+  assert.equal(await f.records.get('claims/one'), null);
+  assert.equal((await f.records.get('issue-history/one/move-records-only')).value.entries.length, 1);
+});
+
 test('a master group moves both destinations atomically and refuses partial selections', async (t) => {
   const f = await fixture(t);
   await f.create('child');

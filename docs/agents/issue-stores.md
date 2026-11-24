@@ -124,6 +124,8 @@ and recovery of older pending operations retain their existing ownership protoco
    before switching both saved destinations. IDs, display numbers, and original
    report bytes remain stable. A failed copy preserves the source destinations.
    A merged issue stays read-only throughout storage migration.
+   When only the Issue store changes, artifacts stay in their existing store;
+   the move does not scan or copy retained project artifacts.
 3. If the move fails or the connection is lost, the selector returns to the
    last saved profile and shows the error. Select the intended profile again to
    retry the same operation. The move retains its operation identity; it does

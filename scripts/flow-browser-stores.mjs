@@ -189,14 +189,16 @@ async function checkSharedMigrationResume({ page, service, issue, storeId, poll,
   await page.reload();
   await expectIssueHome(page, poll, 'files', 'An unconfirmed shared move must retain its original home.');
   const posted = Promise.withResolvers();
-  const observe = (request) => {
-    if (!request.url().endsWith('/api/issue-store-action')) return;
-    const input = request.postDataJSON();
-    if (input.action === 'move-issue' && input.issueId === issue.id) posted.resolve(input);
+  const resumeRoute = async (route) => {
+    const input = route.request().postDataJSON();
+    if (input.action !== 'resume-move' || input.issueId !== issue.id) return route.continue();
+    assert.equal(await page.locator('#issue-store-progress').textContent(), 'Moving issue storage…');
+    posted.resolve(input);
+    return route.continue();
   };
-  page.on('request', observe);
+  await page.route('**/api/issue-store-action', resumeRoute);
   try {
-    await moveFromIssueSettings(page, storeId);
+    await page.locator('#resume-issue-store').click();
     assert.equal((await posted.promise).operationId, operationId, 'A new browser must resume the shared receipt.');
     await poll(
       () => api('issue-stores?issueId=' + issue.id),
@@ -204,7 +206,7 @@ async function checkSharedMigrationResume({ page, service, issue, storeId, poll,
       'The pending shared migration did not resume.'
     );
   } finally {
-    page.off('request', observe);
+    await page.unroute('**/api/issue-store-action', resumeRoute);
   }
 }
 
@@ -359,6 +361,14 @@ export async function issueStoresBrowserChecks({ page, project, service, poll, s
   );
 
   await expectIssueHome(page, poll, storeId, 'Saved Issue home is not visible.');
+  const navigationPeer = await service.flows.capture({
+    requestId: randomUUID(),
+    description: 'Storage error navigation peer.',
+    storageProfile: storeId,
+    folder: folder.name,
+  });
+  const navigationPeerId = navigationPeer.issue.id;
+  await page.locator('#refresh').click();
   const sourceHead = git(project, 'rev-parse', 'HEAD');
   const sourceBytes = readFileSync(join(project, 'source.txt'));
   const moveIds = [];
@@ -379,6 +389,14 @@ export async function issueStoresBrowserChecks({ page, project, service, poll, s
     .getByText('Storage move is pending reconciliation. Refresh its status before continuing.', { exact: true })
     .waitFor();
   assert.equal(await page.locator('#issue-store').inputValue(), storeId, 'A failed move restores the saved selection.');
+  await page.locator(`#issue-list [data-issue="${navigationPeerId}"]`).first().click();
+  await poll(
+    () => page.locator('#issue-store-error').textContent(),
+    (value) => value === '',
+    'A storage error from the previous issue remained visible after navigation.'
+  );
+  await page.locator(`#issue-list [data-issue="${issue.id}"]`).first().click();
+  await expectIssueHome(page, poll, storeId, 'Returning to the issue did not restore its saved Issue home.');
   await page.reload();
   await expectIssueHome(page, poll, storeId, 'Reload did not retain the original Issue home before retry.');
   await moveFromIssueSettings(page, 'files');
