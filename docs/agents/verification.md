@@ -1277,3 +1277,9 @@ publication claim. Cancellation leaves issue reports and current flows unchanged
 checks that rejected local chat settings leave no uncertain startup marker, then
 permits a creation request after the settings are corrected. It uses the real
 Codex connection startup method with a disposable transport and starts no model.
+
+`node --test scripts/factory-issue-create.check.mjs` creates an idle issue through
+the external-chat command against a disposable server, replaces the service,
+replays the request, and reads back the saved scope and unstarted route. It checks
+project identity, preview refusal, strict request fields, and changed-request
+rejection without starting a provider turn.

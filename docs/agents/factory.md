@@ -21,6 +21,40 @@ For changes to the block inspector's Markdown labels, follow
 [Edit the Factory UI from Markdown](../../README.md#edit-the-factory-ui-from-markdown).
 Use `pnpm run factory ui find` to locate the source and its consumers.
 
+## Create an issue from an external chat
+
+When registered chat tools are unavailable, use the supported server command:
+
+```sh
+pnpm run factory -- issue-create REQUEST.json --url http://127.0.0.1:4317
+```
+
+Use the live server's actual URL. The command verifies that it serves the current
+project, then uses the same guarded capture operation as the UI. It creates an
+idle issue in the folder's inherited Issue and Artifact stores. Continue the issue
+from its returned server link; creation starts no clarification or implementation.
+
+Save the request before sending it, for example under
+`.issues/creation-requests/`. Keep that file and reuse its UUID for retries,
+including after a timeout or server restart. Changed wording under the same UUID
+is rejected rather than silently creating another issue.
+
+```json
+{
+  "requestId": "a9c37a62-4dbf-41e8-866b-19a4852eb08e",
+  "description": "Issue title\n\nAgreed problem, scope, constraints, decisions, acceptance criteria and requested proof.",
+  "type": "feature"
+}
+```
+
+`folder` and `storageProfile` are optional explicit overrides. Without them,
+creation uses the project's default issue folder and its inherited storage
+profile. Supported types are `bug`, `feature`, and `investigation`; omit `type`
+to infer it. Put this chat's agreed work context in `description`, rather than
+instructions such as "create only" or "do not start now". No external chat
+connection is transferred: the server retains the work request and owns its later
+execution conversation. This command grants no resume, merge or closure authority.
+
 ## Check progress
 
 `/factory status` displays a code-generated summary from the saved factory records.
