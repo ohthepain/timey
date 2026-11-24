@@ -72,8 +72,13 @@
       "command": ["node", "scripts/flow-browser.mjs", "--branch-repair"]
     },
     {
-      "name": "Closure validates the merged PR base while preserving the original workspace base",
-      "command": ["node", "--test", "scripts/github-closure-proof.check.mjs"]
+      "name": "Closure matches GitHub delivery to the recorded merged candidate",
+      "command": [
+        "node",
+        "--test",
+        "--test-name-pattern=^Close |unmerged or mismatched delivery",
+        "scripts/flow-delivery.check.mjs"
+      ]
     },
     {
       "name": "Pending CI registers before source fetching or repair work",

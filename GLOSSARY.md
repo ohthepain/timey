@@ -458,10 +458,6 @@ its content changes.
 The GitHub branch used as the PR base and by Merge. It follows the
 starting branch until the operator pins a branch or the issue gets a PR.
 
-**Merge verification scope**:
-The set of local checks required for a Merge attempt. The full regression suite
-is an opt-in scope that adds broader regression checks to the default scope.
-
 **Update Branch**:
 The Flow block that fetches the branch recorded in Starting point and brings
 its latest commits into the issue branch.

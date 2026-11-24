@@ -1529,13 +1529,18 @@ void test('GitHub checks report only completed Verify suites as Merge progress',
   const check = { __typename: 'CheckRun', checkSuite, status: 'COMPLETED', conclusion: 'SUCCESS' };
   f.settings.checks = [
     { ...check, name: 'Early checks' },
-    { ...check, name: 'Flow browser', status: 'IN_PROGRESS', conclusion: null },
-    { ...check, name: 'Non-browser tests', conclusion: 'SKIPPED' },
+    { ...check, name: 'Flow browser (1/2)' },
+    { ...check, name: 'Flow browser (2/2)', status: 'IN_PROGRESS', conclusion: null },
+    { ...check, name: 'Non-browser tests (1/2)', conclusion: 'SKIPPED' },
+    { ...check, name: 'Non-browser tests (2/2)', conclusion: 'FAILURE' },
     { ...check, name: 'Classic Factory browser', checkSuite: { ...checkSuite, app: { slug: 'other' } } },
   ];
   await assert.rejects(f.ready({ waitForChecks: true }), {
     code: 'STRATEGY_PENDING',
-    ciProgress: { head: f.pr.head.sha, completedSuites: ['Early checks'] },
+    ciProgress: {
+      head: f.pr.head.sha,
+      completedSuites: ['Early checks', 'Flow browser (1/2)', 'Non-browser tests (2/2)'],
+    },
   });
   f.settings.checks.push(f.passingCheck);
   f.view.mergeStateStatus = 'CLEAN';

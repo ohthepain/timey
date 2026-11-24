@@ -29,8 +29,8 @@ jobs:
           suite: early
           base: ${{ env.AUDIT_BASE }}
 
-  non-browser:
-    name: Non-browser tests
+  non-browser-1:
+    name: Non-browser tests (1/2)
     needs: early
     runs-on: ubuntu-latest
     outputs:
@@ -42,7 +42,23 @@ jobs:
       - uses: ./.github/actions/verify-suite
         id: verify
         with:
-          suite: non-browser
+          suite: non-browser-1
+          base: ${{ needs.early.outputs.base }}
+
+  non-browser-2:
+    name: Non-browser tests (2/2)
+    needs: early
+    runs-on: ubuntu-latest
+    outputs:
+      artifact-id: ${{ steps.verify.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/verify-suite
+        id: verify
+        with:
+          suite: non-browser-2
           base: ${{ needs.early.outputs.base }}
 
   classic-browser:
@@ -61,8 +77,8 @@ jobs:
           suite: classic-browser
           base: ${{ needs.early.outputs.base }}
 
-  flow-browser:
-    name: Flow browser
+  flow-browser-1:
+    name: Flow browser (1/2)
     needs: early
     runs-on: ubuntu-latest
     outputs:
@@ -74,11 +90,27 @@ jobs:
       - uses: ./.github/actions/verify-suite
         id: verify
         with:
-          suite: flow-browser
+          suite: flow-browser-1
+          base: ${{ needs.early.outputs.base }}
+
+  flow-browser-2:
+    name: Flow browser (2/2)
+    needs: early
+    runs-on: ubuntu-latest
+    outputs:
+      artifact-id: ${{ steps.verify.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/verify-suite
+        id: verify
+        with:
+          suite: flow-browser-2
           base: ${{ needs.early.outputs.base }}
 
   test:
-    needs: [early, non-browser, classic-browser, flow-browser]
+    needs: [early, non-browser-1, non-browser-2, classic-browser, flow-browser-1, flow-browser-2]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -108,8 +140,8 @@ jobs:
           merge-multiple: true
       - name: Assemble evidence for the verified candidate
         if: >-
-          needs.early.result == 'success' && needs.non-browser.result == 'success' &&
-          needs.classic-browser.result == 'success' && needs.flow-browser.result == 'success'
+          success() && !contains(needs.*.result, 'failure') &&
+          !contains(needs.*.result, 'skipped') && !contains(needs.*.result, 'cancelled')
         env:
           AUDIT_BASE: ${{ needs.early.outputs.base }}
         run: node scripts/verify-ci-evidence.mjs "$AUDIT_BASE"
@@ -122,7 +154,7 @@ jobs:
           include-hidden-files: true
           overwrite: true
           if-no-files-found: ignore
-      - name: Require all four suites to pass
+      - name: Require all suites to pass
         if: always()
         env:
           SUITES: ${{ toJSON(needs) }}

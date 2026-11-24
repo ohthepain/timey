@@ -4,53 +4,20 @@ import { dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { dependencyPreflight, workspacePackages } from '../verify-preflight.mjs';
 import { digest, git, requireThat } from './common.mjs';
-import { commandSummary, verificationInput } from './checks.mjs';
-import { deliveryTarget, latestCurrentAttempt, requestData, upstreamBlocks } from './flow-block-data.mjs';
-import { mergeCheckPlan } from '../verify-merge-checks.mjs';
+import { commandSummary } from './checks.mjs';
+import { deliveryTarget, requestData } from './flow-block-data.mjs';
 import { evidencePath } from './stores/evidence.mjs';
 
 export const workVerificationScript = fileURLToPath(new URL('../verify.mjs', import.meta.url));
-function upstreamWorkPlans({ flow, block }) {
-  return upstreamBlocks(block, flow.blocks)
-    .filter(({ kind }) => kind === 'work')
-    .map(latestCurrentAttempt)
-    .filter((attempt) => attempt?.status === 'completed')
-    .map((attempt) => attempt.result?.focusedTests);
-}
-
-export function flowMergeChecks(ctx, scope) {
-  if (ctx.block?.kind !== 'merge') return undefined;
-  const plans = upstreamWorkPlans(ctx);
-  return mergeCheckPlan({
-    scope: scope ?? requestedScope(ctx.flow),
-    focusedRecorded: recordedWorkPlans(plans),
-    focused: [
-      ...new Map(
-        plans
-          .filter(Array.isArray)
-          .flat()
-          .map((command) => [JSON.stringify(command), command])
-      ).values(),
-    ],
-  });
-}
-
-const requestedScope = (flow) => (requestData(flow).fullRegression === true ? 'full' : 'default');
-const recordedWorkPlans = (plans) => plans.length > 0 && plans.every(Array.isArray);
-
-function flowVerificationOptions(ctx, scope) {
+function flowVerificationOptions(ctx) {
   const { goal, requestedProof } = requestData(ctx.flow).fields ?? {};
   const { remote, branch } = deliveryTarget(ctx.flow);
   return {
     auditPolicy: 'required',
     verifier: workVerificationScript,
     scope: [goal, requestedProof, remote, branch],
-    mergeChecks: flowMergeChecks(ctx, scope),
   };
 }
-export const flowVerificationInput = (ctx, checkout, base, scope) =>
-  verificationInput(checkout, base, flowVerificationOptions(ctx, scope));
-
 const dependencyRetryLimit = 3;
 const dependencyRecoveryPath = (checkout) => join(checkout, '.issues/evidence/dependency-recovery.json');
 const saveDependencyRecovery = (path, recovery) => {

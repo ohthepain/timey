@@ -5,10 +5,15 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { BranchRepairs, branchCheckFailure } from './factory-ui/branch-repair.mjs';
 import { branchRepairSource } from './factory-ui/branch-repair-workspace.mjs';
+import { runBranchRepair } from './factory-ui/branch-repair-runner.mjs';
 import { BlockCatalog } from './factory-ui/block-catalog.mjs';
+import { CodexConnection } from './factory-ui/codex.mjs';
 import { git } from './factory-ui/common.mjs';
 import { initializeProviderConfig } from './factory-ui/provider-config.mjs';
 import { modelAvailability, observeProvider, saveProviderSettings } from './factory-ui/provider-runtime.mjs';
+import { initializeFolderSettings } from './factory-ui/issue-folder-settings.mjs';
+import { readStoreConfig, writeStoreConfig } from './factory-ui/stores/config.mjs';
+import { resolveIssueStorage } from './factory-ui/stores/settings.mjs';
 
 function fixture(t, run) {
   const root = mkdtempSync(join(tmpdir(), 'timey-branch-repair-check-'));
@@ -66,7 +71,6 @@ function deferred() {
 }
 
 test('branch repair checks provider readiness before checkout and starts one session on retry', async (t) => {
-  const { runBranchRepair } = await import('./factory-ui/branch-repair-runner.mjs');
   const model = 'gpt-6-luna';
   const started = deferred();
   const release = deferred();
@@ -266,8 +270,53 @@ test('missing proof alone is not a broken branch; a retained Fallow blocker is',
   );
 });
 
+void test('Fix Branch starts from the project registry with an explicit or default storage profile', async (t) => {
+  const f = fixture(t, (input) => runBranchRepair(input, { verify: async () => ({ evidence: [] }) }));
+  initializeFolderSettings(f.root);
+  const { revision, ...config } = readStoreConfig(f.root);
+  writeStoreConfig(
+    f.root,
+    {
+      ...config,
+      profileDefault: 'postgres',
+      profiles: [
+        ...config.profiles,
+        { id: 'postgres', label: 'Project profile', issueStore: 'files', artifactStore: 'files' },
+      ],
+    },
+    { expectedRevision: revision }
+  );
+  const settings = join(f.root, 'folder.md');
+  const template = readFileSync(settings, 'utf8');
+  writeFileSync(join(f.checkout, 'folder.md'), template.replace(/storage_profile: .*/, 'storage_profile: postgres'));
+
+  const starts = [];
+  const skill = join(f.root, '.issues/test-skill.md');
+  writeFileSync(skill, 'Fixture skill.');
+  const name = f.repairs.definition().defaultSkill;
+  t.mock.method(CodexConnection.prototype, 'ready', async () => {});
+  t.mock.method(CodexConnection.prototype, 'close', () => {});
+  t.mock.method(CodexConnection.prototype, 'turn', async () => 'Branch checks passed.');
+  t.mock.method(CodexConnection.prototype, 'call', async function (method, params) {
+    if (method === 'skills/list') return { data: [{ skills: [{ name, enabled: true, path: skill }] }] };
+    assert.equal(method, 'thread/start');
+    starts.push({ cwd: params.cwd, root: this.root, sandbox: params.sandbox });
+    return { thread: { id: 'test-repair' } };
+  });
+
+  for (const profile of ['postgres', 'default']) {
+    writeFileSync(settings, template.replace(/storage_profile: .*/, 'storage_profile: ' + profile));
+    assert.equal(resolveIssueStorage(f.root).profileId, 'postgres');
+    await f.start();
+    await f.finish();
+    const record = f.repairs.read(f.issue.id);
+    assert.equal(record.status, 'passed', record.error);
+    assert.deepEqual(starts.at(-1), { cwd: record.checkout, root: f.root, sandbox: 'workspace-write' });
+  }
+  assert.equal(starts.length, 2);
+});
+
 test('native repair verifies the candidate after model work and feeds failed check logs into a bounded retry', async (t) => {
-  const { runBranchRepair } = await import('./factory-ui/branch-repair-runner.mjs');
   const f = fixture(t, async () => {});
   const log = join(f.root, '.issues/check.log');
   writeFileSync(log, 'Fallow failure in source.txt\n');
@@ -321,7 +370,6 @@ test('native repair verifies the candidate after model work and feeds failed che
 });
 
 test('native model-reported blockers cannot produce passing candidate checks', async (t) => {
-  const { runBranchRepair } = await import('./factory-ui/branch-repair-runner.mjs');
   const f = fixture(t, async () => {});
   let checked = false;
   await assert.rejects(

@@ -345,6 +345,7 @@ async function executeRepair(repairs, record, definition, controller, onProgress
   try {
     prepareRepair(repairs, record, signal);
     await repairs.run({
+      root: repairs.root,
       run: record,
       root: repairs.root,
       definition,

@@ -580,12 +580,7 @@
     document
       .querySelectorAll('#inspector-body input, #inspector-body select, #inspector-body textarea')
       .forEach((field) => {
-        const closureSetting = [
-          'retro-setting',
-          'auto-close-setting',
-          'full-regression-setting',
-          'issue-folder-locked',
-        ].includes(field.id);
+        const closureSetting = ['retro-setting', 'auto-close-setting', 'issue-folder-locked'].includes(field.id);
         field.disabled =
           busy ||
           frozen ||
@@ -2075,11 +2070,7 @@
     const definition = state.index.catalog.find((entry) => entry.id === (block.definition ?? block.kind));
     const open = state.view.issue.status !== 'closed';
     const disabled = open ? '' : ' disabled';
-    const regression =
-      flow.routeType === 'investigation'
-        ? ''
-        : `<label><input type="checkbox" id="full-regression-setting"${values.fullRegression === true ? ' checked' : ''}${disabled}> Run full regression suite</label>`;
-    const settings = `${regression}<label><input type="checkbox" id="retro-setting"${values.runRetro ? ' checked' : ''}${disabled}> Run a retro</label>${state.view.issue.state === 'needs-approval' ? '' : `<label><input type="checkbox" id="auto-close-setting"${flow.autoClose ? ' checked' : ''}${disabled}> Close as Fixed and remove the worktree after Factory Merge</label>`}`;
+    const settings = `<label><input type="checkbox" id="retro-setting"${values.runRetro ? ' checked' : ''}${disabled}> Run a retro</label>${state.view.issue.state === 'needs-approval' ? '' : `<label><input type="checkbox" id="auto-close-setting"${flow.autoClose ? ' checked' : ''}${disabled}> Close as Fixed and remove the worktree after Factory Merge</label>`}`;
     return `<section class="detail-section"><div class="section-label">Inputs</div><form id="request-form">${formField('wording', 'Your words', values.wording, 'The original request.', 4)}${saveRow()}</form>${settings}</section>${requestMergeBranch()}${outputsSection(block)}${definition?.prompt ? `<details class="detail-section system-prompt" data-preserve="system-prompt"><summary>System prompt</summary><div class="prompt-preview">${escape(definition.prompt)}</div></details>` : ''}${last ? `<section class="detail-section">${attemptCard(last, block.attempts.length - 1)}${block.attempts.length > 1 ? `<details class="attempt-history" data-preserve="attempt-history"><summary>Earlier requests</summary>${block.attempts.slice(0, -1).map(attemptCard).join('')}</details>` : ''}</section>` : ''}${retiredHistory()}<section class="detail-section"><div class="section-label">Organization</div><form id="issue-folder-form"><label class="field">Folder<select id="issue-folder" name="folder" data-field="folder" required>${folders.map((folder) => `<option value="${escape(folder)}"${(values.folder ?? flow.folder) === folder ? ' selected' : ''}${flow.folderLocked && folder !== flow.folder ? ' disabled' : ''}>${escape(folder)}</option>`).join('')}</select></label><button type="submit" class="small-button" data-action="folder">Move issue</button></form><label class="folder-check"><input id="issue-folder-locked" type="checkbox"${flow.folderLocked ? ' checked' : ''} /> Prevent moves into folders</label></section>`;
   }
 
@@ -3452,7 +3443,7 @@
 
   document.addEventListener('change', async (event) => {
     const field = event.target;
-    if (['retro-setting', 'auto-close-setting', 'full-regression-setting'].includes(field.id)) {
+    if (['retro-setting', 'auto-close-setting'].includes(field.id)) {
       if (!(await action(field.id, { enabled: field.checked }))) field.checked = !field.checked;
       return;
     }

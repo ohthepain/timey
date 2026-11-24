@@ -26,7 +26,7 @@ runs:
       shell: bash
       run: pnpm install --frozen-lockfile
     - name: Install browser
-      if: inputs.suite != 'non-browser'
+      if: ${{ !startsWith(inputs.suite, 'non-browser-') }}
       shell: bash
       run: pnpm exec playwright-cli install-browser chromium --with-deps
     - name: Resolve comparison base
@@ -55,8 +55,9 @@ runs:
         TIMEY_FALLOW_WARNINGS: error
       run: |
         coverage="$GITHUB_WORKSPACE/.issues/repair-first-coverage"
-        if [[ "$VERIFY_SUITE" == early && -d "$coverage" ]]; then
-          export FALLOW_COVERAGE="$coverage" FALLOW_COVERAGE_ROOT="$GITHUB_WORKSPACE"
+        if [ "$VERIFY_SUITE" = early ] && [ -d "$coverage" ]; then
+          export FALLOW_COVERAGE="$coverage"
+          export FALLOW_COVERAGE_ROOT="$GITHUB_WORKSPACE"
         fi
         node scripts/verify.mjs --base "$AUDIT_BASE" --ci-suite "$VERIFY_SUITE"
     - name: Show exact verification failures

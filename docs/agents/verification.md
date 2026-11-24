@@ -460,20 +460,18 @@ requires an idle issue. A new Merge run also aborts a pending local merge once
 before synchronization; subsequent repair steps preserve their own merge state.
 `node scripts/flow-browser.mjs --merge-recovery` checks the control through reload
 and abort using a disposable real conflict. Publish PR requires a clean commit.
-Merge verifies the committed candidate against the fetched destination. Request
-sets the local scope for each new attempt. The default runs the Factory smoke
-suite, both browser suites, Vitest and Work's recorded focused tests, along with
-formatting, Fallow, type checking and the build. Enabling full regression runs
-the full Factory suite in place of the smoke suite. Both scopes end a local
-verification command after 15 minutes. Evidence reuse requires matching inputs,
-including focused commands and the required scope. GitHub CI retains its full
-suite and existing branch protection.
+Merge syncs the issue branch with Destination, pushes a changed candidate,
+and waits for the checks and reviews GitHub requires on the exact PR head.
+Work and explicit Verify remain the places for local verification.
 
-GitHub runs Early checks first, followed by Non-browser tests, Classic Factory
-browser, and Flow browser in parallel. The required `test` job passes after all
-four jobs pass and their evidence matches the same Actions revision, base, and
-tree. **Re-run failed jobs** reuses the successful job results and their evidence
-for that workflow candidate. A new commit starts a new verification run.
+GitHub runs Early checks first. Five jobs then run in parallel: two Non-browser
+jobs, Classic Factory browser, and two Flow browser jobs. The Non-browser jobs
+split the Factory Node test files. The second also runs Vitest and the build.
+The Flow browser jobs split at the start of the shared issue fixture so dependent
+scenarios stay together. The required `test` job passes after all six jobs pass
+and their evidence matches the same Actions revision, base, and tree.
+**Re-run failed jobs** reuses passing results and evidence for the same
+candidate. A new commit starts a new verification run.
 
 Factory Merge waits 15 minutes by default after pushing the candidate or first
 seeing pending checks. Each completed Verify suite adds five minutes once for
@@ -487,8 +485,7 @@ stops at the first failure. CI runs this plan before broad verification while
 the manifest differs from the PR base; after it merges, unchanged plans are
 skipped. Use `node scripts/flow-browser.mjs --timers` for the isolated attempt
 timer scenario. Repair workers reproduce the named failures, include necessary
-predecessor scenarios, and return after focused proof instead of repeating
-Factory's independent full verification.
+predecessor scenarios, and return after focused proof so GitHub can check the repaired commit.
 Include `--stores` when reproducing browser failures after storage activation;
 an isolated legacy-storage run does not establish that the store-backed case
 passed. `--proposals --delayed-delete` holds a proposal Delete request for 16
@@ -507,7 +504,7 @@ advanced since the update. Keep the attempt result and the Git check outcome
 with the smoke-test evidence.
 
 Drag-and-drop browser scenarios are excluded from ordinary verification and
-full regression, including Merge and CI. They run only when explicitly requested
+full regression and CI. They run only when explicitly requested
 with `pnpm run test:browser:drag-and-drop`. This covers legacy queue reordering,
 issue-folder assignment and Flow folder dragging. These fragile browser
 interactions must not gate unrelated delivery. Deterministic folder and ordering
@@ -528,12 +525,8 @@ GitHub artifact downloads have a two-minute transfer deadline; ordinary GitHub
 CLI requests retain their 30-second deadline. This lets large failure evidence
 finish transferring before the repair worker is invoked.
 
-Close can reuse a successful GitHub verification report for an externally merged
-candidate when local delivery proof is absent. `github-closure-proof.mjs` binds
-the run to the merged head, validates its base and exact tree through the normal
-summary validator, checks downloaded artifact hashes and paths, and retains the
-original report alongside its relocated copy. A matching passing step audit is
-still required. Existing corrupt or mismatched retained proof remains blocking.
+Close confirms the exact merged PR, target branch, and required GitHub checks.
+The delivery manifest records the merged candidate tree and retained Work proof.
 
 The Notes browser scenario leaves a pending Discuss draft, unloads the preceding
 page, and closes its Discuss service before installing its own injected provider.
@@ -555,8 +548,7 @@ Work runs `verify -- --work-checks --write-format --base REF` to format
 issue files and check Fallow before running focused tests for the changed
 behavior and Requested Proof. Run individual test files or scenarios directly
 when an aggregate command would include unrelated tests. Work leaves aggregate
-suites such as `pnpm run test:factory` to full candidate verification, which
-Merge requires. Add a focused test when needed. Factory rechecks formatting and
+suites such as `pnpm run test:factory` to GitHub CI. Add a focused test when needed. Factory rechecks formatting and
 Fallow after Work's response.
 
 A standalone focused browser check can be recorded as `node scripts/<name>-browser.mjs`

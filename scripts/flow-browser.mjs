@@ -40,6 +40,7 @@ import { deliveryTarget, requestData, startingPoint } from './factory-ui/flow-bl
 import { createIssueFlows } from './factory-ui/flow-service.mjs';
 import { createFlowExecutor } from './factory-ui/flow-executor.mjs';
 import { requiredPRReview } from './factory-ui/flow-human-input.mjs';
+import { readProjectSettings } from './factory-ui/project-settings.mjs';
 import { saveLifecycle } from './factory-ui/lifecycle-store.mjs';
 import { moveStoredIssue, updateStoredIssueMetadata } from './factory-ui/issue-report-storage.mjs';
 import { git } from './factory-ui/common.mjs';
@@ -69,6 +70,9 @@ import { importBrowserIssue, removeBrowserIssue, writeBrowserIssue } from './flo
 import { issueStoresBrowserChecks } from './flow-browser-stores.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const ciPart = process.argv.find((argument) => argument.startsWith('--ci-part='));
+assert.ok(!ciPart || ['--ci-part=1', '--ci-part=2'].includes(ciPart), 'Choose Flow browser CI part 1 or 2.');
+let part = '--ci-part=1';
 const outputPath = resolve(
   process.env.TIMEY_FLOW_BROWSER_OUTPUT ||
     (process.env.TIMEY_BROWSER_OUTPUT && join(process.env.TIMEY_BROWSER_OUTPUT, 'flow')) ||
@@ -86,6 +90,10 @@ writeFileSync(join(project, 'source.txt'), 'Original fixture source.\n');
 writeFileSync(join(project, '.gitignore'), '/.issues/\n');
 git(project, 'add', 'source.txt', '.gitignore');
 git(project, 'commit', '-qm', 'Browser fixture base');
+if (ciPart === '--ci-part=2') {
+  const { lifecycle } = readProjectSettings(project);
+  writeFileSync(join(project, lifecycle.path), lifecycle.content);
+}
 const branchTree = git(project, 'rev-parse', 'HEAD^{tree}');
 const publicationTarget = git(project, 'rev-parse', 'HEAD');
 const datedBranch = (date) =>
@@ -340,8 +348,9 @@ async function connectionRecoveryIssue() {
   });
   return id;
 }
-async function check(name, run) {
-  if (!flowBrowserScenarioSelected(name)) return;
+async function check(name, run, selectorName = name) {
+  if (ciPart && ciPart !== part) return;
+  if (!flowBrowserScenarioSelected(selectorName) && !flowBrowserScenarioSelected(name)) return;
   try {
     await run();
     results.push({ name, passed: true });
@@ -751,33 +760,30 @@ try {
   );
   if (process.argv.includes(flowBrowserOrderModifier)) await noChangesCheck();
   await check(followupsCheck, () => flowFollowupsBrowserChecks({ page, service, logs, screenshot }));
-  await check(mergeSettingsCheck, async () => {
-    const id = '20261119-merge-settings-fixture';
-    await importBrowserIssue(
-      project,
-      id,
-      `---\nid: ${id}\ntitle: Merge verification settings\nstate: backlog\n---\n\nChoose the local checks before merging.\n`
-    );
-    const request = service.flows.read(service.flows.selected(id)).blocks.find(({ kind }) => kind === 'request');
-    await page.goto('/?issue=' + id);
-    await block(request.id);
-    const setting = page.getByRole('checkbox', { name: 'Run full regression suite' });
-    await setting.waitFor();
-    assert.equal(await setting.isChecked(), false);
-    const saved = await clickAction(setting);
-    assert.equal(requestData(saved.flow).fullRegression, true);
-    await page.reload();
-    await block(request.id);
-    await page.locator('#full-regression-setting:checked').waitFor();
-    await page.getByRole('button', { name: 'Add a step' }).click();
-    const palette = page.locator('#palette-dialog');
-    await palette
-      .getByRole('button', { name: /^Work\b/ })
-      .first()
-      .waitFor();
-    assert.equal(await palette.locator('[data-add-kind="verify"]').count(), 0);
-    await palette.getByRole('button', { name: 'Close block palette' }).click();
-  });
+  await check(
+    'Request leaves merge checks to GitHub and the block palette hides Verify',
+    async () => {
+      const id = '20261119-merge-settings-fixture';
+      await importBrowserIssue(
+        project,
+        id,
+        `---\nid: ${id}\ntitle: Merge verification settings\nstate: backlog\n---\n\nUse GitHub checks before merging.\n`
+      );
+      const request = service.flows.read(service.flows.selected(id)).blocks.find(({ kind }) => kind === 'request');
+      await page.goto('/?issue=' + id);
+      await block(request.id);
+      assert.equal(await page.getByRole('checkbox', { name: 'Run full regression suite' }).count(), 0);
+      await page.getByRole('button', { name: 'Add a step' }).click();
+      const palette = page.locator('#palette-dialog');
+      await palette
+        .getByRole('button', { name: /^Work\b/ })
+        .first()
+        .waitFor();
+      assert.equal(await palette.locator('[data-add-kind="verify"]').count(), 0);
+      await palette.getByRole('button', { name: 'Close block palette' }).click();
+    },
+    mergeSettingsCheck
+  );
   await check('Opening the workspace starts no work and loads no skills', async () => {
     await page.goto('/');
     await page.locator('#connection-status').filter({ hasText: 'Live' }).waitFor();
@@ -1130,6 +1136,8 @@ try {
       await page.goto('about:blank');
     }
   });
+  // The remaining scenarios share the issue created in this section.
+  part = '--ci-part=2';
   const description =
     'Understand why the save button loses text\nDone: The text survives a reload.\nProof: Retained saved text.\nKnown facts: The problem occurs after refresh.\nConstraints: Reproduce before changing code.';
   await check('Folder plus creates an issue directly in that folder and retains typed wording', async () => {
@@ -1401,7 +1409,11 @@ try {
       await poll(view, (value) => value.issue.title === title, 'The issue title was not saved.');
     };
     await rename('Edited from the issue heading');
-    assert.equal(await page.locator('#issue-title').textContent(), 'Edited from the issue heading');
+    await poll(
+      () => page.locator('#issue-title').textContent(),
+      (title) => title === 'Edited from the issue heading',
+      'The heading did not show the saved issue title.'
+    );
     await rename(original);
     const destination = page.getByRole('button', { name: 'Choose destination branch' });
     const select = page.locator('#destination-branch');
@@ -1682,14 +1694,14 @@ try {
       for (const section of sections) {
         if ((await section.getAttribute('open')) === null) await section.locator('summary').click();
       }
-      const regression = reader.locator('#full-regression-setting');
-      assert.equal(await regression.isChecked(), false);
+      const retro = reader.locator('#retro-setting');
+      assert.equal(await retro.isChecked(), false);
       const changed = await reader.request.post('/api/flow-action', {
         headers: { origin: baseURL, 'x-factory-action': 'manual' },
-        data: { action: 'full-regression-setting', issueId: id, revision: prepared.flow.revision, enabled: true },
+        data: { action: 'retro-setting', issueId: id, revision: prepared.flow.revision, enabled: true },
       });
       assert.equal(changed.status(), 200, await changed.text());
-      await reader.locator('#full-regression-setting:checked').waitFor();
+      await reader.locator('#retro-setting:checked').waitFor();
       for (const section of sections) assert.notEqual(await section.getAttribute('open'), null);
     } finally {
       await reader.close();
@@ -2688,7 +2700,6 @@ try {
       if (!approved)
         throw Object.assign(requiredPRReview(), {
           humanInput: { ...requiredPRReview().humanInput, url: flow.destination.url },
-          deliveryVerification: { head: 'retained-proof' },
         });
       return { summary: 'GitHub confirms the protected merge.' };
     };
@@ -2722,7 +2733,6 @@ try {
       );
       const attempt = savedMerge().attempts.at(-1);
       assert.equal(attempt.result.humanInput.kind, 'pr-review');
-      assert.equal(attempt.result.verification.head, 'retained-proof');
       await page.reload();
       await assertRequest();
       await screenshot('needs-your-input');
@@ -2935,6 +2945,7 @@ try {
   await check('Merged issues preserve history and expose only closure controls', () =>
     mergedIssueBrowserChecks({ page, project, service, screenshot, output, poll })
   );
+  assert.ok(!ciPart || results.length, 'The Flow browser CI part did not execute any scenarios.');
   passed = true;
 } catch (error) {
   failure = error.stack;

@@ -1,7 +1,5 @@
 import { flowBrowserOrderModifier, isFlowBrowserSelector } from './browser-scenario-policy.mjs';
 
-export const mergeCheckTimeoutMs = 15 * 60 * 1000;
-
 const fullFactory = 'test:factory';
 const aggregateScripts = new Set([fullFactory, 'test:browser', 'test:flow', 'test:flow:browser']);
 const localPath = (value) => /^(?![/-])(?!.*(?:^|\/)\.\.(?:\/|$))[\w./-]+$/.test(value);
@@ -125,18 +123,4 @@ export function normalizeFocusedTests(value) {
     unique.set(JSON.stringify(requireFocusedCommand(argv, index)), argv);
   }
   return [...unique.values()];
-}
-
-export function mergeCheckPlan(value) {
-  if (!value || !['default', 'full'].includes(value.scope) || typeof value.focusedRecorded !== 'boolean')
-    throw Error('Choose a valid Merge verification scope and focused test plan.');
-  return { scope: value.scope, focusedRecorded: value.focusedRecorded, focused: normalizeFocusedTests(value.focused) };
-}
-
-export function focusedCheckName(index) {
-  return `focused-${index + 1}`;
-}
-
-export function factoryCheckCommand(scope) {
-  return ['pnpm', 'run', scope === 'default' ? 'test:factory:smoke' : fullFactory];
 }

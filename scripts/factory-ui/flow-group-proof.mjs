@@ -106,11 +106,18 @@ function changedPaths(checkout, from, to) {
   return git(checkout, 'diff', '--name-only', '--no-renames', '-z', from, to, '--').split('\0').filter(Boolean);
 }
 
+function retainedVerificationSummary(proof, root) {
+  try {
+    const bytes = readFileSync(evidencePath(root, proof.path, proof.sha256));
+    if (digest(bytes) === proof.sha256) return JSON.parse(bytes);
+  } catch {
+    return undefined;
+  }
+}
+
 function verifiedFocusedCommands(proof, tree, root) {
-  const bytes = readFileSync(evidencePath(root, proof.path, proof.sha256));
-  if (digest(bytes) !== proof.sha256) return [];
-  const summary = JSON.parse(bytes);
-  if (summary.checkpoint !== 'verification' || summary.snapshot_tree !== tree) return [];
+  const summary = retainedVerificationSummary(proof, root);
+  if (summary?.checkpoint !== 'verification' || summary.snapshot_tree !== tree) return [];
   return summary.checks
     .filter(({ passed, name }) => passed && /^focused-\d+$/.test(name))
     .map(({ command }) => JSON.stringify(command));
