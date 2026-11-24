@@ -794,6 +794,10 @@ Active attempt updates read the persisted graph directly through `FlowStore`.
 They retain revision checks without rediscovering folder settings or rebuilding
 the display. Group eligibility rejects issues with existing work before resolving
 their settings.
+`stores/recovered-flow.mjs` reconciles confirmed recovery receipts before a new
+flow action. Retirement preserves the interrupted request and publication evidence,
+and removes an overlay only for its exact owner. Publication confirmation errors
+retain an uncertain attempt for recovery instead of rejecting the background task.
 `flow-changes.mjs` sends change notifications over the authenticated Flow event
 stream. It batches notifications from server operations and watches issue
 records, UI definitions, Git metadata and selected checkouts. A visible Flow tab

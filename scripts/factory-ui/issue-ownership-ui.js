@@ -14,6 +14,8 @@
       const next = JSON.stringify([issue.id, issue.ownership?.token, issue.localOwner, unavailable]);
       if (key === next) return;
       key = next;
+      current = null;
+      controls.hidden = true;
       form.hidden = !issue.ownership;
       if (form.hidden) return;
       const view = await request('/api/issue-store-recovery?issueId=' + encodeURIComponent(issue.id));
