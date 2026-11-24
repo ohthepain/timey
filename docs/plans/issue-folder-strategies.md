@@ -19,7 +19,9 @@ behavior, dependencies, and likely integration conflicts.
 
 ## Create a master issue
 
-Select open issues that have no active run and have not started implementation.
+Select open issues with no active or uncertain work. Issues waiting for approval
+and issues with previous stopped or finished attempts can join a master. Merged
+issues and issues already attached to a master remain ineligible.
 The **Create master issue** button sits immediately to the right of **Start all**
 (or **Start selected**) and becomes available for an eligible selection of at least
 two issues. It opens the combined request for review before creation.
@@ -31,7 +33,18 @@ different target remains visible and can run independently.
 An issue can already have a clarified request. Review and edit the combined
 request before creating the master. The preview links each original issue and
 carries forward its requested proof and any required human checks. Start the
-master as a separate action.
+master as a separate action. Creating it resets the attached issues to Not started
+and saves their previous states on the master. Their reports, attempts, workspaces,
+and evidence remain available; their previous attempts do not determine the
+attached issues' displayed status. Creating or previewing a group starts no work,
+and a rejected preview changes no issue status. A retry of the same creation
+finishes any remaining status updates without creating another master.
+
+`node --test scripts/flow-grouping.check.mjs scripts/flow-folder-settings.check.mjs scripts/storage-profiles-capture.check.mjs`
+checks approval and stopped issues, retained attempts, active-work rejection,
+stale previews, saved status updates, and creation retries after a failed status
+write. The store fixture uses the same grouping controls as the UI without
+starting a model or changing live issues.
 
 If a strategy suggested the group, save its selection reasoning on the master.
 When a sub-issue's check fails, show the unmet check alongside that reasoning.

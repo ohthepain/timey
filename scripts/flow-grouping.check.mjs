@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, rmdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { gitFixture } from './git-fixture.mjs';
@@ -42,7 +42,7 @@ function fixture(t) {
     t.after(() => flows.close());
     return flows;
   };
-  return { root, newFlows };
+  return { root, newFlows, service };
 }
 
 async function group(flows, configure = () => {}) {
@@ -66,6 +66,98 @@ async function group(flows, configure = () => {}) {
   };
   return { create, issueIds };
 }
+
+test('Grouping resets approval and stopped issues while retaining their previous work across replay', async (t) => {
+  const { root, newFlows, service } = fixture(t);
+  const flows = newFlows();
+  let retained;
+  const { create, issueIds } = await group(flows, ([pending, stopped]) => {
+    updateStoredIssueMetadata(root, flows.selected(pending), { state: 'needs-approval' });
+    updateStoredIssueMetadata(root, flows.selected(stopped), { state: 'in-progress' });
+    const flow = flows.read(flows.selected(stopped));
+    flow.blocks
+      .find((block) => block.kind === 'work')
+      .attempts.push({
+        id: 'old-attempt',
+        status: 'failed',
+        startedAt: '2026-11-20T10:00:00Z',
+        summary: 'Previous failure',
+        artifacts: { files: { proof: 'old-proof.txt' } },
+      });
+    flows.store.save(flow, flow.revision);
+    retained = flows.read(flows.selected(stopped));
+    service.lifecycleRuns[stopped] = { work: { checkout: join(root, 'previous-work'), branch: 'old-work' } };
+    service.store.runs.push({ id: 'old-run', issueId: stopped, kind: 'issue-work', status: 'failed' });
+  });
+  for (const id of issueIds)
+    assert.equal((await flows.view()).issues.find((issue) => issue.id === id).groupEligible, true);
+  const master = await flows.action(create);
+  assert.equal(master.issue.status, 'new');
+  for (const id of issueIds) {
+    assert.equal(flows.selected(id).state, 'backlog');
+    assert.equal((await flows.view(id)).issue.status, 'new');
+  }
+  assert.deepEqual(flows.read(flows.selected(issueIds[1])), retained);
+  assert.equal((await newFlows().action(create)).issue.id, master.issue.id);
+  assert.deepEqual(flows.read(flows.selected(issueIds[1])), retained);
+  assert.deepEqual(
+    flows.selected(master.issue.id).issue_group.children.map(({ previousState }) => previousState),
+    ['needs-approval', 'in-progress']
+  );
+  await assert.rejects(flows.action({ action: 'play', issueId: issueIds[1] }), /sub-issue/);
+});
+
+test('Grouping refuses active or uncertain work and rejects changes after preview without resetting issues', async (t) => {
+  const { root, newFlows, service } = fixture(t);
+  const flows = newFlows();
+  const { create, issueIds } = await group(flows);
+  const [id] = issueIds;
+  const report = flows.selected(id).content;
+  for (const status of ['running', 'uncertain']) {
+    const flow = flows.read(flows.selected(id));
+    flow.blocks.find((block) => block.kind === 'work').attempts = [{ id: 'held', status }];
+    flows.store.save(flow, flow.revision);
+    assert.equal((await flows.view()).issues.find((issue) => issue.id === id).groupEligible, false);
+    await assert.rejects(flows.action(create), /Review/);
+    assert.equal(flows.selected(id).content, report);
+  }
+  const flow = flows.read(flows.selected(id));
+  flow.blocks.find((block) => block.kind === 'work').attempts = [];
+  flows.store.save(flow, flow.revision);
+  service.issueChats.active.set(id, {});
+  await assert.rejects(flows.action(create), /Review/);
+  service.issueChats.active.delete(id);
+  updateStoredIssueMetadata(root, flows.selected(id), { title: 'Changed request' });
+  await assert.rejects(flows.action(create), /changed/);
+  assert.equal(
+    flows.issues().some((issue) => issue.issue_group),
+    false
+  );
+});
+
+test('Retry finishes a failed status reset without creating another master or losing the previous state', async (t) => {
+  const { root, newFlows } = fixture(t);
+  const flows = newFlows();
+  const { create, issueIds } = await group(flows, ([id]) =>
+    updateStoredIssueMetadata(root, flows.selected(id), { state: 'needs-approval' })
+  );
+  const capture = flows.capture.bind(flows);
+  const lock = join(root, '.issues/factory.lock');
+  flows.capture = async (...args) => {
+    const result = await capture(...args);
+    mkdirSync(lock);
+    return result;
+  };
+  await assert.rejects(flows.action(create), /EEXIST/);
+  rmdirSync(lock);
+  assert.equal(flows.selected(issueIds[0]).state, 'needs-approval');
+  const masters = flows.issues().filter((issue) => issue.issue_group);
+  assert.equal(masters.length, 1);
+  const result = await newFlows().action(create);
+  assert.equal(result.issue.id, masters[0].id);
+  assert.equal(flows.selected(issueIds[0]).state, 'backlog');
+  assert.equal(flows.selected(result.issue.id).issue_group.children[0].previousState, 'needs-approval');
+});
 
 test('The master protects its original issues across a server restart and releases an individual issue on detach', async (t) => {
   const { root, newFlows } = fixture(t);

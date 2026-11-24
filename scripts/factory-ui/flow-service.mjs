@@ -515,8 +515,13 @@ class IssueFlows {
       resolveFolder,
     });
   }
-  groupEligible(issue, flow, resolveFolder = resolveFolderSettings) {
-    if (!this.folderSelection.eligible(issue, flow)) return false;
+  groupEligible(issue, flow, resolveFolder = resolveFolderSettings, issues = this.issues()) {
+    if (!this.groups.candidate(issue, flow, issues)) return false;
+    if (
+      this.service.projectStores &&
+      readSnapshot(this.service.root)?.claims?.some((claim) => claim.issueId === issue.id)
+    )
+      return false;
     try {
       const folder = resolveFolder(this.service.root, flow.folder);
       return (
@@ -557,6 +562,7 @@ class IssueFlows {
     return this.service.sharedIssues.refreshInBackground(Boolean(needsInitialReport));
   }
   indexIssue(issue, flow, issues, resolveFolder) {
+    const masterId = this.groups.masterId(issue.id, issues);
     const activeBlock = flow.blocks.find((block) =>
       ['running', 'stopping', 'in-progress'].includes(block.attempts.at(-1)?.status)
     );
@@ -574,20 +580,20 @@ class IssueFlows {
       issueNumber: issue.issueNumber,
       state: issue.state,
       type: requestData(flow).fields?.type ?? flow.routeType,
-      masterId: this.groups.masterId(issue.id, issues),
+      masterId,
       folder: flow.folder,
       flowRevision: flow.revision,
       folderLocked: Boolean(flow.folderLocked),
       readOnly: Boolean(mergedDelivery(flow)),
       folderEligible: this.folderSelection.eligible(issue, flow),
-      groupEligible: this.groupEligible(issue, flow, resolveFolder),
+      groupEligible: this.groupEligible(issue, flow, resolveFolder, issues),
       storeId: issue.storeId,
       resolvedBranch: deliveryTarget(flow).branch,
       activeBlock: activeBlock ? { id: activeBlock.id, kind: activeBlock.kind } : null,
       humanInput: availableHumanInput(issue, flow, this.agentApprovals(issue.id)[0]),
       paused: Boolean(this.autoplay.get(issue.id)?.userPaused),
       waitingForApproval: this.autoplay.get(issue.id)?.mode === 'waiting',
-      status: flowStatus(flow, issue, active),
+      status: masterId && !issue.closed ? 'new' : flowStatus(flow, issue, active),
     };
   }
   async storageView(id, { refresh = false } = {}) {
@@ -3036,6 +3042,7 @@ class IssueFlows {
       }),
     };
     if (this.service.projectStores) {
+      if (grouping) this.groups.checkCapture(grouping);
       return this.captureStoredIssue(input, receiptPath, { ...receipt, flow }, storage);
     }
     const path = storedIssuePath(this.service.root, id);

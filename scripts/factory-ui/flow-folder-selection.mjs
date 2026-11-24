@@ -86,18 +86,24 @@ export class FlowFolderSelection {
   }
 
   eligible(issue, flow) {
+    return (
+      this.idle(issue, flow) &&
+      !['in-progress', 'in-review', 'ready-for-commit', 'resolved'].includes(issue.state) &&
+      !flowWorkspace(this.flows.service, flow) &&
+      !hasBlockHistory(flow) &&
+      !this.flows.service.store.runs.some((run) => run.issueId === issue.id && run.kind === 'issue-work')
+    );
+  }
+
+  idle(issue, flow) {
     const service = this.flows.service;
     return (
       !issue.closed &&
       !mergedDelivery(flow) &&
-      !['in-progress', 'in-review', 'ready-for-commit', 'resolved'].includes(issue.state) &&
-      !flowWorkspace(service, flow) &&
       !flow.closing &&
       !['playing', 'waiting'].includes(this.flows.autoplay.get(issue.id)?.mode) &&
       !service.issueChats?.active?.has(issue.id) &&
-      !issueHasActiveWork(service, issue.id) &&
-      !hasBlockHistory(flow) &&
-      !service.store.runs.some((run) => run.issueId === issue.id && run.kind === 'issue-work')
+      !issueHasActiveWork(service, issue.id)
     );
   }
 
