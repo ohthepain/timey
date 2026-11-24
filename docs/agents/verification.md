@@ -1194,3 +1194,8 @@ selection and reload. Saving an available replacement starts no work; explicit
 Run resolves the blocker. The scenario saves unavailable and recovered
 screenshots. Provider observations and execution results are disposable fixtures;
 this does not establish live model entitlements or output quality.
+
+The PR repair-first step records V8 coverage under `.issues/repair-first-coverage`.
+The following strict static audit consumes that actual coverage before broad
+verification, so tested runtime helpers are evaluated with measured coverage.
+No changed repair plan means the focused step skips, as before.

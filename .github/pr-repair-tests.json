@@ -18,6 +18,15 @@
     {
       "name": "Existing closure guards and cleanup actions remain enforced",
       "command": ["node", "--test", "scripts/flow-delivery.check.mjs", "scripts/factory-cleanup.check.mjs"]
+    },
+    {
+      "name": "GitHub provider download transport and diagnostics",
+      "command": [
+        "node",
+        "--test",
+        "scripts/strategy-provider-diagnostics.check.mjs",
+        "scripts/github-call-history.check.mjs"
+      ]
     }
   ]
 }

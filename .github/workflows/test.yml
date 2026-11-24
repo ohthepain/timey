@@ -32,11 +32,14 @@ jobs:
 
       - name: Previously failing PR tests first
         env:
+          NODE_V8_COVERAGE: ${{ github.workspace }}/.issues/repair-first-coverage
           AUDIT_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: node scripts/pr-repair-tests.mjs --base "$AUDIT_BASE"
 
       - name: Verify snapshot
         env:
+          FALLOW_COVERAGE: ${{ github.workspace }}/.issues/repair-first-coverage
+          FALLOW_COVERAGE_ROOT: ${{ github.workspace }}
           AUDIT_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
           TIMEY_FALLOW_ENFORCE: '1'
           TIMEY_FALLOW_WARNINGS: error
