@@ -3,6 +3,16 @@
   "sourceRun": "https://github.com/ohthepain/timey/actions/runs/45240464918",
   "tests": [
     {
+      "name": "Initial issue loading does not wait for the live update stream",
+      "command": [
+        "node",
+        "--test",
+        "scripts/flow-startup.check.mjs",
+        "scripts/flow-progress.check.mjs",
+        "scripts/flow-view-settings.check.mjs"
+      ]
+    },
+    {
       "name": "Named browser selection and focused-command guards",
       "command": ["node", "--test", "scripts/browser-scenario-policy.check.mjs"]
     },

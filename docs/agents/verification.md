@@ -1248,3 +1248,8 @@ Closure recovery checks the merged PR comparison base from GitHub, its ancestry,
 and both the CI report and local step audit for that base and exact candidate
 tree. It retains the original workspace base. The proof suite covers target
 updates, changed PR identity and invalid comparison bases.
+
+`node --test scripts/flow-startup.check.mjs` checks that the first issue snapshot
+loads without waiting for the live-update stream to open, including background
+tabs. Later stream notifications still refresh the displayed issues. These checks
+hold the browser event source unopened and execute the real startup scheduler.

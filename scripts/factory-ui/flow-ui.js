@@ -4052,5 +4052,6 @@
     $('connection-status').innerHTML = '<span class="connection-dot"></span> Offline';
     renderErrors();
   });
+  void load();
   syncChanges();
 })();
