@@ -1,3 +1,4 @@
+import { masterIssueBrowserChecks } from './flow-browser-master-issues.mjs';
 import { blockModelsBrowserChecks } from './flow-browser-block-models.mjs';
 import { providerSettingsBrowserChecks } from './flow-browser-provider-settings.mjs';
 import { activityBrowserChecks } from './flow-browser-activity.mjs';
@@ -111,6 +112,9 @@ const assets = [
   'view-state.js',
   'activity-indicator-ui.js',
   'flow.html',
+  'index.html',
+  'issue-group.css',
+  'issue-group-ui.js',
   'flow.css',
   'flow-ui.js',
   'issue-store-ui.js',
@@ -157,6 +161,7 @@ const fingerprint = () =>
   );
 const candidate = { revision: git(root, 'rev-parse', 'HEAD'), assets: fingerprint() };
 const results = [];
+const masterIssuesCheck = 'Master issue hierarchy and badges across the workspace';
 const folderSettingsCheck = 'Folder settings inherit, repair, search and act on selected open or closed issues';
 const blockDeletionCheck = 'Click-selected blocks support safe, confirmed Delete and Backspace removal';
 const followupsCheck = 'Completed investigations create reviewed follow-ups without another Retro';
@@ -351,6 +356,7 @@ function checkExcluded(name) {
     ['--automate-activity', 'Automate me dots follow each active response'],
     ['--issue-scrollbar', 'Issue flow scrollbar appears only while scrolling'],
     ['--issue-status-folders', 'Status pseudo-folders track project issues without moving them'],
+    ['--master-issues', masterIssuesCheck],
     ['--project-issues', 'Closed issue selections archive together and issue links open the normal view'],
     ['--actions-menu', 'Actions menu lists two running Flow blocks'],
     ['--merged-issue', 'Merged issues preserve history and expose only closure controls'],
@@ -683,6 +689,7 @@ try {
   await check('Closed issue selections archive together and issue links open the normal view', () =>
     projectIssuesBrowserChecks({ page, project, root, output })
   );
+  await check(masterIssuesCheck, () => masterIssueBrowserChecks({ page, project, root, output }));
   await check(navigationCheck, () =>
     withQueueConfiguration({ page, project, root }, () => projectNavigationBrowserChecks({ page, screenshot }))
   );
