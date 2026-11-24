@@ -74,6 +74,8 @@ project defaults. The default-folder flag belongs to a single issue folder and
 never inherits. The
 directory name appears in the sidebar. A rename or move within the project
 preserves assignments. Give a copy a new ID before it can accept assignments.
+While folders share an ID, flow views retain the saved folder name and membership
+instead of choosing either copy. Both folders remain visible for explicit repair.
 If the original folder is missing, retain its assignments so restoring the
 folder restores its issue view. People choose existing issue actions explicitly.
 

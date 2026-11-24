@@ -51,6 +51,37 @@
         "scripts/strategy-provider-diagnostics.check.mjs",
         "scripts/github-call-history.check.mjs"
       ]
+    },
+    {
+      "name": "Publish waits only for its own pushed candidate and preserves concurrent-change guards",
+      "command": [
+        "node",
+        "--test",
+        "--test-name-pattern=publication waits only|repeat publication|publication rejects|publication refuses|publication preserves",
+        "scripts/flow-delivery.check.mjs"
+      ]
+    },
+    {
+      "name": "Manual Close stays before Close and uses the existing confirmation",
+      "command": ["node", "scripts/flow-browser.mjs", "--manual-close"]
+    },
+    {
+      "name": "Automatic Close requires the unrevoked opt-in",
+      "command": [
+        "node",
+        "--test",
+        "--test-name-pattern=automatic closure requires an unrevoked opt-in",
+        "scripts/flow.check.mjs"
+      ]
+    },
+    {
+      "name": "Folder assignment preserves IDs and rejects unavailable destinations",
+      "command": [
+        "node",
+        "--test",
+        "--test-name-pattern=folder scans|issue creation uses the default folder|folder deletion|folder migration|moving an existing issue folder",
+        "scripts/flow.check.mjs"
+      ]
     }
   ]
 }

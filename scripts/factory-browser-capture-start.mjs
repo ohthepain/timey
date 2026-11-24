@@ -61,6 +61,10 @@ export default async function captureStartChecks(page) {
       return select && !select.disabled && select.options.length > 1;
     });
     await page.locator('#capture-folder').selectOption('Inbox');
+    await page.waitForFunction(() => {
+      const select = document.querySelector('#capture-issue-store');
+      return select && !select.disabled && select.value === 'files';
+    });
     await page.locator('#capture-issue-store').selectOption('files');
   }
 

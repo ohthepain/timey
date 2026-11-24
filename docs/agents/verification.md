@@ -1232,3 +1232,8 @@ objects, fragment corruption, failed-index rollback, deletion and authoritative
 cache repair with local drafts. `scripts/snapshot-refresh-benchmark.mjs` compares
 selected cache publication against a fixed Git revision in disposable directories;
 it checks selected and unrelated issue values and never changes shared records.
+
+`node --test --test-name-pattern="publication waits only" scripts/flow-delivery.check.mjs`
+reproduces a successful push followed by a stale GitHub PR head. Publish briefly
+waits only for that exact previous head, while another head, a changed title and
+a persistently stale response remain blocking. Retries never repeat the push.

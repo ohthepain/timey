@@ -4,8 +4,14 @@ import { dirname, join } from 'node:path';
 import { registeredProjectStores } from './factory-ui/stores/report-access.mjs';
 import { storedIssuePath } from './factory-ui/issue-report-storage.mjs';
 import { resolveIssueStorage } from './factory-ui/stores/settings.mjs';
+import { ensureProjectStores } from './factory-ui/stores/runtime.mjs';
 
-export function writeBrowserIssue(project, { id, title, body }) {
+export async function writeBrowserIssue(project, { id, title, body }) {
+  if (typeof project !== 'string') {
+    const service = project;
+    await ensureProjectStores(service);
+    project = service.root;
+  }
   const report = `---\nid: ${id}\ntitle: ${title}\nstate: backlog\n---\n\n${body}\n`;
   return importBrowserIssue(project, id, report);
 }

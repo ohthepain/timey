@@ -546,6 +546,46 @@ test('publication uses a confirmed exact-head non-force push and the mandatory A
   assert.equal(readQueue(f.root).issues[0].state, 'verify');
 });
 
+for (const replacement of ['candidate', 'other-head', 'changed-title', 'stale-head'])
+  void test('publication waits only for its own pushed head: ' + replacement, async (t) => {
+    const f = fixture(t);
+    const pr = {
+      number: 17,
+      state: 'open',
+      draft: false,
+      title: f.ctx.issue.title,
+      user: { login: 'factory[bot]' },
+      head: { ref: f.workspace.branch, repo: { full_name: 'test/fixture' }, sha: 'old-head' },
+      base: { ref: 'dev', repo: { full_name: 'test/fixture' } },
+    };
+    let pushed = false;
+    let delayed = false;
+    f.provider.findIssueBranchPR = async () => pr;
+    f.provider.inspect = async () => {
+      if (!pushed || !delayed || replacement === 'stale-head') return pr;
+      return {
+        ...pr,
+        title: replacement === 'changed-title' ? 'Changed independently' : pr.title,
+        head: { ...pr.head, sha: replacement === 'other-head' ? 'another-head' : f.input.revision },
+      };
+    };
+    f.provider.gh = async (args) =>
+      args.includes('graphql') ? JSON.stringify({ data: { repository: { pullRequest: {} } } }) : 'dev';
+    const execute = f.options.execute;
+    f.options.execute = async (input) => {
+      await execute(input);
+      pushed = true;
+    };
+    f.options.publicationDelay = async () => {
+      delayed = true;
+    };
+    const result = await f.publish();
+    if (replacement === 'candidate') assert.equal(result.status, undefined);
+    else assert.equal(result.status, 'blocked');
+    assert.equal(f.calls.filter((call) => call === 'push').length, 1);
+    assert.equal(delayed, true);
+  });
+
 test('publication authorized by starting the route creates the PR without a preview confirmation', async (t) => {
   const f = fixture(t);
   f.ctx.input = { automaticPublication: true };
