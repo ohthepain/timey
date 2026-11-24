@@ -1848,6 +1848,7 @@ test('opted-in closure holds the worktree until Retro succeeds and files idle ap
     view.flow.blocks.some((item) => item.kind === 'retro'),
     true
   );
+  view = await submit(view, 'retro-setting', { enabled: false });
   const queue = readQueue(root, { issueId: id });
   const issue = queue.issues[0];
   await flows.closeWithReason({
@@ -1857,6 +1858,7 @@ test('opted-in closure holds the worktree until Retro succeeds and files idle ap
     basis: decisionBasis(queue, issue),
     resolution: 'duplicate',
     reason: 'Fixture.',
+    runClosureRetro: true,
   });
   const read = () => flows.read(flows.selected(id));
   await waitUntil(
@@ -1927,6 +1929,7 @@ test('opted-in closure holds the worktree until Retro succeeds and files idle ap
   const closedIssue = closedQueue.issues[0];
   service.decideIssue(id, closedIssue.state, 'reopen', decisionBasis(closedQueue, closedIssue));
   await flows.reopened(id);
+  await submit(await flows.view(id), 'retro-setting', { enabled: true });
   const reopenedQueue = readQueue(root, { issueId: id });
   const reopened = reopenedQueue.issues[0];
   await flows.closeWithReason({
@@ -1936,7 +1939,6 @@ test('opted-in closure holds the worktree until Retro succeeds and files idle ap
     basis: decisionBasis(reopenedQueue, reopened),
     resolution: 'obsolete',
     reason: 'Fixture reopened.',
-    runClosureRetro: false,
   });
   await waitUntil(() => read().closing.complete);
   assert.notEqual(read().closing.id, previousClosure);

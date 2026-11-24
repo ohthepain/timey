@@ -9,7 +9,7 @@ export async function projectDiscussBrowserChecks({ page, service, project, poll
   mkdirSync(skillsDirectory, { recursive: true });
   writeFileSync(join(skillsDirectory, 'requirements.json'), JSON.stringify(requiredSkillSets));
   const calls = [];
-  let availableSkills = ['grilling', 'grill-with-docs'].map((name) => ({
+  let availableSkills = ['grilling', 'grill-me', 'grill-with-docs', 'wayfinder'].map((name) => ({
     name,
     description: 'Ask questions',
     source: 'Project',

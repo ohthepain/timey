@@ -1,0 +1,94 @@
+name: Verify one suite
+description: Run a verification suite on the checked-out candidate and publish its evidence.
+inputs:
+  suite:
+    description: Verification suite ID
+    required: true
+  base:
+    description: Git revision used as the comparison base
+    required: true
+outputs:
+  artifact-id:
+    description: Immutable evidence artifact for this job attempt
+    value: ${{ steps.upload.outputs.artifact-id }}
+  base:
+    description: Resolved comparison base
+    value: ${{ steps.base.outputs.revision }}
+runs:
+  using: composite
+  steps:
+    - uses: pnpm/action-setup@v4
+    - uses: actions/setup-node@v4
+      with:
+        node-version-file: .nvmrc
+        cache: pnpm
+    - name: Install dependencies
+      shell: bash
+      run: pnpm install --frozen-lockfile
+    - name: Install browser
+      if: inputs.suite != 'non-browser'
+      shell: bash
+      run: pnpm exec playwright-cli install-browser chromium --with-deps
+    - name: Resolve comparison base
+      id: base
+      shell: bash
+      env:
+        AUDIT_BASE: ${{ inputs.base }}
+      run: |
+        if [ -z "$AUDIT_BASE" ] || ! git rev-parse --verify "$AUDIT_BASE^{commit}" >/dev/null 2>&1; then
+          AUDIT_BASE="$(git rev-list --max-parents=0 HEAD | tail -1)"
+        fi
+        echo "revision=$(git rev-parse "$AUDIT_BASE^{commit}")" >> "$GITHUB_OUTPUT"
+    - name: Previously failing PR tests first
+      if: inputs.suite == 'early'
+      shell: bash
+      env:
+        NODE_V8_COVERAGE: ${{ github.workspace }}/.issues/repair-first-coverage
+        AUDIT_BASE: ${{ steps.base.outputs.revision }}
+      run: node scripts/pr-repair-tests.mjs --base "$AUDIT_BASE"
+    - name: Verify snapshot
+      shell: bash
+      env:
+        FALLOW_COVERAGE: ${{ github.workspace }}/.issues/repair-first-coverage
+        FALLOW_COVERAGE_ROOT: ${{ github.workspace }}
+        AUDIT_BASE: ${{ steps.base.outputs.revision }}
+        VERIFY_SUITE: ${{ inputs.suite }}
+        TIMEY_FALLOW_ENFORCE: '1'
+        TIMEY_FALLOW_WARNINGS: error
+      run: node scripts/verify.mjs --base "$AUDIT_BASE" --ci-suite "$VERIFY_SUITE"
+    - name: Show exact verification failures
+      if: failure()
+      shell: bash
+      run: |
+        node --input-type=module <<'JS'
+        import { readdirSync, readFileSync, existsSync } from 'node:fs';
+        const directory = '.issues/evidence';
+        const summaries = existsSync(directory) ? readdirSync(directory).filter(name => name.endsWith('-summary.json')) : [];
+        for (const file of summaries) {
+          const report = JSON.parse(readFileSync(directory + '/' + file));
+          for (const check of report.checks.filter(check => !check.passed)) {
+            console.log('FAILED CHECK: ' + check.name + ' — ' + (check.command || []).join(' '));
+            if (check.log && existsSync(check.log)) {
+              const lines = readFileSync(check.log, 'utf8').split('\n').filter(line => line.length < 1000);
+              console.log(lines.slice(-45).join('\n'));
+            }
+            for (const artifact of check.artifacts || []) {
+              if (!artifact.path.endsWith('/results.json') || !existsSync(artifact.path)) continue;
+              const result = JSON.parse(readFileSync(artifact.path));
+              for (const scenario of result.results || []) {
+                if (!scenario.passed) console.log('FAILED SCENARIO: ' + scenario.name + '\n' + scenario.error);
+              }
+            }
+          }
+        }
+        JS
+
+    - name: Preserve suite evidence
+      if: always()
+      id: upload
+      uses: actions/upload-artifact@v4
+      with:
+        name: verification-suite-${{ inputs.suite }}-${{ github.run_attempt }}
+        path: .issues/evidence/
+        include-hidden-files: true
+        if-no-files-found: ignore

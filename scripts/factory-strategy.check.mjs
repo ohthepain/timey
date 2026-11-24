@@ -1519,6 +1519,29 @@ test('GitHub merge readiness accepts no checks and unsuccessful optional checks'
   assert.equal((await f.ready()).checks.length, 3);
 });
 
+void test('GitHub checks report only completed Verify suites as Merge progress', async () => {
+  const f = providerFixture();
+  f.view.mergeStateStatus = 'BLOCKED';
+  const checkSuite = {
+    app: { slug: 'github-actions' },
+    workflowRun: { workflow: { name: 'Verify' } },
+  };
+  const check = { __typename: 'CheckRun', checkSuite, status: 'COMPLETED', conclusion: 'SUCCESS' };
+  f.settings.checks = [
+    { ...check, name: 'Early checks' },
+    { ...check, name: 'Flow browser', status: 'IN_PROGRESS', conclusion: null },
+    { ...check, name: 'Non-browser tests', conclusion: 'SKIPPED' },
+    { ...check, name: 'Classic Factory browser', checkSuite: { ...checkSuite, app: { slug: 'other' } } },
+  ];
+  await assert.rejects(f.ready({ waitForChecks: true }), {
+    code: 'STRATEGY_PENDING',
+    ciProgress: { head: f.pr.head.sha, completedSuites: ['Early checks'] },
+  });
+  f.settings.checks.push(f.passingCheck);
+  f.view.mergeStateStatus = 'CLEAN';
+  assert.equal((await f.ready({ waitForChecks: true })).head, f.pr.head.sha);
+});
+
 test('GitHub readiness rejects drafts, changed PR identity and queue enrollment', async () => {
   const f = providerFixture();
   assert.equal((await f.ready()).head, 'head');

@@ -1482,7 +1482,9 @@ result to be reviewed. The report records the reason, label, time and optional
 details, and the page shows them after closure. Reopening preserves the decision
 in history.
 Changed reports or reason lists invalidate an open decision. In Flow, manual
-Close records the decision, runs the opted-in Retro, then starts Cleanup.
+Close records the decision, runs Retro if selected, then starts Cleanup.
+The Retro checkbox starts with the saved Request setting for Fixed and starts
+unchecked for other reasons.
 Turn on auto-close in Request to record Fixed after Factory confirms its own
 merge and the existing acceptance requirements pass. Each branch requires its
 own deletion choice. In shared queue mode, Cleanup waits for the reviewed

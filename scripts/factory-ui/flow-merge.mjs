@@ -24,6 +24,7 @@ import {
 import { blockerKey, permissionFailure, repairableBlocker } from './strategy-repair.mjs';
 import { fetchIssueTarget, mergeIssueTarget } from './flow-update-branch.mjs';
 import { queueReportPaths } from './shared-issue-config.mjs';
+import { observeMergeWait, startMergeWait } from './flow-merge-wait.mjs';
 
 const headOf = (workspace) => git(workspace.checkout, 'rev-parse', 'HEAD');
 const treeOf = (workspace) => git(workspace.checkout, 'rev-parse', 'HEAD^{tree}');
@@ -290,7 +291,7 @@ async function advanceMerge(service, ctx, workspace, provider, pr, invoke, optio
     await invoke('git', ['push', remote, head + ':refs/heads/' + workspace.branch]);
     state.previousHead = pr.head.sha;
     state.pushed = head;
-    state.deadline = Date.now() + state.workflow.checkTimeoutSeconds * 1000;
+    state.wait = startMergeWait(head, state.workflow.checkTimeoutSeconds * 1000, options.mergeNow);
     throw pending('Pushed the verified commit. Waiting for GitHub checks.');
   }
   if (readiness.target !== target) throw pending('GitHub and the fetched target differ. Refreshing both revisions.');
@@ -308,11 +309,17 @@ function mergeVerification(ctx, state) {
   return state.checked?.verification ?? retainedBlockVerification(ctx.block, ctx.attempt.id);
 }
 
-async function waitForMergeChecks(ctx, state, error, options) {
-  state.deadline ??= Date.now() + state.workflow.checkTimeoutSeconds * 1000;
-  requireThat(Date.now() < state.deadline, 'GitHub checks did not finish in time. ' + error.message);
+async function waitForMergeChecks(ctx, state, error, head, options) {
+  state.wait ??= startMergeWait(head, state.workflow.checkTimeoutSeconds * 1000, options.mergeNow);
+  const next = observeMergeWait(state.wait, error.ciProgress);
+  requireThat(next.kind !== 'timeout', 'GitHub checks did not finish in time. ' + error.message);
+  if (next.kind === 'refresh') {
+    ctx.onProgress('Checking GitHub once more before the CI wait times out.\n', true);
+    return;
+  }
   ctx.onProgress(error.message + '\n', true);
-  await (options.mergeDelay ?? delay)(state.workflow.pollSeconds * 1000, undefined, { signal: ctx.signal });
+  const interval = Math.min(state.workflow.pollSeconds * 1000, next.remaining);
+  await (options.mergeDelay ?? delay)(interval, undefined, { signal: ctx.signal });
 }
 
 function retainMergeFailure(error, ctx, state, pr) {
@@ -378,7 +385,7 @@ export async function mergeFlowPR(service, ctx, workspace, folder, options) {
         if (outcome) return { ...outcome, evidence: evidence(), workspace: { ...workspace, pr: pr.number } };
       } catch (error) {
         if (error.code !== 'STRATEGY_PENDING') await repairCandidate(service, ctx, workspace, error, options, state);
-        else await waitForMergeChecks(ctx, state, error, options);
+        else await waitForMergeChecks(ctx, state, error, pr.head.sha, options);
       }
       pr = await lookupFlowPR(provider, workspace.branch, number);
       requireThat(pr, 'The existing PR is no longer available.');

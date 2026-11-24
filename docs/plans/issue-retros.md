@@ -6,9 +6,12 @@ the closure sequence.
 ## Agreed behavior
 
 - The Request block owns the **Run a retro** setting. Create issue offers the
-  same setting, unchecked by default. The flow includes **Retro** only when the
-  setting is on.
-- For opted-in issues, the sequence is **Close → Retro → Cleanup**. Both the
+  same setting, unchecked by default. When the setting is on, the open flow
+  shows a planned **Retro** block.
+- The Close dialog uses the Request setting for Fixed and starts Retro unchecked
+  for every other reason. The checkbox sets the choice for that closure.
+  Automatic Fixed closure uses the Request setting.
+- When Retro is enabled for the closure, the sequence is **Close → Retro → Cleanup**. Both the
   issue header and the flow follow this sequence. Retro can read the history
   before Cleanup removes the worktree transcript or archives chats.
 - If Retro fails, the issue stays Closed and Cleanup waits. The user can retry
@@ -29,7 +32,7 @@ the closure sequence.
   issues or Archive.
 - Issue creation and implementation can happen on different machines. Saved
   issue conversations can start before an issue worktree exists.
-- Closing a reopened issue runs a fresh Retro if **Run a retro** is still on.
+- Closing a reopened issue can run a fresh Retro using the new closure choice.
   Retrying a Retro preserves earlier approval and deletion decisions for its
   follow-ups.
 

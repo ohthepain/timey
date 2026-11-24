@@ -20,6 +20,9 @@ import { factoryCheckCommand, normalizeFocusedTests } from './verify-merge-check
 import { flowMergeChecks } from './factory-ui/flow-verification.mjs';
 import { validateSummary } from './factory-ui/checks.mjs';
 import { digest } from './factory-ui/common.mjs';
+import { ciSuites } from './verify-ci-suites.mjs';
+import { assembleCIEvidence } from './verify-ci-evidence.mjs';
+import { parse } from 'yaml';
 
 test('Merge uses the Request setting and records only completed upstream focused tests', () => {
   const command = ['node', '--test', 'scripts/one.check.mjs'];
@@ -211,6 +214,68 @@ test('browser evidence retains declared proof with valid hashes and excludes nes
   assert.throws(() => validateSummary(summary, 'base', 'tree'), /Browser evidence changed/);
 });
 
+void test('CI gates the parallel suites on early checks and keeps test as their aggregate', () => {
+  const { jobs } = parse(readFileSync('.github/workflows/test.yml', 'utf8'));
+  assert.deepEqual(jobs.test.needs, Object.keys(ciSuites));
+  assert.equal(jobs.test.if, 'always()');
+  for (const [suite, { name }] of Object.entries(ciSuites)) {
+    assert.equal(jobs[suite].name, name);
+    assert.equal(jobs[suite].needs, suite === 'early' ? undefined : 'early');
+    assert.equal(jobs[suite].steps.at(-1).with.suite, suite);
+    assert.match(jobs[suite].outputs['artifact-id'], /steps\.verify\.outputs\.artifact-id/);
+  }
+});
+
+function writeCISuite(folder, suite, candidate) {
+  const runner = '/github/workspace/.issues/evidence';
+  const checks = ciSuites[suite].checks.map((name) => {
+    const log = name + '.log';
+    const outputs = { browser: 'PASS browser scenario: classic', 'flow-browser': 'PASS Flow fixture' };
+    writeFileSync(join(folder, log), outputs[name] ?? 'passed');
+    const check = { name, passed: true, exit: 0, log: runner + '/' + log };
+    if (outputs[name]) {
+      const file = name + '-results.json';
+      writeFileSync(join(folder, file), 'browser proof');
+      check.artifacts = [{ path: runner + '/' + file, sha256: digest('browser proof') }];
+    }
+    return check;
+  });
+  writeFileSync(
+    join(folder, suite + '-summary.json'),
+    JSON.stringify({
+      checkpoint: 'ci-suite',
+      ciSuite: suite,
+      passed: true,
+      base: candidate.base,
+      revision: candidate.revision,
+      snapshot_tree: candidate.tree,
+      changed_files: [],
+      phases: [],
+      checks,
+    })
+  );
+}
+
+void test('CI assembles passing evidence across rerun jobs only for one exact snapshot', (t) => {
+  const { root } = gitFixture(t, 'ci-suites-');
+  const candidate = { revision: 'same Actions checkout', tree: 'same exact tree', base: 'same base' };
+  for (const suite of ['early', 'non-browser', 'classic-browser']) writeCISuite(root, suite, candidate);
+  assert.throws(() => assembleCIEvidence(root, candidate), /one report for CI suite flow-browser/);
+  writeCISuite(root, 'flow-browser', { ...candidate, revision: 'different checkout' });
+  assert.throws(() => assembleCIEvidence(root, candidate), /exact candidate/);
+  writeCISuite(root, 'flow-browser', candidate);
+  writeFileSync(join(root, 'flow-browser-results.json'), 'altered browser proof');
+  assert.throws(() => assembleCIEvidence(root, candidate), /artifact changed/);
+  writeFileSync(join(root, 'flow-browser-results.json'), 'browser proof');
+  const summary = JSON.parse(readFileSync(assembleCIEvidence(root, candidate), 'utf8'));
+  assert.equal(summary.checkpoint, 'verification');
+  assert.equal(summary.passed, true);
+  const browser = summary.checks.find(({ name }) => name === 'browser');
+  assert.match(readFileSync(browser.log, 'utf8'), /PASS browser scenario: classic\nPASS Flow fixture/);
+  assert.equal(browser.artifacts.length, 4);
+  assert.ok(browser.artifacts.every(({ path, sha256 }) => sha256 === digest(readFileSync(path))));
+});
+
 test('a hung verification command reports its deadline as a timeout', async (t) => {
   const { root } = gitFixture(t, 'merge-timeout-');
   const { runVerificationProcess } = await import('./verify-process.mjs');
@@ -325,6 +390,7 @@ function auditFixture(t, extraFiles = {}) {
     'format-files.mjs',
     'verify.mjs',
     'verify-browser-evidence.mjs',
+    'verify-ci-suites.mjs',
     'verify-scope.mjs',
     'verify-process.mjs',
     'verify-merge-checks.mjs',
@@ -774,6 +840,7 @@ test('failed checks print assertion details for every failed test in the CI cons
     'stamp',
     'writeFileSync',
     'checkAssessment',
+    'isBrowserCheck',
     'report',
     'console',
     'let failure = false; const snapshot = null;\n' + source + '\nreturn recordCheck;'
@@ -783,6 +850,7 @@ test('failed checks print assertion details for every failed test in the CI cons
     'fixture',
     () => {},
     () => ({ passed: false }),
+    () => false,
     { checks: [] },
     {
       log: (line) => lines.push(line),

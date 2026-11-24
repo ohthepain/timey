@@ -19,6 +19,7 @@ function addRetro(flow, catalog) {
   const retro = makeBlock('retro', close ? [close.id] : [], false, catalog);
   retro.id = 'closure-retro';
   flow.blocks.push(retro);
+  return retro;
 }
 
 function retireRetro(flow, retro) {
@@ -30,7 +31,7 @@ function retireRetro(flow, retro) {
 }
 
 function closureBlock(flow, catalog, kind, after = []) {
-  const saved = flow.blocks.find((block) => (kind === 'retro' ? block.id === 'closure-retro' : block.kind === kind));
+  const saved = flow.blocks.find((block) => block.kind === kind);
   if (saved) return saved;
   const block = makeBlock(kind, after, false, catalog);
   flow.blocks.push(block);
@@ -39,7 +40,7 @@ function closureBlock(flow, catalog, kind, after = []) {
 
 export function closureBlocks(flow, catalog) {
   const close = closureBlock(flow, catalog, 'close');
-  const retro = flow.closing.retro ? closureBlock(flow, catalog, 'retro', [close.id]) : null;
+  const retro = flow.closing.retro ? setRetroBlock(flow, catalog) : null;
   if (retro) retro.after = [close.id];
   const after = [(retro || close).id];
   const cleanup = closureBlock(flow, catalog, 'cleanup', after);

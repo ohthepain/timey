@@ -155,9 +155,6 @@ import { FlowOvernight } from './flow-overnight.mjs';
 const hiddenRepoFolders = new Set(['.git', '.issues', 'node_modules', '.next', '.turbo', 'coverage', 'dist', 'build']);
 const confirmationBlocks = new Set(['close', 'delete-worktree']);
 
-function declinesClosureRetro({ resolution, runClosureRetro }) {
-  return Boolean(resolution && resolution !== 'fixed' && runClosureRetro === false);
-}
 const branchActions = new Set([
   'abort-merge',
   'open-worktree',
@@ -1023,7 +1020,10 @@ class IssueFlows {
       id: randomUUID(),
       startedAt: new Date().toISOString(),
       resolution: input.resolution,
-      retro: requestBlock(flow).data.runRetro === true && !declinesClosureRetro(input),
+      retro:
+        typeof input.runClosureRetro === 'boolean'
+          ? input.runClosureRetro
+          : (input.resolution ?? 'fixed') === 'fixed' && requestBlock(flow).data.runRetro === true,
       branches,
     };
     delete flow.autoClose;
@@ -1050,6 +1050,7 @@ class IssueFlows {
       throw error;
     }
     const closedFlow = this.read(this.selected(issue.id));
+    setRetroBlock(closedFlow, catalog);
     resolveBlockingErrors(closedFlow, 'close', ['close']);
     await this.store.save(closedFlow, closedFlow.revision);
     this.pause(issue.id, 'Issue closed');
