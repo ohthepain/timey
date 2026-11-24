@@ -1,0 +1,13 @@
+{
+  "at": "2026-11-23T21:42:10.929Z",
+  "status": "confirmed",
+  "coordination": "postgres",
+  "artifacts": "s3",
+  "catalogsPreserved": 47,
+  "profilesAndSettingsPreserved": true,
+  "cancelledPublicationFlowsUnchanged": true,
+  "claims": 0,
+  "pendingOperations": 0,
+  "sourceRedirectVerified": true,
+  "destinationReceiptVerified": true
+}

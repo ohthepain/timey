@@ -1,3 +1,4 @@
+import { runMetadataOperation } from './stores/metadata-operation.mjs';
 import {
   issueBlockModels,
   blockModelKind,
@@ -2523,6 +2524,19 @@ class IssueFlows {
     return { accepted: true, issueId: issue.id, blockId: block.id, attemptId: attempt.id };
   }
   async admitAttempt(issue, flow, block, attempt, controller, purpose = 'edit') {
+    try {
+      return await this.attemptMetadata(block, () =>
+        this.admitAttemptState(issue, flow, block, attempt, controller, purpose)
+      );
+    } catch (error) {
+      this.active.delete(issue.id);
+      throw error;
+    }
+  }
+  attemptMetadata(block, run) {
+    return block.kind === 'update-branch' ? runMetadataOperation(this.service.projectStores, run) : run();
+  }
+  async admitAttemptState(issue, flow, block, attempt, controller, purpose) {
     const owned = { blockId: block.id, attemptId: attempt.id, controller };
     this.active.set(issue.id, owned);
     try {
@@ -2759,6 +2773,9 @@ class IssueFlows {
     await this.store.flush(issue.id, { drain: false });
   }
   async confirmAttempt(issue, owner, outcome, block) {
+    return this.attemptMetadata(block, () => this.confirmAttemptState(issue, owner, outcome, block));
+  }
+  async confirmAttemptState(issue, owner, outcome, block) {
     const stores = this.service.projectStores;
     const operationId = 'finish-' + owner.attemptId;
     for (;;) {

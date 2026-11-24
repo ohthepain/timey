@@ -76,6 +76,7 @@ export async function openPostgresRecords(config, { root, projectId }) {
     });
   }
   return {
+    inlineLimit: 1_048_576,
     receipt: (id) => operation(pool, id),
     retainedPayloads() {
       return transaction('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY', async (client) => {

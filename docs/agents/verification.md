@@ -90,6 +90,15 @@ concurrent revisions, and uncertain replies with disposable stores.
 full and selected refresh overlap, cold initialization, and direct controller
 freshness. Its HTTP fixture checks a peer update without reading unrelated reports.
 
+`node --test scripts/store-atomic-flow.check.mjs scripts/flow-save-git.check.mjs`
+checks idle flow saves against claims, migration seals, changed revisions,
+concurrent saves, and uncertain replies. The real Git fixture reorders
+investigation outputs while retaining attempt bytes. It counts remote-head
+checks and pushes for small flows and flows with overflowing history, verifies
+the saved results, and checks fresh peer reads and idempotent retries. All Git
+remotes and artifacts are disposable. These counts measure store operations,
+not live GitHub response times.
+
 `node --test scripts/closure-menu.check.mjs` holds a shared-store refresh while
 opening the Close menu through the real HTTP route. The menu must return saved
 issue context without waiting for that refresh. Confirming closure still waits
@@ -1199,6 +1208,30 @@ The PR repair-first step records V8 coverage under `.issues/repair-first-coverag
 The following strict static audit consumes that actual coverage before broad
 verification, so tested runtime helpers are evaluated with measured coverage.
 No changed repair plan means the focused step skips, as before.
+`node --test scripts/store-git-transaction.check.mjs` checks atomic Git metadata
+publication, rollback, competing writes, replay, lost push responses, pinned
+reads and detached callbacks. The manual operation tests in
+`project-stores-flow.check.mjs` check failed admission and checkpoint ordering.
+`RUNS=5 node scripts/branch-update-benchmark.mjs --compare --assert` compares the
+original and current owned branch-update paths against disposable Git stores,
+verifies completed work and released ownership, and counts metadata lookups and
+pushes. It also measures plain fetch-and-merge. See the
+[performance evidence](../plans/update-branch-performance.md) for scope and limits.
+
+`node --test scripts/store-git-github.check.mjs` checks the GitHub metadata request
+schema, exact object identities, conditional ref update, permissions and rejected
+responses. The store-record tests verify that fresh writes avoid downloading their
+just-uploaded payloads, while replay and later reads still validate storage.
+They also check scoped payload reuse, independent values, failure retries and
+expiry for detached callbacks. Git transaction checks cover disjoint peer updates
+without callback replay and rejection of changed input or command prefixes.
+
+`node --test scripts/store-snapshot-files.check.mjs` verifies legacy display-cache
+conversion, scoped issue/claim/command preservation, fresh-process reads, immutable
+objects, fragment corruption, failed-index rollback, deletion and authoritative
+cache repair with local drafts. `scripts/snapshot-refresh-benchmark.mjs` compares
+selected cache publication against a fixed Git revision in disposable directories;
+it checks selected and unrelated issue values and never changes shared records.
 
 `node --test --test-name-pattern="publication waits only" scripts/flow-delivery.check.mjs`
 reproduces a successful push followed by a stale GitHub PR head. Publish briefly
