@@ -37,6 +37,10 @@
       "command": ["node", "scripts/flow-browser.mjs", "--manual-close", "--error-recovery"]
     },
     {
+      "name": "Project Discuss offers setup for a missing clarification skill and removes it after discovery",
+      "command": ["node", "scripts/flow-browser.mjs", "--project-discuss"]
+    },
+    {
       "name": "Closure validates the merged PR base while preserving the original workspace base",
       "command": ["node", "--test", "scripts/github-closure-proof.check.mjs"]
     },

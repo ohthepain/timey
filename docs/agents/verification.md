@@ -290,6 +290,8 @@ Home/issue dispatch in disposable projects. `pnpm run test:project-discuss:brows
 checks that Home opens without a selected issue or a Branch Fix control, then
 drives Home/Discuss navigation, retained drafts, Markdown, model/effort and skill
 selection, Tab acceptance, downloading retained attachment copies, queued edits and Stop.
+The clarification dropdown offers setup while the fixture omits `grill-me` and
+removes the option when refreshed discovery finds the skill.
 It also checks opening a long conversation after delayed history and image loading,
 reloads, returning to Discuss, and preserving manual scrolling through a polling
 rerender. It retains those observations in `project-discuss-scroll.json`. Dictation
