@@ -12,15 +12,7 @@ import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { deliveryTarget, missingMergePR } from './flow-block-data.mjs';
 import { digest, git, requireThat } from './common.mjs';
-import {
-  assertPublicationIdle,
-  assertFlowRemote,
-  ensureFlowVerification,
-  flowDeliveryProvider,
-  lookupFlowPR,
-  retainedBlockVerification,
-  verifiedFlowCandidate,
-} from './flow-delivery.mjs';
+import { assertPublicationIdle, assertFlowRemote, flowDeliveryProvider, lookupFlowPR } from './flow-delivery.mjs';
 import { blockerKey, permissionFailure, repairableBlocker } from './strategy-repair.mjs';
 import { fetchIssueTarget, mergeIssueTarget } from './flow-update-branch.mjs';
 import { queueReportPaths } from './shared-issue-config.mjs';
@@ -35,6 +27,13 @@ function includesCommit(workspace, head, revision) {
 
 function cleanCheckout(workspace) {
   return !git(workspace.checkout, 'status', '--porcelain', '--untracked-files=all');
+}
+
+function requireCleanCandidate(workspace, head) {
+  requireThat(
+    cleanCheckout(workspace) && headOf(workspace) === head,
+    'The issue checkout changed. Commit or preserve its changes before retrying Merge.'
+  );
 }
 
 function pending(message) {
@@ -78,13 +77,6 @@ async function synchronize(workspace, target, invoke) {
   });
 }
 
-function repairableMergeFailure(error) {
-  return (
-    error.code !== 'MERGE_CHECK_TIMEOUT' &&
-    (['target-conflict', 'ci-failure'].includes(error.code) || error.verificationFailure)
-  );
-}
-
 function reserveRepair(error, tree, state) {
   const key = blockerKey({ code: error.code, message: error.message, blockerKey: verificationFailureKey(error) });
   const blocker = state.blockers.get(key) || { attempts: 0, trees: new Set() };
@@ -103,7 +95,8 @@ function reserveRepair(error, tree, state) {
 }
 
 async function repairCandidate(service, ctx, workspace, error, options, state) {
-  if (ctx.signal.aborted || !repairableMergeFailure(error) || permissionFailure(error)) throw error;
+  if (ctx.signal.aborted || !['target-conflict', 'ci-failure'].includes(error.code) || permissionFailure(error))
+    throw error;
   error.message = verificationFailureMessage(error);
   const before = headOf(workspace);
   const tree = treeOf(workspace);
@@ -162,11 +155,9 @@ async function attemptRepair(error, operation) {
   }
 }
 
-async function mergeWhenReady(service, ctx, workspace, provider, pr, readiness, options, state) {
+async function mergeWhenReady(service, ctx, workspace, provider, pr, readiness, state) {
   const { head, target } = readiness;
   const confirmation = mergeConfirmation(ctx, provider, pr, readiness);
-  const verification = state.checked.verification;
-  verifiedFlowCandidate(ctx, workspace, { ...options, verification });
   requireThat(
     !service.sharedIssues || !git(workspace.checkout, 'diff', '--name-only', target, head, '--', ...queueReportPaths()),
     'Shared issue reports require a separate queue PR.'
@@ -178,7 +169,7 @@ async function mergeWhenReady(service, ctx, workspace, provider, pr, readiness, 
     return {
       status: 'blocked',
       summary: 'PR #' + pr.number + ' passed its checks. Approve merging it into ' + pr.base.ref + '.',
-      result: { pr: pr.number, head, target, verification, checks: readiness.checks, mergeConfirmation: confirmation },
+      result: { pr: pr.number, head, target, checks: readiness.checks, mergeConfirmation: confirmation },
     };
   }
   service.guard(service.root, { id: ctx.attempt.id, issues: [ctx.issue.id], worker_revision: head }, 'merge', target);
@@ -193,7 +184,7 @@ async function mergeWhenReady(service, ctx, workspace, provider, pr, readiness, 
         requireThat(actual, 'The existing PR is no longer available.');
         const current = await provider.ready(actual, workspace.branch, head);
         if (current.target !== target) throw pending('The target advanced before merge. Preparing the PR again.');
-        verifiedFlowCandidate(ctx, workspace, { ...options, verification });
+        requireCleanCandidate(workspace, head);
         ctx.signal.throwIfAborted();
       },
     });
@@ -213,33 +204,9 @@ async function mergeWhenReady(service, ctx, workspace, provider, pr, readiness, 
     mergeOrigin = 'observed-merged';
   }
   return {
-    result: { ...merged, pr: pr.number, head, target, verification, checks: readiness.checks, mergeOrigin },
+    result: { ...merged, pr: pr.number, head, target, checks: readiness.checks, mergeOrigin },
     summary: 'GitHub confirms the protected merge.',
   };
-}
-
-async function verifyMergeCandidate(service, ctx, workspace, head, options, state) {
-  const input = options.verificationInput(ctx, workspace.checkout, options.verificationBase);
-  if (state.checked?.head !== head || state.checkedInput !== input) {
-    const folder = join(state.folder, 'verify-' + head + '-' + input);
-    state.checked = await checkMergeVerification(state.repairHistory, head, () =>
-      ensureFlowVerification(service, ctx, workspace, folder, options)
-    );
-    state.evidence.push(...state.checked.evidence);
-    state.checkedInput = input;
-  }
-}
-
-async function checkMergeVerification(history, head, verify) {
-  let checked;
-  try {
-    checked = await verify();
-  } catch (error) {
-    history.verification(head, 'failed', error.verificationFailure?.summaries);
-    throw error;
-  }
-  history.verification(head, 'passed', checked.verification.proof);
-  return checked;
 }
 
 async function retainFailedChecks(provider, error, head, checkout, onProgress) {
@@ -250,7 +217,7 @@ async function retainFailedChecks(provider, error, head, checkout, onProgress) {
 
 async function readMergeReadiness(ctx, workspace, provider, pr) {
   try {
-    ctx.onProgress('Checking GitHub PR readiness before local verification.\n', true);
+    ctx.onProgress('Checking GitHub PR readiness.\n', true);
     const readiness = await provider.ready(pr, workspace.branch, pr.head.sha, {
       waitForChecks: true,
     });
@@ -275,9 +242,8 @@ async function advanceMerge(service, ctx, workspace, provider, pr, invoke, optio
   const target = await fetchTarget(ctx, workspace, invoke);
   await synchronize(workspace, target, invoke);
   const head = headOf(workspace);
-  const verificationOptions = { ...options, verificationBase: target };
+  requireCleanCandidate(workspace, head);
   if (head === pr.head.sha) await requireObservedChecks(ctx, workspace, provider, readinessError, head);
-  await verifyMergeCandidate(service, ctx, workspace, head, verificationOptions, state);
   if (pr.head.sha !== head) {
     if (state.pushed === head && state.previousHead === pr.head.sha)
       throw pending('Waiting for GitHub to observe the updated PR commit.');
@@ -285,28 +251,23 @@ async function advanceMerge(service, ctx, workspace, provider, pr, invoke, optio
       includesCommit(workspace, head, pr.head.sha),
       'The PR branch changed independently. Reconcile it before merging.'
     );
-    verifiedFlowCandidate(ctx, workspace, { ...verificationOptions, verification: state.checked.verification });
     const { remote } = deliveryTarget(ctx.flow);
     assertFlowRemote(workspace, remote, provider.config.repository);
     await invoke('git', ['push', remote, head + ':refs/heads/' + workspace.branch]);
     state.previousHead = pr.head.sha;
     state.pushed = head;
     state.wait = startMergeWait(head, state.workflow.checkTimeoutSeconds * 1000, options.mergeNow);
-    throw pending('Pushed the verified commit. Waiting for GitHub checks.');
+    throw pending('Pushed the updated issue commit. Waiting for GitHub checks.');
   }
   if (readiness.target !== target) throw pending('GitHub and the fetched target differ. Refreshing both revisions.');
   if ((await fetchTarget(ctx, workspace, invoke)) !== target) return undefined;
-  return mergeWhenReady(service, ctx, workspace, provider, pr, readiness, verificationOptions, state);
+  return mergeWhenReady(service, ctx, workspace, provider, pr, readiness, state);
 }
 
 async function prepareMergeCheckout(state, workspace, invoke) {
   if (state.started) return;
   await abortPendingMerge(workspace, invoke);
   state.started = true;
-}
-
-function mergeVerification(ctx, state) {
-  return state.checked?.verification ?? retainedBlockVerification(ctx.block, ctx.attempt.id);
 }
 
 async function waitForMergeChecks(ctx, state, error, head, options) {
@@ -322,8 +283,8 @@ async function waitForMergeChecks(ctx, state, error, head, options) {
   await (options.mergeDelay ?? delay)(interval, undefined, { signal: ctx.signal });
 }
 
-function retainMergeFailure(error, ctx, state, pr) {
-  error.deliveryVerification = mergeVerification(ctx, state);
+function retainMergeFailure(error, pr, evidence) {
+  error.evidence = [...evidence, ...(error.evidence ?? [])];
   if (error.humanInput) error.humanInput = { ...error.humanInput, url: pr?.html_url };
 }
 
@@ -342,7 +303,6 @@ export async function mergeFlowPR(service, ctx, workspace, folder, options) {
       onProgress: ctx.onProgress,
     });
   const state = {
-    folder,
     workflow,
     prepareOnly: ctx.input?.prepareMerge === true,
     repairs: 0,
@@ -391,8 +351,7 @@ export async function mergeFlowPR(service, ctx, workspace, folder, options) {
       requireThat(pr, 'The existing PR is no longer available.');
     }
   } catch (error) {
-    error.evidence = [...evidence(), ...(error.evidence ?? [])];
-    retainMergeFailure(error, ctx, state, pr);
+    retainMergeFailure(error, pr, evidence());
     throw error;
   }
 }

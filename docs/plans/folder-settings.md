@@ -101,11 +101,14 @@ inherited model; other settings still require repair. Rejected starts retain the
 details in **Last blocking error** and leave earlier attempts unchanged.
 The root `folder.md` is named **project settings** in errors so it cannot be
 confused with the issue folder's file. Chat startup reads the main project's
-configuration and storage-profile registry even when an investigation runs in a
-temporary source snapshot. The snapshot remains the agent's working directory;
-it does not receive copies of local storage configuration or credentials.
+configuration and storage-profile registry when an investigation or Fix Branch
+runs in a temporary source snapshot. A storage profile of `default` inherits the
+project's configured default. The snapshot remains the agent's working directory
+and does not receive copies of local storage configuration or credentials.
 `node --test scripts/factory-model-settings.check.mjs scripts/block-model-errors.check.mjs`
 checks these messages and confirms that rejected Resume starts no work.
+`node --test scripts/branch-repair.check.mjs` checks Fix Branch startup with an
+explicit profile and with `default`.
 
 ## Second interview round decisions
 

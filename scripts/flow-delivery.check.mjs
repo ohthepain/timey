@@ -5,12 +5,7 @@ import { join } from 'node:path';
 import YAML from 'yaml';
 import { deliveryFixture } from './factory-workflow-fixture.mjs';
 import { FactoryUI } from './factory-test-service.mjs';
-import {
-  flowClosureArtifact,
-  prepareFlowPublication,
-  publishFlowPR,
-  verifiedFlowCandidate,
-} from './factory-ui/flow-delivery.mjs';
+import { flowClosureArtifact, prepareFlowPublication, publishFlowPR } from './factory-ui/flow-delivery.mjs';
 import { decideIssue } from './factory-ui/issue-decision.mjs';
 import { readQueue } from './factory-ui/data.mjs';
 import { decisionBasis } from './factory-ui/recorded-result.mjs';
@@ -481,7 +476,7 @@ test('unmerged or mismatched delivery cannot supply a closure artifact', async (
     number: 17,
     head: 'different-candidate',
   });
-  await assert.rejects(f.close(), /does not match the verified/);
+  await assert.rejects(f.close(), /does not match the recorded/);
   assert.equal(readQueue(f.root).issues[0].state, 'verify');
 });
 
@@ -511,23 +506,14 @@ test('Close accepts the retained merged candidate after its checkout advances', 
   assert.deepEqual(f.calls, []);
 });
 
-test('Close still rejects changed original proof after the merged checkout advances', async (t) => {
+test('Close uses the merged PR receipt when local verification evidence is unavailable', async (t) => {
   const f = fixture(t);
   retainMergedCandidate(f);
   const checked = f.ctx.flow.blocks[0].attempts[0].result;
-  writeFileSync(checked.proof[0].path, 'Changed original evidence\n');
-  await assert.rejects(f.close(), /verification evidence changed/);
-  assert.equal(readQueue(f.root).issues[0].state, 'verify');
+  unlinkSync(checked.proof[0].path);
+  await f.close();
+  assert.equal(readQueue(f.root, { location: 'closed', issueId: f.ctx.issue.id }).issues[0].state, 'closed');
 });
-
-for (const changed of ['summary', 'command'])
-  test(`changed ${changed} proof blocks flow acceptance`, async (t) => {
-    const f = fixture(t);
-    const checked = f.ctx.flow.blocks[0].attempts[0].result;
-    writeFileSync((changed === 'summary' ? checked.proof : checked.supportingProof)[0].path, 'Changed evidence.\n');
-    await assert.rejects(f.close(), /verification evidence changed/);
-    assert.equal(readQueue(f.root).issues[0].state, 'verify');
-  });
 
 test('publication uses a confirmed exact-head non-force push and the mandatory App publication method', async (t) => {
   const f = fixture(t);
@@ -730,47 +716,12 @@ test('repeat publication retries only the outstanding title, preserves the GitHu
   assert.equal((await f.preview()).status, 'current');
 });
 
-test('candidate validation requires both checkpoints and hashes every retained command before delivery', (t) => {
+test('Publish still requires a committed checkout', async (t) => {
   const f = fixture(t);
-  f.ctx.flow.blocks[0].attempts[0].result.proof.pop();
-  assert.throws(() => verifiedFlowCandidate(f.ctx, f.workspace), /independent verification and step evidence/);
-});
-
-test('an uncommitted verification survives its unchanged commit and expires when the tree changes', async (t) => {
-  const f = fixture(t);
-  const source = join(f.source.root, 'candidate-proof.txt');
-  writeFileSync(source, 'verified content\n');
-  f.source.git('add', 'candidate-proof.txt');
-  const tree = f.source.git('write-tree');
-  const paths = ['verification', 'step'].map((checkpoint) => {
-    const path = join(f.folder, `${checkpoint}.json`);
-    writeFileSync(path, JSON.stringify({ checkpoint, checks: [] }));
-    return { path, sha256: digest(readFileSync(path)) };
-  });
-  const verification = {
-    head: f.source.git('rev-parse', 'HEAD'),
-    tree,
-    base: f.workspace.base,
-    uncommitted: true,
-    proof: paths,
-    supportingProof: [],
-  };
-  f.ctx.flow.blocks[0].attempts[0].result = verification;
-  f.options.validateSummary = () => {};
+  writeFileSync(join(f.source.root, 'candidate-proof.txt'), 'uncommitted content\n');
   await assert.rejects(
     prepareFlowPublication(f.service, f.ctx, f.workspace, f.options),
     /Commit the verified working-tree snapshot before publishing/
-  );
-
-  f.source.git('commit', '-m', 'Commit verified content');
-  assert.equal(verifiedFlowCandidate(f.ctx, f.workspace, { validateSummary: () => {} }).tree, tree);
-
-  writeFileSync(source, 'changed content\n');
-  f.source.git('add', 'candidate-proof.txt');
-  f.source.git('commit', '-m', 'Change candidate content');
-  assert.throws(
-    () => verifiedFlowCandidate(f.ctx, f.workspace, { validateSummary: () => {} }),
-    /Required independent verification and step evidence is missing/
   );
 });
 

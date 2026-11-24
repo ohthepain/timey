@@ -68,20 +68,31 @@ function browserOutput(check, scenario) {
   return output;
 }
 
-function browserCheck(folder, classic, flow) {
+function browserCheck(folder, [classic, ...flow]) {
   const classicOutput = browserOutput(classic, /PASS browser scenario:/);
-  const flowOutput = browserOutput(flow, /^PASS /m);
+  const flowOutput = flow.map((check) => browserOutput(check, /^PASS /m));
   const log = join(folder, 'ci-browser.log');
-  writeFileSync(log, classicOutput + '\n' + flowOutput, { flag: 'wx' });
+  writeFileSync(log, [classicOutput, ...flowOutput].join('\n'), { flag: 'wx' });
   return {
     ...classic,
     log,
-    command: ['CI', 'classic-browser', 'flow-browser'],
-    artifacts: [classic, flow].flatMap((check) => [
+    command: ['CI', 'classic-browser', 'flow-browser-1', 'flow-browser-2'],
+    artifacts: [classic, ...flow].flatMap((check) => [
       { path: check.log, sha256: digest(readFileSync(check.log)) },
       ...check.artifacts,
     ]),
   };
+}
+
+function factoryCheck(folder, shards) {
+  const output = shards.map(({ log }) => readFileSync(log, 'utf8'));
+  requireEvidence(
+    output.every((text) => /(?:ℹ|#) tests [1-9]\d*/.test(text)),
+    'Both Factory shards must run tests.'
+  );
+  const log = join(folder, 'ci-factory.log');
+  writeFileSync(log, output.join('\n'), { flag: 'wx' });
+  return { ...shards[0], log, command: ['CI', 'non-browser-1', 'non-browser-2'] };
 }
 
 export function assembleCIEvidence(directory, candidate) {
@@ -89,12 +100,20 @@ export function assembleCIEvidence(directory, candidate) {
   const reports = readdirSync(folder)
     .filter((name) => name.endsWith('-summary.json'))
     .map((name) => JSON.parse(readFileSync(join(folder, name), 'utf8')));
-  const suites = Object.keys(ciSuites).map((suite) => verifiedSuite(reports, suite, candidate));
-  const [early, nonBrowser, classic, flow] = suites.map((report) =>
-    report.checks.map((check) => relocateCheck(folder, check))
+  const suites = Object.fromEntries(
+    Object.keys(ciSuites).map((suite) => [suite, verifiedSuite(reports, suite, candidate)])
   );
-  const checks = [...early, ...nonBrowser, browserCheck(folder, classic[0], flow[0])];
-  const { ciSuite: _ciSuite, ...summary } = suites[0];
+  const evidence = Object.fromEntries(
+    Object.entries(suites).map(([suite, report]) => [suite, report.checks.map((check) => relocateCheck(folder, check))])
+  );
+  const browser = browserCheck(
+    folder,
+    ['classic-browser', 'flow-browser-1', 'flow-browser-2'].flatMap((id) => evidence[id])
+  );
+  const [factoryTwo, ...nonBrowser] = evidence['non-browser-2'];
+  const factory = factoryCheck(folder, [...evidence['non-browser-1'], factoryTwo]);
+  const checks = [...evidence.early, factory, ...nonBrowser, browser];
+  const { ciSuite: _ciSuite, ...summary } = suites.early;
   const path = join(folder, 'ci-verification-summary.json');
   writeFileSync(
     path,
@@ -102,7 +121,7 @@ export function assembleCIEvidence(directory, candidate) {
       ...summary,
       checkpoint: 'verification',
       finishedAt: new Date().toISOString(),
-      phases: suites.flatMap((suite) => suite.phases),
+      phases: Object.values(suites).flatMap((suite) => suite.phases),
       checks,
     }),
     { flag: 'wx' }
