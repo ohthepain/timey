@@ -184,10 +184,11 @@ function enforce(state) {
     }
   }
 }
-export async function guardProviderWork(root, model, stop) {
-  if (!root || !readProviderConfig(root)) return { close() {}, assert() {} };
-  const policy = readProviderConfig(root).providers[providerForModel(model)];
-  if (!policy.enabled.includes(model))
+export function assertProviderModelReady(root, model) {
+  const config = readProviderConfig(root);
+  if (!config) return null;
+  const provider = providerForModel(model);
+  if (!config.providers[provider].enabled.includes(model))
     throw Object.assign(Error('Model is disabled in Factory settings.'), {
       code: 'PROVIDER_PAUSED',
       turnRejected: true,
@@ -195,11 +196,16 @@ export async function guardProviderWork(root, model, stop) {
   const initial = modelAvailability(root, model);
   if (initial.status === 'unavailable')
     throw Object.assign(Error(initial.reason), { code: 'PROVIDER_PAUSED', turnRejected: true });
-  await refreshProviderQuota(root, providerForModel(model));
+  return provider;
+}
+export async function guardProviderWork(root, model, stop) {
+  const provider = root && assertProviderModelReady(root, model);
+  if (!provider) return { close() {}, assert() {} };
+  await refreshProviderQuota(root, provider);
   const state = runtime(root),
     availability = modelAvailability(root, model);
   if (!usableModel(availability))
-    throw Object.assign(Error(`${providerNames[providerForModel(model)]}: ${availability.reason}`), {
+    throw Object.assign(Error(`${providerNames[provider]}: ${availability.reason}`), {
       code: 'PROVIDER_PAUSED',
       turnRejected: true,
     });

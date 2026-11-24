@@ -819,7 +819,10 @@ checks. `work-progress.mjs` separates bounded unfinished-work continuations from
 check repairs and stops for concrete human, permission or external blockers.
 `flow-repair-evidence.mjs` copies Merge failure records and failed-check logs into
 the issue checkout before its repair worker starts.
-`branch-repair.mjs` owns issue-page branch repair runs and approval.
+`branch-repair.mjs` owns issue-page branch repair runs and approval. It checks
+the selected model against Factory's provider settings before preparing the
+isolated checkout or opening a repair session, and retains setup failures in
+repair history.
 `branch-repair-workspace.mjs` snapshots the source without changing its index and
 applies only an approved patch. `branch-repair-runner.mjs` runs the block prompt
 and Work prerequisite checks in the isolated candidate. `branch-repair-ui.js`

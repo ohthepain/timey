@@ -7,7 +7,11 @@ import { issueStatusFoldersBrowserChecks } from './flow-browser-issue-status-fol
 import { projectIssuesBrowserChecks } from './flow-browser-project-issues.mjs';
 import { errorRecoveryBrowserChecks } from './flow-browser-error-recovery.mjs';
 import { mergeStateBrowserChecks } from './flow-browser-merge-state.mjs';
-import { browserScenarioSelected } from './browser-scenario-policy.mjs';
+import {
+  flowBrowserOrderModifier,
+  flowBrowserScenarioNames,
+  flowBrowserScenarioSelected,
+} from './browser-scenario-policy.mjs';
 import { branchRepairBrowserChecks } from './flow-browser-branch-repair.mjs';
 import { blockSkillsBrowserChecks } from './flow-browser-block-skills.mjs';
 import { nativeAgentBrowserChecks } from './flow-browser-native-agents.mjs';
@@ -161,30 +165,30 @@ const fingerprint = () =>
   );
 const candidate = { revision: git(root, 'rev-parse', 'HEAD'), assets: fingerprint() };
 const results = [];
-const masterIssuesCheck = 'Master issue hierarchy and badges across the workspace';
-const folderSettingsCheck = 'Folder settings inherit, repair, search and act on selected open or closed issues';
-const blockDeletionCheck = 'Click-selected blocks support safe, confirmed Delete and Backspace removal';
-const followupsCheck = 'Completed investigations create reviewed follow-ups without another Retro';
-const navigationCheck = 'Project navigation exposes Home Issues Investigate and an Automate me tab';
-const homeCheck = 'Project home investigates selected branches and reviews Automate me skills';
-const reportsCheck = 'Investigation reports retain content, reading state and shared discussion';
-const investigationFlowsCheck = 'Investigations use ordinary flows and independent retained outputs';
-const discussCheck = 'Project Discuss retains independent conversations, settings and explicit controls';
-const settingsCheck = 'Project Settings addressable pages preserve drafts, sources and explicit saves';
-const storesCheck =
-  'Storage profiles preserve explicit destinations and perform checked moves without workspace updates';
-const aiTextCheck = 'AI text offers copy bro and caret-aware hovered dictation';
-const interfaceStateCheck = 'Refresh preserves expanded activity, editor size, drafts and copied selection';
-const issueResultsCheck = 'Issue results appear below the banner without replacing playback status';
-const humanInputCheck = 'Required PR review is visible and continues only after an explicit action';
-const mergeSettingsCheck = 'Request leaves merge checks to GitHub and the block palette hides Verify';
-const requestSaveCheck = 'Saving Your words releases issue controls while Request clarification runs';
-const blockInspectionCheck =
-  'On-demand refresh preserves drafts; Codex popup resets history without moving the sidebar';
-const storageStatusCheck = 'Storage startup and recovery messages follow confirmed availability';
-const pollingCheck = 'Polling preserves expanded text and the Closed issues list';
-const timersCheck = 'Block timers reset for each attempt and stop at the last saved time after disconnect';
-const proposalsCheck = 'Pending proposals can be approved or deleted after confirmation without starting work';
+const {
+  '--master-issues': masterIssuesCheck,
+  '--folder-settings': folderSettingsCheck,
+  '--block-deletion': blockDeletionCheck,
+  '--investigation-followups': followupsCheck,
+  '--project-navigation': navigationCheck,
+  '--project-home': homeCheck,
+  '--investigation-reports': reportsCheck,
+  '--investigation-flows': investigationFlowsCheck,
+  '--project-discuss': discussCheck,
+  '--project-settings': settingsCheck,
+  '--stores': storesCheck,
+  '--ai-text': aiTextCheck,
+  '--interface-state': interfaceStateCheck,
+  '--issue-results': issueResultsCheck,
+  '--human-input': humanInputCheck,
+  '--merge-settings': mergeSettingsCheck,
+  '--request-save': requestSaveCheck,
+  '--block-inspection': blockInspectionCheck,
+  '--storage-status': storageStatusCheck,
+  '--polling': pollingCheck,
+  '--timers': timersCheck,
+  '--proposals': proposalsCheck,
+} = flowBrowserScenarioNames;
 let requestClarification;
 const pendingResponses = [];
 const logs = {
@@ -349,64 +353,8 @@ async function connectionRecoveryIssue() {
   });
   return id;
 }
-function checkExcluded(name) {
-  if (!browserScenarioSelected(name)) return true;
-  const selections = [
-    ['--activity-indicators', 'Activity dots stay anchored and reflect actual work'],
-    ['--automate-activity', 'Automate me dots follow each active response'],
-    ['--issue-scrollbar', 'Issue flow scrollbar appears only while scrolling'],
-    ['--issue-status-folders', 'Status pseudo-folders track project issues without moving them'],
-    ['--master-issues', masterIssuesCheck],
-    ['--project-issues', 'Closed issue selections archive together and issue links open the normal view'],
-    ['--actions-menu', 'Actions menu lists two running Flow blocks'],
-    ['--merged-issue', 'Merged issues preserve history and expose only closure controls'],
-    ['--manual-close', 'Manual Close remains discoverable after Merge and automatic closing needs no prompt'],
-    ['--error-recovery', 'Successful refresh clears rejected branch update errors'],
-    ['--no-changes', 'Publication with no changes offers Cannot Reproduce closure'],
-    [
-      '--connection-recovery',
-      'Flow and Classic reload the selected issue after a lost connection without replaying the click',
-    ],
-    ['--merge-recovery', 'Pending local merges are visible and can be aborted'],
-    ['--drag-and-drop', 'Issue folders retain every issue and accept drags between folders'],
-    ['--local-notes', 'Local notes capture and handoff preserve flow'],
-    ['--sidebar-labels', 'Issues and Local notes use matching text styles'],
-    ['--sidebar-scroll', 'The whole sidebar scrolls over every section'],
-    ['--project-home', homeCheck],
-    ['--project-navigation', navigationCheck],
-    ['--project-discuss', discussCheck],
-    ['--project-settings', settingsCheck],
-    ['--ai-providers', 'Factory provider settings save enablement and quota warnings'],
-    ['--native-agents', 'Native Flow approvals and questions retain their exact attempt'],
-    ['--stores', storesCheck],
-    ['--ai-text', aiTextCheck],
-    ['--investigation-reports', reportsCheck],
-    ['--investigation-flows', investigationFlowsCheck],
-    ['--investigation-toolbar', 'Investigation controls remain above the graph'],
-    ['--interface-state', interfaceStateCheck],
-    ['--investigation-followups', followupsCheck],
-    ['--branch-repair', 'Branch repair progress survives reload and requires candidate approval'],
-    ['--block-models', 'Block models preserve history and surface persistent blockers'],
-    ['--block-skills', 'Block skill choices preserve defaults and offer missing-skill setup'],
-    ['--block-deletion', blockDeletionCheck],
-    ['--folder-settings', folderSettingsCheck],
-    ['--issue-results', issueResultsCheck],
-    ['--human-input', humanInputCheck],
-    ['--merge-settings', mergeSettingsCheck],
-    ['--request-save', requestSaveCheck],
-    ['--block-inspection', blockInspectionCheck],
-    ['--storage-status', storageStatusCheck],
-    ['--polling', pollingCheck],
-    ['--timers', timersCheck],
-    ['--proposals', proposalsCheck],
-    ['--delayed-delete', proposalsCheck],
-  ];
-  const selected = selections.filter(([flag]) => process.argv.includes(flag));
-  return selected.length > 0 && !selected.some(([, scenario]) => name === scenario);
-}
-
 function checkSelected(name) {
-  return (!ciPart || ciPart === part) && !checkExcluded(name);
+  return (!ciPart || ciPart === part) && flowBrowserScenarioSelected(name);
 }
 
 async function check(name, run) {
@@ -613,7 +561,7 @@ try {
     check('Publication with no changes offers Cannot Reproduce closure', () =>
       noChangesBrowserChecks({ page, service, project, output, root, poll })
     );
-  if (!process.argv.includes('--reverse-fixture-scenarios')) await noChangesCheck();
+  if (!process.argv.includes(flowBrowserOrderModifier)) await noChangesCheck();
   await check('The whole sidebar scrolls over every section', async () => {
     const ids = await seedSidebarOverflow();
     await page.goto('/');
@@ -819,7 +767,7 @@ try {
   await check(folderSettingsCheck, () =>
     flowFolderSettingsBrowserChecks({ page, project, service, logs, screenshot, poll })
   );
-  if (process.argv.includes('--reverse-fixture-scenarios')) await noChangesCheck();
+  if (process.argv.includes(flowBrowserOrderModifier)) await noChangesCheck();
   await check(followupsCheck, () => flowFollowupsBrowserChecks({ page, service, logs, screenshot }));
   await check(mergeSettingsCheck, async () => {
     const id = '20261119-merge-settings-fixture';

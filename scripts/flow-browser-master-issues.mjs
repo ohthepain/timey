@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
-import { copyFileSync, existsSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { importBrowserIssue, removeBrowserIssue } from './flow-browser-fixture.mjs';
+import { withQueueConfiguration } from './flow-browser-queue-configuration.mjs';
 
 const master = '20261124-group-master';
 const children = ['20261124-group-first', '20261124-group-second'];
@@ -14,8 +15,7 @@ const titles = {
 };
 const ids = Object.keys(titles);
 
-async function createGroup(project, root) {
-  copyFileSync(join(root, '.issues/triage-labels.md'), join(project, '.issues/triage-labels.md'));
+async function createGroup(project) {
   for (const id of ids) {
     const group =
       id === master ? 'issue_group:\n  children:\n' + children.map((child) => `    - id: ${child}\n`).join('') : '';
@@ -110,20 +110,22 @@ async function checkIssueWorkspace(page, output) {
 }
 
 export async function masterIssueBrowserChecks({ page, project, root, output }) {
-  const preferences = join(project, '.issues/preferences.json');
-  const needsPreferences = !existsSync(preferences);
-  if (needsPreferences) writeFileSync(preferences, '{"commit":true}');
-  try {
-    await createGroup(project, root);
-    const { left, centerWidth } = await checkIssueWorkspace(page, output);
-    const issues = await checkIssuesTab(page, output);
-    const compactWidth = left.find(({ id }) => id === master).badge.width;
-    assert.ok(issues.find(({ id }) => id === master).badge.width > compactWidth);
-    assert.ok(centerWidth > compactWidth);
-    writeFileSync(join(output, 'master-issues.json'), JSON.stringify({ left, issues, centerWidth }, null, 2) + '\n');
-  } finally {
-    await page.goto('about:blank');
-    for (const id of ids) await removeBrowserIssue(project, id);
-    if (needsPreferences) rmSync(preferences);
-  }
+  const helper = '.agents/skills/issues/scripts';
+  mkdirSync(join(project, helper), { recursive: true });
+  for (const file of ['human-input.mjs', 'human-input-version.json'])
+    copyFileSync(join(root, helper, file), join(project, helper, file));
+  await withQueueConfiguration({ page, project, root }, async () => {
+    try {
+      await createGroup(project);
+      const { left, centerWidth } = await checkIssueWorkspace(page, output);
+      const issues = await checkIssuesTab(page, output);
+      const compactWidth = left.find(({ id }) => id === master).badge.width;
+      assert.ok(issues.find(({ id }) => id === master).badge.width > compactWidth);
+      assert.ok(centerWidth > compactWidth);
+      writeFileSync(join(output, 'master-issues.json'), JSON.stringify({ left, issues, centerWidth }, null, 2) + '\n');
+    } finally {
+      await page.goto('about:blank');
+      for (const id of ids) await removeBrowserIssue(project, id);
+    }
+  });
 }

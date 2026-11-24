@@ -8,8 +8,9 @@ import { executeCommand, modelManifest } from './flow-executor.mjs';
 import { requireThat } from './common.mjs';
 
 export async function runBranchRepair(input, options = {}) {
-  const { root, run, definition, signal, progress, step, retain } = input;
-  const connection = options.connection || createIssueChatConnection({ root });
+  const { run, root, definition, signal, progress, step, retain } = input;
+  const { checkout, modelSettings } = run;
+  const connection = options.connection || createIssueChatConnection({ root, ...modelSettings });
   const binding = {};
   let turnPending = false;
   const stop = () => connection.close();
@@ -36,13 +37,11 @@ export async function runBranchRepair(input, options = {}) {
     signal.throwIfAborted();
     await connection.ready();
     signal.throwIfAborted();
-    const skills = selectedSkills(
-      await listAvailableSkills(connection, run.checkout),
-      definition.defaultSkill ? [definition.defaultSkill] : []
-    );
+    const availableSkills = await listAvailableSkills(connection, checkout);
+    const skills = selectedSkills(availableSkills, definition.defaultSkill ? [definition.defaultSkill] : []);
     const thread = await (options.attach || attachIssueChat)(
       connection,
-      run.checkout,
+      checkout,
       binding,
       (changes) => {
         Object.assign(binding, changes);
@@ -55,7 +54,7 @@ export async function runBranchRepair(input, options = {}) {
       signal.throwIfAborted();
       step(`Repairing branch (${round}/3)`);
       turnPending = true;
-      const output = await connection.turn(thread, run.checkout, failure, undefined, skillInputs(skills));
+      const output = await connection.turn(thread, checkout, failure, undefined, skillInputs(skills), modelSettings);
       turnPending = false;
       progress(output + '\n');
       const reportedFailure = modelManifest(output).failure;

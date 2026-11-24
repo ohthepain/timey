@@ -51,6 +51,69 @@ test('focused test validation accepts supported commands and rejects aggregate o
     assert.throws(() => normalizeFocusedTests([invalid]), /Record focused test commands/);
 });
 
+test('focused test validation preserves the recorded Node pattern and standalone browser check', () => {
+  const commands = [
+    [
+      'node',
+      '--test',
+      '--test-name-pattern=capture retains the chosen grilling skill|capture saves independent Grill',
+      'scripts/factory-capture.check.mjs',
+    ],
+    ['node', 'scripts/capture-grilling-browser.mjs'],
+    ['pnpm', 'run', 'test:pr-repair:control'],
+    ['pnpm', 'exec', 'vp', 'test', 'run', 'src/example.test.ts'],
+  ];
+  assert.deepEqual(normalizeFocusedTests(commands), commands);
+});
+
+test('focused test validation identifies the exact rejected argument and rule', () => {
+  const valid = ['node', '--test', 'scripts/one.check.mjs'];
+  const rejected = [
+    [['sh', '-c', 'test'], 'argument 1 "sh". Use node or pnpm as the command.'],
+    [
+      ['node', '--test', '--import', 'scripts/one.check.mjs'],
+      'argument 3 "--import". Use a local JavaScript test file or --test-name-pattern=<pattern>.',
+    ],
+    [
+      ['node', '--test', '--test-name-pattern=sample'],
+      'argument 4 is missing. Provide at least one local JavaScript test file.',
+    ],
+    [
+      ['node', 'scripts/flow-browser.mjs', '--project-discuss', '--import=other.mjs'],
+      'argument 4 "--import=other.mjs". Use a recognized Flow browser scenario flag or --reverse-fixture-scenarios with a scenario.',
+    ],
+    [
+      ['node', 'scripts/flow-browser.mjs', '--bogus'],
+      'argument 3 "--bogus". Use a recognized Flow browser scenario flag or --reverse-fixture-scenarios with a scenario.',
+    ],
+    [
+      ['node', 'scripts/flow-browser.mjs', '--reverse-fixture-scenarios'],
+      'argument 4 is missing. Provide at least one Flow browser scenario flag.',
+    ],
+    [
+      ['node', 'scripts/capture-grilling-browser.mjs', '--all'],
+      'argument 3 "--all". Standalone browser checks take no arguments.',
+    ],
+    [
+      ['pnpm', 'run', 'test:factory'],
+      'argument 3 "test:factory". Aggregate suites are reserved for full verification.',
+    ],
+    [
+      ['pnpm', 'exec', 'vp test run', 'src/example.test.ts'],
+      'argument 3 "vp test run". Use the literal argument "vp" here.',
+    ],
+    [
+      ['node', '--test', 'scripts/one\n.check.mjs'],
+      'argument 3 "scripts/one\\n.check.mjs". Arguments cannot contain line breaks or NUL characters.',
+    ],
+  ];
+  for (const [command, diagnostic] of rejected) {
+    assert.throws(() => normalizeFocusedTests([valid, command]), {
+      message: `Record focused test commands as argument arrays. Command 2, ${diagnostic}`,
+    });
+  }
+});
+
 test('browser evidence retains declared proof with valid hashes and excludes nested Git repositories', (t) => {
   const { root } = gitFixture(t, 'verify-browser-evidence-');
   const output = join(root, 'browser-output');
@@ -111,26 +174,30 @@ void test('CI gates the parallel suites on early checks and keeps test as their 
   }
 });
 
-test('CI exposes repair-first coverage only to Early checks', (t) => {
+void test('CI passes repair coverage only to the early audit when coverage exists', (t) => {
   const { root } = gitFixture(t, 'ci-coverage-');
-  const { runs } = parse(readFileSync('.github/actions/verify-suite/action.yml', 'utf8'));
-  const { run } = runs.steps.find(({ name }) => name === 'Verify snapshot');
-  mkdirSync(join(root, 'scripts'));
-  mkdirSync(join(root, '.issues/repair-first-coverage'), { recursive: true });
-  writeFileSync(join(root, 'scripts/verify.mjs'), 'console.log(JSON.stringify(process.env.FALLOW_COVERAGE ?? null));');
-  const coverage = (suite) =>
-    JSON.parse(
-      execFileSync('/bin/bash', ['--noprofile', '--norc', '-c', run], {
-        cwd: root,
-        encoding: 'utf8',
-        env: { PATH: process.env.PATH, GITHUB_WORKSPACE: root, VERIFY_SUITE: suite },
-      })
-        .trim()
-        .split('\n')
-        .at(-1)
-    );
-  assert.equal(coverage('early'), join(root, '.issues/repair-first-coverage'));
-  for (const suite of Object.keys(ciSuites).filter((id) => id !== 'early')) assert.equal(coverage(suite), null);
+  const coverage = join(root, '.issues/repair-first-coverage');
+  const action = parse(readFileSync('.github/actions/verify-suite/action.yml', 'utf8'));
+  const verify = action.runs.steps.find(({ name }) => name === 'Verify snapshot');
+  assert.equal(Object.hasOwn(verify.env, 'FALLOW_COVERAGE'), false);
+  assert.equal(Object.hasOwn(verify.env, 'FALLOW_COVERAGE_ROOT'), false);
+  const run = (suite) =>
+    execFileSync(
+      'bash',
+      [
+        '--noprofile',
+        '--norc',
+        '-c',
+        'node() { printf "%s\\n" "${FALLOW_COVERAGE:-}" "${FALLOW_COVERAGE_ROOT:-}" "$@"; }\n' + verify.run,
+      ],
+      { encoding: 'utf8', env: { GITHUB_WORKSPACE: root, AUDIT_BASE: 'test-base', VERIFY_SUITE: suite } }
+    ).split('\n');
+  const command = (suite) => ['scripts/verify.mjs', '--base', 'test-base', '--ci-suite', suite, ''];
+  assert.deepEqual(run('early'), ['', '', ...command('early')]);
+  mkdirSync(coverage, { recursive: true });
+  assert.deepEqual(run('early'), [coverage, root, ...command('early')]);
+  for (const suite of Object.keys(ciSuites).filter((suite) => suite !== 'early'))
+    assert.deepEqual(run(suite), ['', '', ...command(suite)]);
 });
 
 function writeCISuite(folder, suite, candidate) {
@@ -308,6 +375,7 @@ function auditFixture(t, extraFiles = {}) {
     'verify-scope.mjs',
     'verify-process.mjs',
     'verify-merge-checks.mjs',
+    'browser-scenario-policy.mjs',
     'verify-preflight.mjs',
     'audit-result.mjs',
   ])

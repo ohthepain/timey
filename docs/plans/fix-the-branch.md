@@ -35,7 +35,12 @@ revision and whether the finding was inherited or introduced by issue changes.
 
 Repair uses an isolated candidate based on the issue checkout, including its saved
 uncommitted state. It preserves the original checkout while the user continues
-working. Before approval, compare the current branch, source tree, and relevant
+working. The issue-page repair uses the project's Codex model. Factory checks
+provider readiness before creating the repair checkout or opening a session.
+If the check fails, the repair history retains the setup error. Configure the
+provider in Factory settings, then start a new repair explicitly.
+
+Before approval, compare the current branch, source tree, and relevant
 check inputs with the candidate's recorded inputs. If they changed, require
 reconciliation and fresh checks. Do not overwrite edits made during repair.
 
