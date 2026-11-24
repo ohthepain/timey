@@ -1,5 +1,10 @@
 import { mergeGitHubProvider, inspectMergeOutcome } from './flow-merge-github.mjs';
-import { verificationFailureKey, verificationFailureMessage } from './flow-repair-evidence.mjs';
+import {
+  mergeRepairHistory,
+  retainMergeRepairEvidence,
+  verificationFailureKey,
+  verificationFailureMessage,
+} from './flow-repair-evidence.mjs';
 import { retainGitHubFailure } from './flow-ci-evidence.mjs';
 import { abortPendingMerge } from './flow-update-branch.mjs';
 import { existsSync } from 'node:fs';
@@ -96,29 +101,52 @@ function reserveRepair(error, tree, state) {
   return blocker.attempts;
 }
 
-async function repairCandidate(ctx, workspace, error, options, state) {
+async function repairCandidate(service, ctx, workspace, error, options, state) {
   if (ctx.signal.aborted || !repairableMergeFailure(error) || permissionFailure(error)) throw error;
   error.message = verificationFailureMessage(error);
   const before = headOf(workspace);
   const tree = treeOf(workspace);
   const attempt = reserveRepair(error, tree, state);
-  const conflict = error.code === 'target-conflict';
   state.evidence.push(...(error.evidence ?? []));
   state.repairs += 1;
   ctx.onProgress('Repairing this Merge blocker (' + attempt + '/' + state.workflow.repairAttempts + ').\n', true);
-  await attemptRepair(error, async () => {
-    const repair = await options.repair(error, state.repairs);
-    state.evidence.push(...(repair.evidence ?? []));
-    requireThat(repair.status !== 'blocked', repair.summary);
-  });
+  const record = state.repairHistory.start(state.repairs, before, error.message);
+  await runRecordedRepair(service, ctx, workspace, error, { before, tree, record }, options, state);
+}
+
+async function runRecordedRepair(service, ctx, workspace, error, { before, tree, record }, options, state) {
+  const outcome = { status: 'failed' };
+  try {
+    await attemptRepair(error, async () => {
+      const failure = retainMergeRepairEvidence(service.root, workspace.checkout, ctx.attempt.id, error, state.repairs);
+      outcome.failureEvidence = failure.evidence;
+      const repair = await options.repair(error, state.repairs, { ...failure, ...record });
+      outcome.evidence = repair.evidence;
+      state.evidence.push(...(repair.evidence ?? []));
+      requireThat(repair.status !== 'blocked', repair.summary);
+    });
+    const candidate = committedRepair(workspace, before);
+    requireThat(
+      error.code === 'target-conflict' || treeOf(workspace) !== tree,
+      'The repair did not change the candidate tree. Review the retained work before retrying.'
+    );
+    Object.assign(outcome, { status: 'committed', candidate });
+  } catch (failure) {
+    outcome.message = failure.message;
+    outcome.evidence ??= failure.evidence;
+    throw failure;
+  } finally {
+    record.finish(outcome);
+  }
+}
+
+function committedRepair(workspace, before) {
   const after = headOf(workspace);
   requireThat(
-    cleanCheckout(workspace) &&
-      after !== before &&
-      includesCommit(workspace, after, before) &&
-      (conflict || treeOf(workspace) !== tree),
+    cleanCheckout(workspace) && after !== before && includesCommit(workspace, after, before),
     'The repair did not produce a changed, committed issue candidate. Review the retained work before retrying.'
   );
+  return after;
 }
 
 async function attemptRepair(error, operation) {
@@ -192,16 +220,25 @@ async function mergeWhenReady(service, ctx, workspace, provider, pr, readiness, 
 async function verifyMergeCandidate(service, ctx, workspace, head, options, state) {
   const input = options.verificationInput(ctx, workspace.checkout, options.verificationBase);
   if (state.checked?.head !== head || state.checkedInput !== input) {
-    state.checked = await ensureFlowVerification(
-      service,
-      ctx,
-      workspace,
-      join(state.folder, 'verify-' + head + '-' + input),
-      options
+    const folder = join(state.folder, 'verify-' + head + '-' + input);
+    state.checked = await checkMergeVerification(state.repairHistory, head, () =>
+      ensureFlowVerification(service, ctx, workspace, folder, options)
     );
     state.evidence.push(...state.checked.evidence);
     state.checkedInput = input;
   }
+}
+
+async function checkMergeVerification(history, head, verify) {
+  let checked;
+  try {
+    checked = await verify();
+  } catch (error) {
+    history.verification(head, 'failed', error.verificationFailure?.summaries);
+    throw error;
+  }
+  history.verification(head, 'passed', checked.verification.proof);
+  return checked;
 }
 
 async function retainFailedChecks(provider, error, head, checkout, onProgress) {
@@ -304,9 +341,11 @@ export async function mergeFlowPR(service, ctx, workspace, folder, options) {
     repairs: 0,
     blockers: new Map(),
     evidence: [],
+    repairHistory: mergeRepairHistory(folder, ctx.attempt.id, log),
   };
   const evidence = () => [
     ...state.evidence,
+    ...state.repairHistory.evidence(),
     ...(existsSync(log) ? [{ key: 'log', path: log, label: 'Target fetch and merge output' }] : []),
   ];
   let pr;
@@ -338,7 +377,7 @@ export async function mergeFlowPR(service, ctx, workspace, folder, options) {
         const outcome = await advanceMerge(service, ctx, workspace, provider, pr, invoke, options, state);
         if (outcome) return { ...outcome, evidence: evidence(), workspace: { ...workspace, pr: pr.number } };
       } catch (error) {
-        if (error.code !== 'STRATEGY_PENDING') await repairCandidate(ctx, workspace, error, options, state);
+        if (error.code !== 'STRATEGY_PENDING') await repairCandidate(service, ctx, workspace, error, options, state);
         else await waitForMergeChecks(ctx, state, error, options);
       }
       pr = await lookupFlowPR(provider, workspace.branch, number);
