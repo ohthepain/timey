@@ -1,8 +1,9 @@
+import { importBrowserIssue, removeBrowserIssue } from './flow-browser-fixture.mjs';
 import assert from 'node:assert/strict';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-function createFixtures(project, root) {
+async function createFixtures(project, root) {
   const configuration = ['triage-labels.md', 'preferences.json'].map((file) => {
     const path = join(project, '.issues', file);
     return { path, content: existsSync(path) ? readFileSync(path, 'utf8') : null };
@@ -17,21 +18,18 @@ function createFixtures(project, root) {
   for (const file of ['human-input.mjs', 'human-input-version.json'])
     copyFileSync(join(root, helper, file), join(project, helper, file));
   for (const id of closed)
-    writeFileSync(
-      join(project, '.issues/closed', id + '.md'),
-      `---\nid: ${id}\ntitle: ${id}\nstate: closed\n---\n\nClosed fixture.\n`
+    await importBrowserIssue(
+      project,
+      id,
+      `---\nid: ${id}\ntitle: ${id}\nstate: closed\n---\n\nClosed fixture.\n`,
+      'closed'
     );
-  writeFileSync(
-    join(project, '.issues', open + '.md'),
+  await importBrowserIssue(
+    project,
+    open,
     `---\nid: ${open}\ntitle: Open this normal issue\nstate: backlog\n---\n\nOpen the normal issue view.\n`
   );
   return { closed, open, configuration };
-}
-
-function removeFixtures(project, ids) {
-  for (const id of ids)
-    for (const folder of ['', 'closed', 'archive'])
-      rmSync(join(project, '.issues', folder, id + '.md'), { force: true });
 }
 
 function restoreConfiguration(files) {
@@ -42,7 +40,7 @@ function restoreConfiguration(files) {
 }
 
 export async function projectIssuesBrowserChecks({ page, project, root, output }) {
-  const { closed, open, configuration } = createFixtures(project, root);
+  const { closed, open, configuration } = await createFixtures(project, root);
   try {
     await page.goto('/?projectTab=issues');
     const frame = page.frameLocator('#project-issues iframe');
@@ -101,7 +99,7 @@ export async function projectIssuesBrowserChecks({ page, project, root, output }
     await page.screenshot({ path: join(output, 'issue-opened-from-issues.png'), fullPage: true });
   } finally {
     await page.goto('about:blank');
-    removeFixtures(project, [...closed, open]);
+    for (const id of [...closed, open]) await removeBrowserIssue(project, id);
     restoreConfiguration(configuration);
   }
 }

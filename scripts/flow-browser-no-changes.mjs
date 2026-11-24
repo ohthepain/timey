@@ -10,7 +10,7 @@ export async function noChangesBrowserChecks({ page, service, project, output, r
     const id = '20261121-no-changes-fixture';
     const lifecyclePath = join(project, '.issues/triage-labels.md');
     if (!existsSync(lifecyclePath)) copyFileSync(join(root, '.issues/triage-labels.md'), lifecyclePath);
-    await writeBrowserIssue(service, {
+    await writeBrowserIssue(project, {
       id,
       title: 'No changes required',
       body: 'The reported behavior already works.',
@@ -61,7 +61,12 @@ export async function noChangesBrowserChecks({ page, service, project, output, r
       assert.ok(!service.flows.selected(id).closed);
       await screen.locator('#run-block').click();
       await screen.getByRole('button', { name: 'Close as Cannot Reproduce…' }).click();
+      const closureResponse = screen.waitForResponse(
+        (response) => response.url().endsWith('/api/issue-decision') && response.request().method() === 'POST'
+      );
       await screen.locator('#confirm-issue-closure:not(:disabled)').click();
+      const response = await closureResponse;
+      assert.ok(response.ok(), await response.text());
       await screen.locator('#issue-closure-dialog').waitFor({ state: 'hidden' });
       await screen.locator('#close-with-reason').waitFor({ state: 'hidden' });
       await poll(() => !service.flows.closureBusy(id), Boolean, 'No-change fixture cleanup did not finish.');

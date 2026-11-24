@@ -7,7 +7,7 @@ import { createIssueFlows } from './factory-ui/flow-service.mjs';
 import { storedIssuePath } from './factory-ui/issue-report-storage.mjs';
 import { seedInvestigation, investigationProposals } from './investigation-followups-fixture.mjs';
 
-function fixture(t, propose = async () => investigationProposals) {
+async function fixture(t, propose = async () => investigationProposals) {
   const { root, git } = gitFixture(t, 'investigation-followups-');
   mkdirSync(join(root, '.issues'));
   writeFileSync(join(root, 'source.txt'), 'fixture');
@@ -24,7 +24,7 @@ function fixture(t, propose = async () => investigationProposals) {
   };
   let flows = createIssueFlows(service, { proposeInvestigationFollowups: propose });
   t.after(() => flows.close());
-  const source = seedInvestigation(flows);
+  const source = await seedInvestigation(flows);
   const preview = () => flows.action({ ...source, action: 'investigation-followups-preview' });
   const create = (review, items = [review.proposals[0]], folder = review.folder) =>
     flows.action({ ...source, action: 'investigation-followups-create', basis: review.source.basis, folder, items });
@@ -46,7 +46,7 @@ function fixture(t, propose = async () => investigationProposals) {
 
 test('completed investigation proposals are reviewed, selected, linked and idempotent across restart', async (t) => {
   let calls = 0;
-  const f = fixture(t, async (context) => {
+  const f = await fixture(t, async (context) => {
     calls++;
     assert.match(context.findings, /discarded/);
     assert.equal(context.existingIssues.length, 1);
@@ -78,7 +78,7 @@ test('completed investigation proposals are reviewed, selected, linked and idemp
 });
 
 test('changed reports, invalidated or blocked attempts and tampered findings cannot create follow-ups', async (t) => {
-  const f = fixture(t);
+  const f = await fixture(t);
   const review = await f.preview();
   const report = f.flows.selected(f.source.issueId);
   writeFileSync(storedIssuePath(f.root, report.id), report.content + '\nNew finding.\n');
@@ -101,7 +101,7 @@ test('changed reports, invalidated or blocked attempts and tampered findings can
 });
 
 test('partial creation retains per-item outcomes and retries only the remaining saved request', async (t) => {
-  const f = fixture(t);
+  const f = await fixture(t);
   const review = await f.preview();
   const capture = f.flows.capture.bind(f.flows);
   let fail = true;
@@ -121,7 +121,7 @@ test('partial creation retains per-item outcomes and retries only the remaining 
 });
 
 test('empty proposals are valid and generating proposals never starts a model worker or creates issues', async (t) => {
-  const f = fixture(t, async () => []);
+  const f = await fixture(t, async () => []);
   assert.deepEqual((await f.preview()).proposals, []);
   assert.equal(f.flows.issues().length, 1);
   assert.equal(f.flows.active.size, 0);
@@ -129,7 +129,7 @@ test('empty proposals are valid and generating proposals never starts a model wo
 
 test('source changes during generation are rejected and deleted proposals are supplied as declined context', async (t) => {
   let supplied;
-  const f = fixture(t, async (context) => {
+  const f = await fixture(t, async (context) => {
     supplied = context;
     return investigationProposals;
   });
@@ -140,7 +140,7 @@ test('source changes during generation are rejected and deleted proposals are su
   );
   await f.preview();
   assert.equal(supplied.declinedIssues[0].title, 'Previously declined work');
-  const other = fixture(t, async () => {
+  const other = await fixture(t, async () => {
     const report = other.flows.selected(other.source.issueId);
     writeFileSync(storedIssuePath(other.root, report.id), report.content + '\nChanged');
     return investigationProposals;

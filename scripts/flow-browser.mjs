@@ -37,6 +37,7 @@ import { createIssueFlows } from './factory-ui/flow-service.mjs';
 import { createFlowExecutor } from './factory-ui/flow-executor.mjs';
 import { requiredPRReview } from './factory-ui/flow-human-input.mjs';
 import { saveLifecycle } from './factory-ui/lifecycle-store.mjs';
+import { moveStoredIssue, updateStoredIssueMetadata } from './factory-ui/issue-report-storage.mjs';
 import { git } from './factory-ui/common.mjs';
 import { flowIssueFoldersBrowserChecks } from './flow-browser-issue-folders.mjs';
 import { flowBlockDeletionBrowserChecks } from './flow-browser-block-deletion.mjs';
@@ -60,7 +61,7 @@ import { actionsMenuBrowserChecks } from './flow-browser-actions-menu.mjs';
 import { mergedIssueBrowserChecks } from './flow-browser-merged-issue.mjs';
 import { manualCloseBrowserChecks } from './flow-browser-manual-close.mjs';
 import { noChangesBrowserChecks } from './flow-browser-no-changes.mjs';
-import { writeBrowserIssue } from './flow-browser-fixture.mjs';
+import { importBrowserIssue, removeBrowserIssue, writeBrowserIssue } from './flow-browser-fixture.mjs';
 import { issueStoresBrowserChecks } from './flow-browser-stores.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -167,6 +168,9 @@ const requestSaveCheck = 'Saving Your words releases issue controls while Reques
 const blockInspectionCheck =
   'On-demand refresh preserves drafts; Codex popup resets history without moving the sidebar';
 const storageStatusCheck = 'Storage startup and recovery messages follow confirmed availability';
+const pollingCheck = 'Polling preserves expanded text and the Closed issues list';
+const timersCheck = 'Block timers reset for each attempt and stop at the last saved time after disconnect';
+const proposalsCheck = 'Pending proposals can be approved or deleted in one click without starting work';
 let requestClarification;
 const pendingResponses = [];
 const logs = {
@@ -196,7 +200,7 @@ service.codex.call = async (method) => {
   throw Error('Unexpected model call ' + method);
 };
 const executor = {
-  async run({ signal, onProgress, onStep, block, issue }) {
+  async run({ signal, onProgress, onStep, block, issue, attempt }) {
     const number = logs.execution.length + 1;
     logs.execution.push({ number, blockId: block.id, issueId: issue.id });
     onStep('pnpm test');
@@ -209,7 +213,7 @@ const executor = {
         signal.addEventListener('abort', () => reject(Error('Stopped by the user.')), { once: true });
       });
     }
-    const evidence = join(project, 'flow-browser-result.txt');
+    const evidence = join(project, '.issues', 'flow-browser-result-' + attempt.id + '.txt');
     writeFileSync(evidence, 'Explicit browser retry completed.\n');
     return {
       summary: 'Explicit browser retry completed.',
@@ -279,9 +283,17 @@ let addedId;
 let workId;
 let passed = false;
 let failure;
+function expectedReportConsoleError({ text, location }) {
+  return (
+    location?.url === 'about:srcdoc' &&
+    (text.startsWith("Blocked script execution in 'about:srcdoc' because the document's frame is sandboxed") ||
+      text.startsWith("Loading the image 'https://example.invalid/report-tracker.png' violates"))
+  );
+}
+
 function unexpectedConsoleErrors(entries) {
-  return entries.filter((item) => {
-    if (item.type !== 'error') return false;
+  const errors = entries.filter((item) => item.type === 'error' && !expectedReportConsoleError(item));
+  return errors.filter((item) => {
     const url = item.location?.url || '';
     if (!/Failed to load resource/.test(item.text) || !item.text.includes('400')) return true;
     return !(
@@ -291,11 +303,32 @@ function unexpectedConsoleErrors(entries) {
     );
   });
 }
+function unexpectedWorkflowConsoleErrors() {
+  const expected = new Map([
+    [400, JSON.stringify({ error: 'Model is disabled in Factory settings.' })],
+    [409, JSON.stringify({ error: 'Request admission rejected.' })],
+  ]);
+  const errors = unexpectedConsoleErrors(logs.console);
+  const responses = logs.responses.filter(
+    ({ path, status, body }) => path === '/api/flow-action' && expected.has(status) && expected.get(status) === body
+  );
+  for (const { path, status } of responses) {
+    const index = errors.findIndex(
+      ({ location, text }) =>
+        location?.url?.endsWith(path) &&
+        text.startsWith('Failed to load resource') &&
+        text.includes('status of ' + status)
+    );
+    if (index >= 0) errors.splice(index, 1);
+  }
+  return errors;
+}
+
 async function connectionRecoveryIssue() {
   const id = '20261120-connection-recovery-fixture';
   if (!existsSync(join(project, '.issues/triage-labels.md')))
     copyFileSync(join(root, '.issues/triage-labels.md'), join(project, '.issues/triage-labels.md'));
-  await writeBrowserIssue(service, {
+  await writeBrowserIssue(project, {
     id,
     title: 'Reconnect the selected issue',
     body: 'Keep the selected issue after reconnecting.',
@@ -348,6 +381,10 @@ function checkExcluded(name) {
     ['--request-save', requestSaveCheck],
     ['--block-inspection', blockInspectionCheck],
     ['--storage-status', storageStatusCheck],
+    ['--polling', pollingCheck],
+    ['--timers', timersCheck],
+    ['--proposals', proposalsCheck],
+    ['--delayed-delete', proposalsCheck],
   ];
   const selected = selections.filter(([flag]) => process.argv.includes(flag));
   return selected.length > 0 && !selected.some(([, scenario]) => name === scenario);
@@ -386,7 +423,8 @@ async function clickAction(locator) {
     (response) =>
       response.url().endsWith('/api/flow-action') &&
       response.request().method() === 'POST' &&
-      response.request().postDataJSON().action !== 'open-block'
+      response.request().postDataJSON().action !== 'open-block',
+    { timeout: 60000 }
   );
   await locator.click();
   const response = await responsePromise;
@@ -486,6 +524,26 @@ async function graphGeometry() {
   });
 }
 
+async function seedSidebarOverflow() {
+  const ids = Array.from({ length: 24 }, (_, index) => '20261120-sidebar-overflow-' + index);
+  for (const [index, id] of ids.entries()) {
+    await writeBrowserIssue(project, {
+      id,
+      title: 'Overflowing issue ' + index,
+      body: 'Sidebar scrolling fixture.',
+    });
+  }
+  return ids;
+}
+
+async function removeSidebarOverflow(ids) {
+  for (const id of ids) await removeBrowserIssue(project, id);
+  await page.setViewportSize({ width: 1440, height: 960 });
+  await page.reload();
+  await page.locator('#sidebar-file-tree details').first().waitFor();
+  assert.equal(await page.locator('#open-issues [data-issue^="20261120-sidebar-overflow-"]').count(), 0);
+}
+
 try {
   server.listen(0, '127.0.0.1');
   await once(server, 'listening');
@@ -506,7 +564,7 @@ try {
     const failure = { url: request.url(), error: request.failure() };
     const cancelledRead =
       request.method() === 'GET' &&
-      new URL(request.url()).pathname === '/api/flow' &&
+      ['/api/flow', '/api/flow-changes'].includes(new URL(request.url()).pathname) &&
       failure.error?.errorText === 'net::ERR_ABORTED';
     logs[cancelledRead ? 'cancelledReads' : 'failedRequests'].push(failure);
   });
@@ -538,15 +596,7 @@ try {
     );
   if (!process.argv.includes('--reverse-fixture-scenarios')) await noChangesCheck();
   await check('The whole sidebar scrolls over every section', async () => {
-    const issuePaths = Array.from({ length: 24 }, (_, index) =>
-      join(project, '.issues', '20261120-sidebar-overflow-' + index + '.md')
-    );
-    issuePaths.forEach((path, index) =>
-      writeFileSync(
-        path,
-        `---\nid: 20261120-sidebar-overflow-${index}\ntitle: Overflowing issue ${index}\nstate: backlog\n---\n\nSidebar scrolling fixture.\n`
-      )
-    );
+    const ids = await seedSidebarOverflow();
     await page.goto('/');
     await page.locator('#sidebar-file-tree details').first().waitFor();
     await page.evaluate(() => {
@@ -612,9 +662,7 @@ try {
       await screenshot('sidebar-scroll-' + viewport.width);
     }
     writeFileSync(join(output, 'sidebar-scroll.json'), JSON.stringify({ candidate, observations }, null, 2));
-    issuePaths.forEach((path) => rmSync(path));
-    await page.setViewportSize({ width: 1440, height: 960 });
-    await page.reload();
+    await removeSidebarOverflow(ids);
   });
   await check('Status pseudo-folders track project issues without moving them', () =>
     issueStatusFoldersBrowserChecks({ page, project, service, poll, screenshot, output, root })
@@ -696,7 +744,7 @@ try {
   );
   await check('Issue flow scrollbar appears only while scrolling', async () => {
     const id = '20261122-issue-scrollbar-fixture';
-    await writeBrowserIssue(service, {
+    await writeBrowserIssue(project, {
       id,
       title: 'Scroll the issue flow',
       body: 'Show the scrollbar only during scrolling.',
@@ -744,7 +792,7 @@ try {
       );
     } finally {
       await page.goto('about:blank');
-      rmSync(join(project, '.issues', id + '.md'), { force: true });
+      await removeBrowserIssue(project, id);
       await page.setViewportSize({ width: 1440, height: 960 });
     }
   });
@@ -755,8 +803,9 @@ try {
   await check(followupsCheck, () => flowFollowupsBrowserChecks({ page, service, logs, screenshot }));
   await check(mergeSettingsCheck, async () => {
     const id = '20261119-merge-settings-fixture';
-    writeFileSync(
-      join(project, '.issues', id + '.md'),
+    await importBrowserIssue(
+      project,
+      id,
       `---\nid: ${id}\ntitle: Merge verification settings\nstate: backlog\n---\n\nChoose the local checks before merging.\n`
     );
     const request = service.flows.read(service.flows.selected(id)).blocks.find(({ kind }) => kind === 'request');
@@ -862,7 +911,7 @@ try {
   await check('Project settings explain missing configuration and initialize it only on request', async () => {
     const labels = join(project, '.issues/triage-labels.md');
     rmSync(labels, { force: true });
-    await page.getByRole('button', { name: 'Project settings', exact: true }).click();
+    await page.getByRole('button', { name: 'Factory settings', exact: true }).click();
     const settings = page.locator('#project-settings-dialog');
     await settings.locator('[data-settings-page="lifecycle"]').click();
     const initialize = settings.getByRole('button', { name: 'Initialize lifecycle configuration', exact: true });
@@ -874,7 +923,7 @@ try {
     assert.equal(logs.modelCalls.length, 0);
     await page.keyboard.press('Escape');
     assert.throws(() => readFileSync(labels), /ENOENT/);
-    await page.getByRole('button', { name: 'Project settings', exact: true }).click();
+    await page.getByRole('button', { name: 'Factory settings', exact: true }).click();
     await settings.locator('[data-settings-page="lifecycle"]').click();
     await initialize.click();
     await poll(() => openFile.isEnabled(), Boolean, 'Initialized lifecycle file did not become available.');
@@ -885,7 +934,7 @@ try {
     assert.equal(logs.modelCalls.length, 0);
     await page.keyboard.press('Escape');
     await page.reload();
-    await page.getByRole('button', { name: 'Project settings', exact: true }).click();
+    await page.getByRole('button', { name: 'Factory settings', exact: true }).click();
     await settings.locator('[data-settings-page="lifecycle"]').click();
     await poll(() => openFile.isEnabled(), Boolean, 'Saved lifecycle file did not remain available.');
     assert.equal(await initialize.count(), 0);
@@ -905,7 +954,7 @@ try {
   });
   await check(storageStatusCheck, async () => {
     const id = '20261123-storage-status-fixture';
-    await writeBrowserIssue(service, { id, title: 'Confirm storage recovery', body: 'Keep the local draft.' });
+    await writeBrowserIssue(project, { id, title: 'Confirm storage recovery', body: 'Keep the local draft.' });
     let storage = {
       phase: 'refreshing',
       available: false,
@@ -973,7 +1022,7 @@ try {
   );
   await check(blockInspectionCheck, async () => {
     const id = '20261123-block-inspection-fixture';
-    await writeBrowserIssue(service, { id, title: 'Read saved state on demand', body: 'Keep navigation local.' });
+    await writeBrowserIssue(project, { id, title: 'Read saved state on demand', body: 'Keep navigation local.' });
     const inspections = [];
     const refreshes = [];
     const observeRequest = (request) => {
@@ -1079,7 +1128,7 @@ try {
   });
   await check(requestSaveCheck, async () => {
     const id = '20261123-request-save-fixture';
-    await writeBrowserIssue(service, {
+    await writeBrowserIssue(project, {
       id,
       title: 'Save an existing request',
       body: 'Original request',
@@ -1134,6 +1183,7 @@ try {
   const description =
     'Understand why the save button loses text\nDone: The text survives a reload.\nProof: Retained saved text.\nKnown facts: The problem occurs after refresh.\nConstraints: Reproduce before changing code.';
   await check('Folder plus creates an issue directly in that folder and retains typed wording', async () => {
+    await page.goto('/');
     await page.locator('#new-folder').click();
     await page.locator('#folder-name').fill('Browser folder');
     await page.locator('#folder-form button[type="submit"]').click();
@@ -1416,6 +1466,7 @@ try {
       folder: 'Inbox',
       requestId: randomUUID(),
       description: 'Retained closed layout fixture',
+      storageProfile: 'default',
       type: 'feature',
     });
     closedId = closed.issue.id;
@@ -1424,13 +1475,14 @@ try {
       'refs/heads/dev',
       'The next issue did not start on its destination branch.'
     );
-    const source = join(project, '.issues', closedId + '.md');
-    writeFileSync(source, readFileSync(source, 'utf8').replace('state: backlog', 'state: closed'));
-    mkdirSync(join(project, '.issues/closed'), { recursive: true });
-    renameSync(source, join(project, '.issues/closed', closedId + '.md'));
+    await updateStoredIssueMetadata(project, service.flows.selected(closedId), { state: 'closed' });
+    await moveStoredIssue(project, closedId, 'open', 'closed');
     for (const short of [false, true]) {
       if (short)
-        service.flows.store.save({ ...closed.flow, blocks: closed.flow.blocks.slice(0, 2) }, closed.flow.revision);
+        await service.flows.store.save(
+          { ...closed.flow, blocks: closed.flow.blocks.slice(0, 2) },
+          closed.flow.revision
+        );
       await page.goto('/flow?issue=' + closedId);
       await page.locator('[data-node="__destination"]').waitFor();
       await poll(graphGeometry, (value) => Math.abs(value.end) < 2, 'The closed Destination was not bottom aligned.');
@@ -1571,8 +1623,8 @@ try {
     await clickAction(page.locator('#request-form button[type="submit"]'));
     await poll(
       view,
-      (value) => requestData(value.flow).fields?.type === 'bug',
-      'Request clarification did not finish.'
+      (value) => value.flow.routeType === 'bug' && requestData(value.flow).fields?.type === 'bug',
+      'Request clarification did not save its fields and route.'
     );
     await page.reload();
     await page.locator('#request-form').waitFor();
@@ -1617,28 +1669,50 @@ try {
     const updated = await clickAction(wand);
     assert.equal(updated.flowDefinitions.updated, false);
     assert.equal(updated.flow.definition.id, 'team-delivery');
+    assert.equal(updated.flow.definition.name, 'Updated team delivery');
+    assert.ok(updated.flow.revision > linked.flow.revision);
     const rebuilt = await clickAction(wand);
-    assert.ok(rebuilt.flow.revision > updated.flow.revision);
+    assert.equal(rebuilt.flow.revision, updated.flow.revision);
     for (const data of [result, switched, linked, updated, rebuilt]) {
       assert.deepEqual(data.flow.blocks.find((block) => block.kind === 'request').attempts, expected);
     }
   });
-  await check('Polling preserves expanded text and the Closed issues list', async () => {
-    const system = page
-      .locator('#inspector-body details')
-      .filter({ has: page.getByText('System prompt', { exact: true }) });
-    const inputs = page
-      .locator('#inspector-body details')
-      .filter({ has: page.getByText('Details used', { exact: true }) });
-    const closed = page.locator('#closed-issues');
-    for (const section of [system, inputs, closed]) {
-      if ((await section.getAttribute('open')) === null) await section.locator('summary').click();
+  await check(pollingCheck, async () => {
+    const id = '20261124-flow-polling-fixture';
+    const body = 'Keep expanded sections open.\ntype: feature\ngoal: Keep the request details visible.';
+    await writeBrowserIssue(project, { id, title: 'Read the request while the flow changes', body });
+    const flow = service.flows.read(service.flows.selected(id));
+    const prepared = await service.flows.action({
+      action: 'request',
+      issueId: id,
+      revision: flow.revision,
+      wording: body,
+    });
+    const reader = await context.newPage();
+    reader.setDefaultTimeout(15000);
+    try {
+      await reader.goto('/?issue=' + id);
+      const sections = [
+        reader.locator('#inspector-body details').filter({ has: reader.getByText('System prompt', { exact: true }) }),
+        reader.locator('#inspector-body details').filter({ has: reader.getByText('Details used', { exact: true }) }),
+        reader.locator('#closed-issues'),
+      ];
+      for (const section of sections) {
+        if ((await section.getAttribute('open')) === null) await section.locator('summary').click();
+      }
+      const regression = reader.locator('#full-regression-setting');
+      assert.equal(await regression.isChecked(), false);
+      const changed = await reader.request.post('/api/flow-action', {
+        headers: { origin: baseURL, 'x-factory-action': 'manual' },
+        data: { action: 'full-regression-setting', issueId: id, revision: prepared.flow.revision, enabled: true },
+      });
+      assert.equal(changed.status(), 200, await changed.text());
+      await reader.locator('#full-regression-setting:checked').waitFor();
+      for (const section of sections) assert.notEqual(await section.getAttribute('open'), null);
+    } finally {
+      await reader.close();
+      await removeBrowserIssue(project, id);
     }
-    const flow = service.flows.read(service.flows.selected(issueId));
-    flow.blocks.find((block) => block.kind === 'request').attempts.at(-1).summary = 'Updated while reading.';
-    service.flows.store.save(flow, flow.revision);
-    await page.locator('#inspector-body').getByText('Updated while reading.', { exact: true }).waitFor();
-    for (const section of [system, inputs, closed]) assert.notEqual(await section.getAttribute('open'), null);
   });
   await check('Folders can be created and assigned without running work', async () => {
     await page.locator('#new-folder').click();
@@ -1751,8 +1825,11 @@ try {
     await page.setViewportSize({ width: 1440, height: 960 });
   });
   await check('Block comments remain attached after reload', async () => {
+    await page.reload();
     await block(addedId);
-    await page.locator('#comment-form [name="comment"]').fill('Keep every partial attempt for review.');
+    const comment = page.locator('#comment-form [name="comment"]');
+    await comment.fill('Keep every partial attempt for review.');
+    assert.equal(await comment.inputValue(), 'Keep every partial attempt for review.');
     await clickAction(page.locator('#comment-form button[type="submit"]'));
     await page.reload();
     await page.locator('[data-block="' + addedId + '"]').waitFor();
@@ -1879,7 +1956,9 @@ try {
     await clickAction(page.locator('[data-action="stop"]'));
     const stopped = await poll(
       view,
-      (data) => data.flow.blocks.find((item) => item.id === workId).attempts[0]?.status === 'stopped',
+      (data) =>
+        data.flow.blocks.find((item) => item.id === workId).attempts[0]?.status === 'stopped' &&
+        !service.flows.active.has(issueId),
       'Stop was not retained.'
     );
     const attempt = stopped.flow.blocks.find((item) => item.id === workId).attempts[0];
@@ -1892,11 +1971,14 @@ try {
     assert.ok(stopped.flow.blocks.filter((item) => item.suggested).every((item) => item.attempts.length === 0));
   });
   await check('Retry retains both attempts and does not start the next block', async () => {
+    await page.reload();
     await page.locator('#run-block').filter({ hasText: 'Retry' }).waitFor();
     await clickAction(page.locator('#run-block'));
     const completed = await poll(
       view,
-      (data) => data.flow.blocks.find((item) => item.id === workId).attempts.at(-1)?.status === 'completed',
+      (data) =>
+        data.flow.blocks.find((item) => item.id === workId).attempts.at(-1)?.status === 'completed' &&
+        !service.flows.active.has(issueId),
       'Retry did not complete.'
     );
     const attempts = completed.flow.blocks.find((item) => item.id === workId).attempts;
@@ -2021,8 +2103,14 @@ try {
   await check('Candidate assets are unchanged and browser execution is clean', async () => {
     assert.deepEqual(fingerprint(), candidate.assets);
     assert.deepEqual(logs.pageErrors, []);
-    assert.deepEqual(logs.failedRequests, []);
-    assert.deepEqual(unexpectedConsoleErrors(logs.console), []);
+    assert.deepEqual(
+      logs.failedRequests.filter(
+        ({ url, error }) => url !== 'https://example.invalid/report-tracker.png' || error?.errorText !== 'csp'
+      ),
+      []
+    );
+    await Promise.all(pendingResponses);
+    assert.deepEqual(unexpectedWorkflowConsoleErrors(), []);
     assert.equal(logs.execution.length, 2);
     assert.equal(logs.modelCalls.length, 0);
   });
@@ -2032,7 +2120,9 @@ try {
     await clickAction(page.locator('#run-block'));
     await poll(
       view,
-      (data) => data.flow.blocks.find((item) => item.id === open.id).attempts.at(-1)?.status === 'completed',
+      (data) =>
+        data.flow.blocks.find((item) => item.id === open.id).attempts.at(-1)?.status === 'completed' &&
+        !service.flows.active.has(issueId),
       'The Markdown Work block did not finish.'
     );
     assert.equal(logs.execution.length, 3);
@@ -2057,7 +2147,7 @@ try {
     git(project, 'push', 'origin', target + ':refs/heads/older');
     git(project, 'branch', '--set-upstream-to=origin/older', 'recent');
     const flow = service.flows.read(service.flows.selected(issueId));
-    service.flows.store.save(
+    await service.flows.store.save(
       {
         ...flow,
         destination: { branch: 'older' },
@@ -2142,7 +2232,7 @@ try {
       goal: 'Preview exactly',
       requestedProof: 'Browser output',
     };
-    service.flows.store.save(flow, flow.revision);
+    await service.flows.store.save(flow, flow.revision);
     await page.reload();
     await selectBlock(publish.id);
     assert.equal(await page.locator('#issue-pr-menu').isVisible(), false);
@@ -2171,7 +2261,7 @@ try {
     const destination = saved.destination;
     const url = 'https://github.com/test/fixture/pull/17';
     saved.destination = { branch: 'older', pr: 17, url, title: 'Update the folder controls' };
-    saved = service.flows.store.save(saved, saved.revision);
+    saved = await service.flows.store.save(saved, saved.revision);
     await page.reload();
     await page.locator('#connection-status').filter({ hasText: 'Live' }).waitFor();
     const menu = page.locator('#issue-pr-menu');
@@ -2185,14 +2275,15 @@ try {
     assert.equal(await approve.getAttribute('href'), url + '/files');
     assert.equal(await approve.getAttribute('target'), '_blank');
     saved.destination = destination;
-    service.flows.store.save(saved, saved.revision);
+    await service.flows.store.save(saved, saved.revision);
   });
   await check('Issue Start and Resume respect No new actions and run Update Branch without confirmation', async () => {
     service.flows.executor.close();
     service.flows.executor = executor;
     const previousIssueId = issueId;
-    writeFileSync(
-      join(project, '.issues', playbackIssueId + '.md'),
+    await importBrowserIssue(
+      project,
+      playbackIssueId,
       `---\nid: ${playbackIssueId}\ntitle: Playback fixture\nstate: backlog\ncreated: 2026-11-16T12:00:00Z\n---\n\n## Original request\n\nTest autoplay.\n`
     );
     issueId = playbackIssueId;
@@ -2200,7 +2291,7 @@ try {
     const flow = service.flows.read(issue);
     flow.blocks = flow.blocks.filter(({ kind }) => ['request', 'work'].includes(kind));
     flow.blocks[0].data.fields = { type: 'feature', goal: 'Test autoplay' };
-    let saved = service.flows.store.save(flow, flow.revision);
+    let saved = await service.flows.store.save(flow, flow.revision);
     await service.flows.action({
       action: 'add',
       issueId,
@@ -2245,8 +2336,10 @@ try {
     playbackWork.resolve();
     const paused = await poll(
       view,
-      (data) => data.flow.blocks.find(({ id }) => id === 'work').attempts.at(-1)?.status === 'completed',
-      'Work did not finish after Pause.'
+      (data) =>
+        data.flow.blocks.find(({ id }) => id === 'work').attempts.at(-1)?.status === 'completed' &&
+        data.autoplay.mode === 'paused',
+      'Work did not finish and pause the route.'
     );
     assert.equal(paused.flow.blocks.find(({ id }) => id === verify.id).attempts.length, 0);
     assert.equal(paused.autoplay.mode, 'paused');
@@ -2263,7 +2356,7 @@ try {
     await closeDialog.waitFor();
     await closeDialog.getByRole('button', { name: 'Cancel', exact: true }).click();
     assert.equal(await page.locator('#issue-results').isVisible(), true);
-    assert.equal(await page.locator('#issue-heading + #issue-results').count(), 1);
+    assert.equal(await page.locator('#issue-heading ~ #issue-results').count(), 1);
     assert.equal(await page.locator('#playback-status').textContent(), 'Paused');
     assert.equal(await page.locator('[data-block="request"][aria-pressed="true"]').count(), 1);
     assert.equal(await page.locator('#waiting-block').isVisible(), false);
@@ -2286,6 +2379,7 @@ try {
     await dialog.getByRole('button', { name: 'Close issue', exact: true }).click();
     await dialog.waitFor({ state: 'hidden' });
     await close.waitFor({ state: 'hidden' });
+    await poll(() => !service.flows.closureBusy(issueId), Boolean, 'Close did not finish Cleanup.');
     assert.deepEqual(
       logs.execution.slice(executionCount).map(({ blockId }) => blockId),
       [service.flows.read(service.flows.selected(issueId)).blocks.find(({ kind }) => kind === 'cleanup').id]
@@ -2298,8 +2392,9 @@ try {
   });
   await check('Manual Fixed accepts retained Flow investigation evidence before running Cleanup', async () => {
     issueId = '20261116-manual-fixed-fixture';
-    writeFileSync(
-      join(project, '.issues', issueId + '.md'),
+    await importBrowserIssue(
+      project,
+      issueId,
       `---\nid: ${issueId}\ntitle: Manual Fixed fixture\nstate: backlog\nrequest_type: investigation\ncreated: 2026-11-16T12:00:00Z\n---\n\nInvestigate the test project.\n`
     );
     const flow = service.flows.read(service.flows.selected(issueId));
@@ -2325,7 +2420,7 @@ try {
       evidence: [{ path, sha256: createHash('sha256').update(output).digest('hex') }],
       result: { head, base, tree },
     });
-    service.flows.store.save(flow, flow.revision);
+    await service.flows.store.save(flow, flow.revision);
     const executionCount = logs.execution.length;
     await page.goto(new URL('/?issue=' + issueId, page.url()).href);
     await page.locator('#connection-status').filter({ hasText: 'Live' }).waitFor();
@@ -2358,8 +2453,8 @@ try {
     );
     await poll(
       () => logs.execution.length,
-      (count) => count > executionCount,
-      'Cleanup did not run.'
+      (count) => count > executionCount && !service.flows.closureBusy(issueId),
+      'Cleanup did not finish.'
     );
     const saved = service.flows.selected(issueId);
     assert.equal(saved.closure.reason, 'fixed');
@@ -2371,8 +2466,9 @@ try {
     );
     assert.deepEqual(logs.pageErrors, []);
   });
-  await check('Pending proposals can be approved or deleted in one click without starting work', async () => {
+  await check(proposalsCheck, async () => {
     const previous = issueId;
+    await page.goto('/');
     const runs = logs.execution.length;
     const create = page.locator('#capture-dialog');
     await page.locator('#new-issue').click();
@@ -2411,12 +2507,24 @@ try {
     const row = page.locator(`#open-issues [data-issue="${proposal.id}"]`);
     await page.goto(new URL('/?issue=' + proposal.id, page.url()).href);
     await row.waitFor();
-    await clickAction(remove);
+    let delayedDelete = Promise.resolve();
+    const delayDelete = (route) => {
+      if (route.request().postDataJSON()?.action !== 'delete-pending-issue') return route.continue();
+      delayedDelete = new Promise((done) => setTimeout(done, 16000)).then(() => route.continue());
+      return delayedDelete;
+    };
+    if (process.argv.includes('--delayed-delete')) await page.route('**/api/flow-action', delayDelete);
+    try {
+      await clickAction(remove);
+    } finally {
+      await delayedDelete;
+      if (process.argv.includes('--delayed-delete')) await page.unroute('**/api/flow-action', delayDelete);
+    }
     await row.waitFor({ state: 'detached' });
     assert.equal(new URL(page.url()).searchParams.has('issue'), false);
     assert.equal(existsSync(reportPath), false);
     assert.equal(logs.execution.length, runs);
-    await page.goto(new URL('/?issue=' + previous, page.url()).href);
+    await page.goto(previous ? '/?issue=' + previous : '/');
   });
   await check('Worktree Delete requires confirmation and shows why the menu is disabled afterward', async () => {
     const closedIssueId = issueId;
@@ -2516,8 +2624,9 @@ try {
   });
   await check(issueResultsCheck, async () => {
     const resultsIssueId = '20261118-results-fixture';
-    writeFileSync(
-      join(project, '.issues', resultsIssueId + '.md'),
+    await importBrowserIssue(
+      project,
+      resultsIssueId,
       `---\nid: ${resultsIssueId}\ntitle: Keep results and status visible\nstate: backlog\n---\n\nShow results below the banner.\n`
     );
     await page.goto('/?issue=' + resultsIssueId);
@@ -2528,7 +2637,7 @@ try {
     service.flows.pause(resultsIssueId, message);
     await page.reload();
     await page.locator('#issue-results-message').filter({ hasText: message }).waitFor();
-    assert.equal(await page.locator('#issue-heading + #issue-results').count(), 1);
+    assert.equal(await page.locator('#issue-heading ~ #issue-results').count(), 1);
     assert.equal(await page.locator('#playback-status').textContent(), 'Paused');
     const banner = await page.locator('#issue-heading').boundingBox();
     const results = await page.locator('#issue-results').boundingBox();
@@ -2543,8 +2652,9 @@ try {
   });
   await check(humanInputCheck, async () => {
     const id = '20261118-human-input-fixture';
-    writeFileSync(
-      join(project, '.issues', id + '.md'),
+    await importBrowserIssue(
+      project,
+      id,
       `---\nid: ${id}\ntitle: Review before merging\nstate: backlog\n---\n\nMake the required review visible.\n`
     );
     const issue = service.flows.selected(id);
@@ -2562,7 +2672,8 @@ try {
     ];
     flow.autoClose = false;
     flow.destination = { ...flow.destination, branch: 'dev', pr: 17, url: 'https://github.com/test/fixture/pull/17' };
-    service.flows.store.save(flow, flow.revision);
+    await service.flows.store.save(flow, flow.revision);
+    const savedMerge = () => service.flows.read(issue).blocks.find((block) => block.id === merge.id);
     let approved = false;
     let calls = 0;
     const run = executor.run;
@@ -2615,14 +2726,11 @@ try {
       assert.equal(calls, 0);
       await page.locator('#issue-input-continue').click();
       await poll(
-        async () => service.flows.read(issue),
-        (value) => value.blocks.find((b) => b.id === merge.id).attempts.length === 2 && !service.flows.active.has(id),
+        savedMerge,
+        (block) => block.attempts.length === 2 && !service.flows.active.has(id),
         'Explicit Continue did not record the review request.'
       );
-      const attempt = service.flows
-        .read(issue)
-        .blocks.find((b) => b.id === merge.id)
-        .attempts.at(-1);
+      const attempt = savedMerge().attempts.at(-1);
       assert.equal(attempt.result.humanInput.kind, 'pr-review');
       assert.equal(attempt.result.verification.head, 'retained-proof');
       await page.reload();
@@ -2634,8 +2742,8 @@ try {
       assert.equal(calls, 1, 'Approval and reload must not resume Merge');
       await page.locator('#issue-input-continue').click();
       await poll(
-        async () => service.flows.read(issue),
-        (value) => value.blocks.find((b) => b.id === merge.id).attempts.at(-1)?.status === 'completed',
+        savedMerge,
+        (block) => block.attempts.at(-1)?.status === 'completed' && !service.flows.active.has(id),
         'Continue did not complete Merge.'
       );
       await page.reload();
@@ -2653,7 +2761,7 @@ try {
           endedAt: '2026-11-18T12:10:01Z',
           summary: 'Verification failed.',
         });
-      service.flows.store.save(flow, flow.revision);
+      await service.flows.store.save(flow, flow.revision);
       await page.reload();
       await selectBlock(merge.id);
       assert.equal(await page.locator('#run-block').textContent(), 'Retry');
@@ -2676,19 +2784,28 @@ try {
   );
   await check(blockDeletionCheck, async () => {
     const deletionIssueId = '20261117-block-deletion-fixture';
-    writeFileSync(
-      join(project, '.issues', deletionIssueId + '.md'),
+    await importBrowserIssue(
+      project,
+      deletionIssueId,
       `---\nid: ${deletionIssueId}\ntitle: Delete selected flow blocks\nstate: backlog\n---\n\nRemove a block after an explicit click.\n`
     );
     await flowBlockDeletionBrowserChecks(page, service, deletionIssueId);
     if (issueId) await page.goto('/?issue=' + issueId);
   });
-  await check('Block timers reset for each attempt and stop at the last saved time after disconnect', async () => {
-    const issue = service.flows.selected(issueId);
+  await check(timersCheck, async () => {
+    const timerIssueId = '20261124-flow-timers-fixture';
+    await importBrowserIssue(
+      project,
+      timerIssueId,
+      `---\nid: ${timerIssueId}\ntitle: Attempt timers\nstate: backlog\n---\n\nVerify each saved attempt duration.\n`
+    );
+    await page.goto('/?issue=' + timerIssueId);
+    await page.locator('#connection-status').filter({ hasText: 'Live' }).waitFor();
+    const issue = service.flows.selected(timerIssueId);
     let flow = service.flows.read(issue);
-    const request = flow.blocks.find((item) => item.kind === 'request');
-    const badge = page.locator('[data-block="' + request.id + '"] .block-status');
-    request.attempts = [
+    const request = () => flow.blocks.find((item) => item.kind === 'request');
+    const badge = page.locator('[data-block="' + request().id + '"] .block-status');
+    request().attempts = [
       {
         id: 'waiting-attempt',
         status: 'uncertain',
@@ -2697,23 +2814,23 @@ try {
         endedAt: '2026-11-16T12:08:00Z',
       },
     ];
-    flow = service.flows.store.save(flow, flow.revision);
+    flow = await service.flows.store.save(flow, flow.revision);
     await badge.filter({ hasText: /^Needs input$/ }).waitFor();
-    request.attempts.push({
+    request().attempts.push({
       id: 'failed-attempt',
       status: 'blocked',
       startedAt: '2026-11-16T12:10:00Z',
       endedAt: '2026-11-16T12:10:07Z',
     });
-    flow = service.flows.store.save(flow, flow.revision);
+    flow = await service.flows.store.save(flow, flow.revision);
     await badge.filter({ hasText: /^Failed after 00:07$/ }).waitFor();
-    request.attempts.push({
+    request().attempts.push({
       id: 'disconnected-attempt',
       status: 'running',
       startedAt: '2026-11-16T12:20:00Z',
       lastActiveAt: '2026-11-16T12:20:09Z',
     });
-    service.flows.store.save(flow, flow.revision);
+    await service.flows.store.save(flow, flow.revision);
     await badge.filter({ hasText: /^Disconnected after 00:09$/ }).waitFor();
     await page.reload();
     await badge.filter({ hasText: /^Disconnected after 00:09$/ }).waitFor();
@@ -2790,8 +2907,9 @@ try {
   );
   await check('Starting branch confirmation moves saved work through the real UI', async () => {
     issueId = '20261117-starting-branch-fixture';
-    writeFileSync(
-      join(project, '.issues', issueId + '.md'),
+    await importBrowserIssue(
+      project,
+      issueId,
       `---\nid: ${issueId}\ntitle: Correct the starting branch\nstate: backlog\n---\n\nMove the saved edits.\n`
     );
     const issue = service.flows.selected(issueId);
@@ -2803,7 +2921,7 @@ try {
     writeFileSync(join(checkout, 'saved-edit.txt'), 'Keep this local edit.\n');
     flow.workspace = { branch, base, checkout };
     flow.startingPoint = { ref: 'refs/heads/dev', name: 'dev', commit: base };
-    service.flows.store.save(flow, flow.revision);
+    await service.flows.store.save(flow, flow.revision);
     await page.goto('/?issue=' + issueId);
     const selector = page.getByRole('combobox', { name: 'Starting branch', exact: true });
     const dialog = page.getByRole('dialog', { name: 'Change starting branch' });

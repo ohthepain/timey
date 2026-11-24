@@ -1095,10 +1095,15 @@ and the Update Branch block, using the starting branch’s upstream. Conflict re
 update aborts a pending merge before fetching and retains the other Git-operation
 guards. `flow-merge-state.mjs` reads the pending local merge for the header
 control, whose explicit abort action is guarded by the flow service.
+Confirmed Flow saves notify subscribed readers directly through the existing
+flow-change channel. Filesystem watching remains the fallback for external writes.
 `flow-merge.mjs` shares the Git fetch and merge helpers for Destination, budgets recovery per blocker, stops repeated failing source trees, waits for GitHub checks, and binds approval to the exact issue commit
 and target revision. `flow-merge-github.mjs` bounds transient GitHub observation
 and merge retries, reconciling uncertain writes before repeating them. Merge
 checks GitHub first and retains matching verification across request failures.
+`github-closure-proof.mjs` imports verified GitHub reports for externally merged
+candidates during Close, retaining source provenance and the existing exact-tree,
+step-audit and evidence-hash guards.
 `flow-human-input.mjs` describes required PR review and derives the outstanding
 request from retained attempts, including legacy review blockers. Flow views and
 sidebar rows expose it separately from execution status; the UI offers explicit

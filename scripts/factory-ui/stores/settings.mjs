@@ -30,3 +30,7 @@ export function resolveIssueStorage(root, { profileId, folder } = {}) {
     source: selected.source,
   };
 }
+
+export function inheritedIssueCaptureProfile(service) {
+  return service.projectStores ? 'default' : undefined;
+}

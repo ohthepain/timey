@@ -2925,8 +2925,9 @@
 
   $('publish-preview').addEventListener('click', (event) => {
     if (!event.target.closest('[data-close-no-changes]')) return;
+    const flowRevision = publishReview.preview.flowRevision;
     $('publish-dialog').close();
-    openClosure('cannot-reproduce');
+    openClosure('cannot-reproduce', flowRevision);
   });
 
   function closeRename() {
@@ -3708,12 +3709,12 @@
     }
   });
 
-  function openClosure(suggestedResolution) {
+  function openClosure(suggestedResolution, flowRevision = state.view.flow.revision) {
     const { issue, flow } = state.view;
     void closureDialog.open(async () => ({
       ...(await json('/api/issue-closure?issue=' + encodeURIComponent(issue.id))),
       kind: 'close',
-      flowRevision: flow.revision,
+      flowRevision,
       offerClosureRetro: flow.blocks.some((block) => block.kind === 'retro'),
       suggestedResolution,
     }));

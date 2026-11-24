@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "sourceRun": "https://github.com/ohthepain/timey/pull/114",
+  "tests": [
+    {
+      "name": "Close imports the exact successful CI candidate and rejects invalid evidence",
+      "command": ["node", "--test", "scripts/github-closure-proof.check.mjs"]
+    },
+    {
+      "name": "Cleanup recovers after an unavailable retry without losing resource identity",
+      "command": [
+        "node",
+        "--test",
+        "--test-name-pattern=cleanup retains the selected identity",
+        "scripts/factory-cleanup.check.mjs"
+      ]
+    },
+    {
+      "name": "Existing closure guards and cleanup actions remain enforced",
+      "command": ["node", "--test", "scripts/flow-delivery.check.mjs", "scripts/factory-cleanup.check.mjs"]
+    },
+    {
+      "name": "GitHub provider download transport and diagnostics",
+      "command": [
+        "node",
+        "--test",
+        "scripts/strategy-provider-diagnostics.check.mjs",
+        "scripts/github-call-history.check.mjs"
+      ]
+    }
+  ]
+}

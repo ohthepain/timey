@@ -19,6 +19,7 @@ import { queueReportPaths } from './shared-issue-config.mjs';
 import { requireGroupProof } from './flow-group-proof.mjs';
 import { evidencePath } from './stores/evidence.mjs';
 import { fetchIssueTarget } from './flow-update-branch.mjs';
+import { retainGitHubClosureVerification } from './github-closure-proof.mjs';
 
 const execute = promisify(execFile);
 
@@ -143,10 +144,11 @@ export function verifiedFlowCandidate(ctx, workspace, options = {}) {
         (checked?.uncommitted && checked?.tree === candidate.tree)) &&
       (!base || (checked?.input && checked.base === base && inputs.includes(checked.input)))
   );
-  requireThat(
-    current.some((checked) => checked.proof?.length >= 2),
-    'Required independent verification and step evidence is missing for this exact issue candidate.'
-  );
+  if (!current.some((checked) => checked.proof?.length >= 2))
+    throw Object.assign(
+      Error('Required independent verification and step evidence is missing for this exact issue candidate.'),
+      { code: 'FLOW_PROOF_MISSING' }
+    );
   let failure;
   for (const checked of current) {
     try {
@@ -578,19 +580,34 @@ function closureCandidate(ctx, workspace, options) {
   };
 }
 
+async function verifiedClosureCandidate(ctx, workspace, options, retain) {
+  try {
+    return { candidate: closureCandidate(ctx, workspace, options), options };
+  } catch (error) {
+    if (error.code !== 'FLOW_PROOF_MISSING' || !mergedDelivery(ctx.flow)) throw error;
+  }
+  const verification = await retain();
+  options = { ...options, verification };
+  return { candidate: closureCandidate(ctx, workspace, options), options };
+}
+
 export async function flowClosureArtifact(service, ctx, workspace, folder, options = {}) {
   ctx = { ...ctx, evidenceRoot: service.root };
   requireThat(ctx.input?.confirmed === true, 'Accept the recorded result explicitly before closing this issue.');
   const type = ctx.details?.type ?? requestData(ctx.flow).fields?.type ?? ctx.flow.routeType;
   requireThat(issueTypes.includes(type), 'Missing issue type. Set the issue type in Request before closing.');
   if (type === 'investigation') return investigationClosureArtifact(ctx, workspace);
-  const candidate = closureCandidate(ctx, workspace, options);
-  const groupEvidence = requireGroupProof(ctx.issue, ctx.flow, candidate.tree, ctx.block, service.root);
   const provider = flowDeliveryProvider(service, ctx, workspace, options);
   const merged = mergedDelivery(ctx.flow);
   const pr = merged ? { number: merged.pr } : await provider.findByBranch(workspace.branch, provider.config.target);
   requireThat(pr, 'No PR exists for this issue branch. Publish and merge its PR before closing.');
   const delivered = await provider.inspectExternalDelivery(pr.number, { requiredChecksOnly: true });
+  const checked = await verifiedClosureCandidate(ctx, workspace, options, () =>
+    retainGitHubClosureVerification({ provider, delivered, workspace, folder })
+  );
+  const candidate = checked.candidate;
+  options = checked.options;
+  const groupEvidence = requireGroupProof(ctx.issue, ctx.flow, candidate.tree, ctx.block, service.root);
   requireThat(
     delivered.number === pr.number &&
       delivered.head === candidate.head &&

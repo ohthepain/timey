@@ -53,7 +53,7 @@ export async function nativeAgentBrowserChecks({ page, service, project, poll, s
   try {
     for (const kind of ['permission', 'question']) {
       const id = '20261123-native-' + kind;
-      await writeBrowserIssue(service, { id, title: 'Native ' + kind, body: 'Exercise explicit agent input.' });
+      await writeBrowserIssue(project, { id, title: 'Native ' + kind, body: 'Exercise explicit agent input.' });
     }
     await ensureProjectStores(service);
     for (const kind of ['permission', 'question']) {

@@ -63,8 +63,9 @@ export default async function captureStartChecks(page) {
     await page.locator('#capture-folder').selectOption('Inbox');
     await page.waitForFunction(() => {
       const select = document.querySelector('#capture-issue-store');
-      return select && !select.disabled && select.value === 'local';
+      return select && !select.disabled && select.value === 'files';
     });
+    await page.locator('#capture-issue-store').selectOption('files');
   }
 
   async function verifyDefaultCapture(page, captures, starts) {
@@ -94,8 +95,8 @@ export default async function captureStartChecks(page) {
         (await page.locator('#capture-status').textContent())
     );
     expect(captures.length === 1, 'Capture request was not received.');
+    expect(captures[0].storageProfile === 'files', 'Storage profile not retained.');
     expect(captures[0].model === 'gpt-6-astra', 'Model not retained');
-    expect(captures[0].storageProfile === 'local', 'Storage profile not retained');
     expect(starts.length === 0, 'Save without selected operations started work.');
   }
 

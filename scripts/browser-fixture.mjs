@@ -164,8 +164,8 @@ export function browserFixture(root) {
       if (url.pathname === '/api/issue-stores')
         return response.end(
           JSON.stringify({
-            profiles: [{ id: 'local', label: 'Local files', storeId: 'local', artifactStoreId: 'local' }],
-            selected: 'local',
+            profiles: [{ id: 'files', label: 'Local files', storeId: 'files', artifactStoreId: 'files' }],
+            selected: 'files',
           })
         );
       if (url.pathname === '/api/queue') return response.end(JSON.stringify(data));
