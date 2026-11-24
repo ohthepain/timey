@@ -115,9 +115,9 @@ export async function assertBlockModelAvailable(service, issue, flow, block) {
   return view;
 }
 
-export function issueBlockModels(service, issue, flow, issueSettings) {
+export function issueBlockModels(service, issue, flow, issueSettings, resolveFolder) {
   const observed = {
-    settings: readModelSettings(service.root),
+    settings: readModelSettings(service.root, { resolveFolder }),
     conversation: conversationState(service.root, issue.id),
     defaults: issueSettings
       ? { model: issueSettings.values.model, effort: issueSettings.values.effort }

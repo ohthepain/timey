@@ -7,6 +7,7 @@ export default async function clarificationCaptureChecks(page) {
   if (await toggle.isChecked()) throw Error('Grilling must default off.');
   await page.getByLabel('Description', { exact: true }).fill('Grill me about Save behavior');
   await page.locator('#capture-folder').selectOption('Inbox');
+  await page.locator('#capture-issue-store').selectOption('files');
   await toggle.check();
   await page.route('**/api/issue-capture', async (route) => {
     submissions.push(route.request().postDataJSON());

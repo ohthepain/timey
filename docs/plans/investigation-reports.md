@@ -9,7 +9,7 @@ The completed planning decisions are indexed in the
 ## Confirmed product decisions
 
 Investigations use the ordinary flow workspace. Their default route is
-Request → Investigate → Generate report → Create Issues.
+Request → Investigate → Create Issues → Generate report.
 Both output blocks appear by default. The person can remove either block and
 run either independently using the investigation's findings. Create Issues does
 not require a generated report, and Generate report does not require issue
@@ -201,8 +201,8 @@ The user resolved this planning decision after confirming these behaviors:
 - A Generate report failure pauses the route. Create Issues remains manually
   runnable from completed investigation findings, independently of that failure.
 
-The default execution order remains Request, Investigate, Generate report, and
-Create Issues. Either output block can be removed. Both use the investigation
+The default execution order is Request, Investigate, Create Issues, and
+Generate report. Either output block can be removed. Both use the investigation
 findings, and Create Issues also receives any additional findings from Generate
 report. Supplemental findings retain their originating attempt and inspected
 revision so readers can distinguish new observations from the original inquiry.
@@ -401,7 +401,7 @@ These are future checks against the implemented behavior, not passing test resul
 
 | Scenario                                    | Expected behavior                                                                                                                                                                     |
 | ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Create an investigation                     | The default flow contains Request, Investigate, Generate report, and Create Issues. Creation and page loading start nothing.                                                          |
+| Create an investigation                     | The default flow contains Request, Investigate, Create Issues, and Generate report in that order. Creation and page loading start nothing.                                            |
 | Remove either output block                  | The other output remains runnable from investigation findings.                                                                                                                        |
 | Investigate newer code from an output       | The attempt retains the original run and records additional inspected revisions and evidence.                                                                                         |
 | Pass supplemental findings                  | Create Issues receives available additional findings from successful report generation; failed or stopped attempts remain historical.                                                 |

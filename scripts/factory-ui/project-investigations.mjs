@@ -1,3 +1,4 @@
+import { inheritedIssueCaptureProfile } from './stores/settings.mjs';
 import { existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -259,6 +260,7 @@ export class ProjectInvestigations {
       description: this.brief(config),
       type: 'investigation',
       folder: input.issueFolder || defaultIssueFolder(this.service.root).name,
+      storageProfile: inheritedIssueCaptureProfile(this.service),
       startingRef: config.branch,
       reusable: input.reusable === true,
     });
@@ -379,6 +381,7 @@ export class ProjectInvestigations {
       description: session.captureDescription,
       type: 'investigation',
       folder: session.captureFolder,
+      storageProfile: inheritedIssueCaptureProfile(this.service),
       startingRef: session.captureRef,
     });
     requireThat(!created.deleted, 'This investigation issue was deleted. Start a new investigation.');

@@ -2,6 +2,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { digest } from './factory-ui/common.mjs';
+import { importBrowserIssue } from './flow-browser-fixture.mjs';
 import { makeBlock } from './factory-ui/flow-store.mjs';
 
 export const investigationProposals = [
@@ -21,10 +22,11 @@ export const investigationProposals = [
   },
 ];
 
-export function seedInvestigation(flows, id = '20261118-understand-fixture') {
+export async function seedInvestigation(flows, id = '20261118-understand-fixture') {
   const root = flows.service.root;
-  writeFileSync(
-    join(root, '.issues', id + '.md'),
+  await importBrowserIssue(
+    root,
+    id,
     `---\nid: ${id}\ntitle: Understand publication failure\nstate: backlog\nrequest_type: investigation\ncreated: 2026-11-18T12:00:00Z\n---\n\n## Original request\n\nInvestigate the missing validation diagnostics.\n`
   );
   const issue = flows.selected(id);
@@ -53,6 +55,6 @@ export function seedInvestigation(flows, id = '20261118-understand-fixture') {
       evidence: [evidence],
     },
   ];
-  flows.store.save(flow, flow.revision);
+  await flows.store.save(flow, flow.revision);
   return { issueId: id, blockId: block.id, attemptId, evidence };
 }

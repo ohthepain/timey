@@ -53,6 +53,19 @@ async function fixture(t, run = async () => ({ summary: 'Completed' })) {
   return { root, git, records, issues, project, flows, service, id, blockId: block.id };
 }
 
+void test('confirmed flow saves notify readers after each persisted attempt transition', async (t) => {
+  const f = await fixture(t);
+  const notifications = [];
+  f.service.flowChanges = { notify: (...value) => notifications.push(value) };
+  let flow = f.flows.read(f.flows.selected(f.id));
+  for (const status of ['uncertain', 'blocked', 'running']) {
+    flow.blocks[0].attempts.push({ id: status, status });
+    flow = await f.flows.store.save(flow, flow.revision);
+    assert.deepEqual(notifications.at(-1), ['flow', f.id]);
+  }
+  assert.equal(notifications.length, 3);
+});
+
 test('displaying an observed merged PR does not wait for its shared save and remains read-only', async (t) => {
   const f = await fixture(t);
   const flow = f.flows.read(f.flows.selected(f.id));
