@@ -1,0 +1,258 @@
+{
+  "baselineRevision": "3549f7e8afbc52bf724448e74a9d2460f1c1962c",
+  "cores": 10,
+  "load": [2.4951171875, 2.1669921875, 2.5986328125],
+  "errors": 0,
+  "measurements": [
+    {
+      "variant": "before",
+      "elapsedMs": 2545.04075,
+      "phases": [
+        {
+          "name": "plainFetchMerge",
+          "ms": 36.697999999999865
+        },
+        {
+          "name": "fetch",
+          "ms": 19.953457999999955
+        },
+        {
+          "name": "merge",
+          "ms": 10.94254200000023
+        },
+        {
+          "name": "gitUpdate",
+          "ms": 184.36666700000023
+        }
+      ],
+      "remoteReads": 52,
+      "pushes": 8,
+      "gitCommands": 610
+    },
+    {
+      "variant": "after",
+      "elapsedMs": 661.2137499999999,
+      "phases": [
+        {
+          "name": "plainFetchMerge",
+          "ms": 38.89300000000003
+        },
+        {
+          "name": "fetch",
+          "ms": 26.499958000000333
+        },
+        {
+          "name": "merge",
+          "ms": 10.596457999999984
+        },
+        {
+          "name": "gitUpdate",
+          "ms": 217.22162499999922
+        }
+      ],
+      "remoteReads": 2,
+      "pushes": 2,
+      "gitCommands": 127
+    },
+    {
+      "variant": "before",
+      "elapsedMs": 2715.574458,
+      "phases": [
+        {
+          "name": "fetch",
+          "ms": 20.477249999999913
+        },
+        {
+          "name": "merge",
+          "ms": 10.468500000000859
+        },
+        {
+          "name": "gitUpdate",
+          "ms": 176.02300000000105
+        },
+        {
+          "name": "plainFetchMerge",
+          "ms": 35.035499999999956
+        }
+      ],
+      "remoteReads": 52,
+      "pushes": 8,
+      "gitCommands": 610
+    },
+    {
+      "variant": "after",
+      "elapsedMs": 567.5217080000002,
+      "phases": [
+        {
+          "name": "fetch",
+          "ms": 21.080665999999837
+        },
+        {
+          "name": "merge",
+          "ms": 10.849500000000262
+        },
+        {
+          "name": "gitUpdate",
+          "ms": 179.80562499999905
+        },
+        {
+          "name": "plainFetchMerge",
+          "ms": 33.14099999999962
+        }
+      ],
+      "remoteReads": 2,
+      "pushes": 2,
+      "gitCommands": 127
+    },
+    {
+      "variant": "before",
+      "elapsedMs": 2539.3697920000013,
+      "phases": [
+        {
+          "name": "plainFetchMerge",
+          "ms": 34.63591699999961
+        },
+        {
+          "name": "fetch",
+          "ms": 19.673790999999255
+        },
+        {
+          "name": "merge",
+          "ms": 10.309624999999869
+        },
+        {
+          "name": "gitUpdate",
+          "ms": 176.56662499999948
+        }
+      ],
+      "remoteReads": 52,
+      "pushes": 8,
+      "gitCommands": 610
+    },
+    {
+      "variant": "after",
+      "elapsedMs": 556.1752919999999,
+      "phases": [
+        {
+          "name": "plainFetchMerge",
+          "ms": 36.83645799999795
+        },
+        {
+          "name": "fetch",
+          "ms": 19.888999999999214
+        },
+        {
+          "name": "merge",
+          "ms": 10.554374999999709
+        },
+        {
+          "name": "gitUpdate",
+          "ms": 177.25070899999992
+        }
+      ],
+      "remoteReads": 2,
+      "pushes": 2,
+      "gitCommands": 127
+    },
+    {
+      "variant": "before",
+      "elapsedMs": 2551.565666999999,
+      "phases": [
+        {
+          "name": "fetch",
+          "ms": 19.912083999999595
+        },
+        {
+          "name": "merge",
+          "ms": 10.177958000000217
+        },
+        {
+          "name": "gitUpdate",
+          "ms": 176.7880839999998
+        },
+        {
+          "name": "plainFetchMerge",
+          "ms": 33.54941699999836
+        }
+      ],
+      "remoteReads": 52,
+      "pushes": 8,
+      "gitCommands": 610
+    },
+    {
+      "variant": "after",
+      "elapsedMs": 598.8078329999989,
+      "phases": [
+        {
+          "name": "fetch",
+          "ms": 23.497957999999926
+        },
+        {
+          "name": "merge",
+          "ms": 10.318875000000844
+        },
+        {
+          "name": "gitUpdate",
+          "ms": 203.05970800000068
+        },
+        {
+          "name": "plainFetchMerge",
+          "ms": 33.35620800000106
+        }
+      ],
+      "remoteReads": 2,
+      "pushes": 2,
+      "gitCommands": 127
+    },
+    {
+      "variant": "before",
+      "elapsedMs": 2598.2530000000006,
+      "phases": [
+        {
+          "name": "plainFetchMerge",
+          "ms": 33.34020800000144
+        },
+        {
+          "name": "fetch",
+          "ms": 24.446125000002212
+        },
+        {
+          "name": "merge",
+          "ms": 10.643583000000945
+        },
+        {
+          "name": "gitUpdate",
+          "ms": 211.96054100000038
+        }
+      ],
+      "remoteReads": 52,
+      "pushes": 8,
+      "gitCommands": 610
+    },
+    {
+      "variant": "after",
+      "elapsedMs": 677.2904170000002,
+      "phases": [
+        {
+          "name": "plainFetchMerge",
+          "ms": 33.72791700000016
+        },
+        {
+          "name": "fetch",
+          "ms": 21.977999999999156
+        },
+        {
+          "name": "merge",
+          "ms": 10.659707999999227
+        },
+        {
+          "name": "gitUpdate",
+          "ms": 188.02179100000285
+        }
+      ],
+      "remoteReads": 2,
+      "pushes": 2,
+      "gitCommands": 127
+    }
+  ]
+}

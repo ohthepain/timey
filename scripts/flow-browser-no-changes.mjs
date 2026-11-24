@@ -3,14 +3,14 @@ import { copyFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { git } from './factory-ui/common.mjs';
 import { withBrowserScenarioFixture } from './flow-browser-scenario-fixture.mjs';
-import { importBrowserIssue } from './flow-browser-fixture.mjs';
+import { writeBrowserIssue } from './flow-browser-fixture.mjs';
 
 export async function noChangesBrowserChecks({ page, service, project, output, root, poll }) {
   return withBrowserScenarioFixture({ project, service }, async () => {
     const id = '20261121-no-changes-fixture';
     const lifecyclePath = join(project, '.issues/triage-labels.md');
     if (!existsSync(lifecyclePath)) copyFileSync(join(root, '.issues/triage-labels.md'), lifecyclePath);
-    await importBrowserIssue(service, {
+    await writeBrowserIssue(service, {
       id,
       title: 'No changes required',
       body: 'The reported behavior already works.',
@@ -61,9 +61,12 @@ export async function noChangesBrowserChecks({ page, service, project, output, r
       assert.ok(!service.flows.selected(id).closed);
       await screen.locator('#run-block').click();
       await screen.getByRole('button', { name: 'Close as Cannot Reproduce…' }).click();
-      const decision = screen.waitForResponse((response) => new URL(response.url()).pathname === '/api/issue-decision');
+      const closureResponse = screen.waitForResponse(
+        (response) =>
+          new URL(response.url()).pathname === '/api/issue-decision' && response.request().method() === 'POST'
+      );
       await screen.locator('#confirm-issue-closure:not(:disabled)').click();
-      const response = await decision;
+      const response = await closureResponse;
       assert.equal(response.status(), 200, await response.text());
       await screen.locator('#issue-closure-dialog').waitFor({ state: 'hidden' });
       await screen.locator('#close-with-reason').waitFor({ state: 'hidden' });

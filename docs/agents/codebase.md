@@ -794,6 +794,14 @@ Active attempt updates read the persisted graph directly through `FlowStore`.
 They retain revision checks without rediscovering folder settings or rebuilding
 the display. Group eligibility rejects issues with existing work before resolving
 their settings.
+`flow-changes.mjs` sends change notifications over the authenticated Flow event
+stream. It batches notifications from server operations and watches issue
+records, UI definitions, Git metadata and selected checkouts. A visible Flow tab
+reads its snapshot on changes and reconnect, with a check every minute for
+shared storage, GitHub and missed file events. Unchanged snapshots leave the
+issue view in place. The stream carries no issue contents and closes when the
+tab is hidden.
+
 Each Flow view shares a folder settings snapshot across its issue rows. The
 snapshot lasts for that view only; mutation checks resolve current settings.
 `merged-issue.mjs` identifies retained merged delivery and defines the read-only
@@ -1089,10 +1097,33 @@ and the Update Branch block, using the starting branch’s upstream. Conflict re
 update aborts a pending merge before fetching and retains the other Git-operation
 guards. `flow-merge-state.mjs` reads the pending local merge for the header
 control, whose explicit abort action is guarded by the flow service.
+Confirmed Flow saves notify subscribed readers directly through the existing
+flow-change channel. Filesystem watching remains the fallback for external writes.
+Manual owned operations and Update Branch blocks publish admission and completion
+through `stores/providers/git-transaction.mjs`. `git-read-set.mjs` checks record
+and list dependencies before retrying disjoint peer changes without replaying work.
+`git-github.mjs` publishes matching prepared Git objects with the configured App
+and conditionally updates the metadata ref. `stores/metadata-operation.mjs` scopes immutable payload reuse across an operation
+and uses the provider’s outer transaction when supported.
+`record-payloads.mjs` shares verified
+immutable payloads within one metadata operation. Standalone record lists use a
+fresh snapshot for both records and overflow relocation metadata, avoiding a
+remote authority lookup for each retained payload.
+Progress saves cannot overlap completion.
+`stores/snapshots.mjs` keeps the display API hydrated while persisting a small
+atomic index over immutable per-issue fragments. Selected refreshes serialize only
+the selected issues; legacy caches convert on installation. Full authoritative
+refreshes can repair damaged fragments while retaining local report drafts.
+PostgreSQL records and receipts up to 1 MiB use native JSONB; larger payloads retain
+the configured Artifact store.
+See the [Update Branch measurements](../plans/update-branch-performance.md).
 `flow-merge.mjs` shares the Git fetch and merge helpers for Destination, budgets recovery per blocker, stops repeated failing source trees, waits for GitHub checks, and binds approval to the exact issue commit
 and target revision. `flow-merge-github.mjs` bounds transient GitHub observation
 and merge retries, reconciling uncertain writes before repeating them. Merge
 checks GitHub first and retains matching verification across request failures.
+`github-closure-proof.mjs` imports verified GitHub reports for externally merged
+candidates during Close, retaining source provenance and the existing exact-tree,
+step-audit and evidence-hash guards.
 `flow-human-input.mjs` describes required PR review and derives the outstanding
 request from retained attempts, including legacy review blockers. Flow views and
 sidebar rows expose it separately from execution status; the UI offers explicit

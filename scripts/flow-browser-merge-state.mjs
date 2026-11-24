@@ -9,6 +9,7 @@ export async function mergeStateBrowserChecks({ page, project, service, screensh
     action: 'capture',
     requestId: randomUUID(),
     description: 'Show a pending local merge.',
+    storageProfile: 'default',
   });
   const id = captured.issue.id;
   const flow = service.flows.read(service.flows.selected(id));
@@ -26,7 +27,7 @@ export async function mergeStateBrowserChecks({ page, project, service, screensh
   const saved = git(checkout, 'rev-parse', 'HEAD');
   assert.throws(() => git(checkout, 'merge', '--no-edit', target));
   flow.workspace = { checkout, branch, base };
-  service.flows.store.save(flow, flow.revision);
+  await service.flows.store.save(flow, flow.revision);
   await page.goto('/?issue=' + id);
   const menu = page.getByRole('combobox', { name: 'Merge in progress', exact: true });
   await menu.waitFor();

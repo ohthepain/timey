@@ -1,7 +1,7 @@
+import { importBrowserIssues, removeBrowserIssue } from './flow-browser-fixture.mjs';
 import assert from 'node:assert/strict';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { importBrowserIssues, removeBrowserIssues } from './flow-browser-fixture.mjs';
 
 async function createFixtures(project, root, service) {
   const configuration = ['triage-labels.md', 'preferences.json'].map((file) => {
@@ -97,7 +97,7 @@ export async function projectIssuesBrowserChecks({ page, project, root, output, 
     await page.screenshot({ path: join(output, 'issue-opened-from-issues.png'), fullPage: true });
   } finally {
     await page.goto('about:blank');
-    await removeBrowserIssues(service, [...closed, open]);
+    for (const id of [...closed, open]) await removeBrowserIssue(project, id);
     restoreConfiguration(configuration);
   }
 }

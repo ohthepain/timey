@@ -1,4 +1,4 @@
-import { importBrowserIssue } from './flow-browser-fixture.mjs';
+import { importBrowserIssue, writeBrowserIssue } from './flow-browser-fixture.mjs';
 import assert from 'node:assert/strict';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -120,15 +120,23 @@ function configureHome(service, calls) {
 }
 
 async function runInvestigationBlock(page, service, issueId, kind, poll) {
+  await page.reload();
   const block = service.flows.read(service.flows.selected(issueId)).blocks.find((entry) => entry.kind === kind);
   await page.locator('#graph [data-block="' + block.id + '"]').click();
+  const start = page.waitForResponse(
+    (response) => response.url().endsWith('/api/flow-action') && response.request().postDataJSON()?.action === 'start'
+  );
   await page.locator('#run-block[data-action="start"]').click();
+  const response = await start;
+  assert.ok(response.ok(), await response.text());
   return poll(
     () =>
-      service.flows
-        .read(service.flows.selected(issueId))
-        .blocks.find(({ id }) => id === block.id)
-        .attempts.at(-1),
+      service.flows.active.has(issueId)
+        ? null
+        : service.flows
+            .read(service.flows.selected(issueId))
+            .blocks.find(({ id }) => id === block.id)
+            .attempts.at(-1),
     (attempt) => attempt?.status === 'completed',
     kind + ' did not complete.'
   );
@@ -211,7 +219,7 @@ async function prepareHome(page, service) {
 }
 export async function investigationToolbarBrowserChecks({ page, service, screenshot }) {
   const id = '20261123-investigation-toolbar';
-  await importBrowserIssue(service, {
+  await writeBrowserIssue(service, {
     id,
     title: 'Investigation toolbar layout',
     body: 'Check layout without running an investigation.',
@@ -334,12 +342,17 @@ async function deleteArchivedReports(page, { root }, screenshot) {
   const archive = join(root, '.issues/archive');
   mkdirSync(archive, { recursive: true });
   const report = join(archive, id + '.md');
-  writeFileSync(report, `---\nid: ${id}\ntitle: ${title}\nstate: closed\n---\nDisposable archive record.\n`);
+  await importBrowserIssue(
+    root,
+    id,
+    `---\nid: ${id}\ntitle: ${title}\nstate: closed\n---\nDisposable archive record.\n`,
+    'archive'
+  );
   git(root, 'branch', branch, 'dev');
   await page.getByRole('tab', { name: 'Admin' }).click();
   await page.getByRole('button', { name: 'Preview archived issues' }).click();
   const dialog = page.getByRole('dialog', { name: 'Delete archived issues' });
-  const choice = dialog.getByRole('checkbox', { name: title, exact: true });
+  const choice = dialog.getByRole('checkbox', { name: new RegExp('^(?:#\\d+ )?' + title + '$') });
   await choice.check();
   const branchChoice = dialog.getByRole('checkbox', { name: `Also delete local branch ${branch}` });
   assert.equal(await branchChoice.isChecked(), false);
@@ -349,10 +362,20 @@ async function deleteArchivedReports(page, { root }, screenshot) {
   assert.match(readFileSync(report, 'utf8'), /Disposable archive record/);
   assert.equal(git(root, 'branch', '--format=%(refname:short)', '--list', branch), branch);
   await screenshot('project-admin-archive-deletion-confirmation');
+  const deletion = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === '/api/project-archive-deletion' && response.request().method() === 'POST',
+    { timeout: 60_000 }
+  );
   await dialog.getByRole('button', { name: 'Permanently delete 1 archived issue' }).click();
+  const response = await deletion;
+  const result = await response.json();
+  assert.equal(response.status(), 200, JSON.stringify(result));
+  assert.deepEqual(result.results, [{ id, status: 'deleted', branches: [{ name: branch, status: 'deleted' }] }]);
   await dialog.getByText(`${branch} · deleted`).waitFor();
   assert.equal(git(root, 'branch', '--list', branch), '');
   assert.throws(() => readFileSync(report), /ENOENT/);
+  await screenshot('project-admin-archive-deletion-result');
   await dialog.getByRole('button', { name: 'Close' }).click();
   await page.getByRole('tab', { name: 'Home' }).click();
 }

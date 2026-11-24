@@ -79,6 +79,8 @@ or profile; no Factory-specific AWS access-key secret is required.
 5. Choose **Coordination** and **Coordination artifacts** independently for the
    project. Changing either role uses a checked project migration. All affected
    work must be idle and pending operations reconciled first.
+   **Test connection** beside the Coordination store selector checks the selected
+   destination before saving, without moving coordination data.
 
 Configured destinations and roles are fixed after saving. To change a database,
 table, directory, or Git branch, add a new named store and perform a checked move.
@@ -104,6 +106,12 @@ refresh shows a warning and preserves cached browsing. Shared edits and executio
 still wait for fresh authoritative checks. Opening an issue refreshes its retained
 evidence in the background; opening a retained file waits for that file's evidence.
 Opening selected Classic details still waits for its authoritative snapshot.
+
+Rebuilding an idle flow saves its changed structure and confirmed operation in
+one Coordination transaction. The transaction checks the catalog, original flow,
+absent claim, migration gate, and operation revisions together. It does not
+publish a temporary claim before saving. Saves belonging to a running attempt
+and recovery of older pending operations retain their existing ownership protocol.
 
 ## Move existing issues
 

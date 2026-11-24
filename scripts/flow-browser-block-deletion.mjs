@@ -22,7 +22,7 @@ export async function flowBlockDeletionBrowserChecks(page, service, issueId) {
       endedAt: '2099-01-01T00:00:01Z',
     },
   ];
-  service.flows.store.save(flow, flow.revision);
+  await service.flows.store.save(flow, flow.revision);
   const card = (id) => page.locator(`#graph [data-block="${id}"]`);
   const selectCard = async (id) => {
     await card(id).click();

@@ -1149,6 +1149,9 @@ test('Merge asks its worker to repair an inherited browser failure and verifies 
   f.connection.turn = async (...args) => {
     const [, checkout, prompt] = args;
     assert.match(prompt, /repair inherited test failures/);
+    assert.match(prompt, /Name the exact failed tests/);
+    assert.match(prompt, /dedicated PR repair check/);
+    assert.match(prompt, /do not duplicate full-suite runs/);
     assert.match(prompt, /Closure waited for background resource checks/);
     const repairInput = JSON.parse(prompt);
     for (const item of repairInput.evidence) {

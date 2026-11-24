@@ -423,7 +423,7 @@
     render();
   }
 
-  async function load(force = false, announce = false) {
+  async function load(force = false, announce = false, remote = false) {
     if (serverControlUI.isWaitingForServer()) return;
     if (!force && (state.pending || state.loading)) {
       if (announce) toast('Wait for the current action before refreshing.');
@@ -438,22 +438,29 @@
     try {
       const query = new URLSearchParams();
       if (selected) query.set('issue', selected);
-      if (announce) query.set('refresh', 'true');
+      if (announce || remote) query.set('refresh', 'true');
       if (document.documentElement.dataset.projectIssueRequestEmbed === 'true') query.set('view', 'request');
       const params = query.toString();
       const result = await json(`/api/flow${params ? `?${params}` : ''}`, {
         signal: controller.signal,
       });
       if (sequence !== state.sequence || selected !== state.issueId || serverControlUI.isWaitingForServer()) return;
+      const recovering = Boolean(state.connectionError);
       state.connectionError = '';
       $('connection-status').className = 'connection';
-      $('connection-status').innerHTML = '<span class="connection-dot"></span> Local updates · GitHub on demand';
+      $('connection-status').innerHTML = '<span class="connection-dot"></span> Live · Watching for changes';
       $('connection-status').title = result.storeStatus?.checkedAt
         ? `Shared data last checked ${date(result.storeStatus.checkedAt)}`
-        : 'Remote data refreshes on demand.';
+        : 'Remote data is checked periodically.';
       if (announce) state.error = '';
-      applyView(result);
-      void refreshIssueStore();
+      const { observedAt, remoteObservedAt, remoteAttemptedAt, ...environment } = result.environment || {};
+      const { checkedAt, ...storeStatus } = result.storeStatus || {};
+      const fingerprint = JSON.stringify({ ...result, environment, storeStatus });
+      if (force || recovering || state.snapshotFingerprint !== fingerprint) {
+        state.snapshotFingerprint = fingerprint;
+        applyView(result);
+        void refreshIssueStore();
+      }
       if (announce)
         toast(
           result.environment?.remoteError || result.sharedQueueWarning
@@ -632,6 +639,9 @@
       Boolean(state.view?.grouping?.master) ||
       routeAction === 'close';
     $('close-with-reason').disabled = busy;
+    document.querySelectorAll('[data-close-issue]').forEach((button) => {
+      button.disabled = busy || Boolean(state.view?.closureBusy) || state.view?.flow?.blocks.some(isRunning);
+    });
     $('issue-archive-menu').hidden = !closed;
     $('issue-archive-menu').disabled = busy;
     const archived = issue?.location === 'archive';
@@ -1690,6 +1700,27 @@
     return `<button class="block-card${state.blockId === block.id ? ' selected' : ''}${block.suggested ? ' suggested' : ''}" style="--block-color:${style.color}" data-block="${escape(block.id)}"${source} data-node="${escape(block.id)}" aria-pressed="${state.blockId === block.id}">${cardContents(block, style)}</button>`;
   }
 
+  function manualClosePrompt() {
+    const { flow, issue, grouping, closureBusy } = state.view;
+    if (
+      flow.autoClose ||
+      flow.routeType === 'investigation' ||
+      issue.status === 'closed' ||
+      issue.state === 'needs-approval' ||
+      ['closed', 'archive'].includes(issue.location) ||
+      grouping?.master ||
+      closureBusy ||
+      (flow.closing && !flow.closing.complete)
+    )
+      return '';
+    return '<div class="graph-terminal graph-manual-close"><p class="terminal-note">Closing is manual. The issue stays open until you confirm Close.</p><button type="button" class="small-button" data-close-issue>Close issue…</button></div>';
+  }
+
+  function graphRow(row) {
+    const prompt = row.some((block) => block.kind === 'close') ? manualClosePrompt() : '';
+    return `${prompt}<div class="graph-row">${row.map(blockCard).join('')}</div>`;
+  }
+
   function renderGraph() {
     const flow = state.view?.flow;
     $('graph').hidden = !flow;
@@ -1729,7 +1760,7 @@
     );
     view.render(
       $('graph'),
-      `<svg class="graph-lines" aria-hidden="true"></svg>${baseNode}${layers.map((row) => `<div class="graph-row">${row.map(blockCard).join('')}</div>`).join('')}<button class="graph-add" data-open-palette aria-label="Add a step" title="Add a step">＋</button>${destination}`,
+      `<svg class="graph-lines" aria-hidden="true"></svg>${baseNode}${layers.map(graphRow).join('')}<button class="graph-add" data-open-palette aria-label="Add a step" title="Add a step">＋</button>${destination}`,
       'flow-graph:' + state.issueId
     );
     $('graph').dataset.issue = state.issueId;
@@ -2855,7 +2886,6 @@
       $('publish-preview').replaceChildren();
       return;
     }
-    review.flowRevision = result.flowRevision;
     const changed =
       confirming && preview.token !== token && preview.status === 'confirm'
         ? '<p>The publication changed. Review the updated preview.</p>'
@@ -2895,9 +2925,9 @@
 
   $('publish-preview').addEventListener('click', (event) => {
     if (!event.target.closest('[data-close-no-changes]')) return;
-    const revision = publishReview.flowRevision;
+    const flowRevision = publishReview.preview.flowRevision;
     $('publish-dialog').close();
-    openClosure('cannot-reproduce', revision);
+    openClosure('cannot-reproduce', flowRevision);
   });
 
   function closeRename() {
@@ -3261,6 +3291,7 @@
     if (skillPicker) return void openBlockSkillPicker(skillPicker.dataset.skillPicker);
     const button = event.target.closest('button');
     if (!button || button.disabled) return;
+    if (button.hasAttribute('data-close-issue')) return openClosure();
     if (button.hasAttribute('data-destination-open')) {
       $('destination-heading').textContent = button.dataset.destinationLabel || 'Destination branch';
       $('destination-message').textContent = 'Checking branches…';
@@ -3678,12 +3709,12 @@
     }
   });
 
-  function openClosure(suggestedResolution, revision = state.view.flow.revision) {
+  function openClosure(suggestedResolution, flowRevision = state.view.flow.revision) {
     const { issue, flow } = state.view;
     void closureDialog.open(async () => ({
       ...(await json('/api/issue-closure?issue=' + encodeURIComponent(issue.id))),
       kind: 'close',
-      flowRevision: revision,
+      flowRevision,
       offerClosureRetro: flow.blocks.some((block) => block.kind === 'retro'),
       suggestedResolution,
     }));
@@ -3967,17 +3998,60 @@
     { passive: true }
   );
   new ResizeObserver(drawConnections).observe($('graph-scroll'));
-  document.addEventListener('visibilitychange', () => {
-    if (!document.hidden) void load();
-  });
+  let changes;
+  let changeSelection;
+  let updateTimer;
+  let remoteCheck = false;
+
+  function queueUpdate(remote = false) {
+    remoteCheck ||= remote;
+    if (updateTimer || document.hidden) return;
+    updateTimer = setTimeout(() => {
+      updateTimer = undefined;
+      if (document.hidden) return;
+      if (state.pending || state.loading) {
+        queueUpdate();
+        return;
+      }
+      const refreshRemote = remoteCheck;
+      remoteCheck = false;
+      void load(false, false, refreshRemote);
+    }, 100);
+  }
+
+  function connectChanges() {
+    if (changes && changeSelection === state.issueId) return;
+    changes?.close();
+    changeSelection = state.issueId;
+    const query = changeSelection ? '?issue=' + encodeURIComponent(changeSelection) : '';
+    changes = new EventSource('/api/flow-changes' + query);
+    changes.addEventListener('open', () => queueUpdate());
+    changes.addEventListener('error', () => {
+      if (changes?.readyState === EventSource.CLOSED) queueUpdate();
+    });
+    changes.addEventListener('flow', () => queueUpdate());
+    changes.addEventListener('sources', () => window.dispatchEvent(new Event('factory-sources-changed')));
+  }
+
+  function syncChanges() {
+    if (document.hidden) {
+      changes?.close();
+      changes = undefined;
+    } else {
+      connectChanges();
+    }
+  }
+
+  document.addEventListener('visibilitychange', syncChanges);
+  window.addEventListener('factory-workspace-changed', syncChanges);
   setInterval(updateBlockTimers, 1000);
   setInterval(() => {
-    if (!document.hidden) void load();
-  }, 2000);
+    if (!document.hidden) queueUpdate(true);
+  }, 60_000);
   serverControlUI.watchConnection(() => {
     $('connection-status').className = 'connection offline';
     $('connection-status').innerHTML = '<span class="connection-dot"></span> Offline';
     renderErrors();
   });
-  void load();
+  syncChanges();
 })();

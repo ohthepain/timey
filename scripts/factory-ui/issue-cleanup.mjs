@@ -551,7 +551,14 @@ function makeCleanupRecord(issueId, issue, input, previous, preview, selected) {
     closure: issue.closure || null,
     resolution: cleanupResolution(input, issue),
     selected,
-    selectedResources: input.selectedResources || preview.resources.filter((item) => selected.includes(item.id)),
+    selectedResources: [
+      ...new Map(
+        [
+          ...(previous?.selectedResources || []),
+          ...(input.selectedResources || preview.resources.filter((item) => selected.includes(item.id))),
+        ].map((item) => [item.id, item])
+      ).values(),
+    ],
     preview,
     status: 'running',
     created: new Date().toISOString(),

@@ -536,3 +536,37 @@ void test('unchanged manifests retry newly unavailable or corrupt artifacts whil
       assert.equal(cached, recovered);
     });
 });
+
+void test('lazy Git providers expose atomic metadata transactions without opening unused stores', async (t) => {
+  const f = fixture(t);
+  f.git('remote', 'add', 'origin', f.root);
+  const { revision, ...config } = readStoreConfig(f.root);
+  writeStoreConfig(
+    f.root,
+    {
+      ...config,
+      stores: [
+        ...config.stores,
+        { id: 'git-metadata', label: 'Git metadata', kind: 'git', roles: ['coordination'], branch: 'queue' },
+      ],
+    },
+    { expectedRevision: revision }
+  );
+  const stores = await ensureProjectStores(f.service, { fresh: true });
+  const records = stores.recordStores.get('git-metadata');
+  assert.equal(typeof records.transaction, 'function');
+  await records.transaction(async () => {
+    await records.commit({
+      operationId: 'one',
+      expected: [{ key: 'one', revision: null }],
+      writes: [{ key: 'one', value: 1 }],
+    });
+    await records.commit({
+      operationId: 'two',
+      expected: [{ key: 'two', revision: null }],
+      writes: [{ key: 'two', value: 2 }],
+    });
+  });
+  assert.equal(f.git('rev-list', '--count', 'queue'), '1');
+  assert.equal((await records.get('two')).value, 2);
+});

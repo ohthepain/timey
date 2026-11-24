@@ -12,7 +12,7 @@ import {
   storeFailure,
   validIdentity,
 } from './coordination.mjs';
-import { installSnapshot, readSnapshot } from './snapshots.mjs';
+import { captureFlowGenerations, installSnapshot, readSnapshot } from './snapshots.mjs';
 import { moveIssue, moveProjectStore } from './migrations.mjs';
 import { deleteIssue, resumeDelete } from './deletion.mjs';
 
@@ -74,6 +74,96 @@ function assertFlowVersion(record, expected) {
     'STORE_CONFLICT',
     'The shared flow changed. Refresh before editing.'
   );
+}
+
+function sameFlow(record, flow) {
+  return Boolean(record && inputDigest(record.value) === inputDigest(flow));
+}
+
+function validateFlowSave(record, flow, expectedRevision, purpose) {
+  const unchanged = sameFlow(record, flow);
+  assertStoreState(
+    !merged(record?.value) || permitsClosure(record.value, flow, purpose) || unchanged,
+    'STORE_MERGED',
+    'This merged issue is read-only.'
+  );
+  assertFlowVersion(record, expectedRevision);
+  return unchanged;
+}
+
+function confirmedFlowSave(coordination, operation, record, inputHash) {
+  coordination.matchOperation(operation, inputHash);
+  return operation.value.status === 'confirmed' ? { flow: record?.value ?? null } : null;
+}
+
+function flowSaveKeys(issueId, operationId) {
+  assertStoreState(
+    typeof operationId === 'string' && operationId.length > 0 && operationId.length < 500,
+    'STORE_INVALID_OPERATION',
+    'Supply a stable operation identity.'
+  );
+  return { key: 'operations/' + encodeURIComponent(operationId), claimKey: 'claims/' + validIdentity(issueId) };
+}
+
+function recordRevision(record) {
+  return record?.revision ?? null;
+}
+
+function updatedFlow(record, flow, at) {
+  return { ...cloneRecord(flow), revision: (record?.value.revision || 0) + 1, updatedAt: at };
+}
+
+function flowSaveTransaction(
+  { catalog, record, gate, unchanged, key, claimKey, operationId },
+  input,
+  inputHash,
+  runnerId
+) {
+  const at = now();
+  const flow = unchanged ? record.value : updatedFlow(record, input.flow, at);
+  const value = {
+    id: operationId,
+    kind: 'save-flow',
+    input,
+    inputHash,
+    status: 'confirmed',
+    createdAt: at,
+    confirmedAt: at,
+    runnerId,
+    token: randomUUID(),
+    result: {},
+  };
+  return {
+    flow,
+    transaction: {
+      operationId: operationId + '/atomic',
+      expected: [
+        { key: catalog.key, revision: catalog.revision },
+        { key: flowKey(input.issueId), revision: recordRevision(record) },
+        { key: claimKey, revision: null },
+        { key: 'project/migration', revision: recordRevision(gate) },
+        { key, revision: null },
+      ],
+      writes: [{ key, value }, ...(!unchanged ? [{ key: flowKey(input.issueId), value: flow }] : [])],
+    },
+  };
+}
+
+async function reconcileFlowSave(project, { key, issueId, inputHash, operationId }, error) {
+  let recovered;
+  try {
+    recovered = await project.pinnedRead(async (view) => ({
+      operation: await view.coordination.get(key),
+      record: await view.coordination.get(flowKey(issueId)),
+    }));
+  } catch {
+    throw Object.assign(error, { operationId, pending: true });
+  }
+  if (recovered.operation) {
+    const confirmed = confirmedFlowSave(project.coordination, recovered.operation, recovered.record, inputHash);
+    if (confirmed) return confirmed;
+  }
+  throw Object.assign(error, { operationId, pending: error.code !== 'STORE_CONFLICT' });
 }
 
 export function createProjectStores({
@@ -233,7 +323,8 @@ export function createProjectStores({
       },
       async refresh(options = {}) {
         try {
-          return installSnapshot(this.root, await this.snapshot(options));
+          const flowGenerations = captureFlowGenerations(this.root, options.issueIds);
+          return installSnapshot(this.root, await this.snapshot(options), { flowGenerations });
         } catch (error) {
           if (!options.allowCached) throw error;
           const cached = readSnapshot(this.root);
@@ -573,7 +664,43 @@ export function createProjectStores({
             purpose: input.kind === 'close' ? 'closure' : 'edit',
           });
       },
+      async atomicFlowSave({ issueId, flow, expectedRevision, operationId, owner, purpose }) {
+        if (owner) return null;
+        flow = cloneRecord(flow);
+        const { key, claimKey } = flowSaveKeys(issueId, operationId);
+        const state = await this.pinnedRead(async (view) => {
+          const catalog = await view.catalog(issueId);
+          const [record, operation, claim, gate] = await Promise.all([
+            view.coordination.get(flowKey(issueId)),
+            view.coordination.get(key),
+            view.coordination.get(claimKey),
+            view.coordination.get('project/migration'),
+          ]);
+          return { catalog, record, operation, claim, gate };
+        });
+        const { record, operation, claim, gate } = state;
+        const input = { issueId, flow, expectedRevision, owner: null, purpose };
+        const inputHash = inputDigest({ kind: 'save-flow', input });
+        if (operation) return confirmedFlowSave(this.coordination, operation, record, inputHash);
+        const unchanged = validateFlowSave(record, flow, expectedRevision, purpose);
+        assertStoreState(!claim, 'STORE_CLAIMED', 'Another runner or attempt owns this issue.');
+        this.coordination.requireGate(gate);
+        const saved = flowSaveTransaction(
+          { ...state, unchanged, key, claimKey, operationId },
+          input,
+          inputHash,
+          this.runnerId
+        );
+        try {
+          await this.records.commit(saved.transaction);
+        } catch (error) {
+          return reconcileFlowSave(this, { key, issueId, inputHash, operationId }, error);
+        }
+        return { flow: saved.flow };
+      },
       async saveFlow({ issueId, flow, expectedRevision, operationId, owner, purpose = 'edit' }) {
+        const atomic = await this.atomicFlowSave({ issueId, flow, expectedRevision, operationId, owner, purpose });
+        if (atomic) return atomic.flow;
         await this.catalog(issueId);
         const record = await this.coordination.get(flowKey(issueId));
         const op = await this.coordination.operation(operationId, 'save-flow', {
@@ -584,23 +711,16 @@ export function createProjectStores({
           purpose,
         });
         if (op.value.status === 'confirmed') return (await this.readIssue(issueId)).flow;
-        assertStoreState(
-          !merged(record?.value) ||
-            permitsClosure(record.value, flow, purpose) ||
-            inputDigest(record.value) === inputDigest(flow),
-          'STORE_MERGED',
-          'This merged issue is read-only.'
-        );
-        assertFlowVersion(record, expectedRevision);
+        validateFlowSave(record, flow, expectedRevision, purpose);
         const claimOwner = owner || this.coordination.owner(op, issueId);
         if (!owner) await this.coordination.acquire(claimOwner, operationId + '/claim');
         const claim = await this.coordination.owned(claimOwner);
-        if (record && inputDigest(record.value) === inputDigest(flow)) {
+        if (sameFlow(record, flow)) {
           if (owner) await this.coordination.confirmOwned(op, owner);
           else await this.coordination.finalize(op, claimOwner);
           return record.value;
         }
-        const next = { ...cloneRecord(flow), revision: (record?.value.revision || 0) + 1, updatedAt: now() };
+        const next = updatedFlow(record, flow, now());
         if (!owner)
           await this.coordination.finalize(
             op,

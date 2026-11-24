@@ -90,6 +90,15 @@ concurrent revisions, and uncertain replies with disposable stores.
 full and selected refresh overlap, cold initialization, and direct controller
 freshness. Its HTTP fixture checks a peer update without reading unrelated reports.
 
+`node --test scripts/store-atomic-flow.check.mjs scripts/flow-save-git.check.mjs`
+checks idle flow saves against claims, migration seals, changed revisions,
+concurrent saves, and uncertain replies. The real Git fixture reorders
+investigation outputs while retaining attempt bytes. It counts remote-head
+checks and pushes for small flows and flows with overflowing history, verifies
+the saved results, and checks fresh peer reads and idempotent retries. All Git
+remotes and artifacts are disposable. These counts measure store operations,
+not live GitHub response times.
+
 `node --test scripts/closure-menu.check.mjs` holds a shared-store refresh while
 opening the Close menu through the real HTTP route. The menu must return saved
 issue context without waiting for that refresh. Confirming closure still waits
@@ -162,6 +171,11 @@ allows chat requests across issue, project, report, temporary, and coordinator
 conversations while work dispatch stays paused. Its HTTP Discuss regression
 sends and drains queued prompts through an injected provider with the switch on
 and another action running. It starts no live model work.
+The Flow browser suite checks that the runner holding the active Work claim can
+resume playback and that No new actions still prevents dispatching the next block.
+It also checks that the open page disables Resume once Work finishes while No new
+actions is on. The focused Flow service test verifies that the pause itself
+notifies watchers after the Work completion notification.
 
 `node scripts/flow-browser.mjs --investigation-reports` checks retained report
 reading and discussion. Its draft-restoration regression holds the discussion
@@ -202,6 +216,10 @@ failure and chained-cleanup coverage with both existing and absent configuration
 Run the scenarios individually with `--no-changes` and `--folder-settings`.
 Run `node scripts/flow-browser.mjs --no-changes --folder-settings` together.
 Add `--reverse-fixture-scenarios` to run folder settings before no-change publication.
+Run `node scripts/flow-browser.mjs --no-changes --sidebar-scroll` and repeat
+with `--reverse-fixture-scenarios`. The sidebar check creates and removes its
+overflow issues both before and after no-change publication activates the
+Issue Store.
 The main browser workflow intentionally shares state between checks and does not
 use this boundary. Independent scenarios opt in at their exported entry point.
 The missing-lifecycle browser scenario removes the disposable project's lifecycle
@@ -241,11 +259,10 @@ and check evidence, Stop, restart visibility, and bounded provider repair with
 injected model and check responses. It preserves staged and uncommitted edits.
 `node scripts/flow-browser.mjs --branch-repair` drives the real issue-page button,
 red check-failure state, progress after reload, candidate diff, and explicit
-approval in a disposable checkout. It holds the initial inspector request and
-checks that repair controls remain available while it waits, then releases the
-inspection before accepting a repair command. It injects
-the repair worker and does not run
-a live model or repair a production issue.
+approval in a disposable checkout. It holds an explicit issue refresh and
+checks that repair controls remain available, then releases the refresh before
+accepting a repair command. The scenario uses an injected repair worker in the
+disposable checkout.
 
 `node --test scripts/block-skills.check.mjs scripts/flow-folder-settings.check.mjs`
 checks per-block defaults, personal/project extensions and explicit skill choices.
@@ -305,6 +322,8 @@ project-scoped Automate me history, retained conversations, and reviewed skill
 application in disposable projects. `pnpm run test:project-home:browser` drives
 the actual home page and dialogs, including custom history duration, discussion,
 Run, findings, draft edits, Apply, reload, and narrow layout with injected models.
+The Project Home browser check waits for the archive deletion response, then
+checks the displayed result and confirms that the report and selected branch are gone.
 The factory and Flow aggregate checks include these scenarios. Live provider
 availability remains a separate check.
 
@@ -442,6 +461,31 @@ verification command after 15 minutes. Evidence reuse requires matching inputs,
 including focused commands and the required scope. GitHub CI retains its full
 suite and existing branch protection.
 
+For a PR repairing failed CI tests, record the exact regression commands in
+`.github/pr-repair-tests.json`. `pnpm run test:pr-repair` runs them by name and
+stops at the first failure. CI runs this plan before broad verification while
+the manifest differs from the PR base; after it merges, unchanged plans are
+skipped. Use `node scripts/flow-browser.mjs --timers` for the isolated attempt
+timer scenario. Repair workers reproduce the named failures, include necessary
+predecessor scenarios, and return after focused proof instead of repeating
+Factory's independent full verification.
+Include `--stores` when reproducing browser failures after storage activation;
+an isolated legacy-storage run does not establish that the store-backed case
+passed. `--proposals --delayed-delete` holds a proposal Delete request for 16
+seconds. The shared action helper allows 60 seconds for mutation responses and
+still checks their actual status and result. CI prints failed checks and browser
+scenario names directly from the retained verification record.
+
+To verify an update, open the latest **Update Branch** attempt in Flow. Confirm
+that it shows `completed` and records `containsFetchedCommit: true`. Copy the
+exact `fetchedCommit` hash from the result.
+
+In the issue worktree, replace `FETCHED_COMMIT` with the copied hash and run
+`git merge-base --is-ancestor FETCHED_COMMIT HEAD`. Exit status `0` confirms
+that the current issue branch still contains that commit, even if `HEAD` has
+advanced since the update. Keep the attempt result and the Git check outcome
+with the smoke-test evidence.
+
 Drag-and-drop browser scenarios are excluded from ordinary verification and
 full regression, including Merge and CI. They run only when explicitly requested
 with `pnpm run test:browser:drag-and-drop`. This covers legacy queue reordering,
@@ -457,6 +501,16 @@ identifies failed checks separately from successful checks and references the
 local copies. Original records remain unchanged. The regression in
 `scripts/flow-executor.check.mjs` covers a passing build followed by a browser
 failure whose original logs are outside the worker checkout.
+GitHub artifact downloads have a two-minute transfer deadline; ordinary GitHub
+CLI requests retain their 30-second deadline. This lets large failure evidence
+finish transferring before the repair worker is invoked.
+
+Close can reuse a successful GitHub verification report for an externally merged
+candidate when local delivery proof is absent. `github-closure-proof.mjs` binds
+the run to the merged head, validates its base and exact tree through the normal
+summary validator, checks downloaded artifact hashes and paths, and retains the
+original report alongside its relocated copy. A matching passing step audit is
+still required. Existing corrupt or mismatched retained proof remains blocking.
 
 The Notes browser scenario leaves a pending Discuss draft, unloads the preceding
 page, and closes its Discuss service before installing its own injected provider.
@@ -1156,6 +1210,40 @@ screenshots. Provider observations and execution results are disposable fixtures
 this does not establish live model entitlements or output quality.
 
 `node scripts/factory-browser.mjs --scenario=factory-browser-capture-start.mjs`
-runs only the capture-profile scenario. Named Factory scenarios are accepted as
-focused PR repair commands; aggregate Factory browser runs, duplicate selections
-and path traversal are rejected. Ordinary and drag-only suite selection is unchanged.
+runs the capture-profile scenario on its own. PR repair accepts named Factory
+browser scenarios and rejects aggregate runs, duplicate selections, and path
+traversal. The ordinary and drag-only suites retain their existing selection rules.
+
+The PR repair-first step records V8 coverage under `.issues/repair-first-coverage`.
+The following strict static audit consumes that actual coverage before broad
+verification, so tested runtime helpers are evaluated with measured coverage.
+No changed repair plan means the focused step skips, as before.
+`node --test scripts/store-git-transaction.check.mjs` checks atomic Git metadata
+publication, rollback, competing writes, replay, lost push responses, pinned
+reads and detached callbacks. The manual operation tests in
+`project-stores-flow.check.mjs` check failed admission and checkpoint ordering.
+`RUNS=5 node scripts/branch-update-benchmark.mjs --compare --assert` compares the
+original and current owned branch-update paths against disposable Git stores,
+verifies completed work and released ownership, and counts metadata lookups and
+pushes. It also measures plain fetch-and-merge. See the
+[performance evidence](../plans/update-branch-performance.md) for scope and limits.
+
+`node --test scripts/store-git-github.check.mjs` checks the GitHub metadata request
+schema, exact object identities, conditional ref update, permissions and rejected
+responses. The store-record tests verify that fresh writes avoid downloading their
+just-uploaded payloads, while replay and later reads still validate storage.
+They also check scoped payload reuse, independent values, failure retries and
+expiry for detached callbacks. Git transaction checks cover disjoint peer updates
+without callback replay and rejection of changed input or command prefixes.
+
+`node --test scripts/store-snapshot-files.check.mjs` verifies legacy display-cache
+conversion, scoped issue/claim/command preservation, fresh-process reads, immutable
+objects, fragment corruption, failed-index rollback, deletion and authoritative
+cache repair with local drafts. `scripts/snapshot-refresh-benchmark.mjs` compares
+selected cache publication against a fixed Git revision in disposable directories;
+it checks selected and unrelated issue values and never changes shared records.
+
+`node --test --test-name-pattern="publication waits only" scripts/flow-delivery.check.mjs`
+reproduces a successful push followed by a stale GitHub PR head. Publish briefly
+waits only for that exact previous head, while another head, a changed title and
+a persistently stale response remain blocking. Retries never repeat the push.

@@ -1,3 +1,4 @@
+import { runMetadataOperation } from './metadata-operation.mjs';
 import { prepareAttemptCommit } from './flow-evidence.mjs';
 import { makeBlock } from '../flow-store.mjs';
 import { redactValue } from '../activity.mjs';
@@ -98,7 +99,15 @@ export async function startOwnedOperation(
   Object.assign(block, { label, operation, shareSourceCheckpoint });
   prepared.blocks.push(block);
   const attempt = flows.makeAttempt(prepared, issue, block, catalog);
-  const admitted = await flows.admitAttempt(issue, prepared, block, attempt, controller);
+  let admitted;
+  try {
+    admitted = await runMetadataOperation(flows.service.projectStores, () =>
+      flows.admitAttempt(issue, prepared, block, attempt, controller)
+    );
+  } catch (error) {
+    flows.active.delete(issue.id);
+    throw error;
+  }
   admitted.owned.movingStartingPoint = movingStartingPoint;
   const task = executeOperation(flows, { issue, admitted, block, attempt, controller, run });
   admitted.owned.task = task;
@@ -109,14 +118,26 @@ export async function runOwnedOperation(flows, options) {
   return (await startOwnedOperation(flows, options)).task;
 }
 
+function operationCheckpoint(flows, issue, owner, controller) {
+  let pending;
+  const timer = setInterval(() => {
+    pending ||= flows
+      .synchronizeAttempt(issue, owner, controller)
+      .catch((error) => flows.pause(issue.id, 'Waiting for shared storage: ' + redactValue(error.message)))
+      .finally(() => {
+        pending = null;
+      });
+  }, 5000);
+  timer.unref();
+  return () => {
+    clearInterval(timer);
+    return pending;
+  };
+}
+
 async function executeOperation(flows, { issue, admitted, block, attempt, controller, run }) {
   const context = operationContext(flows, issue, admitted, block, attempt, controller);
-  const checkpoint = setInterval(() => {
-    flows.synchronizeAttempt(issue, admitted.owned.storeOwner, controller).catch((error) => {
-      flows.pause(issue.id, 'Waiting for shared storage: ' + redactValue(error.message));
-    });
-  }, 5000);
-  checkpoint.unref();
+  const checkpoint = operationCheckpoint(flows, issue, admitted.owned.storeOwner, controller);
   let result;
   let failure;
   try {
@@ -124,10 +145,12 @@ async function executeOperation(flows, { issue, admitted, block, attempt, contro
   } catch (error) {
     failure = error;
   } finally {
-    clearInterval(checkpoint);
+    await checkpoint();
   }
   const outcome = terminalOutcome(flows, issue, block, attempt, result, failure, controller);
-  await completeOperation(flows, issue, admitted, block, outcome);
+  await runMetadataOperation(flows.service.projectStores, () =>
+    completeOperation(flows, issue, admitted, block, outcome)
+  );
   if (flows.active.get(issue.id) === admitted.owned) flows.active.delete(issue.id);
   if (failure && !(outcome.mergedReceipt && failure.code === 'STORE_MERGED')) throw failure;
   return outcome;

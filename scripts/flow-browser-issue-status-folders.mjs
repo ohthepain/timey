@@ -1,9 +1,9 @@
+import { importBrowserIssues, removeBrowserIssue } from './flow-browser-fixture.mjs';
 import assert from 'node:assert/strict';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createIssueFolderSettings } from './factory-ui/issue-folder-settings.mjs';
 import { git } from './factory-ui/common.mjs';
-import { importBrowserIssues, removeBrowserIssues } from './flow-browser-fixture.mjs';
 
 async function setAttempt(service, entry, status, humanInput) {
   const flow = service.flows.read(service.flows.selected(entry.id));
@@ -51,11 +51,8 @@ async function removeFixtures(service, folders, fixtures) {
   for (const entry of fixtures) {
     service.flows.active.delete(entry.id);
     service.flows.autoplay.delete(entry.id);
+    await removeBrowserIssue(service.root, entry.id);
   }
-  await removeBrowserIssues(
-    service,
-    fixtures.map(({ id }) => id)
-  );
 }
 
 async function checkDirectStart(service, paused, running, expectMembers) {

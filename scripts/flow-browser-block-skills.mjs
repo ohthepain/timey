@@ -1,11 +1,12 @@
+import { importBrowserIssue } from './flow-browser-fixture.mjs';
 import assert from 'node:assert/strict';
-import { writeFileSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { readFileSync } from 'node:fs';
 
 export async function blockSkillsBrowserChecks({ page, service, project, poll }) {
   const id = '20261119-block-skills-fixture';
-  writeFileSync(
-    join(project, '.issues', id + '.md'),
+  await importBrowserIssue(
+    project,
+    id,
     `---\nid: ${id}\ntitle: Choose a block skill\nstate: backlog\n---\n\nFix a fixture.\n`
   );
   const skills = async () => [{ name: 'poteto-mode' }];

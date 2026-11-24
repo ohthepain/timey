@@ -143,7 +143,7 @@
         ],
         files: [],
       }[store.kind];
-      return `<fieldset><legend>${esc(store.label)} · ${esc(store.kind)}</legend>${storeField(store, 'label', 'Name')}${fields.map(([key, label]) => storeField(store, key, label)).join('')}${store.references ? references(store) : '<p>Connection references are checked after saving.</p>'}<button type="button" class="small-button" data-store-test="${esc(store.id)}"${store.unsaved ? ' disabled' : ''}>Test store connection</button><p data-store-result="${esc(store.id)}" role="status"></p></fieldset>`;
+      return `<fieldset data-store-check><legend>${esc(store.label)} · ${esc(store.kind)}</legend>${storeField(store, 'label', 'Name')}${fields.map(([key, label]) => storeField(store, key, label)).join('')}${store.references ? references(store) : '<p>Connection references are checked after saving.</p>'}<button type="button" class="small-button" data-store-test="${esc(store.id)}"${store.unsaved ? ' disabled' : ''}>Test store connection</button><p data-store-result="${esc(store.id)}" role="status"></p></fieldset>`;
     }
     function storeOptions(role, selected) {
       const registry = data.storeRegistry;
@@ -160,6 +160,8 @@
     }
     function roleChoice(role, label, selected) {
       const key = role === 'artifact' ? 'artifacts' : role;
+      if (role === 'coordination')
+        return `<div data-store-check><label class="field" for="settings-coordination-store">${label}</label><div data-coordination-store-choice><select id="settings-coordination-store" name="role:${key}" required><option value="">Choose a store</option>${storeOptions(role, selected)}</select><button type="button" class="small-button" data-store-test-role="coordination">Test connection</button></div><p data-store-result role="status"></p></div>`;
       return `<label class="field">${label}<select name="role:${key}" required><option value="">Choose a store</option>${storeOptions(role, selected)}</select></label>`;
     }
     function configuredProfile(profile) {
@@ -300,19 +302,26 @@
         issueStoreUI.finishMigration(confirmed, input);
       }
     }
+    function storeToTest(button) {
+      const role = button.dataset.storeTestRole;
+      const storeId = role ? form().elements['role:' + role].value : button.dataset.storeTest;
+      const store = data.storeRegistry.stores.find(({ id }) => id === storeId);
+      if (!store) throw Error('Choose a store to test.');
+      if (store.unsaved) throw Error('Save the configured store before testing its connection.');
+      return { storeId: store.id, role: role || store.roles[0] };
+    }
     async function testStore(button) {
+      const output = button.closest('[data-store-check]').querySelector('[data-store-result]');
       button.disabled = true;
+      output.textContent = 'Testing connection…';
       try {
-        const store = data.storeRegistry.stores.find(({ id }) => id === button.dataset.storeTest);
         const result = await post('/api/issue-store-action', {
           action: 'test',
-          storeId: store.id,
-          role: store.roles[0],
+          ...storeToTest(button),
         });
-        content.querySelector(`[data-store-result="${store.id}"]`).textContent =
-          result.message || 'Connection verified.';
+        output.textContent = result.message || 'Connection verified.';
       } catch (failure) {
-        showError(failure.message);
+        output.textContent = failure.message;
       } finally {
         button.disabled = false;
       }
@@ -534,7 +543,7 @@
       ['[data-settings-create]', createDefaults],
       ['[data-store-add]', addStore],
       ['[data-profile-add]', addProfile],
-      ['[data-store-test]', testStore],
+      ['[data-store-test], [data-store-test-role]', testStore],
       ['[data-store-resume-delete]', (button) => leave(() => void resumeDeletion(button))],
       [
         '[data-settings-admin]',

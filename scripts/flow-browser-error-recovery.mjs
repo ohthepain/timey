@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
 import { git } from './factory-ui/common.mjs';
-import { importBrowserIssue } from './flow-browser-fixture.mjs';
+import { writeBrowserIssue } from './flow-browser-fixture.mjs';
 
 export async function errorRecoveryBrowserChecks({ page, service, project, output }) {
   const id = '20261120-error-recovery-fixture';
-  await importBrowserIssue(service, {
+  await writeBrowserIssue(service, {
     id,
     title: 'Recover from a rejected branch update',
     body: 'Refresh the shared queue before retrying.',

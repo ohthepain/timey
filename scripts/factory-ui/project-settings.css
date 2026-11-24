@@ -67,6 +67,14 @@ dialog.modal:where(#project-settings-dialog) {
   width: 100%;
   box-sizing: border-box;
 }
+[data-coordination-store-choice] select {
+  flex: 1;
+  min-width: 140px;
+  width: auto;
+}
+[data-coordination-store-choice] button {
+  flex-shrink: 0;
+}
 [data-settings-source] {
   display: block;
   overflow-wrap: anywhere;
@@ -121,7 +129,8 @@ dialog.modal:where(#project-settings-dialog) {
   font-weight: 600;
   padding: 0 8px;
 }
-.provider-actions {
+.provider-actions,
+[data-coordination-store-choice] {
   display: flex;
   gap: 12px;
   align-items: center;

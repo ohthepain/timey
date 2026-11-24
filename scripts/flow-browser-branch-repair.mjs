@@ -1,12 +1,25 @@
+import { importBrowserIssue } from './flow-browser-fixture.mjs';
 import assert from 'node:assert/strict';
 import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { git } from './factory-ui/common.mjs';
 
+async function runRepairCommand(page, command) {
+  const result = page.waitForResponse(
+    (response) => response.url().endsWith('/api/flow-action') && response.request().postDataJSON()?.action === command
+  );
+  await page.locator('#branch-repair-dialog [data-repair-command]').click();
+  const response = await result;
+  const body = await response.json();
+  assert.equal(response.status(), 200, JSON.stringify(body));
+  return body;
+}
+
 export async function branchRepairBrowserChecks({ page, service, project, poll, screenshot }) {
   const id = '20261120-branch-repair-fixture';
-  writeFileSync(
-    join(project, '.issues', id + '.md'),
+  await importBrowserIssue(
+    project,
+    id,
     `---\nid: ${id}\ntitle: Follow a branch repair\nstate: backlog\n---\n\nRepair a blocking branch check.\n`
   );
   const issue = service.flows.selected(id);
@@ -26,7 +39,7 @@ export async function branchRepairBrowserChecks({ page, service, project, poll, 
     output: '```flow-result\n{"failure":"Fallow failed in source.txt; Discuss proof could not run."}\n```',
     evidence: [],
   });
-  service.flows.store.save(flow, flow.revision);
+  await service.flows.store.save(flow, flow.revision);
   let release;
   const wait = new Promise((done) => {
     release = done;
@@ -41,24 +54,24 @@ export async function branchRepairBrowserChecks({ page, service, project, poll, 
     writeFileSync(join(run.checkout, 'branch-fix.txt'), 'Checked repair\n');
     retain({ checks: [{ label: 'Formatting and Fallow passed' }] });
   };
-  let openingBlock = false;
-  const opening = Promise.withResolvers();
-  const openingHandled = Promise.withResolvers();
-  const holdOpeningBlock = async (route) => {
-    const input = route.request().postDataJSON();
-    if (input.action === 'open-block' && input.issueId === id) {
-      openingBlock = true;
-      await opening.promise;
+  let refreshPending = false;
+  const refresh = Promise.withResolvers();
+  const refreshHandled = Promise.withResolvers();
+  const holdRefresh = async (route) => {
+    const query = new URL(route.request().url()).searchParams;
+    if (query.get('issue') === id && query.get('refresh') === 'true') {
+      refreshPending = true;
+      await refresh.promise;
       try {
         await route.continue();
       } finally {
-        openingHandled.resolve();
+        refreshHandled.resolve();
       }
       return;
     }
     await route.continue();
   };
-  await page.route('**/api/flow-action', holdOpeningBlock);
+  await page.route('**/api/flow?**', holdRefresh);
   try {
     await page.goto('/?issue=' + id);
     const button = page.locator('#fix-branch');
@@ -68,11 +81,12 @@ export async function branchRepairBrowserChecks({ page, service, project, poll, 
       (value) => value === 'broken',
       'Blocking check did not mark Fix Branch red'
     );
-    await poll(() => openingBlock, Boolean, 'The initial inspector check did not start');
-    assert.equal(await button.isEnabled(), true, 'Automatic inspector checks must not disable Fix Branch');
-    opening.resolve();
-    if (openingBlock) await openingHandled.promise;
-    await page.unroute('**/api/flow-action', holdOpeningBlock);
+    await page.locator('#refresh').click();
+    await poll(() => refreshPending, Boolean, 'The explicit issue refresh did not start');
+    assert.equal(await button.isEnabled(), true, 'Refreshing issue data must leave Fix Branch available');
+    refresh.resolve();
+    if (refreshPending) await refreshHandled.promise;
+    await page.unroute('**/api/flow?**', holdRefresh);
     await button.click();
     const dialog = page.locator('#branch-repair-dialog');
     assert.match(await dialog.locator('[data-repair-status]').textContent(), /Fallow failed/);
@@ -102,7 +116,10 @@ export async function branchRepairBrowserChecks({ page, service, project, poll, 
     assert.equal(await button.evaluate((node) => node.dataset.repairState === 'ready'), true);
     assert.match(await dialog.locator('[data-repair-diff]').textContent(), /branch-fix.txt/);
     await screenshot('branch-repair-ready');
-    await dialog.locator('[data-repair-command]').click();
+    await repairs.active.get(id)?.task;
+    await page.reload();
+    await button.click();
+    await runRepairCommand(page, 'branch-repair-approve');
     await poll(
       () => button.textContent(),
       (value) => value.includes('Branch Fix Applied'),
@@ -143,17 +160,17 @@ export async function branchRepairBrowserChecks({ page, service, project, poll, 
         return { summary: 'Updated the issue branch from the starting branch.' };
       },
     };
-    await dialog.locator('[data-repair-command]').click();
-    await dialog.locator('[data-repair-status]').filter({ hasText: 'Updated the issue branch' }).waitFor();
+    const updated = await runRepairCommand(page, 'update-worktree');
+    assert.match(updated.branchUpdateSummary, /Updated the issue branch/);
+    await page.locator('#fix-branch:not([data-repair-state="broken"])').waitFor();
     assert.equal(updates, 1);
     assert.equal(git(checkout, 'diff', '--name-only', '--diff-filter=U'), '');
-    assert.notEqual(await button.getAttribute('data-repair-state'), 'broken');
     await screenshot('branch-conflict-recovered');
     await dialog.locator('[data-repair-close]').click();
   } finally {
-    opening.resolve();
-    if (openingBlock) await openingHandled.promise;
-    await page.unroute('**/api/flow-action', holdOpeningBlock);
+    refresh.resolve();
+    if (refreshPending) await refreshHandled.promise;
+    await page.unroute('**/api/flow?**', holdRefresh);
     release();
     repairs.run = original;
     service.flows.executor = originalExecutor;
