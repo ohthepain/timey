@@ -5,6 +5,8 @@ const dragAndDropScenarios = new Set([
 ]);
 
 export function browserScenarioSelected(name, args = process.argv) {
+  const named = args.filter((arg) => arg.startsWith('--scenario='));
+  if (named.length) return named.length === 1 && named[0] === '--scenario=' + name;
   const dragAndDrop = dragAndDropScenarios.has(name);
   return args.includes('--drag-and-drop') ? dragAndDrop : !dragAndDrop;
 }

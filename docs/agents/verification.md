@@ -1154,3 +1154,8 @@ selection and reload. Saving an available replacement starts no work; explicit
 Run resolves the blocker. The scenario saves unavailable and recovered
 screenshots. Provider observations and execution results are disposable fixtures;
 this does not establish live model entitlements or output quality.
+
+`node scripts/factory-browser.mjs --scenario=factory-browser-capture-start.mjs`
+runs only the capture-profile scenario. Named Factory scenarios are accepted as
+focused PR repair commands; aggregate Factory browser runs, duplicate selections
+and path traversal are rejected. Ordinary and drag-only suite selection is unchanged.
