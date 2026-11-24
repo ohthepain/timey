@@ -97,6 +97,11 @@ export async function branchRepairBrowserChecks({ page, service, project, poll, 
       'No repair spinner state'
     );
     assert.equal(await button.locator('.active-spinner').count(), 1);
+    await poll(
+      () => repairs.read(id)?.output || '',
+      (output) => output.includes('source.txt needs repair'),
+      'Repair output was not retained before reload'
+    );
     await screenshot('branch-repair-running');
     await dialog.locator('[data-repair-close]').click();
     await page.reload();

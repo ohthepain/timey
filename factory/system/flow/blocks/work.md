@@ -43,7 +43,7 @@ clean result, report the concrete blocker. A no-change result may reuse HEAD.
 Factory checks formatting, Fallow, and checkout cleanliness after the response.
 
 In the final `flow-result` JSON, include a top-level `focusedTests` array
-with the passing focused test commands Merge should rerun. Use argument
+with the passing focused commands that verified the requested behavior. Use argument
 arrays without shell syntax or environment assignments. Supported commands
 include `["node","--test","scripts/example.check.mjs"]`,
 `["node","scripts/flow-browser.mjs","--project-discuss"]`, a named focused

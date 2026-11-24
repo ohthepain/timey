@@ -198,30 +198,26 @@ execution. Recovery can reuse matching verification from before an intervening
 claim-acquisition failure; explicit invalidation still prevents reuse. Changed
 candidates or inputs require verification again.
 
-Merge fetches Destination and merges its current revision into the issue branch.
-It verifies the issue commit against that destination revision using the local
-scope selected in Request at the start of the attempt. The default uses the
-Factory smoke checks, both browser suites, Vitest and Work's recorded focused
-checks, along with formatting, Fallow, types and the build. Full regression
-substitutes the full Factory suite. Every local verification command has a
-15-minute deadline. Merge pushes any changed commit to the existing PR and waits
-for required GitHub checks. It repeats if Destination advances. GitHub determines
-readiness, including repositories with zero required
-checks or unsuccessful optional checks. The Merge block Markdown sets the merge
-policy, polling interval, check timeout, and repair limit. Merge defaults to
-automatic and proceeds when verification and GitHub requirements pass. Human-first policy
-requires approval of the current issue commit and target revision. A change to
-either revision expires approval. GitHub App publication and GitHub protection
-apply. Merge can repair inherited test or formatting failures and new Fallow
-findings that block required checks. It commits the smallest repair that
-preserves the behavior and coverage under test, then verifies the candidate again.
+Merge fetches Destination and synchronizes the issue branch. It pushes any
+changed commit to the existing PR and waits for GitHub's required checks and
+reviews for that commit. GitHub determines readiness, including repositories
+with zero required checks or unsuccessful optional checks. Merge checks
+Destination again before merging and prepares the PR again if the branch
+advances. The Merge block Markdown sets the polling interval, check timeout,
+repair limit, and Factory's approval policy. It defaults to automatic.
+Human-first policy asks for consent to merge the exact current issue commit
+and target revision. GitHub App publication and GitHub protection apply.
+Merge can repair conflicts and failures reported by GitHub. It commits the
+smallest repair supported by focused evidence and pushes it for GitHub to check.
 Close confirms that the target still contains the merged PR and checks
 only the GitHub checks required for that PR. Zero required checks is valid.
 Explicit acceptance and cleanup ownership checks remain separate.
 
 An open, approved issue has **Close** beside **Worktree**. The header and Close
 block use the same dialog and start a separate closure sequence in the issue
-flow. Close records the selected reason, then Retro runs if enabled in Request.
+flow. Close records the selected reason, then Retro runs if selected for that
+closure. The dialog defaults to the Request setting for Fixed and to off for
+all other reasons.
 Cleanup runs last. If Retro fails, Cleanup waits for a retry or an explicit
 choice to continue. Closing as **Fixed** still requires retained evidence and
 all acceptance checks. Auto-close requires explicit consent for the delivery

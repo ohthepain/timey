@@ -155,9 +155,6 @@ import { FlowOvernight } from './flow-overnight.mjs';
 const hiddenRepoFolders = new Set(['.git', '.issues', 'node_modules', '.next', '.turbo', 'coverage', 'dist', 'build']);
 const confirmationBlocks = new Set(['close', 'delete-worktree']);
 
-function declinesClosureRetro({ resolution, runClosureRetro }) {
-  return Boolean(resolution && resolution !== 'fixed' && runClosureRetro === false);
-}
 const branchActions = new Set([
   'abort-merge',
   'open-worktree',
@@ -1025,7 +1022,10 @@ class IssueFlows {
       id: randomUUID(),
       startedAt: new Date().toISOString(),
       resolution: input.resolution,
-      retro: requestBlock(flow).data.runRetro === true && !declinesClosureRetro(input),
+      retro:
+        typeof input.runClosureRetro === 'boolean'
+          ? input.runClosureRetro
+          : (input.resolution ?? 'fixed') === 'fixed' && requestBlock(flow).data.runRetro === true,
       branches,
     };
     delete flow.autoClose;
@@ -1052,6 +1052,7 @@ class IssueFlows {
       throw error;
     }
     const closedFlow = this.read(this.selected(issue.id));
+    setRetroBlock(closedFlow, catalog);
     resolveBlockingErrors(closedFlow, 'close', ['close']);
     await this.store.save(closedFlow, closedFlow.revision);
     this.pause(issue.id, 'Issue closed');
@@ -1393,16 +1394,9 @@ class IssueFlows {
     );
     if (issue.state === 'needs-approval')
       requireThat(
-        [
-          'open-block',
-          'rename-issue',
-          'edit-request',
-          'comment',
-          'retro-setting',
-          'full-regression-setting',
-          'folder',
-          'folder-lock',
-        ].includes(action),
+        ['open-block', 'rename-issue', 'edit-request', 'comment', 'retro-setting', 'folder', 'folder-lock'].includes(
+          action
+        ),
         'Approve this issue before starting work.'
       );
     if (flow.closing && !flow.closing.complete)
@@ -1501,7 +1495,7 @@ class IssueFlows {
     let flow = await this.actionFlow(issue, input, catalog);
     if (isInvestigation(issue, flow))
       requireThat(
-        !closureActions.has(input.action) && !['retro-setting', 'full-regression-setting'].includes(input.action),
+        !closureActions.has(input.action) && input.action !== 'retro-setting',
         'Investigations are archived directly; they have no Close, Retro, or Merge step.'
       );
     this.overnight.requireManualAction(issue.id, input.action);
@@ -1541,15 +1535,6 @@ class IssueFlows {
     }
     if (!['comment', 'open-block'].includes(input.action))
       requireThat(input.revision === flow.revision, 'This flow changed. Refresh before saving this edit.');
-    if (input.action === 'full-regression-setting') {
-      requireThat(
-        !issue.closed && typeof input.enabled === 'boolean',
-        'Choose whether to run full regression on this open issue.'
-      );
-      requestBlock(flow).data.fullRegression = input.enabled;
-      await this.store.save(flow, flow.revision);
-      return this.view(issue.id);
-    }
     if (input.action === 'edit-request') return this.editRequest(issue, flow, input, catalog);
     if (input.action === 'folder' || input.action === 'folder-lock') return await this.editFolder(issue, flow, input);
     if (closureActions.has(input.action)) return await this.dispatchClosure(input, issue, flow, catalog);
@@ -2735,7 +2720,6 @@ class IssueFlows {
         current.endedAt = new Date().toISOString();
         if (error.partialText) current.output += error.partialText;
         current.evidence = error.evidence || current.evidence;
-        if (error.deliveryVerification) current.result = { verification: error.deliveryVerification };
         if (error.humanInput) current.result = { ...current.result, humanInput: error.humanInput };
         if (error.input) current.input = error.input;
         outcome = current;

@@ -13,14 +13,11 @@ import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { setTimeout as delay } from 'node:timers/promises';
 import { cleanEnvironment, digest, git, requireThat, writeJson } from './common.mjs';
-import { validateSummary } from './checks.mjs';
 import { StrategyProvider } from './strategy-provider.mjs';
-import { flowMergeChecks, flowVerificationInput } from './flow-verification.mjs';
 import { queueReportPaths } from './shared-issue-config.mjs';
 import { recheckedGroupProof, requireGroupProof } from './flow-group-proof.mjs';
 import { evidencePath } from './stores/evidence.mjs';
 import { fetchIssueTarget } from './flow-update-branch.mjs';
-import { retainGitHubClosureVerification } from './github-closure-proof.mjs';
 
 const execute = promisify(execFile);
 
@@ -114,126 +111,6 @@ function blockVerification(block, attempt = latestCurrentAttempt(block)) {
 export function flowVerificationHead(block) {
   const verification = blockVerification(block);
   return verification?.uncommitted ? undefined : verification?.head;
-}
-
-export function retainedBlockVerification(block, attemptId) {
-  const previous = block.attempts?.findLast(
-    (attempt) => attempt.id !== attemptId && (attempt.invalidatedAt || blockVerification(block, attempt))
-  );
-  if (!previous) return undefined;
-  if (previous.invalidatedAt) return undefined;
-  return blockVerification(block, previous);
-}
-
-export function verifiedFlowCandidate(ctx, workspace, options = {}) {
-  const candidate = committedCandidate(workspace);
-  const base = options.verificationBase;
-  const mergeChecks = base && flowMergeChecks(ctx);
-  const getInput = options.verificationInput || flowVerificationInput;
-  const inputs = base ? [getInput(ctx, workspace.checkout, base)] : [];
-  if (mergeChecks?.scope === 'default') inputs.push(getInput(ctx, workspace.checkout, base, 'full'));
-  const checks = [
-    options.verification,
-    retainedBlockVerification(ctx.block, ctx.attempt?.id),
-    ...upstreamBlocks(ctx.block, ctx.flow.blocks)
-      .toReversed()
-      .map((block) => blockVerification(block)),
-  ];
-  const current = checks.filter(
-    (checked) =>
-      ((!checked?.uncommitted && checked?.head === candidate.head) ||
-        (checked?.uncommitted && checked?.tree === candidate.tree)) &&
-      (!base || (checked?.input && checked.base === base && inputs.includes(checked.input)))
-  );
-  if (!current.some((checked) => checked.proof?.length >= 2))
-    throw Object.assign(
-      Error('Required independent verification and step evidence is missing for this exact issue candidate.'),
-      { code: 'FLOW_PROOF_MISSING' }
-    );
-  let failure;
-  for (const checked of current) {
-    try {
-      const verificationBase = checked.destinationBase || candidate.base;
-      git(workspace.checkout, 'merge-base', '--is-ancestor', verificationBase, candidate.head);
-      return {
-        ...candidate,
-        verification: checked,
-        evidence: verifyEvidence({ ...candidate, base: verificationBase }, checked, {
-          ...options,
-          mergeChecks,
-          evidenceRoot: ctx.evidenceRoot,
-        }),
-      };
-    } catch (error) {
-      failure ??= error;
-    }
-  }
-  throw failure;
-}
-
-function verifyEvidence({ tree, base }, checked, options) {
-  requireThat(
-    checked.tree === tree && checked.base === base && checked.proof?.length >= 2,
-    'The verified candidate changed. Preserve its changes and run an explicit Verify block again.'
-  );
-  const checkpoints = new Set();
-  const evidence = [];
-  for (const proof of checked.supportingProof || []) {
-    requireThat(
-      digest(readFileSync(evidencePath(options.evidenceRoot, proof.path, proof.sha256))) === proof.sha256,
-      'Supporting verification evidence changed. Run an explicit Verify block again.'
-    );
-    evidence.push(proof);
-  }
-  for (const proof of checked.proof) {
-    const bytes = readFileSync(evidencePath(options.evidenceRoot, proof.path, proof.sha256));
-    requireThat(digest(bytes) === proof.sha256, 'The retained verification evidence changed. Run verification again.');
-    const summary = JSON.parse(bytes);
-    (options.validateSummary || validateSummary)(summary, base, tree, {
-      auditPolicy: 'required',
-      mergeChecks: options.mergeChecks,
-    });
-    checkpoints.add(summary.checkpoint);
-    evidence.push(proof);
-    for (const check of summary.checks || []) {
-      requireThat(
-        (checked.supportingProof || []).some((file) => file.path === check.log),
-        'Immutable command evidence is missing. Run an explicit Verify block again.'
-      );
-      for (const file of check.artifacts || [])
-        requireThat(
-          (checked.supportingProof || []).some((proof) => proof.path === file.path && proof.sha256 === file.sha256),
-          'Immutable browser evidence is missing. Run an explicit Verify block again.'
-        );
-    }
-  }
-  requireThat(
-    checkpoints.has('verification') && checkpoints.has('step'),
-    'Both independent verification and step checkpoints are required before delivery.'
-  );
-  return evidence;
-}
-
-export async function ensureFlowVerification(service, ctx, workspace, folder, options) {
-  const before = committedCandidate(workspace);
-  try {
-    return verifiedFlowCandidate(ctx, workspace, options);
-  } catch (error) {
-    if (!options.verifyCandidate) throw error;
-  }
-  service.guard(service.root, { id: ctx.attempt.id, issues: [ctx.issue.id] }, 'verify', workspace.base);
-  ctx.onProgress('Running independent verification on the issue commit.\n', true);
-  const base = options.verificationBase;
-  const { result, evidence } = await options.verifyCandidate(ctx, base ? { ...workspace, base } : workspace, folder);
-  ctx.signal.throwIfAborted();
-  const verification = base ? { ...result, destinationBase: base } : result;
-  const checked = verifiedFlowCandidate(ctx, workspace, { ...options, verification });
-  requireThat(
-    checked.head === before.head,
-    'The issue commit changed during verification. Review the candidate again.'
-  );
-  const verificationEvidence = evidence.map(({ key, ...entry }) => ({ ...entry, key: 'verification-' + key }));
-  return { ...checked, evidence: [...checked.evidence, ...verificationEvidence] };
 }
 
 function publicationBlocker(pr, identity, target) {
@@ -577,37 +454,6 @@ function deliveryWorkProof(ctx, candidate) {
   };
 }
 
-function closureCandidate(ctx, workspace, options) {
-  const merged = mergedDelivery(ctx.flow);
-  if (!merged?.verification) return verifiedFlowCandidate(ctx, workspace, options);
-  const checked = merged.verification;
-  const tree = git(workspace.checkout, 'rev-parse', `${merged.head}^{tree}`);
-  const base = checked.destinationBase || workspace.base;
-  requireThat(
-    checked.uncommitted || checked.head === merged.head,
-    'The retained verification does not match the merged issue candidate.'
-  );
-  git(workspace.checkout, 'merge-base', '--is-ancestor', base, merged.head);
-  return {
-    head: merged.head,
-    tree,
-    base,
-    verification: checked,
-    evidence: verifyEvidence({ tree, base }, checked, { ...options, evidenceRoot: ctx.evidenceRoot }),
-  };
-}
-
-async function verifiedClosureCandidate(ctx, workspace, options, retain) {
-  try {
-    return { candidate: closureCandidate(ctx, workspace, options), options };
-  } catch (error) {
-    if (error.code !== 'FLOW_PROOF_MISSING' || !mergedDelivery(ctx.flow)) throw error;
-  }
-  const verification = await retain();
-  options = { ...options, verification };
-  return { candidate: closureCandidate(ctx, workspace, options), options };
-}
-
 export async function flowClosureArtifact(service, ctx, workspace, folder, options = {}) {
   ctx = { ...ctx, evidenceRoot: service.root };
   requireThat(ctx.input?.confirmed === true, 'Accept the recorded result explicitly before closing this issue.');
@@ -619,35 +465,42 @@ export async function flowClosureArtifact(service, ctx, workspace, folder, optio
   const pr = merged ? { number: merged.pr } : await provider.findByBranch(workspace.branch, provider.config.target);
   requireThat(pr, 'No PR exists for this issue branch. Publish and merge its PR before closing.');
   const delivered = await provider.inspectExternalDelivery(pr.number, { requiredChecksOnly: true });
-  const checked = await verifiedClosureCandidate(ctx, workspace, options, () =>
-    retainGitHubClosureVerification({ provider, delivered, workspace, folder })
+  assertMatchingDelivery(ctx.flow, workspace, pr.number, delivered, merged);
+  return recordClosureDelivery(ctx, workspace, folder, delivered, merged?.verification);
+}
+
+function assertMatchingDelivery(flow, workspace, number, delivered, merged) {
+  const expected = [
+    delivered.number === number,
+    delivered.branch === workspace.branch,
+    delivered.target === deliveryTarget(flow).branch,
+    delivered.mergedAt,
+    delivered.mergeCommit,
+    delivered.targetRevision,
+    delivered.head === (merged?.head ?? delivered.head),
+    delivered.mergeCommit === (merged?.revision ?? delivered.mergeCommit),
+  ];
+  requireThat(
+    expected.every(Boolean),
+    'The merged PR does not match the recorded issue candidate and target. Reconcile its delivery before accepting.'
   );
-  const candidate = checked.candidate;
-  options = checked.options;
+}
+
+function recordClosureDelivery(ctx, workspace, folder, delivered, verification) {
+  const candidate = {
+    head: delivered.head,
+    tree: git(workspace.checkout, 'rev-parse', delivered.head + '^{tree}'),
+    verification,
+  };
   const groupEvidence = requireGroupProof(
     ctx.issue,
     ctx.flow,
     candidate.tree,
     ctx.block,
-    service.root,
-    ctx.issue.issue_group ? recheckedGroupProof(workspace.checkout, candidate, service.root) : undefined
-  );
-  requireThat(
-    delivered.number === pr.number &&
-      delivered.head === candidate.head &&
-      delivered.branch === workspace.branch &&
-      delivered.target === deliveryTarget(ctx.flow).branch &&
-      delivered.mergedAt &&
-      delivered.mergeCommit &&
-      (!merged?.revision || delivered.mergeCommit === merged.revision) &&
-      delivered.targetRevision,
-    'The merged PR does not match the verified issue candidate and target. Reconcile its delivery before accepting.'
+    ctx.evidenceRoot,
+    ctx.issue.issue_group ? recheckedGroupProof(workspace.checkout, candidate, ctx.evidenceRoot) : undefined
   );
   ctx.signal.throwIfAborted();
-  requireThat(
-    closureCandidate(ctx, workspace, options).head === candidate.head,
-    'The issue candidate changed while checking its merged PR. Review the current result before accepting.'
-  );
   const path = join(folder, 'merged-delivery.json');
   const workProof = deliveryWorkProof(ctx, candidate);
   writeJson(path, { ...delivered, candidateTree: candidate.tree, workProof });
@@ -656,7 +509,6 @@ export async function flowClosureArtifact(service, ctx, workspace, folder, optio
     checkout: workspace.checkout,
     ...(groupEvidence.length && { groupProof: true }),
     evidence: [
-      ...candidate.evidence,
       ...workProof.attempts.flatMap(({ file }) => (file ? [file] : [])),
       ...groupEvidence,
       { path, sha256: digest(readFileSync(path)) },

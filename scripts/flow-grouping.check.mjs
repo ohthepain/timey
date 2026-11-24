@@ -281,6 +281,11 @@ test('Only retained passing proof for the candidate tree can satisfy every attac
   save('passed');
   assert.throws(() => requireGroupProof(issue, flow, 'new-tree'), /Save the edit, Show errors/);
   assert.deepEqual(requireGroupProof(issue, flow, 'exact-tree'), [attempt.artifacts.files.subIssueProof]);
+  const legacy = { proof: [{ path: join(root, 'missing-summary.json'), sha256: digest('old verification') }] };
+  assert.deepEqual(
+    requireGroupProof(issue, flow, 'exact-tree', {}, root, recheckedGroupProof(root, { verification: legacy }, root)),
+    [attempt.artifacts.files.subIssueProof]
+  );
   writeFileSync(path, 'changed');
   assert.throws(() => requireGroupProof(issue, flow, 'exact-tree'), /Save the edit, Show errors/);
 });

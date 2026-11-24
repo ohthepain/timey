@@ -1519,6 +1519,34 @@ test('GitHub merge readiness accepts no checks and unsuccessful optional checks'
   assert.equal((await f.ready()).checks.length, 3);
 });
 
+void test('GitHub checks report only completed Verify suites as Merge progress', async () => {
+  const f = providerFixture();
+  f.view.mergeStateStatus = 'BLOCKED';
+  const checkSuite = {
+    app: { slug: 'github-actions' },
+    workflowRun: { workflow: { name: 'Verify' } },
+  };
+  const check = { __typename: 'CheckRun', checkSuite, status: 'COMPLETED', conclusion: 'SUCCESS' };
+  f.settings.checks = [
+    { ...check, name: 'Early checks' },
+    { ...check, name: 'Flow browser (1/2)' },
+    { ...check, name: 'Flow browser (2/2)', status: 'IN_PROGRESS', conclusion: null },
+    { ...check, name: 'Non-browser tests (1/2)', conclusion: 'SKIPPED' },
+    { ...check, name: 'Non-browser tests (2/2)', conclusion: 'FAILURE' },
+    { ...check, name: 'Classic Factory browser', checkSuite: { ...checkSuite, app: { slug: 'other' } } },
+  ];
+  await assert.rejects(f.ready({ waitForChecks: true }), {
+    code: 'STRATEGY_PENDING',
+    ciProgress: {
+      head: f.pr.head.sha,
+      completedSuites: ['Early checks', 'Flow browser (1/2)', 'Non-browser tests (2/2)'],
+    },
+  });
+  f.settings.checks.push(f.passingCheck);
+  f.view.mergeStateStatus = 'CLEAN';
+  assert.equal((await f.ready({ waitForChecks: true })).head, f.pr.head.sha);
+});
+
 test('GitHub readiness rejects drafts, changed PR identity and queue enrollment', async () => {
   const f = providerFixture();
   assert.equal((await f.ready()).head, 'head');
@@ -1572,6 +1600,23 @@ test('GitHub readiness distinguishes required checks, required reviews and other
     () => f.ready(),
     (error) => error.code === 'STRATEGY_PENDING'
   );
+});
+
+test('GitHub readiness recognizes a conflicting PR even when its merge state says blocked', async () => {
+  const f = providerFixture();
+  Object.assign(f.view, { mergeStateStatus: 'BLOCKED', mergeable: 'CONFLICTING', reviewDecision: 'APPROVED' });
+  await assert.rejects(() => f.ready({ waitForChecks: true }), { code: 'target-conflict' });
+});
+
+test('GitHub readiness recognizes an advanced destination before diagnosing a generic PR blocker', async () => {
+  const f = providerFixture();
+  Object.assign(f.view, {
+    mergeStateStatus: 'BLOCKED',
+    mergeable: 'MERGEABLE',
+    baseRef: { target: { oid: 'advanced-base' } },
+    reviewDecision: 'APPROVED',
+  });
+  await assert.rejects(() => f.ready({ waitForChecks: true }), { code: 'target-outdated' });
 });
 
 test('readiness reconciles a merged candidate and records its latest check attempts', async () => {

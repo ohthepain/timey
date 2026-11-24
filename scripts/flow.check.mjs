@@ -1071,20 +1071,6 @@ test('request data and block order persist with revision conflicts rejected', as
   assert.ok(existsSync(join(root, '.issues/flows', id, 'flow.json')));
 });
 
-test('Request saves the full regression setting across reloads and rejects stale edits', async (t) => {
-  const { id, service } = fixture(t);
-  const flows = createIssueFlows(service, { executor: executor(async () => ({})) });
-  const { flow } = await flows.view(id);
-  assert.notEqual(requestData(flow).fullRegression, true);
-  const toggle = (revision, enabled) =>
-    flows.action({ issueId: id, revision, action: 'full-regression-setting', enabled });
-  const saved = await toggle(flow.revision, true);
-  await assert.rejects(toggle(flow.revision, false), /flow changed/);
-  const reloaded = createIssueFlows(service, { executor: executor(async () => ({})) });
-  assert.equal(requestData((await reloaded.view(id)).flow).fullRegression, true);
-  assert.equal(requestData((await toggle(saved.flow.revision, false)).flow).fullRegression, false);
-});
-
 test('a block runs only on explicit start and retry retains both attempts', async (t) => {
   const { id, service } = fixture(t);
   let calls = 0;
@@ -1848,6 +1834,7 @@ test('opted-in closure holds the worktree until Retro succeeds and files idle ap
     view.flow.blocks.some((item) => item.kind === 'retro'),
     true
   );
+  view = await submit(view, 'retro-setting', { enabled: false });
   const queue = readQueue(root, { issueId: id });
   const issue = queue.issues[0];
   await flows.closeWithReason({
@@ -1857,6 +1844,7 @@ test('opted-in closure holds the worktree until Retro succeeds and files idle ap
     basis: decisionBasis(queue, issue),
     resolution: 'duplicate',
     reason: 'Fixture.',
+    runClosureRetro: true,
   });
   const read = () => flows.read(flows.selected(id));
   await waitUntil(
@@ -1927,6 +1915,7 @@ test('opted-in closure holds the worktree until Retro succeeds and files idle ap
   const closedIssue = closedQueue.issues[0];
   service.decideIssue(id, closedIssue.state, 'reopen', decisionBasis(closedQueue, closedIssue));
   await flows.reopened(id);
+  await submit(await flows.view(id), 'retro-setting', { enabled: true });
   const reopenedQueue = readQueue(root, { issueId: id });
   const reopened = reopenedQueue.issues[0];
   await flows.closeWithReason({
@@ -1936,7 +1925,6 @@ test('opted-in closure holds the worktree until Retro succeeds and files idle ap
     basis: decisionBasis(reopenedQueue, reopened),
     resolution: 'obsolete',
     reason: 'Fixture reopened.',
-    runClosureRetro: false,
   });
   await waitUntil(() => read().closing.complete);
   assert.notEqual(read().closing.id, previousClosure);
@@ -2413,7 +2401,6 @@ for (const [label, input] of [
   ['route start/resume', { action: 'play' }],
   ['Work retry', { action: 'start', blockId: 'work' }],
   ['Merge retry', { action: 'continue', blockId: 'merge' }],
-  ['verification settings', { action: 'full-regression-setting', enabled: true }],
 ]) {
   test(`merged issue rejects ${label} before changing the issue or flow`, async (t) => {
     const f = mergedIssueFixture(t);
@@ -2567,9 +2554,8 @@ test('an unavailable linked PR status refuses edits without changing the saved i
   assert.equal(f.flows.selected(f.id).title, 'Preserve request wording');
 });
 
-test('a shared claim timeout retains the block failure and completed verification', async (t) => {
+test('a shared claim timeout retains the original block failure', async (t) => {
   const { id, service } = fixture(t);
-  const verification = { head: 'retained-candidate', proof: [{ path: 'retained-proof' }] };
   service.sharedIssues = {
     acquireFlowBlock: () => ({ issueId: id, oid: 'original-claim' }),
     releaseFlowBlock() {
@@ -2579,7 +2565,7 @@ test('a shared claim timeout retains the block failure and completed verificatio
   };
   const flows = createIssueFlows(service, {
     executor: executor(async () => {
-      throw Object.assign(Error('Original GitHub request failed'), { deliveryVerification: verification });
+      throw Error('Original GitHub request failed');
     }),
   });
   t.after(() => flows.close());
@@ -2592,7 +2578,6 @@ test('a shared claim timeout retains the block failure and completed verificatio
   assert.equal(attempt.status, 'uncertain');
   assert.match(attempt.summary, /Original GitHub request failed/);
   assert.match(attempt.summary, /claim release.*spawnSync git ETIMEDOUT/i);
-  assert.deepEqual(attempt.result.verification, verification);
   assert.deepEqual(attempt.claimReleaseFailure, {
     status: 'blocked',
     summary: 'Original GitHub request failed',

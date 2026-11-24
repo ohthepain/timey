@@ -269,6 +269,18 @@ The project's selected Artifact store for retained coordination data, including
 project records and operation receipts. It is separate from each issue's selected
 Artifact store.
 
+**Managed asset**:
+A project-owned artifact tracked independently of its storage location or public
+URL. Reports, issues, chats, retained history, and personal saves can refer to it.
+
+**Asset reference**:
+A recorded relationship that keeps a managed asset retained. It identifies the
+referring content or the person who saved the asset.
+
+**Saved asset**:
+A managed asset that a person has chosen to retain independently of referring
+content. Each person can save the same asset once.
+
 **Issue delivery**:
 One issue's contributions retained on a stable branch and published through one
 pull request. The default outcome is a draft PR handoff; an explicitly selected
@@ -445,10 +457,6 @@ its content changes.
 **Flow destination**:
 The GitHub branch used as the PR base and by Merge. It follows the
 starting branch until the operator pins a branch or the issue gets a PR.
-
-**Merge verification scope**:
-The set of local checks required for a Merge attempt. The full regression suite
-is an opt-in scope that adds broader regression checks to the default scope.
 
 **Update Branch**:
 The Flow block that fetches the branch recorded in Starting point and brings

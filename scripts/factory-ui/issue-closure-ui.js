@@ -84,16 +84,17 @@
     }
 
     function addRetroChoice(session, reason) {
-      if (!session.decision.offerClosureRetro) return;
+      const { fixedRetroDefault } = session.decision;
+      if (fixedRetroDefault === undefined) return;
       reason
         .closest('label')
         .insertAdjacentHTML(
           'afterend',
-          '<label hidden><input type="checkbox" id="run-closure-retro"> Run Retro before Cleanup</label>'
+          '<label><input type="checkbox" id="run-closure-retro"> Run Retro before Cleanup</label>'
         );
       const retro = panel.querySelector('#run-closure-retro');
       const updateRetro = () => {
-        retro.closest('label').hidden = reason.value === 'fixed';
+        retro.checked = reason.value === 'fixed' && fixedRetroDefault;
       };
       reason.addEventListener('change', updateRetro);
       updateRetro();
@@ -170,12 +171,12 @@
     function decision() {
       const resolution = panel.querySelector('#closure-reason').value;
       const selected = [...selectedItems()];
-      const { offerClosureRetro, suggestedResolution, ...decision } = current.decision;
+      const { fixedRetroDefault, suggestedResolution, ...decision } = current.decision;
       return {
         ...decision,
         reason: panel.querySelector('#reopen-reason').value,
         resolution,
-        ...(offerClosureRetro && resolution !== 'fixed'
+        ...(fixedRetroDefault !== undefined
           ? { runClosureRetro: panel.querySelector('#run-closure-retro').checked }
           : {}),
         cleanup: current.resources

@@ -8,8 +8,8 @@ import { executeCommand, modelManifest } from './flow-executor.mjs';
 import { requireThat } from './common.mjs';
 
 export async function runBranchRepair(input, options = {}) {
-  const { run, definition, signal, progress, step, retain } = input;
-  const connection = options.connection || createIssueChatConnection();
+  const { root, run, definition, signal, progress, step, retain } = input;
+  const connection = options.connection || createIssueChatConnection({ root });
   const binding = {};
   let turnPending = false;
   const stop = () => connection.close();
