@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parse } from 'yaml';
-import { digest } from './common.mjs';
+import { digest, requireThat } from './common.mjs';
 import { deliveryTarget } from './flow-block-data.mjs';
 import { readIssueFolderSettings, resolveFolderSettings } from './issue-folder-settings.mjs';
 import { readSavedReport } from './report-document.mjs';
@@ -46,7 +46,7 @@ function applyOverrides(root, resolved, overrides, observedFields) {
     resolved.values[key] = overrides[key];
     resolved.sources[key] = 'Issue override';
     const message = validateSettingValue(root, key, overrides[key], observedFields);
-    if (message) errors.push({ key, message });
+    if (message) errors.push({ key, message, value: overrides[key], source: 'Issue settings' });
   }
   resolved.errors = errors;
 }
@@ -117,4 +117,19 @@ export function executionBlockSkill(block, definition, settings) {
   return ['work', 'tdd', 'edit', 'understand'].includes(block.kind) && settings?.values.skill !== 'none'
     ? settings?.values.skill || block.skill || definition.defaultSkill
     : block.skill || definition.defaultSkill;
+}
+
+export function requireValidExecutionSettings(settings, blockModel) {
+  const errors = settings.errors.filter((error) => error.key !== 'model' || !blockModel);
+  requireThat(
+    !errors.length,
+    'Cannot start this issue. Fix these settings:\n' +
+      errors
+        .map((error) => {
+          const source = error.source || settings.sources?.[error.key] || 'Project settings';
+          const value = error.value === undefined ? '' : ` Saved value: ${JSON.stringify(error.value)}.`;
+          return `- ${error.key.replaceAll('_', ' ')} in ${source}: ${error.message}${value}`;
+        })
+        .join('\n')
+  );
 }

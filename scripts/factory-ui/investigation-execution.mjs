@@ -10,6 +10,7 @@ import {
 } from './investigation-flow.mjs';
 import { invalidateBlocks, requestData, latestCurrentAttempt } from './flow-block-data.mjs';
 import { branchStartingPoint, flowBranches } from './flow-branches.mjs';
+import { requireValidExecutionSettings } from './issue-execution-settings.mjs';
 
 function requireOwningSession(owner, input) {
   if (!input.investigationOperation) return;
@@ -51,7 +52,7 @@ export async function prepareInvestigationBlock(owner, issue, flow, block, input
 }
 function refreshInquirySettings(owner, issue, flow) {
   const settings = owner.issueSettings(issue, flow);
-  requireThat(!settings.errors.length, 'Fix folder settings before starting this investigation.');
+  requireValidExecutionSettings(settings);
   flow.executionSettings = { values: settings.values, sources: settings.sources, basis: settings.basis };
   flow.resolvedBranch = settings.values.branch;
 }

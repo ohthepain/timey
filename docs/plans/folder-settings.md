@@ -94,6 +94,14 @@ The user answered "yes to all" to the first interview round on November 18, 2026
    explicit values. The wand only fills absent fields and preserves identity,
    existing values, and comments.
 
+Starting or resuming an issue reports each invalid setting with its field name,
+saved value, source file, and validation reason. Issue overrides identify **Issue
+settings** as their source. Model overrides on a block bypass only an invalid
+inherited model; other settings still require repair. Rejected starts retain the
+details in **Last blocking error** and leave earlier attempts unchanged.
+`node --test scripts/factory-model-settings.check.mjs scripts/block-model-errors.check.mjs`
+checks these messages and confirms that rejected Resume starts no work.
+
 ## Second interview round decisions
 
 The user accepted this round on November 18, 2026, with the amendments below.

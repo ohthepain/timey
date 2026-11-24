@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { makeBlock } from './factory-ui/flow-store.mjs';
@@ -9,6 +9,7 @@ import { initializeFolderSettings } from './factory-ui/issue-folder-settings.mjs
 import { initializeProviderConfig, readProviderConfig } from './factory-ui/provider-config.mjs';
 import { observeProvider, saveProviderSettings } from './factory-ui/provider-runtime.mjs';
 import { saveConversationState } from './factory-ui/conversation-store.mjs';
+import { blockExecutionSettings } from './factory-ui/block-models.mjs';
 import { lastBlockingError, retainBlockingError, resolveBlockingErrors } from './factory-ui/block-errors.mjs';
 
 function fixture(t) {
@@ -72,6 +73,54 @@ function configure(root, enabled) {
   config.providers.google.allowUnmonitored = true;
   saveProviderSettings(root, config);
 }
+
+test('Resume retains actionable inherited settings errors before starting any work', async (t) => {
+  const { root, id, flows, read, action, calls, controller } = fixture(t);
+  const path = join(root, 'folder.md');
+  const original = readFileSync(path, 'utf8');
+  writeFileSync(
+    path,
+    original.replace(/effort: .*/, 'effort: impossible').replace(/skill: .*/, 'skill: missing-skill')
+  );
+  const before = read().blocks;
+  await action('play');
+  await new Promise(setImmediate);
+  assert.equal(flows.autoplay.get(id).mode, 'paused');
+  assert.deepEqual(read().blocks, before);
+  assert.equal(calls.length, 0);
+  const view = await controller().view(id);
+  assert.match(view.lastBlockingError.message, /effort in folder.md/);
+  assert.match(view.lastBlockingError.message, /Choose a listed effort/);
+  assert.match(view.lastBlockingError.message, /impossible/);
+  assert.match(view.lastBlockingError.message, /skill in folder.md/);
+  assert.match(view.lastBlockingError.message, /missing-skill/);
+});
+
+test('an explicit block model bypasses only inherited model errors, preserving other repair details', (t) => {
+  const { root, flows, issue, read } = fixture(t);
+  const flow = read();
+  flow.settings = {};
+  const path = join(root, 'folder.md');
+  const invalidModel = readFileSync(path, 'utf8').replace(/model: .*/, 'model: missing-model');
+  writeFileSync(path, invalidModel);
+  assert.throws(
+    () => blockExecutionSettings(flows.service, issue, flow, {}, { validate: true }),
+    /model in folder.md:.*missing-model/
+  );
+  assert.equal(
+    blockExecutionSettings(flows.service, issue, flow, { model: 'gpt-6-luna' }, { validate: true }).model,
+    'gpt-6-luna'
+  );
+  writeFileSync(path, invalidModel.replace(/effort: .*/, 'effort: impossible'));
+  assert.throws(
+    () => blockExecutionSettings(flows.service, issue, flow, { model: 'gpt-6-luna' }, { validate: true }),
+    (error) => {
+      assert.match(error.message, /effort in folder.md:.*impossible/);
+      assert.doesNotMatch(error.message, /missing-model/);
+      return true;
+    }
+  );
+});
 
 test('idle override preserves frozen defaults and completed history, then supplies the next attempt', async (t) => {
   const { flows, issue, read, action, calls } = fixture(t);

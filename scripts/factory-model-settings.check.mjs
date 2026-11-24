@@ -12,6 +12,7 @@ import {
   saveDefaultModelSettings,
   saveIssueModelSettings,
 } from './factory-ui/model-settings.mjs';
+import { initializeFolderSettings, createIssueFolderSettings } from './factory-ui/issue-folder-settings.mjs';
 
 function project(t) {
   const root = mkdtempSync(join(tmpdir(), 'timey-model-settings-'));
@@ -22,6 +23,51 @@ function project(t) {
   const service = { root, ownServer() {} };
   return { root, service };
 }
+
+test('invalid inherited chat settings name the field, saved value and file to repair', (t) => {
+  const { root } = project(t);
+  initializeFolderSettings(root);
+  createIssueFolderSettings(root, 'Repairs');
+  createIssueFolderSettings(root, 'Repairs/Child');
+  const folder = join(root, 'user/Repairs/folder.md');
+  const original = readFileSync(folder, 'utf8');
+  assert.match(original, /effort: "default"/);
+  writeFileSync(folder, original.replace('effort: "default"', 'effort: impossible'));
+  mkdirSync(join(root, '.issues/flows/issue-one'), { recursive: true });
+  writeFileSync(
+    join(root, '.issues/flows/issue-one/flow.json'),
+    JSON.stringify({ issueId: 'issue-one', folder: 'Repairs/Child', blocks: [] })
+  );
+  assert.throws(
+    () => newChatModelSettings(root, 'issue-one'),
+    (error) => {
+      assert.match(error.message, /effort/i);
+      assert.match(error.message, /impossible/);
+      assert.match(error.message, /user\/Repairs\/folder.md/);
+      assert.match(error.message, /Choose a listed effort/);
+      return true;
+    }
+  );
+});
+
+test('invalid issue overrides and malformed project settings identify their own repair location', (t) => {
+  const { root } = project(t);
+  initializeFolderSettings(root);
+  writeFileSync(
+    join(root, '.issues/model-settings.json'),
+    JSON.stringify({ issues: { 'issue-one': { effort: 'broken-effort' } } })
+  );
+  assert.throws(() => newChatModelSettings(root, 'issue-one'), /effort in Issue settings:.*broken-effort/);
+  writeFileSync(join(root, 'folder.md'), '---\nmodel: [broken\n---\n');
+  assert.throws(
+    () => newChatModelSettings(root),
+    (error) => {
+      assert.match(error.message, /file in folder.md/);
+      assert.match(error.message, /collection|sequence|flow/i);
+      return true;
+    }
+  );
+});
 
 test('model settings retain Codex defaults and expose the supported native agent models', (t) => {
   const { root } = project(t);

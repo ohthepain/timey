@@ -78,7 +78,12 @@ import {
 } from './investigation-execution.mjs';
 import { flowHumanInput } from './flow-human-input.mjs';
 import { FolderOperations } from './folder-operations.mjs';
-import { executionBlockSkill, executionStarted, resolveIssueExecutionSettings } from './issue-execution-settings.mjs';
+import {
+  executionBlockSkill,
+  executionStarted,
+  resolveIssueExecutionSettings,
+  requireValidExecutionSettings,
+} from './issue-execution-settings.mjs';
 import { folderSettingsFields, validateSettingValue } from './folder-settings-schema.mjs';
 import {
   createIssueFolderSettings,
@@ -2486,10 +2491,7 @@ class IssueFlows {
     await assertBlockModelAvailable(this.service, issue, flow, block);
     if (!flow.executionSettings) {
       const settings = this.issueSettings(issue, flow);
-      requireThat(
-        !settings.errors.some((error) => error.key !== 'model' || !block.model),
-        'Fix folder settings before starting this issue.'
-      );
+      requireValidExecutionSettings(settings, block.model);
       flow.executionSettings = { values: settings.values, sources: settings.sources, basis: settings.basis };
       flow.resolvedBranch = settings.values.branch;
     }
