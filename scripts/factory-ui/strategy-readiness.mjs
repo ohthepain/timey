@@ -11,6 +11,7 @@ const readinessQuery = `
         baseRefName
         baseRefOid
         baseRef { target { oid } }
+        mergeable
         mergeStateStatus
         reviewDecision
         autoMergeRequest { enabledAt }
@@ -237,8 +238,18 @@ function pendingReadiness(message) {
   return Object.assign(Error(message), { code: 'STRATEGY_PENDING' });
 }
 
+function observedMergeState(view) {
+  if (view.mergeable === 'CONFLICTING' || view.mergeStateStatus === 'DIRTY') return 'DIRTY';
+  return destinationAdvanced(view) ? 'BEHIND' : view.mergeStateStatus;
+}
+
+function destinationAdvanced({ baseRef, baseRefOid }) {
+  const tip = baseRef?.target?.oid ?? baseRefOid;
+  return tip !== baseRefOid;
+}
+
 function assertMergeState(view, checks, waitForChecks) {
-  const state = view.mergeStateStatus;
+  const state = observedMergeState(view);
   if (['CLEAN', 'HAS_HOOKS', 'UNSTABLE'].includes(state)) return assertRequiredChecks(checks);
   if (state === 'BLOCKED') assertBlockedPR(view, checks, waitForChecks);
   const blocker = mergeStateErrors.get(state);
