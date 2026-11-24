@@ -1199,3 +1199,8 @@ The PR repair-first step records V8 coverage under `.issues/repair-first-coverag
 The following strict static audit consumes that actual coverage before broad
 verification, so tested runtime helpers are evaluated with measured coverage.
 No changed repair plan means the focused step skips, as before.
+
+`node --test --test-name-pattern="publication waits only" scripts/flow-delivery.check.mjs`
+reproduces a successful push followed by a stale GitHub PR head. Publish briefly
+waits only for that exact previous head, while another head, a changed title and
+a persistently stale response remain blocking. Retries never repeat the push.

@@ -1,31 +1,36 @@
 {
   "version": 1,
-  "sourceRun": "https://github.com/ohthepain/timey/pull/114",
+  "sourceRun": "https://github.com/ohthepain/timey/pull/112",
   "tests": [
     {
-      "name": "Close imports the exact successful CI candidate and rejects invalid evidence",
-      "command": ["node", "--test", "scripts/github-closure-proof.check.mjs"]
-    },
-    {
-      "name": "Cleanup recovers after an unavailable retry without losing resource identity",
+      "name": "Publish waits only for its own pushed candidate and preserves concurrent-change guards",
       "command": [
         "node",
         "--test",
-        "--test-name-pattern=cleanup retains the selected identity",
-        "scripts/factory-cleanup.check.mjs"
+        "--test-name-pattern=publication waits only|repeat publication|publication rejects|publication refuses|publication preserves",
+        "scripts/flow-delivery.check.mjs"
       ]
     },
     {
-      "name": "Existing closure guards and cleanup actions remain enforced",
-      "command": ["node", "--test", "scripts/flow-delivery.check.mjs", "scripts/factory-cleanup.check.mjs"]
+      "name": "Manual Close stays before Close and uses the existing confirmation",
+      "command": ["node", "scripts/flow-browser.mjs", "--manual-close"]
     },
     {
-      "name": "GitHub provider download transport and diagnostics",
+      "name": "Automatic Close requires the unrevoked opt-in",
       "command": [
         "node",
         "--test",
-        "scripts/strategy-provider-diagnostics.check.mjs",
-        "scripts/github-call-history.check.mjs"
+        "--test-name-pattern=automatic closure requires an unrevoked opt-in",
+        "scripts/flow.check.mjs"
+      ]
+    },
+    {
+      "name": "Folder assignment preserves IDs and rejects unavailable destinations",
+      "command": [
+        "node",
+        "--test",
+        "--test-name-pattern=folder scans|issue creation uses the default folder|folder deletion|folder migration|moving an existing issue folder",
+        "scripts/flow.check.mjs"
       ]
     }
   ]

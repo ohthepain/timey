@@ -479,9 +479,10 @@ class IssueFlows {
   ) {
     const flow = this.store.read(issue, flowTarget(this.service.root), catalog);
     if (mergedDelivery(flow)) return flow;
-    const fallback = folderSettings.find(({ id }) => id === this.inboxFolder.id)?.name || this.inboxFolder.name;
+    const assignableFolders = folderSettings.filter((folder) => folder.id && !folder.duplicate);
+    const fallback = assignableFolders.find(({ id }) => id === this.inboxFolder.id)?.name || this.inboxFolder.name;
     if (Object.hasOwn(issue, 'folder_id'))
-      flow.folder = folderSettings.find(({ id }) => id === issue.folder_id)?.name || flow.folder || fallback;
+      flow.folder = assignableFolders.find(({ id }) => id === issue.folder_id)?.name || flow.folder || fallback;
     flow.folder ||= fallback;
     const settings = this.issueSettings(issue, flow, resolveFolder);
     flow.resolvedBranch = settings.values.branch;
