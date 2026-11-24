@@ -1199,6 +1199,7 @@ class IssueFlows {
   }
   pause(issueId, reason) {
     this.autoplay.set(issueId, { mode: 'paused', reason });
+    this.service.flowChanges?.notify('flow', issueId);
   }
   pauseAutoplay(issueId, reason) {
     const mode = this.autoplay.get(issueId)?.mode;

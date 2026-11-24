@@ -164,6 +164,9 @@ sends and drains queued prompts through an injected provider with the switch on
 and another action running. It starts no live model work.
 The Flow browser suite checks that the runner holding the active Work claim can
 resume playback and that No new actions still prevents dispatching the next block.
+It also checks that the open page disables Resume once Work finishes while No new
+actions is on. The focused Flow service test verifies that the pause itself
+notifies watchers after the Work completion notification.
 
 `node scripts/flow-browser.mjs --investigation-reports` checks retained report
 reading and discussion. Its draft-restoration regression holds the discussion
