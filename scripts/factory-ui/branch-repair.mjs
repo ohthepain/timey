@@ -328,6 +328,7 @@ async function executeRepair(repairs, record, definition, controller, onProgress
     record.snapshotBase = prepareBranchRepair(record.original, record.source, record.checkout);
     repairs.save(record);
     await repairs.run({
+      root: repairs.root,
       run: record,
       definition,
       signal,

@@ -890,30 +890,10 @@ test('stop reaches explicit command execution and preserves its log', async (t) 
   assert.equal(receivedSignal.aborted, true);
 });
 
-function verificationResult(workspace, folder) {
-  const git = (...args) =>
-    execFileSync('git', ['-C', workspace.checkout, ...args], {
-      encoding: 'utf8',
-    }).trim();
-  mkdirSync(folder, { recursive: true });
-  const proof = ['verification', 'step'].map((checkpoint) => {
-    const path = join(folder, checkpoint + '.json');
-    writeFileSync(path, JSON.stringify({ checkpoint }));
-    return { path, sha256: digest(readFileSync(path)) };
-  });
-  return {
-    head: git('rev-parse', 'HEAD'),
-    tree: git('rev-parse', 'HEAD^{tree}'),
-    base: workspace.base,
-    proof,
-  };
-}
-
 function mergeFixture(
   t,
-  { merged = false, onWait, repair, beforeVerify, onGit, onReady, onLookup, onMerge, onInspect, github } = {}
+  { merged = false, onWait, repair, onGit, onReady, onLookup, onMerge, onInspect, github, mergeNow } = {}
 ) {
-  const verificationInput = () => 'fixture-input';
   const observations = [];
   let publishedHead;
   let nextTarget = 0;
@@ -932,9 +912,9 @@ function mergeFixture(
   });
   const f = fixture(t, {
     repair,
-    verificationInput,
-    async mergeDelay() {
-      await onWait?.(advanceTarget);
+    mergeNow,
+    async mergeDelay(interval) {
+      await onWait?.(advanceTarget, interval);
     },
     async execute({ cwd, args, log }) {
       if (log) writeFileSync(log, '$ git ' + args.join(' ') + '\n', { flag: 'a' });
@@ -949,11 +929,8 @@ function mergeFixture(
       }
       return git(...args);
     },
-    async verifyCandidate(_ctx, workspace, folder) {
-      await beforeVerify?.(workspace);
-      const result = { ...verificationResult(workspace, folder), input: verificationInput() };
-      observations.push({ operation: 'verify', head: result.head });
-      return { result, evidence: [] };
+    async verifyCandidate() {
+      assert.fail('Merge must use GitHub checks without invoking local verification.');
     },
     provider: {
       config: { repository: 'test/fixture', target: 'dev' },
@@ -992,9 +969,6 @@ function mergeFixture(
         };
       },
     },
-    validateSummary(_summary, _base, _tree, policy) {
-      assert.equal(policy.auditPolicy, 'required');
-    },
   });
   f.git('remote', 'add', 'origin', 'git@github.com:test/fixture.git');
   writeFileSync(
@@ -1004,13 +978,12 @@ function mergeFixture(
   return { ...f, observations, advanceTarget };
 }
 
-test('Update Branch leaves full verification of the updated candidate to Merge', async (t) => {
+test('Update Branch leaves publication of the updated candidate to Merge', async (t) => {
   const f = mergeFixture(t);
   await f.run('understand');
   f.advanceTarget();
   const update = await f.run('update-branch');
   assert.ok(update.result.fetchedCommit);
-  assert.equal(f.observations.filter(({ operation }) => operation === 'verify').length, 0);
   f.flow.blocks.push({
     id: 'updated-branch',
     kind: 'update-branch',
@@ -1018,7 +991,7 @@ test('Update Branch leaves full verification of the updated candidate to Merge',
     attempts: [{ status: 'completed', result: update.result }],
   });
   await f.run('merge', { after: ['updated-branch'] });
-  assert.equal(f.observations.filter(({ operation }) => operation === 'verify').length, 1);
+  assert.ok(f.observations.some(({ operation }) => operation === 'push'));
 });
 
 function approvalAttempt(result) {
@@ -1038,26 +1011,26 @@ function approveMerge(f, result) {
   });
 }
 
-test('Merge verifies an unchanged PR once and requires approval of its exact commit and target', async (t) => {
+test('Merge requires approval of its exact commit and target', async (t) => {
   const f = mergeFixture(t);
   await f.run('understand');
   const first = await f.run('merge', humanFirstMerge);
   assert.equal(first.status, 'blocked');
   assert.deepEqual(
     f.observations.map(({ operation }) => operation),
-    ['ready', 'verify']
+    ['ready']
   );
   const result = await approveMerge(f, first);
   assert.equal(result.result.revision, 'actual-merge');
   assert.equal(result.workspace.pr, 9);
   assert.deepEqual(
     f.observations.map(({ operation }) => operation),
-    ['ready', 'verify', 'ready', 'ready', 'merge']
+    ['ready', 'ready', 'ready', 'merge']
   );
   assert.equal(f.calls.filter((item) => item.method === 'guard').at(-1).args[2], 'merge');
 });
 
-test('overnight prepare verifies the PR and stops before automatic merge', async (t) => {
+test('overnight prepare checks GitHub readiness and stops before automatic merge', async (t) => {
   const f = mergeFixture(t);
   await f.run('understand');
   const result = await f.run('merge', {
@@ -1066,10 +1039,10 @@ test('overnight prepare verifies the PR and stops before automatic merge', async
   });
   assert.equal(result.status, 'blocked');
   assert.equal(result.result.mergeConfirmation.pr, 9);
-  assert.equal(result.result.verification.head, result.result.mergeConfirmation.head);
+  assert.equal(result.result.mergeConfirmation.head, result.result.head);
   assert.deepEqual(
     f.observations.map(({ operation }) => operation),
-    ['ready', 'verify']
+    ['ready']
   );
   assert.equal(
     f.calls.some((item) => item.method === 'guard' && item.args[2] === 'merge'),
@@ -1077,7 +1050,7 @@ test('overnight prepare verifies the PR and stops before automatic merge', async
   );
 });
 
-test('Merge verifies and pushes each new candidate, then expires approval if the target moves again', async (t) => {
+test('Merge pushes each new candidate, then expires approval if the target moves again', async (t) => {
   let waits = 0;
   const f = mergeFixture(t, {
     onWait(advance) {
@@ -1090,7 +1063,7 @@ test('Merge verifies and pushes each new candidate, then expires approval if the
   assert.equal(first.status, 'blocked');
   assert.deepEqual(
     f.observations.map(({ operation }) => operation),
-    ['ready', 'verify', 'push', 'ready', 'verify', 'push', 'ready']
+    ['ready', 'push', 'ready', 'push', 'ready']
   );
   assert.equal(first.result.mergeConfirmation.target, f.git('rev-parse', 'dev'));
   f.advanceTarget();
@@ -1104,7 +1077,7 @@ test('Merge verifies and pushes each new candidate, then expires approval if the
   assert.equal((await approveMerge(f, second)).result.revision, 'actual-merge');
 });
 
-test('Merge repairs a target conflict in its owning checkout before it verifies or pushes', async (t) => {
+test('Merge repairs a target conflict in its owning checkout before it pushes', async (t) => {
   const f = mergeFixture(t);
   await f.run('understand');
   const { checkout } = f.flow.workspace;
@@ -1126,17 +1099,17 @@ test('Merge repairs a target conflict in its owning checkout before it verifies 
   assert.equal(result.result.revision, 'actual-merge');
   assert.deepEqual(
     f.observations.map(({ operation }) => operation),
-    ['ready', 'ready', 'verify', 'push', 'ready', 'ready', 'merge']
+    ['ready', 'ready', 'push', 'ready', 'ready', 'merge']
   );
   assert.equal(issueGit('merge-base', 'HEAD', 'dev'), f.git('rev-parse', 'dev'));
   assert.equal(readFileSync(join(checkout, 'source.txt'), 'utf8'), 'Issue and target changes.\n');
 });
 
-test('Merge preserves each inherited browser failure and verifies all three repair candidates in order', async (t) => {
+test('Merge preserves each GitHub browser failure and pushes all three repair candidates in order', async (t) => {
   let failedEvidence;
   let repairs = 0;
   const f = mergeFixture(t, {
-    beforeVerify() {
+    onReady() {
       if (repairs < 3) {
         const folder = join(f.root, '.issues/failed-merge-' + repairs);
         mkdirSync(folder, { recursive: true });
@@ -1161,6 +1134,7 @@ test('Merge preserves each inherited browser failure and verifies all three repa
         ].map((item) => ({ ...item, sha256: digest(readFileSync(item.path)) }));
         failedEvidence ??= evidence;
         throw Object.assign(Error('Closure waited for background resource checks.'), {
+          code: 'ci-failure',
           verificationFailure: { summaries: [summary], logs: [log] },
           evidence,
         });
@@ -1213,10 +1187,6 @@ test('Merge preserves each inherited browser failure and verifies all three repa
     assert.equal(digest(readFileSync(checkpoint.path)), checkpoint.sha256);
   }
   assert.equal(readFileSync(failedEvidence[0].path, 'utf8'), 'Initial verification failed.\n');
-  assert.deepEqual(
-    f.observations.filter(({ operation }) => operation === 'verify').map(({ head }) => head),
-    [result.result.head]
-  );
   const index = result.evidence.find(({ label }) => label === 'Merge repair index');
   const retrieve = ({ path, sha256 }) => {
     const bytes = readFileSync(path);
@@ -1230,7 +1200,7 @@ test('Merge preserves each inherited browser failure and verifies all three repa
   );
   const messages = conversationMessages(f.root, f.issue.id);
   for (const [i, record] of attempts.entries()) {
-    const { round, candidate, conversation, verification } = record;
+    const { round, candidate, conversation } = record;
     const { evidence } = JSON.parse(retrieve(record.result));
     const requestId = 'flow-request-' + attemptId + '-repair-' + round;
     const responseId = 'flow-result-' + attemptId + '-repair-' + round;
@@ -1244,19 +1214,8 @@ test('Merge preserves each inherited browser failure and verifies all three repa
     assert.ok(record.startedAt <= conversation.requestedAt);
     assert.ok(conversation.requestedAt <= conversation.respondedAt);
     assert.ok(conversation.respondedAt <= record.finishedAt);
-    assert.ok(record.finishedAt <= verification[0].at);
-    assert.equal(verification[0].status, round === 3 ? 'passed' : 'failed');
-    if (round === 3) {
-      assert.equal(candidate, result.result.head);
-      assert.deepEqual(
-        verification[0].summaries.map((file) => JSON.parse(retrieve(file)).checkpoint),
-        ['verification', 'step']
-      );
-    } else {
-      assert.equal(candidate, attempts[i + 1].failedHead);
-      assert.ok(verification[0].at <= attempts[i + 1].startedAt);
-      assert.equal(JSON.parse(retrieve(verification[0].summaries[0])).checks[1].passed, false);
-    }
+    assert.equal(candidate, attempts[i + 1]?.failedHead ?? result.result.head);
+    assert.ok(f.observations.some(({ operation, head }) => operation === 'push' && head === candidate));
     assert.match(retrieve(record.log), /\$ git fetch /);
     for (const file of record.failure.evidence) retrieve(file);
     for (const key of ['result', 'log']) {
@@ -1271,7 +1230,6 @@ test('Merge preserves each inherited browser failure and verifies all three repa
         round,
         candidate,
         conversation,
-        verification: verification[0].status,
         resultSha256: record.result.sha256,
         logSha256: record.log.sha256,
       })
@@ -1283,12 +1241,13 @@ for (const thrown of [false, true])
   test(`Merge names the failed test when its repair ${thrown ? 'throws' : 'returns blocked'}`, async (t) => {
     let failure;
     const f = mergeFixture(t, {
-      beforeVerify() {
+      onReady() {
         const folder = join(f.root, '.issues/failed-browser');
         mkdirSync(folder, { recursive: true });
         const summary = join(folder, 'summary.json');
         writeFileSync(summary, JSON.stringify({ checks: [{ name: 'browser', passed: false }] }));
         failure = Object.assign(Error('Fixture issues are absent from the initialized store.'), {
+          code: 'ci-failure',
           verificationFailure: { summaries: [summary], logs: [] },
         });
         throw failure;
@@ -1906,12 +1865,13 @@ test('Update Branch stops its conflict loop for an explicit human decision', asy
   assert.equal(f.work('rev-parse', 'MERGE_HEAD'), target);
 });
 
-test('Merge gives a new blocker its own repair budget and keeps verifying changed candidates', async (t) => {
+test('Merge gives a new blocker its own repair budget and keeps pushing changed candidates', async (t) => {
   let repairs = 0;
   const f = mergeFixture(t, {
-    beforeVerify() {
+    onReady() {
       if (repairs >= 4) return;
       throw Object.assign(Error(repairs < 3 ? 'First broken check' : 'Second broken check'), {
+        code: 'ci-failure',
         verificationFailure: { summaries: [] },
         blockerKey: repairs < 3 ? 'first' : 'second',
       });
@@ -1933,8 +1893,12 @@ test('Merge gives a new blocker its own repair budget and keeps verifying change
 test('Merge stops after three changed candidates fail the same blocker', async (t) => {
   let repairs = 0;
   const f = mergeFixture(t, {
-    beforeVerify() {
-      throw Object.assign(Error('Same broken check'), { verificationFailure: { summaries: [] }, blockerKey: 'same' });
+    onReady() {
+      throw Object.assign(Error('Same broken check'), {
+        code: 'ci-failure',
+        verificationFailure: { summaries: [] },
+        blockerKey: 'same',
+      });
     },
   });
   await f.run('understand');
@@ -1949,7 +1913,7 @@ test('Merge stops after three changed candidates fail the same blocker', async (
   assert.equal(repairs, 3);
 });
 
-test('Merge downloads failed GitHub verification evidence, repairs it, verifies, pushes and merges', async (t) => {
+test('Merge downloads failed GitHub verification evidence, repairs it, pushes and merges', async (t) => {
   const { assertChecks } = await import('./factory-ui/strategy-readiness.mjs');
   let failed = true,
     downloads = 0;
@@ -2001,15 +1965,18 @@ test('Merge downloads failed GitHub verification evidence, repairs it, verifies,
   const result = await f.run('merge');
   assert.equal(downloads, 1);
   assert.equal(result.result.revision, 'actual-merge');
-  assert.equal(f.observations.filter(({ operation }) => operation === 'verify').length, 1);
   assert.equal(f.observations.filter(({ operation }) => operation === 'push').length, 1);
 });
 
 test('Merge stops when repairs cycle back to the same failing source tree', async (t) => {
   let repairs = 0;
   const f = mergeFixture(t, {
-    beforeVerify() {
-      throw Object.assign(Error('Same broken check'), { verificationFailure: { summaries: [] }, blockerKey: 'same' });
+    onReady() {
+      throw Object.assign(Error('Same broken check'), {
+        code: 'ci-failure',
+        verificationFailure: { summaries: [] },
+        blockerKey: 'same',
+      });
     },
   });
   await f.run('understand');
@@ -2057,7 +2024,7 @@ test('GitHub repair retains failed job output when verification artifacts are un
   assert.match(readFileSync(error.evidence[0].path, 'utf8'), /CI test failed before evidence upload/);
 });
 
-test('Merge retries temporary readiness failures before running any local checks', async (t) => {
+test('Merge retries temporary readiness failures before merging', async (t) => {
   let requests = 0;
   const f = mergeFixture(t, {
     onReady() {
@@ -2072,9 +2039,8 @@ test('Merge retries temporary readiness failures before running any local checks
   assert.equal(result.result.revision, 'actual-merge');
   assert.deepEqual(
     f.observations.slice(0, 4).map(({ operation }) => operation),
-    ['ready', 'ready', 'ready', 'verify']
+    ['ready', 'ready', 'ready', 'ready']
   );
-  assert.equal(f.observations.filter(({ operation }) => operation === 'verify').length, 1);
   assert.equal(f.calls.filter(({ method }) => method === 'turn').length, 1);
 });
 
@@ -2095,7 +2061,7 @@ test('Merge bounds temporary lookup failures and retains the final reason withou
   assert.equal(f.calls.filter(({ method }) => method === 'turn').length, 1);
 });
 
-test('Merge Retry checks GitHub first and reuses the previous exact verification', async (t) => {
+test('Merge Continue checks GitHub again before merging', async (t) => {
   const f = mergeFixture(t);
   await f.run('understand');
   const prepared = await f.run('merge', humanFirstMerge);
@@ -2121,11 +2087,10 @@ test('Merge retries an uncertain successful merge by inspecting GitHub without a
   const result = await f.run('merge');
   assert.equal(result.result.revision, 'actual-merge');
   assert.equal(merges, 1);
-  assert.equal(f.observations.filter(({ operation }) => operation === 'verify').length, 1);
 });
 
 for (const transient of [true, false]) {
-  test('Merge retains verification across exhausted or permanent GitHub failures: ' + transient, async (t) => {
+  test('Merge can retry after exhausted or permanent GitHub failures: ' + transient, async (t) => {
     let failed = false;
     let requests = 0;
     const f = mergeFixture(t, {
@@ -2139,26 +2104,14 @@ for (const transient of [true, false]) {
     const prepared = await f.run('merge', humanFirstMerge);
     failed = true;
     requests = 0;
-    let retained;
     await assert.rejects(approveMerge(f, prepared), (error) => {
       assert.match(error.message, transient ? /HTTP 503/ : /HTTP 403/);
-      retained = error.deliveryVerification;
-      assert.deepEqual(retained, prepared.result.verification);
       return true;
     });
     assert.equal(requests, transient ? 4 : 1);
     failed = false;
-    const result = await f.run('merge', {
-      attempts: [
-        {
-          id: 'failed',
-          status: 'blocked',
-          result: { verification: retained },
-        },
-      ],
-    });
+    const result = await f.run('merge');
     assert.equal(result.result.revision, 'actual-merge');
-    assert.equal(f.observations.filter(({ operation }) => operation === 'verify').length, 1);
     assert.equal(f.calls.filter(({ method }) => method === 'turn').length, 1);
   });
 }
@@ -2181,7 +2134,7 @@ test('Stop interrupts GitHub retry backoff without checking or repairing tests',
   assert.deepEqual(f.observations, []);
 });
 
-void test('Merge waits for newly published checks to register before local verification', async (t) => {
+void test('Merge waits for newly published checks to register before merging', async (t) => {
   const { inspectReadiness } = await import('./factory-ui/strategy-readiness.mjs');
   let waiting = true;
   let waits = 0;
@@ -2210,14 +2163,12 @@ void test('Merge waits for newly published checks to register before local verif
     },
     onWait() {
       waits++;
-      assert.equal(f.observations.filter(({ operation }) => operation === 'verify').length, 0);
       waiting = false;
     },
   });
   await f.run('understand');
   assert.equal((await f.run('merge')).result.revision, 'actual-merge');
   assert.equal(waits, 1);
-  assert.equal(f.observations.filter(({ operation }) => operation === 'verify').length, 1);
   assert.equal(
     f.calls.filter(({ method }) => method === 'turn').length,
     1,
@@ -2249,11 +2200,10 @@ void test('Merge waits for CI without refetching source and still incorporates a
   const result = await f.run('merge');
   assert.equal(result.result.revision, 'actual-merge');
   f.git('-C', f.flow.workspace.checkout, 'merge-base', '--is-ancestor', f.git('rev-parse', 'dev'), 'HEAD');
-  assert.equal(f.observations.filter(({ operation }) => operation === 'verify').length, 1);
   assert.equal(f.observations.filter(({ operation }) => operation === 'push').length, 1);
 });
 
-test('Merge waits for pending GitHub tests without rerunning local verification', async (t) => {
+test('Merge waits for pending GitHub tests before merging', async (t) => {
   let pending = true;
   const f = mergeFixture(t, {
     onReady() {
@@ -2272,10 +2222,93 @@ test('Merge waits for pending GitHub tests without rerunning local verification'
   });
   await f.run('understand');
   assert.equal((await f.run('merge')).result.revision, 'actual-merge');
-  assert.equal(f.observations.filter(({ operation }) => operation === 'verify').length, 1);
 });
 
-test('Merge bounds unsuccessful merge requests while preserving completed verification', async (t) => {
+void test('Merge extends for fresh suite progress once and accepts passing checks on the final poll', async (t) => {
+  const minute = 60_000;
+  const observations = [0, 15, 20, 25, 30, 30];
+  const completions = [
+    [],
+    ['Early checks'],
+    ['Early checks', 'Non-browser tests (1/2)'],
+    ['Early checks', 'Non-browser tests (1/2)', 'Non-browser tests (2/2)'],
+    ['Early checks', 'Non-browser tests (1/2)', 'Non-browser tests (2/2)', 'Flow browser (1/2)'],
+  ];
+  let time = 0;
+  let polls = 0;
+  let waits = 0;
+  const f = mergeFixture(t, {
+    mergeNow: () => time,
+    onReady(_pr, _branch, head, { waitForChecks } = {}) {
+      if (!waitForChecks) return;
+      assert.equal(time, observations[polls] * minute, 'Readiness is checked again at the hard cap');
+      const completedSuites = completions[polls++];
+      if (!completedSuites) return;
+      throw Object.assign(Error('Required check test is pending.'), {
+        code: 'STRATEGY_PENDING',
+        ciProgress: { head, completedSuites },
+      });
+    },
+    onWait() {
+      time = observations[++waits] * minute;
+    },
+  });
+  await f.run('understand');
+  assert.equal((await f.run('merge')).result.revision, 'actual-merge');
+  assert.equal(polls, 6);
+  assert.equal(waits, 4);
+});
+
+void test('Merge ignores completed suites for other heads and times out after one fresh observation', async (t) => {
+  let time = 0;
+  let polls = 0;
+  let waits = 0;
+  const f = mergeFixture(t, {
+    mergeNow: () => time,
+    onReady() {
+      polls++;
+      throw Object.assign(Error('Required check test is pending.'), {
+        code: 'STRATEGY_PENDING',
+        ciProgress: { head: 'a different commit', completedSuites: ['Early checks', 'Non-browser tests'] },
+      });
+    },
+    onWait() {
+      waits++;
+      time += 15 * 60_000;
+    },
+  });
+  await f.run('understand');
+  await assert.rejects(f.run('merge'), /GitHub checks did not finish in time/);
+  assert.equal(polls, 3);
+  assert.equal(waits, 1);
+});
+
+void test('Merge counts a completed CI suite only once after repeated or rerun observations', async (t) => {
+  const minute = 60_000;
+  const observations = [0, 15, 20, 20];
+  let time = 0;
+  let waits = 0;
+  let polls = 0;
+  const f = mergeFixture(t, {
+    mergeNow: () => time,
+    onReady(_pr, _branch, head) {
+      assert.equal(time, observations[polls] * minute);
+      throw Object.assign(Error('Required check test is pending.'), {
+        code: 'STRATEGY_PENDING',
+        ciProgress: { head, completedSuites: polls++ ? ['Early checks'] : [] },
+      });
+    },
+    onWait() {
+      time = observations[++waits] * minute;
+    },
+  });
+  await f.run('understand');
+  await assert.rejects(f.run('merge'), /GitHub checks did not finish in time/);
+  assert.equal(polls, 4);
+  assert.equal(waits, 2);
+});
+
+test('Merge bounds unsuccessful merge requests and reports the last GitHub error', async (t) => {
   let requests = 0;
   const f = mergeFixture(t, {
     onMerge() {
@@ -2288,11 +2321,9 @@ test('Merge bounds unsuccessful merge requests while preserving completed verifi
   await f.run('understand');
   await assert.rejects(f.run('merge'), (error) => {
     assert.match(error.message, /HTTP 502 merge gateway unavailable/);
-    assert.ok(error.deliveryVerification.proof.length);
     return true;
   });
   assert.equal(requests, 4);
-  assert.equal(f.observations.filter(({ operation }) => operation === 'verify').length, 1);
   assert.equal(f.calls.filter(({ method }) => method === 'turn').length, 1);
 });
 
@@ -2311,34 +2342,9 @@ test('Merge retains the original merge error when outcome inspection also fails'
   await assert.rejects(f.run('merge'), (error) => {
     assert.match(error.message, /HTTP 422 merge candidate rejected/);
     assert.match(error.message, /Merge outcome could not be checked: HTTP 503 outcome lookup unavailable/);
-    assert.ok(error.deliveryVerification.proof.length);
     return true;
   });
-  assert.equal(f.observations.filter(({ operation }) => operation === 'verify').length, 1);
 });
-
-for (const invalidated of [false, true]) {
-  test(
-    'Merge recovery retains verification through failed claim attempts and respects invalidation: ' + invalidated,
-    async (t) => {
-      const f = mergeFixture(t);
-      await f.run('understand');
-      const prepared = await f.run('merge', humanFirstMerge);
-      await f.run('merge', {
-        attempts: [
-          approvalAttempt(prepared),
-          {
-            id: 'failed-claim',
-            status: 'blocked',
-            summary: 'Reconcile the interrupted shared issue claim.',
-            ...(invalidated ? { invalidatedAt: '2026-11-21T00:00:00Z' } : {}),
-          },
-        ],
-      });
-      assert.equal(f.observations.filter(({ operation }) => operation === 'verify').length, invalidated ? 2 : 1);
-    }
-  );
-}
 
 test('oversized input is rejected before dispatch and does not retain uncertain ownership', async (t) => {
   const { CodexConnection } = await import('./factory-ui/codex.mjs');

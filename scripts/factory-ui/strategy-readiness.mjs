@@ -1,6 +1,7 @@
 import { requireThat } from './common.mjs';
 import { repairableBlocker, strategyDelay } from './strategy-repair.mjs';
 import { requiredPRReview } from './flow-human-input.mjs';
+import { ciSuiteNames } from '../verify-ci-suites.mjs';
 
 const readinessQuery = `
   query($owner: String!, $name: String!, $number: Int!, $endCursor: String) {
@@ -253,12 +254,30 @@ function readinessResult(pr, head, target, checks) {
   return result;
 }
 
+function assertMergeReadiness(live, checks, head, waitForChecks) {
+  try {
+    assertMergeState(live, checks, waitForChecks);
+  } catch (error) {
+    if (error.code === 'STRATEGY_PENDING' && waitForChecks)
+      error.ciProgress = { head, completedSuites: completedVerificationSuites(checks) };
+    throw error;
+  }
+}
+
+function completedVerificationSuites(checks) {
+  return checks
+    .filter((check) => ciSuiteNames.has(check.name) && check.status === 'COMPLETED')
+    .filter((check) => ['SUCCESS', 'FAILURE', 'TIMED_OUT'].includes(check.conclusion))
+    .filter((check) => check.checkSuite && checkSuiteSource(check.checkSuite) === 'Verify:github-actions')
+    .map(({ name }) => name);
+}
+
 export async function inspectReadiness(provider, pr, branch, head, canBypassHandoffReview, waitForChecks = false) {
   assertIdentity(pr, provider.config, branch, head);
   assertState(pr);
   const { live, checks } = await observeReadiness(provider, pr.number, head);
   if (canBypassHandoffReview) await assertHandoffReadiness(pr, live, checks, canBypassHandoffReview);
-  else if (!pr.merged_at) assertMergeState(live, checks, waitForChecks);
+  else if (!pr.merged_at) assertMergeReadiness(live, checks, head, waitForChecks);
   return readinessResult(pr, head, live.baseRefOid, checks);
 }
 

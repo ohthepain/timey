@@ -1,5 +1,3 @@
-export const mergeCheckTimeoutMs = 15 * 60 * 1000;
-
 const fullFactory = 'test:factory';
 const aggregateScripts = new Set([fullFactory, 'test:browser', 'test:flow', 'test:flow:browser']);
 const localPath = (value) => /^(?![/-])(?!.*(?:^|\/)\.\.(?:\/|$))[\w./-]+$/.test(value);
@@ -62,18 +60,4 @@ function requireFocusedCommand(argv) {
       'Record focused test commands using Node test files, a standalone browser check, a Flow browser scenario, a focused pnpm test script, or Vitest paths.'
     );
   return argv;
-}
-
-export function mergeCheckPlan(value) {
-  if (!value || !['default', 'full'].includes(value.scope) || typeof value.focusedRecorded !== 'boolean')
-    throw Error('Choose a valid Merge verification scope and focused test plan.');
-  return { scope: value.scope, focusedRecorded: value.focusedRecorded, focused: normalizeFocusedTests(value.focused) };
-}
-
-export function focusedCheckName(index) {
-  return `focused-${index + 1}`;
-}
-
-export function factoryCheckCommand(scope) {
-  return ['pnpm', 'run', scope === 'default' ? 'test:factory:smoke' : fullFactory];
 }

@@ -1095,7 +1095,7 @@ Factory issue references in open and unarchived closed reports.
 It binds deletion to the archived report contents and uses the same local branch
 cleanup for explicitly selected branches associated with the deleted reports.
 `flow-delivery.mjs` reads live destination branches, prepares the publication
-preview, and validates or refreshes independent verification evidence.
+preview, and records the confirmed GitHub delivery for Close.
 Explicit Publish fetches a destination commit missing from the local object
 database before comparing changes against GitHub's observed commit. It uses
 `flow-update-branch.mjs` to fetch without merging or changing the issue checkout.
@@ -1133,10 +1133,8 @@ See the [Update Branch measurements](../plans/update-branch-performance.md).
 `flow-merge.mjs` shares the Git fetch and merge helpers for Destination, budgets recovery per blocker, stops repeated failing source trees, waits for GitHub checks, and binds approval to the exact issue commit
 and target revision. `flow-merge-github.mjs` bounds transient GitHub observation
 and merge retries, reconciling uncertain writes before repeating them. Merge
-checks GitHub first and retains matching verification across request failures.
-`github-closure-proof.mjs` imports verified GitHub reports for externally merged
-candidates during Close, retaining source provenance and the existing exact-tree,
-step-audit and evidence-hash guards.
+uses GitHub's configured checks and reviews for the exact PR head. Close
+records the merged PR receipt and the candidate tree alongside Work proof.
 `flow-human-input.mjs` describes required PR review and derives the outstanding
 request from retained attempts, including legacy review blockers. Flow views and
 sidebar rows expose it separately from execution status; the UI offers explicit

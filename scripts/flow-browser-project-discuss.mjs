@@ -9,7 +9,7 @@ export async function projectDiscussBrowserChecks({ page, service, project, poll
   mkdirSync(skillsDirectory, { recursive: true });
   writeFileSync(join(skillsDirectory, 'requirements.json'), JSON.stringify(requiredSkillSets));
   const calls = [];
-  let availableSkills = ['grilling', 'grill-with-docs'].map((name) => ({
+  let availableSkills = ['grilling', 'grill-with-docs', 'wayfinder'].map((name) => ({
     name,
     description: 'Ask questions',
     source: 'Project',
@@ -206,6 +206,7 @@ export async function projectDiscussBrowserChecks({ page, service, project, poll
   assert.equal(calls[4].settings.clarificationSkill, 'none');
   assert.deepEqual(calls[4].settings.skills, []);
   assert.match(calls[4].text, /Set up the missing supported skill collections/);
+  assert.match(calls[4].text, /\(missing skills: grill-me\)/);
   assert.equal(await page.locator('#discuss-draft').inputValue(), 'Keep my draft during setup');
   availableSkills = requiredSkillSets.flatMap((set) => set.skills.map((name) => ({ name })));
   await page.locator('#discuss-refresh-skills').click();

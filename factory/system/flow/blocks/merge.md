@@ -1,14 +1,14 @@
 # Merge block
 
-Check the existing PR and GitHub checks before running local verification or repairing tests. If the PR is already merged, record GitHub's confirmed outcome without rerunning tests. Wait for pending checks; repair only failures observed on the current candidate. Reuse retained local verification when its candidate, target, inputs and proof still match.
+Check the existing PR and GitHub checks before repairing tests. If the PR is already merged, record GitHub's confirmed outcome without rerunning tests. Wait for pending checks; repair only failures observed on the current candidate.
 
-At the start of a new Merge run, abort any pending local merge before syncing the target into the issue branch. Verify and push each new candidate, then wait for GitHub's required checks before merging the PR. Do not abort merges created by conflict repair within the same run.
+At the start of a new Merge run, abort any pending local merge before syncing the target into the issue branch. Push each new candidate, then wait for GitHub's required checks before merging the PR. Do not abort merges created by conflict repair within the same run.
 
 Fetch Destination again before merging. If the target advanced, repeat from the sync step. If a conflict or verification failure needs a decision, or repair stops making progress, pause for input. Under human-first policy, wait for approval of the current PR commit and target revision.
 
-Temporary GitHub request failures get up to three retries with 1, 2 and 4 second delays. Retain the redacted error reason in progress and the final failure. Do not retry permission, authentication or validation failures. Before repeating an uncertain merge request, inspect the existing PR and recheck readiness through the protected merge guard; preserve the checkout and completed verification. Stop interrupts retry backoff.
+Temporary GitHub request failures get up to three retries with 1, 2 and 4 second delays. Retain the redacted error reason in progress and the final failure. Do not retry permission, authentication or validation failures. Before repeating an uncertain merge request, inspect the existing PR and recheck readiness through the protected merge guard; preserve the checkout. Stop interrupts retry backoff.
 
-Recover from local and GitHub check failures within the same run. Use the failed run’s retained logs, repair the candidate, verify it, push it, and check GitHub again. Make up to three different repair attempts per distinct blocker. Stop for a required decision, unavailable permission, an unchanged candidate, or a repeated failing source tree.
+Recover from required GitHub check failures within the same run. Use the failed run’s retained logs, repair the candidate, verify it, push it, and check GitHub again. Make up to three different repair attempts per distinct blocker. Stop for a required decision, unavailable permission, an unchanged candidate, or a repeated failing source tree.
 
 Identify the exact failed test names, assertions and errors from the current
 candidate's verification evidence. Reproduce those cases with focused commands
@@ -20,15 +20,10 @@ Add or update a dedicated PR repair check that runs those cases before the broad
 suite and reports each result by name. Preserve the behavior and assertions the
 tests protect. Record the focused commands and their actual results.
 
-Commit the repair promptly once its focused checks pass. Factory performs the
-remaining required verification and publication; avoid repeating full suites
-inside the repair worker before that independent verification. Merge as soon as
+Commit the repair promptly once its focused checks pass. Factory pushes the
+repair and waits for GitHub. Leave the broad suites to GitHub. Merge as soon as
 the current candidate satisfies required checks and approvals. Keep unrelated
 cleanup out of the repair.
-
-Use the local verification scope saved in Request when the attempt starts.
-Repeat the focused tests recorded by Work. Local verification commands have a
-15-minute deadline. GitHub's required checks still apply.
 
 # Merge workflow
 
@@ -47,14 +42,14 @@ Repeat the focused tests recorded by Work. Local verification commands have a
 
 # System prompt
 
-Resolve straightforward conflicts and fix verification failures within the approved issue scope. Commit the repaired candidate in the issue checkout. Ask for human input if the fix needs a product decision, broader scope, or permission. Factory owns publication, verification, and the protected GitHub merge.
+Resolve straightforward conflicts and fix verification failures within the approved issue scope. Commit the repaired candidate in the issue checkout. Ask for human input if the fix needs a product decision, broader scope, or permission. Factory owns publication and the protected GitHub merge.
 
 For test failures, name and reproduce the exact failing cases first. Fix their
 demonstrated cause, rerun those cases before broader checks, and add them to the
 PR's dedicated repair check so GitHub tests them first. Include order-dependent
 predecessors and use GitHub's environment when needed. Preserve assertions,
 record focused commands and results, and return the committed repair promptly
-for Factory's independent verification. Avoid duplicate full-suite runs and
+so Factory can push it for GitHub's required checks. Avoid duplicate full-suite runs and
 unrelated cleanup. Merge promptly once required checks and approvals pass.
 
 Keep all work inside the saved issue checkout. Preserve unrelated changes. Report actual evidence and uncertainty. Do not turn advice into execution.

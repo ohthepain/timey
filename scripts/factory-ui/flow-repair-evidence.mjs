@@ -18,7 +18,6 @@ export function mergeRepairHistory(folder, attemptId, log) {
         failure: { message },
         log: existsSync(log) ? retainRepairFile(directory, 'merge.log', readFileSync(log)) : null,
         conversation: {},
-        verification: [],
       };
       attempts.push(record);
       save();
@@ -38,22 +37,10 @@ export function mergeRepairHistory(folder, attemptId, log) {
         },
       };
     },
-    verification(head, status, summaries = []) {
-      const record = attempts.at(-1);
-      if (record?.candidate !== head) return;
-      record.verification.push({ at: new Date().toISOString(), status, summaries: summaries.map(summaryReference) });
-      save();
-    },
     evidence() {
       return attempts.length ? [{ path: index, label: 'Merge repair index', sha256: digest(readFileSync(index)) }] : [];
     },
   };
-}
-
-function summaryReference(summary) {
-  if (typeof summary !== 'string') return summary;
-  if (!existsSync(summary)) return { originalPath: summary, unavailable: 'missing' };
-  return { path: summary, sha256: digest(readFileSync(summary)) };
 }
 
 function retainRepairFile(folder, name, bytes) {

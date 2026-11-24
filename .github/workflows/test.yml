@@ -5,76 +5,146 @@ on:
     branches: [main, dev]
   pull_request:
 
-jobs:
-  test:
-    runs-on: ubuntu-latest
+permissions:
+  contents: read
+  actions: read
 
+env:
+  AUDIT_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+
+jobs:
+  early:
+    name: Early checks
+    runs-on: ubuntu-latest
+    outputs:
+      artifact-id: ${{ steps.verify.outputs.artifact-id }}
+      base: ${{ steps.verify.outputs.base }}
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - uses: ./.github/actions/verify-suite
+        id: verify
+        with:
+          suite: early
+          base: ${{ env.AUDIT_BASE }}
 
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
+  non-browser-1:
+    name: Non-browser tests (1/2)
+    needs: early
+    runs-on: ubuntu-latest
+    outputs:
+      artifact-id: ${{ steps.verify.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/verify-suite
+        id: verify
+        with:
+          suite: non-browser-1
+          base: ${{ needs.early.outputs.base }}
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+  non-browser-2:
+    name: Non-browser tests (2/2)
+    needs: early
+    runs-on: ubuntu-latest
+    outputs:
+      artifact-id: ${{ steps.verify.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/verify-suite
+        id: verify
+        with:
+          suite: non-browser-2
+          base: ${{ needs.early.outputs.base }}
+
+  classic-browser:
+    name: Classic Factory browser
+    needs: early
+    runs-on: ubuntu-latest
+    outputs:
+      artifact-id: ${{ steps.verify.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/verify-suite
+        id: verify
+        with:
+          suite: classic-browser
+          base: ${{ needs.early.outputs.base }}
+
+  flow-browser-1:
+    name: Flow browser (1/2)
+    needs: early
+    runs-on: ubuntu-latest
+    outputs:
+      artifact-id: ${{ steps.verify.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/verify-suite
+        id: verify
+        with:
+          suite: flow-browser-1
+          base: ${{ needs.early.outputs.base }}
+
+  flow-browser-2:
+    name: Flow browser (2/2)
+    needs: early
+    runs-on: ubuntu-latest
+    outputs:
+      artifact-id: ${{ steps.verify.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/verify-suite
+        id: verify
+        with:
+          suite: flow-browser-2
+          base: ${{ needs.early.outputs.base }}
+
+  test:
+    needs: [early, non-browser-1, non-browser-2, classic-browser, flow-browser-1, flow-browser-2]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
-          cache: pnpm
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Install browser
-        run: pnpm exec playwright-cli install-browser chromium --with-deps
-
-      - name: Previously failing PR tests first
+      - name: Select evidence from the suite job outputs
+        id: evidence
         env:
-          NODE_V8_COVERAGE: ${{ github.workspace }}/.issues/repair-first-coverage
-          AUDIT_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
-        run: node scripts/pr-repair-tests.mjs --base "$AUDIT_BASE"
-
-      - name: Verify snapshot
-        env:
-          FALLOW_COVERAGE: ${{ github.workspace }}/.issues/repair-first-coverage
-          FALLOW_COVERAGE_ROOT: ${{ github.workspace }}
-          AUDIT_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
-          TIMEY_FALLOW_ENFORCE: '1'
-          TIMEY_FALLOW_WARNINGS: error
-        run: |
-          if [ -z "$AUDIT_BASE" ] || ! git rev-parse --verify "$AUDIT_BASE^{commit}" >/dev/null 2>&1; then
-            AUDIT_BASE="$(git rev-list --max-parents=0 HEAD | tail -1)"
-          fi
-          pnpm run verify -- --base "$AUDIT_BASE"
-
-      - name: Show exact verification failures
-        if: failure()
+          SUITES: ${{ toJSON(needs) }}
         run: |
           node --input-type=module <<'JS'
-          import { readdirSync, readFileSync, existsSync } from 'node:fs';
-          const directory = '.issues/evidence';
-          const summaries = existsSync(directory) ? readdirSync(directory).filter(name => name.endsWith('-summary.json')) : [];
-          for (const file of summaries) {
-            const report = JSON.parse(readFileSync(directory + '/' + file));
-            for (const check of report.checks.filter(check => !check.passed)) {
-              console.log('FAILED CHECK: ' + check.name + ' — ' + (check.command || []).join(' '));
-              if (check.log && existsSync(check.log)) {
-                const lines = readFileSync(check.log, 'utf8').split('\n').filter(line => line.length < 1000);
-                console.log(lines.slice(-45).join('\n'));
-              }
-              for (const artifact of check.artifacts || []) {
-                if (!artifact.path.endsWith('/results.json') || !existsSync(artifact.path)) continue;
-                const result = JSON.parse(readFileSync(artifact.path));
-                for (const scenario of result.results || []) {
-                  if (!scenario.passed) console.log('FAILED SCENARIO: ' + scenario.name + '\n' + scenario.error);
-                }
-              }
-            }
-          }
+          import { appendFileSync } from 'node:fs';
+          const ids = Object.values(JSON.parse(process.env.SUITES))
+            .map(({ outputs }) => outputs['artifact-id'])
+            .filter((id) => /^\d+$/.test(id));
+          if (ids.length) appendFileSync(process.env.GITHUB_OUTPUT, 'ids=' + ids.join(',') + '\n');
           JS
-
+      - name: Download suite evidence
+        if: steps.evidence.outputs.ids != ''
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ steps.evidence.outputs.ids }}
+          github-token: ${{ github.token }}
+          path: .issues/evidence/
+          merge-multiple: true
+      - name: Assemble evidence for the verified candidate
+        if: >-
+          success() && !contains(needs.*.result, 'failure') &&
+          !contains(needs.*.result, 'skipped') && !contains(needs.*.result, 'cancelled')
+        env:
+          AUDIT_BASE: ${{ needs.early.outputs.base }}
+        run: node scripts/verify-ci-evidence.mjs "$AUDIT_BASE"
       - name: Preserve verification evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -82,3 +152,15 @@ jobs:
           name: verification-evidence
           path: .issues/evidence/
           include-hidden-files: true
+          overwrite: true
+          if-no-files-found: ignore
+      - name: Require all suites to pass
+        if: always()
+        env:
+          SUITES: ${{ toJSON(needs) }}
+        run: |
+          node --input-type=module <<'JS'
+          const suites = Object.entries(JSON.parse(process.env.SUITES));
+          for (const [suite, { result }] of suites) console.log(suite + ': ' + result);
+          process.exitCode = Number(suites.some(([, { result }]) => result !== 'success'));
+          JS
