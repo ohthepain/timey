@@ -69,13 +69,14 @@ import { importBrowserIssue, removeBrowserIssue, writeBrowserIssue } from './flo
 import { issueStoresBrowserChecks } from './flow-browser-stores.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const output = resolve(
+const outputPath = resolve(
   process.env.TIMEY_FLOW_BROWSER_OUTPUT ||
     (process.env.TIMEY_BROWSER_OUTPUT && join(process.env.TIMEY_BROWSER_OUTPUT, 'flow')) ||
     join(root, '.issues/evidence/flow-browser-' + randomUUID())
 );
+mkdirSync(outputPath, { recursive: true });
+const output = realpathSync(outputPath);
 const project = join(output, 'project');
-mkdirSync(output, { recursive: true });
 mkdirSync(project);
 mkdirSync(join(project, '.issues'), { recursive: true });
 git(project, 'init', '-q', '-b', 'dev');

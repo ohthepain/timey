@@ -1057,6 +1057,10 @@ relative card bounds and viewport height in the polling diagnostic.
 
 `node scripts/flow-browser.mjs --error-recovery` triggers a rejected branch update
 and verifies that a successful explicit Refresh clears its old error banner.
+Run it with `--manual-close --error-recovery` to exercise refresh after the
+manual-close scenario has initialized the Issue Store. Set
+`TIMEY_FLOW_BROWSER_OUTPUT` to a new directory under a symlink to also check
+that fixture writes use the canonical project path.
 Background polling retains action errors. The running-Work browser scenario also
 checks that both Update Branch entry points are disabled while a block is active;
 opening the worktree remains available.

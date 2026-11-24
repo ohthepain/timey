@@ -33,8 +33,8 @@
       "command": ["node", "scripts/flow-browser.mjs", "--ai-text"]
     },
     {
-      "name": "Closed issues stop asking for Close after manual or automatic delivery",
-      "command": ["node", "scripts/flow-browser.mjs", "--manual-close"]
+      "name": "Manual and automatic closure followed by refresh after a rejected branch update",
+      "command": ["node", "scripts/flow-browser.mjs", "--manual-close", "--error-recovery"]
     },
     {
       "name": "Closure validates the merged PR base while preserving the original workspace base",
