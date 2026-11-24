@@ -19,7 +19,7 @@ Starting **Merge** authorizes preparation of the existing PR. The runner uses th
 
 When Publish PR records the linked PR, an earlier Merge attempt that failed only because the branch had no PR moves into the attempt history. Merge is ready to run again. Newer failures and failures for other reasons stay visible.
 
-1. Fetch the Destination. If its current revision is missing from the issue branch, merge that revision into the issue branch.
+1. Fetch the Destination. If its current revision is missing from the issue branch, merge that revision into the issue branch. GitHub may report a generic blocked state while its merge assessment still refers to an older target. Factory recognizes that mismatch and explicit conflict signals so it can synchronize and repair before rechecking readiness.
 2. Push a changed issue commit to the existing PR so GitHub can run its required checks.
 3. Wait for GitHub to report readiness for the current PR commit. Fetch the Destination again before merging. If it advanced, repeat from step 1.
 4. Once the issue commit and target revision are current and GitHub reports the PR ready, apply the merge policy. Automatic policy can proceed through GitHub's protected merge. Human-first policy asks for approval of the exact PR commit and target revision. A change to either revision expires that approval and returns the run to preparation.

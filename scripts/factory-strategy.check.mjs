@@ -1602,6 +1602,23 @@ test('GitHub readiness distinguishes required checks, required reviews and other
   );
 });
 
+test('GitHub readiness recognizes a conflicting PR even when its merge state says blocked', async () => {
+  const f = providerFixture();
+  Object.assign(f.view, { mergeStateStatus: 'BLOCKED', mergeable: 'CONFLICTING', reviewDecision: 'APPROVED' });
+  await assert.rejects(() => f.ready({ waitForChecks: true }), { code: 'target-conflict' });
+});
+
+test('GitHub readiness recognizes an advanced destination before diagnosing a generic PR blocker', async () => {
+  const f = providerFixture();
+  Object.assign(f.view, {
+    mergeStateStatus: 'BLOCKED',
+    mergeable: 'MERGEABLE',
+    baseRef: { target: { oid: 'advanced-base' } },
+    reviewDecision: 'APPROVED',
+  });
+  await assert.rejects(() => f.ready({ waitForChecks: true }), { code: 'target-outdated' });
+});
+
 test('readiness reconciles a merged candidate and records its latest check attempts', async () => {
   const f = providerFixture();
   Object.assign(f.pr, { merged_at: 'now', merge_commit_sha: 'merged', state: 'closed', mergeable: false });

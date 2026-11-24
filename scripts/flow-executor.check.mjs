@@ -1077,8 +1077,40 @@ test('Merge pushes each new candidate, then expires approval if the target moves
   assert.equal((await approveMerge(f, second)).result.revision, 'actual-merge');
 });
 
-test('Merge repairs a target conflict in its owning checkout before it pushes', async (t) => {
-  const f = mergeFixture(t);
+test('Merge repairs a target conflict even when GitHub only reports blocked readiness', async (t) => {
+  const { inspectReadiness } = await import('./factory-ui/strategy-readiness.mjs');
+  let observed = false;
+  const f = mergeFixture(t, {
+    async onReady(pr, branch, head, { waitForChecks } = {}) {
+      if (observed) return;
+      observed = true;
+      const live = {
+        headRefOid: head,
+        baseRefName: 'dev',
+        baseRefOid: f.flow.workspace.base,
+        baseRef: { target: { oid: f.git('rev-parse', 'dev') } },
+        mergeable: 'MERGEABLE',
+        mergeStateStatus: 'BLOCKED',
+        reviewDecision: 'APPROVED',
+        commits: {
+          nodes: [
+            {
+              commit: {
+                statusCheckRollup: {
+                  contexts: { nodes: [{ name: 'test', isRequired: true, status: 'COMPLETED', conclusion: 'SUCCESS' }] },
+                },
+              },
+            },
+          ],
+        },
+      };
+      const provider = {
+        config: { repository: 'test/fixture', target: 'dev' },
+        gh: () => JSON.stringify([{ data: { repository: { pullRequest: live } } }]),
+      };
+      await inspectReadiness(provider, pr, branch, head, undefined, waitForChecks);
+    },
+  });
   await f.run('understand');
   const { checkout } = f.flow.workspace;
   const issueGit = (...args) => execFileSync('git', ['-C', checkout, ...args], { encoding: 'utf8' }).trim();
