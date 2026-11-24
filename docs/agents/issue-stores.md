@@ -136,6 +136,9 @@ browser's retained retry identity. To discover older unfinished moves from anoth
 runner that stopped before sealing an issue, open **Factory settings → Issue
 Storage** and choose **Find unfinished storage moves**. This explicit recovery
 search reads historical operations and can take longer than a profile change.
+It also identifies other pending updates that can block permanent deletion.
+**Reconcile stale save** retains the original operation and marks it rejected
+once Factory verifies that the issue has advanced and released its claim.
 
 A master and all attached sub-issues must use the same Issue and Artifact stores.
 Grouping compares actual destinations, so profiles with different names can still

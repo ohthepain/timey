@@ -88,3 +88,9 @@ Continue with independent issues. A Stop control ends the run. The morning
 report lists what finished and gives the failed check, where applicable, and
 the next action for each issue that needs attention. Merge and closure remain
 separate actions.
+
+After a target update, closure can reuse a retained passing Work report when
+the delivered candidate descends from the proved commit, preserves the implementation paths
+changed by Work, and its validated verification reran all recorded Work focused
+checks successfully. Required human checks still apply. Missing proof errors
+include the saved sub-issue numbers when available.

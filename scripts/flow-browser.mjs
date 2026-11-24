@@ -170,7 +170,7 @@ const blockInspectionCheck =
 const storageStatusCheck = 'Storage startup and recovery messages follow confirmed availability';
 const pollingCheck = 'Polling preserves expanded text and the Closed issues list';
 const timersCheck = 'Block timers reset for each attempt and stop at the last saved time after disconnect';
-const proposalsCheck = 'Pending proposals can be approved or deleted in one click without starting work';
+const proposalsCheck = 'Pending proposals can be approved or deleted after confirmation without starting work';
 let requestClarification;
 const pendingResponses = [];
 const logs = {
@@ -2539,6 +2539,13 @@ try {
     const row = page.locator(`#open-issues [data-issue="${proposal.id}"]`);
     await page.goto(new URL('/?issue=' + proposal.id, page.url()).href);
     await row.waitFor();
+    const canceled = page.waitForEvent('dialog');
+    const cancelClick = remove.click();
+    const confirmation = await canceled;
+    assert.match(confirmation.message(), /Permanently delete .*Discard an idle retro proposal/);
+    await confirmation.dismiss();
+    await cancelClick;
+    assert.equal(existsSync(reportPath), true);
     let delayedDelete = Promise.resolve();
     const delayDelete = (route) => {
       if (route.request().postDataJSON()?.action !== 'delete-pending-issue') return route.continue();
@@ -2546,6 +2553,7 @@ try {
       return delayedDelete;
     };
     if (process.argv.includes('--delayed-delete')) await page.route('**/api/flow-action', delayDelete);
+    page.once('dialog', (dialog) => void dialog.accept());
     try {
       await clickAction(remove);
     } finally {

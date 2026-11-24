@@ -110,6 +110,14 @@ test('Delete resumes the same durable cleanup after partial physical deletion an
   assert.deepEqual(await f.create().resumeDelete({ operationId: 'delete-a' }), result);
 });
 
+void test('Delete identifies the pending update that blocks cleanup', async (t) => {
+  const f = await fixture(t);
+  await f.add('a');
+  await f.project.coordination.operation('pending-flow', 'save-flow', { issueId: 'b' });
+  await assert.rejects(f.del('a'), { code: 'STORE_PENDING', message: /save-flow operation \(pending-flow\)/ });
+  assert.equal((await f.project.readIssue('a')).location, 'archive');
+});
+
 test('a live private record payload protects identical public evidence and unused stores are not opened', async (t) => {
   const f = await fixture(t);
   await f.add('a');
@@ -127,7 +135,14 @@ test('a live private record payload protects identical public evidence and unuse
       throw Error('unused store opened');
     },
   });
+  const get = f.physical.get.bind(f.physical);
+  let retainedReads = 0;
+  f.physical.get = (requested) => {
+    if (requested.sha256 === ref.sha256) retainedReads++;
+    return get(requested);
+  };
   await f.del('a');
+  assert.equal(retainedReads, 1, 'Deletion reuses the immutable payload across both inventories and receipts');
   assert.equal((await f.records.get('private/b')).value.text.length, 20000);
   assert.equal((await f.physical.get(ref)).toString(), body);
 });

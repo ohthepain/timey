@@ -2,7 +2,7 @@ import { mergedDelivery } from '../merged-issue.mjs';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { assertStoreState, inputDigest, sealCoordination } from './coordination.mjs';
+import { assertStoreState, inputDigest, sealCoordination, storeFailure } from './coordination.mjs';
 import { planRetirement, redactDeletedMove } from './deletion-retention.mjs';
 import { planDeletedFiles, removeDeletedFiles } from './deletion-files.mjs';
 
@@ -321,20 +321,25 @@ export async function resumeDelete(project, { operationId }) {
   }
 }
 
+async function requireIdleProject(coordination) {
+  assertStoreState(
+    (await coordination.list('claims/')).length === 0,
+    'STORE_BUSY',
+    'Finish or explicitly reconcile project work before permanently deleting evidence.'
+  );
+  const pending = (await coordination.list('operations/')).find(({ value }) => value.status === 'pending');
+  if (pending)
+    throw storeFailure(
+      'STORE_PENDING',
+      `Reconcile the pending ${pending.value.kind} operation (${pending.value.id}) before permanently deleting evidence.`
+    );
+}
+
 export async function deleteIssue(project, { issueId, expectedRevision, operationId, purpose = 'pending', owner }) {
   assertStoreState(!owner, 'STORE_BUSY', 'Finish the running attempt before permanently deleting its evidence.');
   const existing = await project.coordination.get('operations/' + encodeURIComponent(operationId));
   if (!existing) {
-    assertStoreState(
-      (await project.coordination.list('claims/')).length === 0,
-      'STORE_BUSY',
-      'Finish or explicitly reconcile project work before permanently deleting evidence.'
-    );
-    assertStoreState(
-      !(await project.coordination.list('operations/')).some((record) => record.value.status === 'pending'),
-      'STORE_PENDING',
-      'Reconcile pending project updates before permanently deleting evidence.'
-    );
+    await requireIdleProject(project.coordination);
     const issue = await project.readIssue(issueId);
     assertStoreState(
       issue.revision === expectedRevision,

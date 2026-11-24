@@ -17,7 +17,7 @@ import { validateSummary } from './checks.mjs';
 import { StrategyProvider } from './strategy-provider.mjs';
 import { flowMergeChecks, flowVerificationInput } from './flow-verification.mjs';
 import { queueReportPaths } from './shared-issue-config.mjs';
-import { requireGroupProof } from './flow-group-proof.mjs';
+import { recheckedGroupProof, requireGroupProof } from './flow-group-proof.mjs';
 import { evidencePath } from './stores/evidence.mjs';
 import { fetchIssueTarget } from './flow-update-branch.mjs';
 import { retainGitHubClosureVerification } from './github-closure-proof.mjs';
@@ -592,6 +592,7 @@ function closureCandidate(ctx, workspace, options) {
     head: merged.head,
     tree,
     base,
+    verification: checked,
     evidence: verifyEvidence({ tree, base }, checked, { ...options, evidenceRoot: ctx.evidenceRoot }),
   };
 }
@@ -623,7 +624,14 @@ export async function flowClosureArtifact(service, ctx, workspace, folder, optio
   );
   const candidate = checked.candidate;
   options = checked.options;
-  const groupEvidence = requireGroupProof(ctx.issue, ctx.flow, candidate.tree, ctx.block, service.root);
+  const groupEvidence = requireGroupProof(
+    ctx.issue,
+    ctx.flow,
+    candidate.tree,
+    ctx.block,
+    service.root,
+    ctx.issue.issue_group ? recheckedGroupProof(workspace.checkout, candidate, service.root) : undefined
+  );
   requireThat(
     delivered.number === pr.number &&
       delivered.head === candidate.head &&

@@ -2,8 +2,10 @@ import { requireThat } from '../common.mjs';
 import { safeStoreView, writeStoreConfig, readStoreConfig, requireStore } from './config.mjs';
 import { resolveIssueStorage } from './settings.mjs';
 import { readSnapshot } from './snapshots.mjs';
+import { reconcileSupersededFlowSave } from './recovery.mjs';
 import { parse } from 'yaml';
 const pendingViews = new WeakMap();
+const moveKinds = new Set(['move-issue', 'move-project-store']);
 
 function migrationRequested(input) {
   return Boolean(input.migrationStoreId || input.migrationStorageProfile);
@@ -50,26 +52,31 @@ function readStoreOperations(records, input, saved) {
   return linkedStoreOperations(records, input, saved);
 }
 
+function operationSubject({ kind, input = {} }) {
+  const { issueId, owner, storeId, artifactStoreId, ids, role } = input;
+  switch (kind) {
+    case 'save-flow':
+      return { issueId, ownerBound: Boolean(owner) };
+    case 'move-issue':
+      return { storeId, artifactStoreId, issueIds: ids };
+    case 'move-project-store':
+      return { storeId, role };
+    default:
+      return { issueId };
+  }
+}
+
 async function pendingStoreOperations(service, input, saved) {
   if (service.storeStatus?.unavailable) return pendingViews.get(service) || [];
   if (!service.projectStores?.records?.list) return [];
   const operations = await readStoreOperations(service.projectStores.records, input, saved);
   const pending = operations
-    .filter(
-      ({ value }) =>
-        value.status !== 'confirmed' && ['move-issue', 'move-project-store', 'delete-issue'].includes(value.kind)
-    )
+    .filter(({ value }) => value.status === 'pending')
     .map(({ value }) => ({
       operationId: value.id,
       kind: value.kind,
       status: value.status,
-      ...(value.kind === 'delete-issue'
-        ? { issueId: value.input.issueId }
-        : {
-            storeId: value.input.storeId,
-            ...(value.input.artifactStoreId && { artifactStoreId: value.input.artifactStoreId }),
-            ...(value.kind === 'move-issue' ? { issueIds: value.input.ids } : { role: value.input.role }),
-          }),
+      ...operationSubject(value),
       createdAt: value.createdAt,
     }));
   pending.sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
@@ -150,7 +157,7 @@ export async function issueStoresView(service, input = {}) {
   const saved = await savedIssueHome(service, input.issueId);
   const targetStorage = requestedTarget(service.root, input.migrationStorageProfile);
   const pending = await pendingStoreOperations(service, { ...input, targetStorage }, saved);
-  const migrations = pending.filter(({ kind }) => kind !== 'delete-issue');
+  const migrations = pending.filter(({ kind }) => moveKinds.has(kind));
   const savedStorage = catalogStorage(saved);
   const selection = savedStorage
     ? savedProfileSelection(view, savedStorage)
@@ -160,6 +167,7 @@ export async function issueStoresView(service, input = {}) {
     ...selection,
     pendingMigrations: migrations,
     pendingDeletions: pending.filter(({ kind }) => kind === 'delete-issue'),
+    pendingUpdates: pending.filter(({ kind }) => !moveKinds.has(kind) && kind !== 'delete-issue'),
     moveGroup: await moveGroup(service, { ...input, targetStorage }, migrations),
     targetStorage,
     ...unavailableStatus(service),
@@ -171,6 +179,7 @@ function configuredInput(value) {
     revision,
     pendingMigrations: _pending,
     pendingDeletions: _deletions,
+    pendingUpdates: _updates,
     moveGroup: _group,
     savedStorage: _savedStorage,
     targetStorage: _targetStorage,
@@ -282,6 +291,7 @@ export async function handleStoreAction(service, input) {
     'Keep a stable operation ID when changing storage.'
   );
   const actions = new Map([
+    ['reconcile-flow-save', () => reconcileSupersededFlowSave(service, input)],
     ['resume-delete', () => stores.resumeDelete({ operationId: input.operationId })],
     ['resume-move', () => resumeIssueMove(stores, input)],
     ['move-issue', () => moveSelectedIssue(service, input, stores)],

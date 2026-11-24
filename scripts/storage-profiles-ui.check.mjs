@@ -189,7 +189,7 @@ test('project settings adds and saves a named profile without changing saved pro
     }
     if (path.startsWith('/api/issue-stores')) {
       if (path.includes('discoverMigrations=true')) discoveryRequests.push(path);
-      return { ...registry, pendingMigrations: [] };
+      return { ...registry, pendingMigrations: [], pendingUpdates: [], pendingDeletions: [] };
     }
     return {
       storage: {
@@ -224,7 +224,8 @@ test('project settings adds and saves a named profile without changing saved pro
   assert.equal(discoveryRequests.length, 0);
   document.querySelector('[data-store-discover]').click();
   await settle(
-    () => document.querySelector('[data-store-discovery-status]').textContent === 'No unfinished storage moves found.'
+    () =>
+      document.querySelector('[data-store-discovery-status]').textContent === 'No unfinished storage operations found.'
   );
   assert.equal(discoveryRequests.length, 1);
   assert.equal(added.querySelector('[name$=":label"]').value, 'Evidence on other files');
@@ -433,7 +434,13 @@ test('explicit storage recovery discovers a pending receipt created before the i
   const projectStores = {
     records: {
       get: async (key) => (key === 'catalog/one' ? { value: catalog } : null),
-      list: async (prefix) => (prefix === 'operations/' ? [{ value: pending }] : []),
+      list: async (prefix) =>
+        prefix === 'operations/'
+          ? [
+              { value: pending },
+              { value: { id: 'unfinished-save', kind: 'save-flow', status: 'pending', input: { issueId: 'one' } } },
+            ]
+          : [],
     },
   };
   const view = await issueStoresView(
@@ -445,6 +452,8 @@ test('explicit storage recovery discovers a pending receipt created before the i
     }
   );
   assert.equal(view.pendingMigrations[0].operationId, 'pre-seal-move');
+  assert.equal(view.pendingUpdates[0].operationId, 'unfinished-save');
+  assert.equal(view.pendingUpdates[0].issueId, 'one');
   assert.equal(view.moveGroup.resuming, true);
   assert.deepEqual(view.moveGroup.issueIds, ['one']);
 });
