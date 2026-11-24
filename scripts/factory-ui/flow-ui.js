@@ -747,8 +747,13 @@
     const folders = [
       ...new Set([...(state.index.folders || []), ...issues.map((issue) => issue.folder).filter(Boolean)]),
     ];
-    const row = (issue) =>
-      `<button class="issue-row${issue.id === state.issueId ? ' selected' : ''}" data-issue="${escape(issue.id)}" draggable="${issue.status !== 'closed' && !issue.readOnly && !issue.activeBlock}" title="${escape(issue.title)}"${issue.id === state.issueId ? ' aria-current="page"' : ''}>${issue.activeBlock ? activeSpinner(issue.activeBlock) : statusIcon(issue.humanInput ? 'needs-input' : issue.status)}<span class="issue-name">${issue.issueNumber ? `#${escape(issue.issueNumber)} - ` : ''}${escape(issue.title)}${issue.humanInput ? '<span class="issue-input-label">Needs your input</span>' : ''}</span></button>`;
+    const { issueGroups, masterBadge } = window.issueGroupUI;
+    const row = (issue, subIssue = false) =>
+      `<button class="issue-row${issue.id === state.issueId ? ' selected' : ''}" data-issue="${escape(issue.id)}"${subIssue ? ' data-sub-issue' : ''} draggable="${issue.status !== 'closed' && !issue.readOnly && !issue.activeBlock}" title="${escape(issue.title)}"${issue.id === state.issueId ? ' aria-current="page"' : ''}>${issue.activeBlock ? activeSpinner(issue.activeBlock) : statusIcon(issue.humanInput ? 'needs-input' : issue.status)}<span class="issue-name">${issue.issueNumber ? `#${escape(issue.issueNumber)} - ` : ''}${escape(issue.title)}${issue.isMaster ? ' ' + masterBadge(true) : ''}${issue.humanInput ? '<span class="issue-input-label">Needs your input</span>' : ''}</span></button>`;
+    const rows = (items) =>
+      issueGroups(items)
+        .map(({ issue, children }) => row(issue) + children.map((child) => row(child, true)).join(''))
+        .join('');
     const groups = folders
       .map((folder) => {
         const children = issues.filter((issue) => issue.folder === folder && issue.status !== 'closed');
@@ -757,7 +762,7 @@
         const active = children.find((issue) => issue.activeBlock);
         const name = escape(folder);
         const selected = state.folder === folder;
-        return `<section class="issue-folder"><div class="sidebar-folder-row" data-issue-folder-drop="${name}"><button class="icon-button folder-disclosure" type="button" data-toggle-folder="${name}" aria-label="${collapsed ? 'Expand' : 'Collapse'} ${name}" aria-expanded="${!collapsed}"></button><button class="folder-toggle" data-folder="${name}"${selected ? ' aria-current="page"' : ''}>${active ? activeSpinner(active.activeBlock) : ''}<span class="issue-folder-name">${name}</span><span class="folder-count">${children.length}</span></button><button class="icon-button sidebar-folder-create" data-create-folder-issue="${name}" aria-label="Create issue in ${name}" title="Create issue in ${name}">＋</button></div><div class="folder-items"${collapsed ? ' hidden' : ''}>${children.map(row).join('')}</div></section>`;
+        return `<section class="issue-folder"><div class="sidebar-folder-row" data-issue-folder-drop="${name}"><button class="icon-button folder-disclosure" type="button" data-toggle-folder="${name}" aria-label="${collapsed ? 'Expand' : 'Collapse'} ${name}" aria-expanded="${!collapsed}"></button><button class="folder-toggle" data-folder="${name}"${selected ? ' aria-current="page"' : ''}>${active ? activeSpinner(active.activeBlock) : ''}<span class="issue-folder-name">${name}</span><span class="folder-count">${children.length}</span></button><button class="icon-button sidebar-folder-create" data-create-folder-issue="${name}" aria-label="Create issue in ${name}" title="Create issue in ${name}">＋</button></div><div class="folder-items"${collapsed ? ' hidden' : ''}>${rows(children)}</div></section>`;
       })
       .join('');
     const closed = issues.filter((issue) => issue.status === 'closed');
@@ -780,22 +785,18 @@
       },
     ].map(({ id, name, matches }) => {
       const members = issues.filter((issue) => !issue.paused && issue.status !== 'closed' && matches(issue));
-      return collection(
-        id,
-        `${name}<span class="folder-count">${members.length}</span>`,
-        members.map(row).join('') || empty
-      );
+      return collection(id, `${name}<span class="folder-count">${members.length}</span>`, rows(members) || empty);
     });
     view.render(
       $('issue-list'),
       statusCollections.join('') +
         `<div id="open-issues">${groups || empty}</div>` +
-        collection('closed-issues', 'Closed', closed.map(row).join('') || empty) +
+        collection('closed-issues', 'Closed', rows(closed) || empty) +
         collection(
           'archived-issues',
           'Archived',
           state.archivedIssues
-            ? archive.map(row).join('') || empty
+            ? rows(archive) || empty
             : '<p class="sidebar-empty">Open Archived to load its reports.</p>'
         ),
       'flow-sidebar:' + state.index.project
@@ -879,7 +880,7 @@
   }
 
   function issueLink(issue) {
-    return `<a href="?issue=${encodeURIComponent(issue.id)}" data-open-folder-issue="${escape(issue.id)}">${escape(issueLabel(issue))}</a>`;
+    return `<a href="?issue=${encodeURIComponent(issue.id)}" data-open-folder-issue="${escape(issue.id)}">${escape(issueLabel(issue))}</a>${issue.isMaster ? ' ' + window.issueGroupUI.masterBadge() : ''}`;
   }
 
   const folderMarkup = new WeakMap();
@@ -898,25 +899,18 @@
   }
 
   function folderMemberRows(members, reasons) {
-    const visibleIds = new Set(members.map(({ id }) => id));
-    const children = new Map();
-    for (const issue of members) {
-      if (!issue.masterId || !visibleIds.has(issue.masterId)) continue;
-      if (!children.has(issue.masterId)) children.set(issue.masterId, []);
-      children.get(issue.masterId).push(issue);
-    }
-    const row = (issue) => {
-      const subIssues = children.get(issue.id);
-      return folderIssueRow(
-        issue,
-        folderIssueStatus(issue, reasons.get(issue.id)),
-        'member',
-        subIssues ? `<ul class="folder-issues" aria-label="Sub-issues">${subIssues.map(row).join('')}</ul>` : ''
-      );
-    };
-    return members
-      .filter((issue) => !visibleIds.has(issue.masterId))
-      .map(row)
+    return window.issueGroupUI
+      .issueGroups(members)
+      .map(({ issue, children }) =>
+        folderIssueRow(
+          issue,
+          folderIssueStatus(issue, reasons.get(issue.id)),
+          'member',
+          children.length
+            ? `<ul class="folder-issues" aria-label="Sub-issues">${children.map((child) => folderIssueRow(child, folderIssueStatus(child, reasons.get(child.id)), 'member')).join('')}</ul>`
+            : ''
+        )
+      )
       .join('');
   }
 
@@ -2480,6 +2474,7 @@
     issueNumber.hidden = issue?.issueNumber == null;
     issueNumber.textContent = issueNumber.hidden ? '' : `#${issue.issueNumber}`;
     $('issue-title').textContent = issue?.title || '';
+    $('issue-master-badge').hidden = !issue?.isMaster;
     renderBlockingError();
     renderMergedIssueNotice(issue);
     if ($('rename-issue-form').dataset.issue !== issue?.id) closeRename();

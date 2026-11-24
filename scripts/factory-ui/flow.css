@@ -317,7 +317,7 @@ kbd {
   border: 0;
   background: transparent;
   border-radius: 5px;
-  padding: 9px 10px;
+  padding: 9px 10px 9px calc(10px + var(--issue-row-indent, 0px));
   margin-bottom: 3px;
   text-align: left;
   font-size: 12px;
@@ -1834,7 +1834,7 @@ kbd {
   .issue-row {
     font-size: 10px;
     gap: 6px;
-    padding-left: 5px;
+    padding-left: calc(5px + var(--issue-row-indent, 0px));
     padding-right: 5px;
   }
   .folder-toggle {
@@ -2515,5 +2515,5 @@ kbd {
   min-width: 0;
 }
 .folder-issues ul {
-  padding-left: 16px;
+  padding-inline-start: var(--sub-issue-indent);
 }
