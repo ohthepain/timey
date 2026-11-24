@@ -1,32 +1,34 @@
-import { importBrowserIssues, removeBrowserIssue } from './flow-browser-fixture.mjs';
+import { importBrowserIssue, removeBrowserIssue } from './flow-browser-fixture.mjs';
 import assert from 'node:assert/strict';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-async function createFixtures(project, root, service) {
+async function createFixtures(project, root) {
   const configuration = ['triage-labels.md', 'preferences.json'].map((file) => {
     const path = join(project, '.issues', file);
     return { path, content: existsSync(path) ? readFileSync(path, 'utf8') : null };
   });
   const closed = ['20261120-bulk-closed-one', '20261120-bulk-closed-two', '20261120-bulk-closed-untouched'];
   const open = '20261120-bulk-open';
+  mkdirSync(join(project, '.issues/closed'), { recursive: true });
   writeFileSync(join(project, '.issues/preferences.json'), '{"commit":true}');
   copyFileSync(join(root, '.issues/triage-labels.md'), join(project, '.issues/triage-labels.md'));
   const helper = '.agents/skills/issues/scripts';
   mkdirSync(join(project, helper), { recursive: true });
   for (const file of ['human-input.mjs', 'human-input-version.json'])
     copyFileSync(join(root, helper, file), join(project, helper, file));
-  await importBrowserIssues(service, [
-    ...closed.map((id) => ({
+  for (const id of closed)
+    await importBrowserIssue(
+      project,
       id,
-      location: 'closed',
-      report: `---\nid: ${id}\ntitle: ${id}\nstate: closed\n---\n\nClosed fixture.\n`,
-    })),
-    {
-      id: open,
-      report: `---\nid: ${open}\ntitle: Open this normal issue\nstate: backlog\n---\n\nOpen the normal issue view.\n`,
-    },
-  ]);
+      `---\nid: ${id}\ntitle: ${id}\nstate: closed\n---\n\nClosed fixture.\n`,
+      'closed'
+    );
+  await importBrowserIssue(
+    project,
+    open,
+    `---\nid: ${open}\ntitle: Open this normal issue\nstate: backlog\n---\n\nOpen the normal issue view.\n`
+  );
   return { closed, open, configuration };
 }
 
@@ -37,8 +39,8 @@ function restoreConfiguration(files) {
   }
 }
 
-export async function projectIssuesBrowserChecks({ page, project, root, output, service }) {
-  const { closed, open, configuration } = await createFixtures(project, root, service);
+export async function projectIssuesBrowserChecks({ page, project, root, output }) {
+  const { closed, open, configuration } = await createFixtures(project, root);
   try {
     await page.goto('/?projectTab=issues');
     const frame = page.frameLocator('#project-issues iframe');

@@ -106,6 +106,13 @@ async function checkAutomaticClose({ page, flows, id, close, poll, screenshot })
   await poll(() => flows.selected(id).closed, Boolean, 'Opted-in issue did not close automatically.');
   await poll(() => !flows.closureBusy(id), Boolean, 'Automatic cleanup did not finish.');
   assert.equal(flows.selected(id).closure.reason, 'fixed');
+  await page.reload();
+  await page.locator('#issue-title').filter({ hasText: 'Close after Merge true' }).waitFor();
+  assert.equal(
+    await page.locator('#merged-issue-notice').isVisible(),
+    false,
+    'Closed issues must not ask to close again.'
+  );
   assert.equal(await close.count(), 0);
   assert.equal(await page.locator('#issue-closure-dialog[open]').count(), 0);
   await screenshot('automatic-close-no-prompt');

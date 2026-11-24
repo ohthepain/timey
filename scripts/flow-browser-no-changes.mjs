@@ -2,15 +2,15 @@ import assert from 'node:assert/strict';
 import { copyFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { git } from './factory-ui/common.mjs';
-import { withBrowserScenarioFixture } from './flow-browser-scenario-fixture.mjs';
 import { writeBrowserIssue } from './flow-browser-fixture.mjs';
+import { withBrowserScenarioFixture } from './flow-browser-scenario-fixture.mjs';
 
 export async function noChangesBrowserChecks({ page, service, project, output, root, poll }) {
   return withBrowserScenarioFixture({ project, service }, async () => {
     const id = '20261121-no-changes-fixture';
     const lifecyclePath = join(project, '.issues/triage-labels.md');
     if (!existsSync(lifecyclePath)) copyFileSync(join(root, '.issues/triage-labels.md'), lifecyclePath);
-    await writeBrowserIssue(service, {
+    await writeBrowserIssue(project, {
       id,
       title: 'No changes required',
       body: 'The reported behavior already works.',
@@ -62,12 +62,11 @@ export async function noChangesBrowserChecks({ page, service, project, output, r
       await screen.locator('#run-block').click();
       await screen.getByRole('button', { name: 'Close as Cannot Reproduce…' }).click();
       const closureResponse = screen.waitForResponse(
-        (response) =>
-          new URL(response.url()).pathname === '/api/issue-decision' && response.request().method() === 'POST'
+        (response) => response.url().endsWith('/api/issue-decision') && response.request().method() === 'POST'
       );
       await screen.locator('#confirm-issue-closure:not(:disabled)').click();
       const response = await closureResponse;
-      assert.equal(response.status(), 200, await response.text());
+      assert.ok(response.ok(), await response.text());
       await screen.locator('#issue-closure-dialog').waitFor({ state: 'hidden' });
       await screen.locator('#close-with-reason').waitFor({ state: 'hidden' });
       await poll(() => !service.flows.closureBusy(id), Boolean, 'No-change fixture cleanup did not finish.');

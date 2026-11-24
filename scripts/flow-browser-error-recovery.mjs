@@ -5,7 +5,7 @@ import { writeBrowserIssue } from './flow-browser-fixture.mjs';
 
 export async function errorRecoveryBrowserChecks({ page, service, project, output }) {
   const id = '20261120-error-recovery-fixture';
-  await writeBrowserIssue(service, {
+  await writeBrowserIssue(project, {
     id,
     title: 'Recover from a rejected branch update',
     body: 'Refresh the shared queue before retrying.',

@@ -219,7 +219,7 @@ async function prepareHome(page, service) {
 }
 export async function investigationToolbarBrowserChecks({ page, service, screenshot }) {
   const id = '20261123-investigation-toolbar';
-  await writeBrowserIssue(service, {
+  await writeBrowserIssue(service.root, {
     id,
     title: 'Investigation toolbar layout',
     body: 'Check layout without running an investigation.',

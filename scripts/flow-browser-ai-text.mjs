@@ -106,6 +106,7 @@ export async function aiTextBrowserChecks({ page, service, project, poll, screen
   assertCollapsed(enabledPointerAway);
   assert.equal(await bro.getAttribute('aria-pressed'), 'true');
   await simplifiedText.hover();
+  assertExpanded(await textControlLayout(block, '[data-ai-simplified]'), enabledPointerAway);
   const enabledStyle = await bro.evaluate((button) => ({
     color: getComputedStyle(button).color,
     background: getComputedStyle(button).backgroundColor,

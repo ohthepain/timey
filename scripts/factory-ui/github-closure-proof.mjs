@@ -24,6 +24,23 @@ function proof(path) {
   return { path, sha256: digest(readFileSync(path)) };
 }
 
+async function comparisonBase(provider, delivered, workspace, head) {
+  const pr = await provider.inspect(delivered.number);
+  requireThat(
+    pr.number === delivered.number &&
+      pr.merged_at &&
+      pr.merge_commit_sha === delivered.mergeCommit &&
+      pr.head?.sha === head &&
+      pr.head.ref === workspace.branch &&
+      pr.base?.ref === delivered.target,
+    'The merged PR changed while retaining GitHub verification.'
+  );
+  const base = pr.base.sha;
+  requireThat(/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(base), 'The merged PR comparison base is unavailable.');
+  git(workspace.checkout, 'merge-base', '--is-ancestor', base, head);
+  return base;
+}
+
 function relocatedFile(folder, remoteRoot, path, sha256) {
   requireThat(typeof path === 'string' && path.startsWith(remoteRoot + '/'), 'CI evidence escapes its artifact root.');
   const file = realpathSync(resolve(folder, posix.relative(remoteRoot, path)));
@@ -117,7 +134,8 @@ export async function retainGitHubClosureVerification({
     delivered.mergedAt && delivered.head === head,
     'Only the exact merged candidate can reuse GitHub verification.'
   );
-  const step = stepEvidence(workspace.checkout, workspace.base, tree, validate);
+  const base = await comparisonBase(provider, delivered, workspace, head);
+  const step = stepEvidence(workspace.checkout, base, tree, validate);
   for (const id of runIds(provider.config.repository, delivered.checks)) {
     const directory = join(workspace.checkout, '.issues/evidence', 'github-closure-' + id);
     const run = await downloadRun(provider, id, head, directory);
@@ -125,7 +143,7 @@ export async function retainGitHubClosureVerification({
       const original = join(directory, name);
       const summary = relocateSummary(directory, original);
       if (summary.checkpoint !== 'verification') continue;
-      validate(summary, workspace.base, tree, { auditPolicy: 'required' });
+      validate(summary, base, tree, { auditPolicy: 'required' });
       mkdirSync(folder, { recursive: true });
       const path = join(folder, 'github-verification-' + id + '.json');
       writeFileSync(
@@ -138,7 +156,8 @@ export async function retainGitHubClosureVerification({
       return {
         head,
         tree,
-        base: workspace.base,
+        base,
+        destinationBase: base,
         uncommitted: false,
         origin: { kind: 'github-actions', run: run.html_url, head: run.head_sha },
         proof: [proof(path), proof(step.path)],

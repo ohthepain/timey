@@ -2492,10 +2492,9 @@
   }
 
   function renderMergedIssueNotice(issue) {
-    $('merged-issue-notice').hidden = !issue?.readOnly;
-    $('merged-issue-notice').textContent = issue?.readOnly
-      ? 'Merged. This issue is read-only. Close it when ready.'
-      : '';
+    const awaitingClose = issue?.readOnly && issue.status !== 'closed';
+    $('merged-issue-notice').hidden = !awaitingClose;
+    $('merged-issue-notice').textContent = awaitingClose ? 'Merged. This issue is read-only. Close it when ready.' : '';
   }
 
   function renderInvestigationPage() {

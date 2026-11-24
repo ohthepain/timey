@@ -55,7 +55,7 @@ export async function investigationReportsBrowserChecks({ page, service, project
     evidence: [],
   };
   await importBrowserIssue(
-    service,
+    project,
     source.issueId,
     `---\nid: ${source.issueId}\ntitle: Archived source investigation\nstate: backlog\nrequest_type: investigation\n---\n\nRetained archived inquiry.\n`,
     'archive'

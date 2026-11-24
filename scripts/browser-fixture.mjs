@@ -168,8 +168,6 @@ export function browserFixture(root) {
             selected: 'files',
           })
         );
-      if (url.pathname === '/api/capture-grilling-skills')
-        return response.end(JSON.stringify([{ kind: 'skill', label: 'Grilling', skill: 'grilling' }]));
       if (url.pathname === '/api/queue') return response.end(JSON.stringify(data));
       if (url.pathname === '/api/issue') {
         const issueId = url.searchParams.get('issue');

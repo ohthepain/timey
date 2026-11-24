@@ -4,7 +4,7 @@ import { basename, join } from 'node:path';
 import { copyFileSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import { deliveryFixture } from './factory-workflow-fixture.mjs';
 import { retainGitHubClosureVerification } from './factory-ui/github-closure-proof.mjs';
-import { flowClosureArtifact } from './factory-ui/flow-delivery.mjs';
+import { flowClosureArtifact, verifiedFlowCandidate } from './factory-ui/flow-delivery.mjs';
 
 function fixture(t) {
   const f = deliveryFixture(t);
@@ -55,10 +55,45 @@ function fixture(t) {
       return delivered;
     },
   };
+  const pr = {
+    number: delivered.number,
+    merged_at: delivered.mergedAt,
+    merge_commit_sha: delivered.mergeCommit,
+    head: { sha: delivered.head, ref: workspace.branch },
+    base: { sha: workspace.base, ref: delivered.target },
+  };
+  provider.inspect = async () => pr;
   const folder = join(f.queue.root, '.issues/closure-proof');
   const retain = () => retainGitHubClosureVerification({ provider, delivered, workspace, folder });
-  return { ...f, workspace, directory, step, report, summary, bundle, run, delivered, provider, folder, retain };
+  return { ...f, workspace, directory, step, report, summary, bundle, run, delivered, provider, folder, retain, pr };
 }
+
+void test('Close preserves the original workspace base while verifying the merged PR comparison base', async (t) => {
+  const f = fixture(t);
+  f.source.git('commit', '--allow-empty', '-qm', 'Advance the comparison base');
+  const comparisonBase = f.source.git('rev-parse', 'HEAD');
+  assert.notEqual(comparisonBase, f.workspace.base);
+  f.source.git('commit', '--allow-empty', '-qm', 'Advance issue after updating the target');
+  const head = f.source.git('rev-parse', 'HEAD');
+  f.run.head_sha = head;
+  f.delivered.head = head;
+  f.pr.head.sha = head;
+  f.pr.base.sha = comparisonBase;
+  f.report.base = comparisonBase;
+  writeFileSync(f.summary, JSON.stringify(f.report));
+  const step = JSON.parse(readFileSync(f.step));
+  step.base = comparisonBase;
+  writeFileSync(f.step, JSON.stringify(step));
+  const verification = await f.retain();
+  const checked = verifiedFlowCandidate(
+    { flow: { blocks: [] }, block: {}, attempt: {}, evidenceRoot: f.queue.root },
+    f.workspace,
+    { verification }
+  );
+  assert.equal(checked.head, head);
+  assert.equal(verification.destinationBase, comparisonBase);
+  assert.equal(f.workspace.base, f.input.base);
+});
 
 void test('Close reuses actual GitHub verification and a matching step audit without rerunning suites', async (t) => {
   const f = fixture(t);
@@ -94,6 +129,20 @@ void test('Close reuses actual GitHub verification and a matching step audit wit
 });
 
 for (const [name, change, expected] of [
+  [
+    'a changed merged PR',
+    (f) => {
+      f.pr.head.sha = '0'.repeat(40);
+    },
+    /merged PR changed/,
+  ],
+  [
+    'an unavailable comparison base',
+    (f) => {
+      f.pr.base.sha = 'unavailable';
+    },
+    /comparison base is unavailable/,
+  ],
   [
     'another candidate',
     (f) => {

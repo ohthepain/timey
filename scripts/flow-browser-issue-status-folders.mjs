@@ -1,4 +1,4 @@
-import { importBrowserIssues, removeBrowserIssue } from './flow-browser-fixture.mjs';
+import { importBrowserIssue, removeBrowserIssue } from './flow-browser-fixture.mjs';
 import assert from 'node:assert/strict';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -21,6 +21,16 @@ async function setAttempt(service, entry, status, humanInput) {
   await service.flows.store.save(flow, flow.revision);
 }
 
+async function writeFixture(project, service, folders, reports, entry) {
+  const content = `---\nid: ${entry.id}\ntitle: Status ${entry.key}\nstate: ${entry.state || 'backlog'}\nfolder_id: ${folders[entry.folder].id}\n---\n\nStatus fixture.\n`;
+  const path = join(project, '.issues', entry.id + '.md');
+  reports.set(path, content);
+  await importBrowserIssue(project, entry.id, content);
+  await setAttempt(service, entry, entry.status, entry.humanInput);
+  if (entry.active) service.flows.active.set(entry.id, { blockId: 'held-fixture' });
+  if (entry.waiting) service.flows.autoplay.set(entry.id, { mode: 'waiting', blockId: 'confirmation' });
+}
+
 async function createFixtures(project, service) {
   const folders = ['Status folder one', 'Status folder two'].map((name) => createIssueFolderSettings(project, name));
   const fixtures = [
@@ -33,25 +43,17 @@ async function createFixtures(project, service) {
     { key: 'paused', folder: 0, status: 'blocked', humanInput: { kind: 'human-input', message: 'Retained input.' } },
     { key: 'stopped', folder: 1, status: 'stopped' },
   ].map((entry) => ({ ...entry, id: '20261121-status-' + entry.key }));
-  const reports = fixtures.map(({ id, key, state, folder }) => ({
-    id,
-    report: `---\nid: ${id}\ntitle: Status ${key}\nstate: ${state || 'backlog'}\nfolder_id: ${folders[folder].id}\n---\n\nStatus fixture.\n`,
-  }));
-  await importBrowserIssues(service, reports);
-  for (const entry of fixtures) {
-    await setAttempt(service, entry, entry.status, entry.humanInput);
-    if (entry.active) service.flows.active.set(entry.id, { blockId: 'held-fixture' });
-    if (entry.waiting) service.flows.autoplay.set(entry.id, { mode: 'waiting', blockId: 'confirmation' });
-  }
+  const reports = new Map();
+  for (const entry of fixtures) await writeFixture(project, service, folders, reports, entry);
   return { folders, fixtures, reports };
 }
 
-async function removeFixtures(service, folders, fixtures) {
+async function removeFixtures(project, service, folders, fixtures) {
   for (const folder of folders) rmSync(folder.directory, { recursive: true, force: true });
   for (const entry of fixtures) {
     service.flows.active.delete(entry.id);
     service.flows.autoplay.delete(entry.id);
-    await removeBrowserIssue(service.root, entry.id);
+    await removeBrowserIssue(project, entry.id);
   }
 }
 
@@ -199,8 +201,7 @@ export async function issueStatusFoldersBrowserChecks({ page, project, service, 
       id,
       folder: service.flows.read(service.flows.selected(id)).folder,
     }));
-    for (const { id, report } of reports)
-      assert.equal(readFileSync(join(project, '.issues', id + '.md'), 'utf8'), report);
+    for (const [path, content] of reports) assert.equal(readFileSync(path, 'utf8'), content);
     fixtures.forEach((entry, index) => assert.equal(assignments[index].folder, folders[entry.folder].name));
     writeFileSync(
       join(output, 'issue-status-folders-proof.json'),
@@ -227,6 +228,6 @@ export async function issueStatusFoldersBrowserChecks({ page, project, service, 
     );
   } finally {
     await page.goto('about:blank');
-    await removeFixtures(service, folders, fixtures);
+    await removeFixtures(project, service, folders, fixtures);
   }
 }

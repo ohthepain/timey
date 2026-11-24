@@ -61,12 +61,7 @@ import { actionsMenuBrowserChecks } from './flow-browser-actions-menu.mjs';
 import { mergedIssueBrowserChecks } from './flow-browser-merged-issue.mjs';
 import { manualCloseBrowserChecks } from './flow-browser-manual-close.mjs';
 import { noChangesBrowserChecks } from './flow-browser-no-changes.mjs';
-import {
-  importBrowserIssue,
-  importBrowserIssues,
-  removeBrowserIssue,
-  writeBrowserIssue,
-} from './flow-browser-fixture.mjs';
+import { importBrowserIssue, removeBrowserIssue, writeBrowserIssue } from './flow-browser-fixture.mjs';
 import { issueStoresBrowserChecks } from './flow-browser-stores.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -530,15 +525,15 @@ async function graphGeometry() {
 }
 
 async function seedSidebarOverflow() {
-  const issues = Array.from({ length: 24 }, (_, index) => {
-    const id = '20261120-sidebar-overflow-' + index;
-    return {
+  const ids = Array.from({ length: 24 }, (_, index) => '20261120-sidebar-overflow-' + index);
+  for (const [index, id] of ids.entries()) {
+    await writeBrowserIssue(project, {
       id,
-      report: `---\nid: ${id}\ntitle: Overflowing issue ${index}\nstate: backlog\n---\n\nSidebar scrolling fixture.\n`,
-    };
-  });
-  await importBrowserIssues(service, issues);
-  return issues.map(({ id }) => id);
+      title: 'Overflowing issue ' + index,
+      body: 'Sidebar scrolling fixture.',
+    });
+  }
+  return ids;
 }
 
 async function removeSidebarOverflow(ids) {
@@ -673,7 +668,7 @@ try {
     issueStatusFoldersBrowserChecks({ page, project, service, poll, screenshot, output, root })
   );
   await check('Closed issue selections archive together and issue links open the normal view', () =>
-    projectIssuesBrowserChecks({ page, project, root, output, service })
+    projectIssuesBrowserChecks({ page, project, root, output })
   );
   await check(navigationCheck, () =>
     withQueueConfiguration({ page, project, root }, () => projectNavigationBrowserChecks({ page, screenshot }))

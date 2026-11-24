@@ -6,34 +6,27 @@ import { storedIssuePath } from './factory-ui/issue-report-storage.mjs';
 import { resolveIssueStorage } from './factory-ui/stores/settings.mjs';
 import { ensureProjectStores } from './factory-ui/stores/runtime.mjs';
 
-export function writeBrowserIssue(project, { id, title, body }) {
-  const report = `---\nid: ${id}\ntitle: ${title}\nstate: backlog\n---\n\n${body}\n`;
-  return importBrowserIssue(project, id, report);
-}
-
-export function importBrowserIssue(project, id, report, location = 'open') {
-  return importBrowserIssues(project, [{ id, report, location }]);
-}
-
-export async function importBrowserIssues(project, issues) {
+export async function writeBrowserIssue(project, { id, title, body }) {
   if (typeof project !== 'string') {
     const service = project;
     await ensureProjectStores(service);
     project = service.root;
   }
+  const report = `---\nid: ${id}\ntitle: ${title}\nstate: backlog\n---\n\n${body}\n`;
+  return importBrowserIssue(project, id, report);
+}
+
+export async function importBrowserIssue(project, id, report, location = 'open') {
   const stores = registeredProjectStores(project);
   if (!stores) {
-    for (const { id, report, location = 'open' } of issues) {
-      const path = storedIssuePath(project, id, location);
-      mkdirSync(dirname(path), { recursive: true });
-      writeFileSync(path, report);
-    }
+    const path = storedIssuePath(project, id, location);
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, report);
     return;
   }
   const { storeId, artifactStoreId } = resolveIssueStorage(project);
-  for (const { id, report, location = 'open' } of issues)
-    await stores.importIssue({ id, report, location, storeId, artifactStoreId, operationId: 'fixture-' + id });
-  await stores.refresh({ issueIds: issues.map(({ id }) => id) });
+  await stores.importIssue({ id, report, location, storeId, artifactStoreId, operationId: 'fixture-' + id });
+  await stores.refresh({ issueIds: [id] });
 }
 
 export async function removeBrowserIssue(project, id) {
