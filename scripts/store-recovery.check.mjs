@@ -1,13 +1,15 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { openRecordStore, openIssueStore } from './factory-ui/stores/providers.mjs';
 import { openArtifactStore } from './factory-ui/stores/artifacts.mjs';
 import { createProjectStores } from './factory-ui/stores/project-stores.mjs';
-import { readOwnership, recoverOwnership } from './factory-ui/stores/recovery.mjs';
+import { readOwnership, recoverOwnership, cancelPendingFlowSave } from './factory-ui/stores/recovery.mjs';
 import { sealCoordination } from './factory-ui/stores/coordination.mjs';
+import { registerProjectStores } from './factory-ui/stores/report-access.mjs';
+import { FlowStore } from './factory-ui/flow-store.mjs';
 
 async function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), 'timey-explicit-recovery-'));
@@ -65,6 +67,52 @@ async function fixture(t) {
   };
   return { root, records, stores, other, id, owner, service, input };
 }
+
+void test('confirmed ownership recovery preserves pending evidence without shadowing the recovered flow', async (t) => {
+  const f = await fixture(t);
+  t.after(registerProjectStores(f.root, f.other));
+  const store = new FlowStore(f.root, { ownerForIssue: () => f.owner });
+  f.service.flows.store = store;
+  const flow = structuredClone((await f.other.readIssue(f.id)).flow);
+  flow.blocks[1].attempts[0].output = 'Earlier publication';
+  store.stage(flow);
+  store.flowPublication(f.id);
+  flow.blocks[1].attempts[0].output = 'Newest unpublished progress';
+  store.stage(flow);
+  await readOwnership(f.service, { issueId: f.id });
+  assert.ok(store.pendingFlow(f.id), 'Reading ownership must not discard unrecovered progress.');
+  await recoverOwnership(f.service, f.input);
+  assert.equal(store.pendingFlow(f.id), undefined, 'Recovered progress must not shadow the authoritative revision.');
+  const directory = join(f.root, '.issues/store-runtime/recovered-flows', f.id);
+  const [path] = readdirSync(directory);
+  const evidence = JSON.parse(readFileSync(join(directory, path), 'utf8'));
+  assert.equal(evidence.pending.flow.blocks[1].attempts[0].output, 'Newest unpublished progress');
+  assert.equal(evidence.publication.flow.blocks[1].attempts[0].output, 'Earlier publication');
+  assert.equal(evidence.recovery.value.status, 'confirmed');
+  const recovered = (await f.other.readIssue(f.id)).flow;
+  assert.equal(recovered.blocks[1].attempts[0].status, 'uncertain');
+  await assert.rejects(store.save(recovered, recovered.revision), { code: 'STORE_NOT_OWNER' });
+  store.ownerForIssue = () => undefined;
+  recovered.blocks[1].comments = [{ text: 'A new operator edit after recovery.' }];
+  await store.save(recovered, recovered.revision);
+});
+
+void test('a restarted store reconciles confirmed recovery but preserves a different pending owner', async (t) => {
+  const f = await fixture(t);
+  t.after(registerProjectStores(f.root, f.other));
+  const store = new FlowStore(f.root, { ownerForIssue: () => f.owner });
+  const flow = (await f.other.readIssue(f.id)).flow;
+  store.stage(flow);
+  await f.other.recoverAttempt({ ...f.input, operationId: 'ownership-recovery-' + f.input.operationId });
+  await f.other.refresh();
+  const restarted = new FlowStore(f.root, { ownerForIssue: () => ({ ...f.owner, token: 'replacement-token' }) });
+  f.service.flows.store = restarted;
+  await readOwnership(f.service, { issueId: f.id });
+  assert.equal(restarted.pendingFlow(f.id), undefined);
+  restarted.stage(flow);
+  await readOwnership(f.service, { issueId: f.id });
+  assert.equal(restarted.pendingFlow(f.id).owner.token, 'replacement-token');
+});
 
 test('ownership reads never expire old claims and require explicit stopped-runner confirmation', async (t) => {
   const f = await fixture(t);
@@ -269,4 +317,73 @@ test('unavailable recovery stays pending with its claim, while a confirmed lost 
   assert.equal(recovered.recovered, true);
   assert.equal((await f.records.get(key)).value.status, 'confirmed');
   assert.equal(await f.records.get('claims/' + f.id), null);
+});
+
+async function pendingPublication(t, claimed = true) {
+  const f = await fixture(t);
+  await recoverOwnership(f.service, f.input);
+  const flow = await f.records.get('flows/' + f.id);
+  const operation = await f.other.coordination.operation('pending-save', 'save-flow', {
+    issueId: f.id,
+    flow: { ...flow.value, closing: { resolution: 'fixed' } },
+    expectedRevision: flow.value.revision,
+    owner: null,
+    purpose: 'closure',
+  });
+  if (claimed) await f.other.coordination.acquire(f.other.coordination.owner(operation, f.id), 'pending-claim');
+  const claim = await f.records.get('claims/' + f.id);
+  return {
+    ...f,
+    originalFlow: flow,
+    operation,
+    cancellation: {
+      issueId: f.id,
+      publicationId: 'pending-save',
+      operationId: 'cancel-save',
+      operationRevision: operation.revision,
+      flowRevision: flow.revision,
+      claimRevision: claim?.revision ?? null,
+      confirmed: true,
+      reason: 'Publication stopped; operator cancelled its uncommitted flow edit.',
+    },
+  };
+}
+
+void test('explicit publication cancellation retains input and current flow, releases only its claim, and fences replay', async (t) => {
+  for (const claimed of [false, true]) {
+    const f = await pendingPublication(t, claimed);
+    assert.deepEqual(await cancelPendingFlowSave(f.service, f.cancellation), { cancelled: true });
+    const operation = await f.records.get(f.operation.key);
+    assert.equal(operation.value.status, 'rejected');
+    assert.deepEqual(operation.value.input, f.operation.value.input);
+    assert.deepEqual(await f.records.get('flows/' + f.id), f.originalFlow);
+    assert.equal(await f.records.get('claims/' + f.id), null);
+    assert.deepEqual(await cancelPendingFlowSave(f.service, f.cancellation), { cancelled: true });
+    await assert.rejects(f.other.saveFlow({ ...f.operation.value.input, operationId: 'pending-save' }), {
+      code: 'STORE_PUBLICATION_CANCELLED',
+    });
+  }
+});
+
+void test('publication cancellation rejects absent confirmation, local activity and changed authority', async (t) => {
+  for (const variant of ['confirmation', 'active', 'revision', 'peer']) {
+    const f = await pendingPublication(t);
+    const input = { ...f.cancellation };
+    if (variant === 'confirmation') input.confirmed = false;
+    if (variant === 'active') f.service.flows.active.set(f.id, {});
+    if (variant === 'revision') input.flowRevision = 'stale';
+    if (variant === 'peer') {
+      const claim = await f.records.get('claims/' + f.id);
+      await f.records.commit({
+        operationId: 'peer',
+        expected: [{ key: claim.key, revision: claim.revision }],
+        writes: [{ key: claim.key, value: { ...claim.value, token: 'peer' } }],
+      });
+      input.claimRevision = (await f.records.get(claim.key)).revision;
+    }
+    await assert.rejects(cancelPendingFlowSave(f.service, input));
+    assert.equal((await f.records.get(f.operation.key)).value.status, 'pending');
+    assert.deepEqual(await f.records.get('flows/' + f.id), f.originalFlow);
+    assert.ok(await f.records.get('claims/' + f.id));
+  }
 });

@@ -12,6 +12,7 @@ import { guardProviderWork } from './provider-runtime.mjs';
 import { withDiagnosticContext } from './diagnostic-activity.mjs';
 import { storeUnavailable } from './stores/availability.mjs';
 import { sameOwner } from './stores/coordination.mjs';
+import { reconcileRecoveredProgress } from './stores/recovered-flow.mjs';
 import { abortOwnedMerge, moveOwnedStartingPoint, updateOwnedWorktree } from './stores/manual-operations.mjs';
 import { prepareAttemptCommit } from './stores/flow-evidence.mjs';
 import { readSnapshot } from './stores/snapshots.mjs';
@@ -189,7 +190,7 @@ const scopedFolderActions = new Set([
 ]);
 const cachedFlowActions = new Set(['agent-answer', 'cancel-confirmation', 'reveal-definition', 'open-block-extension']);
 
-export function prepareFlowActionStores(service, input) {
+export async function prepareFlowActionStores(service, input) {
   const { action, issueId, subIssueId } = input;
   const ids = Array.isArray(input.issueIds) ? input.issueIds : [];
   const issueIds = [...new Set([issueId, subIssueId, ...ids])].filter(
@@ -197,11 +198,13 @@ export function prepareFlowActionStores(service, input) {
   );
   const queueWide = folderActions.has(action) && !scopedFolderActions.has(action);
   const fresh = action !== 'capture' && !cachedFlowActions.has(action) && (queueWide || issueIds.length > 0);
-  return ensureProjectStores(service, {
+  const stores = await ensureProjectStores(service, {
     fresh,
     issueIds: queueWide ? undefined : issueIds,
     display: !fresh && action !== 'capture',
   });
+  if (stores && fresh) for (const id of issueIds) await reconcileRecoveredProgress(service, stores, id);
+  return stores;
 }
 
 const unresolvedAttempt = (attempt) =>
@@ -2730,13 +2733,7 @@ class IssueFlows {
     } finally {
       providerGuard?.close();
       clearInterval(checkpoint);
-      if (owner && outcome) {
-        if (unresolvedAttempt(outcome)) {
-          await prepareAttemptCommit(this, issue, owner, outcome, block);
-          await this.service.projectStores.flushProgress(owner);
-          await this.store.flush(issue.id);
-        } else await this.confirmAttempt(issue, owner, outcome, block);
-      }
+      if (owner && outcome) await this.finalizeAttempt(issue, owner, outcome, block);
       if (claim && outcome && !unresolvedAttempt(outcome)) {
         try {
           queue.releaseFlowBlock(claim);
@@ -2774,6 +2771,25 @@ class IssueFlows {
   }
   async confirmAttempt(issue, owner, outcome, block) {
     return this.attemptMetadata(block, () => this.confirmAttemptState(issue, owner, outcome, block));
+  }
+  async finalizeAttempt(issue, owner, outcome, block) {
+    try {
+      if (unresolvedAttempt(outcome)) {
+        await prepareAttemptCommit(this, issue, owner, outcome, block);
+        await this.service.projectStores.flushProgress(owner);
+        await this.store.flush(issue.id);
+      } else await this.confirmAttempt(issue, owner, outcome, block);
+    } catch (error) {
+      const message = redactValue(error.message);
+      const failed = {
+        status: 'uncertain',
+        summary: 'Result confirmation failed: ' + message,
+        confirmationFailure: { status: outcome.status, summary: outcome.summary, message },
+      };
+      Object.assign(outcome, failed);
+      this.changeAttempt(issue, block.id, owner.attemptId, (current) => Object.assign(current, failed));
+      this.pause(issue.id, failed.summary);
+    }
   }
   async confirmAttemptState(issue, owner, outcome, block) {
     const stores = this.service.projectStores;

@@ -1,5 +1,6 @@
 import { FileReadCache } from './file-read-cache.mjs';
 import { registeredProjectStores } from './stores/report-access.mjs';
+import { sameOwner } from './stores/coordination.mjs';
 import { blockDefinitionId, missingMergePR, requestBlock, withoutTarget } from './flow-block-data.mjs';
 import { BlockCatalog } from './block-catalog.mjs';
 import { inquiryKinds, investigationOutputKinds } from './investigation-flow.mjs';
@@ -333,6 +334,22 @@ export class FlowStore {
     this.onSaved?.(flow.issueId);
     return saved;
   }
+}
+export function retireRecoveredPending(store, owner, recovery) {
+  const issueId = owner.issueId;
+  requireIssueId(issueId);
+  const pending = store.pendingFlow(issueId);
+  if (store.flushes.has(issueId) || !sameOwner(pending?.owner, owner)) return;
+  const publicationPath = store.publicationPath(issueId);
+  const publication = existsSync(publicationPath) ? JSON.parse(readFileSync(publicationPath, 'utf8')) : null;
+  if (publication && !sameOwner(publication.owner, owner)) return;
+  const evidence = { pending, publication, recovery };
+  const directory = join(store.root, '.issues/store-runtime/recovered-flows', issueId);
+  mkdirSync(directory, { recursive: true });
+  writeJson(join(directory, digest(JSON.stringify(evidence)) + '.json'), evidence);
+  if (publication) unlinkSync(publicationPath);
+  unlinkSync(join(store.root, '.issues/store-runtime/pending-flows', issueId + '.json'));
+  store.staged.delete(issueId);
 }
 function validateGraph(blocks) {
   requireThat(blocks.length <= 200, 'Keep each issue flow under 200 blocks.');

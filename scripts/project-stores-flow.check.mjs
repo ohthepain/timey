@@ -55,6 +55,31 @@ async function fixture(t, run = async () => ({ summary: 'Completed' }), recordKi
   return { root, git, records, issues, project, flows, service, id, blockId: block.id };
 }
 
+for (const status of ['completed', 'uncertain'])
+  void test(`a ${status} publication conflict stays recoverable without rejecting the background task`, async (t) => {
+    const held = Promise.withResolvers();
+    const f = await fixture(t, () => held.promise);
+    const flow = f.flows.read(f.flows.selected(f.id));
+    await f.flows.action({ action: 'start', issueId: f.id, blockId: f.blockId, revision: flow.revision });
+    const active = f.flows.active.get(f.id);
+    const task = assert.doesNotReject(active.task);
+    f.flows.store.flush = async () => {
+      throw Object.assign(Error('The shared flow changed. Refresh before editing.'), { code: 'STORE_CONFLICT' });
+    };
+    held.resolve({ status, summary: 'Implementation completed locally.' });
+    await task;
+    assert.equal(f.flows.active.has(f.id), false);
+    const pending = f.flows.store.read(f.flows.selected(f.id));
+    const attempt = pending.blocks.find((block) => block.id === f.blockId).attempts.at(-1);
+    assert.equal(attempt.status, 'uncertain');
+    assert.match(attempt.summary, /confirmation failed.*shared flow changed/i);
+    assert.equal(attempt.confirmationFailure.status, status);
+    assert.equal(attempt.confirmationFailure.summary, 'Implementation completed locally.');
+    const stores = f.service.projectStores;
+    assert.equal((await stores.coordination.get('claims/' + f.id)).value.token, active.storeOwner.token);
+    assert.equal(await stores.coordination.get('operations/finish-' + active.attemptId), null);
+  });
+
 void test('confirmed flow saves notify readers after each persisted attempt transition', async (t) => {
   const f = await fixture(t);
   const notifications = [];

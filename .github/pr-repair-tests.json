@@ -35,6 +35,27 @@
     {
       "name": "Closure validates the merged PR base while preserving the original workspace base",
       "command": ["node", "--test", "scripts/github-closure-proof.check.mjs"]
+    },
+    {
+      "name": "Pending CI registers before source fetching or repair work",
+      "command": ["node", "--test", "--test-name-pattern=Merge waits", "scripts/flow-executor.check.mjs"]
+    },
+    {
+      "name": "Ownership form stays hidden until its claim is ready",
+      "command": ["node", "--test", "scripts/issue-ownership-ui.check.mjs"]
+    },
+    {
+      "name": "Publication conflicts retain uncertain results without a rejected background task",
+      "command": [
+        "node",
+        "--test",
+        "--test-name-pattern=publication conflict|late.*snapshot",
+        "scripts/project-stores-flow.check.mjs"
+      ]
+    },
+    {
+      "name": "Confirmed recovery and interrupted-save cancellation preserve exact owner and evidence guards",
+      "command": ["node", "--test", "scripts/store-recovery.check.mjs"]
     }
   ]
 }
