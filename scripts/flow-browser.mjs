@@ -169,6 +169,7 @@ const blockInspectionCheck =
 const storageStatusCheck = 'Storage startup and recovery messages follow confirmed availability';
 const pollingCheck = 'Polling preserves expanded text and the Closed issues list';
 const timersCheck = 'Block timers reset for each attempt and stop at the last saved time after disconnect';
+const proposalsCheck = 'Pending proposals can be approved or deleted in one click without starting work';
 let requestClarification;
 const pendingResponses = [];
 const logs = {
@@ -380,6 +381,8 @@ function checkExcluded(name) {
     ['--storage-status', storageStatusCheck],
     ['--polling', pollingCheck],
     ['--timers', timersCheck],
+    ['--proposals', proposalsCheck],
+    ['--delayed-delete', proposalsCheck],
   ];
   const selected = selections.filter(([flag]) => process.argv.includes(flag));
   return selected.length > 0 && !selected.some(([, scenario]) => name === scenario);
@@ -418,7 +421,8 @@ async function clickAction(locator) {
     (response) =>
       response.url().endsWith('/api/flow-action') &&
       response.request().method() === 'POST' &&
-      response.request().postDataJSON().action !== 'open-block'
+      response.request().postDataJSON().action !== 'open-block',
+    { timeout: 60000 }
   );
   await locator.click();
   const response = await responsePromise;
@@ -2457,8 +2461,9 @@ try {
     );
     assert.deepEqual(logs.pageErrors, []);
   });
-  await check('Pending proposals can be approved or deleted in one click without starting work', async () => {
+  await check(proposalsCheck, async () => {
     const previous = issueId;
+    await page.goto('/');
     const runs = logs.execution.length;
     const create = page.locator('#capture-dialog');
     await page.locator('#new-issue').click();
@@ -2497,12 +2502,24 @@ try {
     const row = page.locator(`#open-issues [data-issue="${proposal.id}"]`);
     await page.goto(new URL('/?issue=' + proposal.id, page.url()).href);
     await row.waitFor();
-    await clickAction(remove);
+    let delayedDelete = Promise.resolve();
+    const delayDelete = (route) => {
+      if (route.request().postDataJSON()?.action !== 'delete-pending-issue') return route.continue();
+      delayedDelete = new Promise((done) => setTimeout(done, 16000)).then(() => route.continue());
+      return delayedDelete;
+    };
+    if (process.argv.includes('--delayed-delete')) await page.route('**/api/flow-action', delayDelete);
+    try {
+      await clickAction(remove);
+    } finally {
+      await delayedDelete;
+      if (process.argv.includes('--delayed-delete')) await page.unroute('**/api/flow-action', delayDelete);
+    }
     await row.waitFor({ state: 'detached' });
     assert.equal(new URL(page.url()).searchParams.has('issue'), false);
     assert.equal(existsSync(reportPath), false);
     assert.equal(logs.execution.length, runs);
-    await page.goto(new URL('/?issue=' + previous, page.url()).href);
+    await page.goto(previous ? '/?issue=' + previous : '/');
   });
   await check('Worktree Delete requires confirmation and shows why the menu is disabled afterward', async () => {
     const closedIssueId = issueId;

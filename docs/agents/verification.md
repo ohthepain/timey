@@ -455,6 +455,12 @@ skipped. Use `node scripts/flow-browser.mjs --timers` for the isolated attempt
 timer scenario. Repair workers reproduce the named failures, include necessary
 predecessor scenarios, and return after focused proof instead of repeating
 Factory's independent full verification.
+Include `--stores` when reproducing browser failures after storage activation;
+an isolated legacy-storage run does not establish that the store-backed case
+passed. `--proposals --delayed-delete` holds a proposal Delete request for 16
+seconds. The shared action helper allows 60 seconds for mutation responses and
+still checks their actual status and result. CI prints failed checks and browser
+scenario names directly from the retained verification record.
 
 To verify an update, open the latest **Update Branch** attempt in Flow. Confirm
 that it shows `completed` and records `containsFetchedCommit: true`. Copy the

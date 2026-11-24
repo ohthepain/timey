@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "sourceRun": "https://github.com/ohthepain/timey/actions/runs/45307083864",
+  "sourceRun": "https://github.com/ohthepain/timey/actions/runs/45310415306",
   "tests": [
     {
       "name": "Saved attempt transitions notify readers",
@@ -16,12 +16,25 @@
       "command": ["node", "--test", "--test-name-pattern=Flow notifies watchers", "scripts/flow.check.mjs"]
     },
     {
-      "name": "Attempt timer labels update and survive reload",
-      "command": ["node", "scripts/flow-browser.mjs", "--timers"]
+      "name": "Merge inherited-failure repair prompt and candidate verification",
+      "command": [
+        "node",
+        "--test",
+        "--test-name-pattern=Merge asks its worker to repair an inherited browser failure",
+        "scripts/flow-executor.check.mjs"
+      ]
     },
     {
-      "name": "Polling preserves the selected reader state",
-      "command": ["node", "scripts/flow-browser.mjs", "--polling"]
+      "name": "Store-backed proposal deletion, polling and attempt timers",
+      "command": [
+        "node",
+        "scripts/flow-browser.mjs",
+        "--stores",
+        "--polling",
+        "--timers",
+        "--proposals",
+        "--delayed-delete"
+      ]
     }
   ]
 }

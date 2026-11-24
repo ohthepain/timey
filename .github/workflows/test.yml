@@ -46,6 +46,32 @@ jobs:
           fi
           pnpm run verify -- --base "$AUDIT_BASE"
 
+      - name: Show exact verification failures
+        if: failure()
+        run: |
+          node --input-type=module <<'JS'
+          import { readdirSync, readFileSync, existsSync } from 'node:fs';
+          const directory = '.issues/evidence';
+          const summaries = existsSync(directory) ? readdirSync(directory).filter(name => name.endsWith('-summary.json')) : [];
+          for (const file of summaries) {
+            const report = JSON.parse(readFileSync(directory + '/' + file));
+            for (const check of report.checks.filter(check => !check.passed)) {
+              console.log('FAILED CHECK: ' + check.name + ' — ' + (check.command || []).join(' '));
+              if (check.log && existsSync(check.log)) {
+                const lines = readFileSync(check.log, 'utf8').split('\n').filter(line => line.length < 1000);
+                console.log(lines.slice(-45).join('\n'));
+              }
+              for (const artifact of check.artifacts || []) {
+                if (!artifact.path.endsWith('/results.json') || !existsSync(artifact.path)) continue;
+                const result = JSON.parse(readFileSync(artifact.path));
+                for (const scenario of result.results || []) {
+                  if (!scenario.passed) console.log('FAILED SCENARIO: ' + scenario.name + '\n' + scenario.error);
+                }
+              }
+            }
+          }
+          JS
+
       - name: Preserve verification evidence
         if: always()
         uses: actions/upload-artifact@v4
