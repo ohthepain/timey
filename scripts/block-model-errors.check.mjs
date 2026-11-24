@@ -89,10 +89,10 @@ test('Resume retains actionable inherited settings errors before starting any wo
   assert.deepEqual(read().blocks, before);
   assert.equal(calls.length, 0);
   const view = await controller().view(id);
-  assert.match(view.lastBlockingError.message, /effort in folder.md/);
+  assert.match(view.lastBlockingError.message, /effort in project settings \(folder.md\)/);
   assert.match(view.lastBlockingError.message, /Choose a listed effort/);
   assert.match(view.lastBlockingError.message, /impossible/);
-  assert.match(view.lastBlockingError.message, /skill in folder.md/);
+  assert.match(view.lastBlockingError.message, /skill in project settings \(folder.md\)/);
   assert.match(view.lastBlockingError.message, /missing-skill/);
 });
 
@@ -105,7 +105,7 @@ test('an explicit block model bypasses only inherited model errors, preserving o
   writeFileSync(path, invalidModel);
   assert.throws(
     () => blockExecutionSettings(flows.service, issue, flow, {}, { validate: true }),
-    /model in folder.md:.*missing-model/
+    /model in project settings \(folder.md\):.*missing-model/
   );
   assert.equal(
     blockExecutionSettings(flows.service, issue, flow, { model: 'gpt-6-luna' }, { validate: true }).model,
@@ -115,7 +115,7 @@ test('an explicit block model bypasses only inherited model errors, preserving o
   assert.throws(
     () => blockExecutionSettings(flows.service, issue, flow, { model: 'gpt-6-luna' }, { validate: true }),
     (error) => {
-      assert.match(error.message, /effort in folder.md:.*impossible/);
+      assert.match(error.message, /effort in project settings \(folder.md\):.*impossible/);
       assert.doesNotMatch(error.message, /missing-model/);
       return true;
     }

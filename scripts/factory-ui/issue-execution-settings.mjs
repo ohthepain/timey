@@ -126,7 +126,8 @@ export function requireValidExecutionSettings(settings, blockModel) {
     'Cannot start this issue. Fix these settings:\n' +
       errors
         .map((error) => {
-          const source = error.source || settings.sources?.[error.key] || 'Project settings';
+          const origin = error.source || settings.sources?.[error.key] || 'Project settings';
+          const source = origin === 'folder.md' ? 'project settings (folder.md)' : origin;
           const value = error.value === undefined ? '' : ` Saved value: ${JSON.stringify(error.value)}.`;
           return `- ${error.key.replaceAll('_', ' ')} in ${source}: ${error.message}${value}`;
         })

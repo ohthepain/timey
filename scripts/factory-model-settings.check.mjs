@@ -4,6 +4,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { CodexConnection } from './factory-ui/codex.mjs';
+import { attachIssueChat } from './factory-ui/issue-chat-runtime.mjs';
+import { gitFixture } from './git-fixture.mjs';
+import { investigationSnapshot, removeInvestigationSnapshot } from './factory-ui/investigation-snapshot.mjs';
+import { readStoreConfig, writeStoreConfig } from './factory-ui/stores/config.mjs';
 import {
   newChatModelSettings,
   codexHelperModelSettings,
@@ -23,6 +27,63 @@ function project(t) {
   const service = { root, ownServer() {} };
   return { root, service };
 }
+
+test('investigation chat startup uses the main project registry while running in an isolated snapshot', async (t) => {
+  const { root, git } = gitFixture(t, 'settings-snapshot-');
+  mkdirSync(join(root, '.issues'));
+  initializeFolderSettings(root);
+  const { revision, ...config } = readStoreConfig(root);
+  writeStoreConfig(
+    root,
+    {
+      ...config,
+      profiles: [
+        ...config.profiles,
+        { id: 'postgres', label: 'Configured profile', issueStore: 'files', artifactStore: 'files' },
+      ],
+    },
+    { expectedRevision: revision }
+  );
+  const path = join(root, 'folder.md');
+  writeFileSync(path, readFileSync(path, 'utf8').replace(/storage_profile: .*/, 'storage_profile: postgres'));
+  writeFileSync(join(root, '.gitignore'), '.issues/\n');
+  git('add', '.');
+  git('commit', '-qm', 'Configured storage profile');
+  const snapshot = investigationSnapshot(root, git('rev-parse', 'HEAD'));
+  t.after(() => removeInvestigationSnapshot(snapshot));
+  assert.deepEqual(readModelSettings(root).errors, []);
+  assert.ok(readModelSettings(snapshot.checkout).errors.some(({ key }) => key === 'storage_profile'));
+  const connection = new CodexConnection({ root, model: 'gpt-6-luna' });
+  connection.ready = async () => {};
+  const requests = [];
+  connection.call = async (method, params) => {
+    requests.push({ method, params });
+    return { thread: { id: 'isolated-investigation' } };
+  };
+  await attachIssueChat(
+    connection,
+    snapshot.checkout,
+    {},
+    () => {},
+    'workspace-write',
+    'Inspect this source snapshot.'
+  );
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].method, 'thread/start');
+  assert.equal(requests[0].params.cwd, snapshot.checkout);
+  assert.equal(requests[0].params.model, 'gpt-6-luna');
+  assert.equal(requests[0].params.sandbox, 'workspace-write');
+  assert.equal(connection.root, root);
+  writeFileSync(
+    path,
+    readFileSync(path, 'utf8').replace('storage_profile: postgres', 'storage_profile: missing-profile')
+  );
+  await assert.rejects(
+    attachIssueChat(connection, snapshot.checkout, {}, () => {}),
+    /storage profile in project settings \(folder.md\):.*missing-profile/
+  );
+  assert.equal(requests.length, 1, 'Invalid main-project settings must still block thread creation.');
+});
 
 test('invalid inherited chat settings name the field, saved value and file to repair', (t) => {
   const { root } = project(t);
@@ -62,7 +123,7 @@ test('invalid issue overrides and malformed project settings identify their own 
   assert.throws(
     () => newChatModelSettings(root),
     (error) => {
-      assert.match(error.message, /file in folder.md/);
+      assert.match(error.message, /file in project settings \(folder.md\)/);
       assert.match(error.message, /collection|sequence|flow/i);
       return true;
     }
