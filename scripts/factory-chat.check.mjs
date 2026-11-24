@@ -1395,3 +1395,29 @@ test('Stop control interrupts a prompt owned by the shared base Codex connection
     /Saved shared partial/
   );
 });
+
+test('invalid chat settings do not retain uncertain startup when no creation request was sent', async () => {
+  const connection = new CodexConnection();
+  connection.ready = async () => {};
+  connection.threadModelSettings = () => {
+    throw Error('Fix project or folder settings before starting this issue.');
+  };
+  connection.call = () => assert.fail('Invalid settings must not dispatch a creation request.');
+  const startup = [];
+  await assert.rejects(
+    connection.start('/fixture', 'workspace-write', (state) => startup.push(state)),
+    /Fix project/
+  );
+  assert.deepEqual(startup, []);
+  connection.threadModelSettings = () => ({ model: 'gpt-6.1-sol' });
+  connection.call = async (method) => {
+    assert.equal(method, 'thread/start');
+    assert.deepEqual(startup, [{ status: 'starting' }]);
+    return { thread: { id: 'retry-after-settings-fix' } };
+  };
+  assert.equal(
+    await connection.start('/fixture', 'workspace-write', (state) => startup.push(state)),
+    'retry-after-settings-fix'
+  );
+  assert.deepEqual(startup.at(-1), { status: 'ready', threadId: 'retry-after-settings-fix' });
+});

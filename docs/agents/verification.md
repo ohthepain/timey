@@ -1272,3 +1272,8 @@ results without rejecting background work. `store-recovery.check.mjs` checks
 confirmed receipt reconciliation and explicit interrupted-save cancellation: retain
 request evidence, reject changed revisions and owners, and release only the matching
 publication claim. Cancellation leaves issue reports and current flows unchanged.
+
+`node --test --test-name-pattern='invalid chat settings' scripts/factory-chat.check.mjs`
+checks that rejected local chat settings leave no uncertain startup marker, then
+permits a creation request after the settings are corrected. It uses the real
+Codex connection startup method with a disposable transport and starts no model.
