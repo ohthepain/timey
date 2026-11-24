@@ -1,3 +1,4 @@
+import { runMetadataOperation } from './factory-ui/stores/metadata-operation.mjs';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';

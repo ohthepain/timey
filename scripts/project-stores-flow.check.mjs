@@ -1,3 +1,4 @@
+import { readSnapshot } from './factory-ui/stores/snapshots.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { writeFileSync, readFileSync, existsSync, realpathSync } from 'node:fs';
@@ -927,4 +928,74 @@ test('Update Branch block publication failure leaves no local execution or share
   assert.equal(executed, false);
   assert.equal(f.flows.active.has(f.id), false);
   assert.equal(await f.records.get('claims/' + f.id), null);
+});
+
+async function heldRefresh(project) {
+  const snapshot = project.snapshot;
+  const entered = Promise.withResolvers();
+  const release = Promise.withResolvers();
+  project.snapshot = async (...args) => {
+    const value = await snapshot.apply(project, args);
+    entered.resolve();
+    await release.promise;
+    return value;
+  };
+  const pending = project.refresh();
+  await entered.promise;
+  project.snapshot = snapshot;
+  return async () => {
+    release.resolve();
+    return pending;
+  };
+}
+
+void test('confirmed flow saves notify readers after each persisted attempt transition', async (t) => {
+  const f = await fixture(t);
+  const notifications = [];
+  f.service.flowChanges = { notify: (...value) => notifications.push(value) };
+  let flow = f.flows.read(f.flows.selected(f.id));
+  for (const status of ['uncertain', 'blocked', 'running']) {
+    flow.blocks[0].attempts.push({ id: status, status });
+    flow = await f.flows.store.save(flow, flow.revision);
+    assert.deepEqual(notifications.at(-1), ['flow', f.id]);
+  }
+  assert.equal(notifications.length, 3);
+});
+
+void test('a late display snapshot cannot roll back a confirmed local flow and poison its next publication', async (t) => {
+  const f = await fixture(t);
+  const finishRefresh = await heldRefresh(f.project);
+  const issue = f.flows.selected(f.id);
+  const flow = f.flows.read(issue);
+  flow.blocks.find((block) => block.id === f.blockId).label = 'Confirmed newer work';
+  const confirmed = await f.flows.store.save(flow, flow.revision);
+  await finishRefresh();
+  const next = f.flows.read(issue);
+  assert.equal(next.revision, confirmed.revision);
+  assert.equal(readSnapshot(f.root).issues[0].flow.revision, confirmed.revision);
+  next.blocks.find((block) => block.id === f.blockId).label = 'Next confirmed publication';
+  await f.flows.store.save(next, next.revision);
+});
+
+void test('a late snapshot preserves newer installed flow and ownership state together', async (t) => {
+  const f = await fixture(t);
+  const initial = await f.project.snapshot();
+  const finishInitial = await heldRefresh(f.project);
+  const { owner } = await f.project.beginAttempt({
+    issueId: f.id,
+    blockId: f.blockId,
+    attempt: { id: 'snapshot-race' },
+    expectedRevision: initial.issues[0].flow.revision,
+    operationId: 'snapshot-race-start',
+  });
+  await f.project.refresh();
+  await finishInitial();
+  assert.equal(readSnapshot(f.root).claims[0].token, owner.token);
+  const finishActive = await heldRefresh(f.project);
+  await f.project.finishAttempt(owner, { result: { status: 'completed' }, operationId: 'snapshot-race-finish' });
+  await f.project.refresh();
+  const finished = readSnapshot(f.root);
+  await finishActive();
+  assert.deepEqual(readSnapshot(f.root).claims, []);
+  assert.equal(readSnapshot(f.root).issues[0].flow.revision, finished.issues[0].flow.revision);
 });

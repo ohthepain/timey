@@ -1,3 +1,4 @@
+import { runMetadataOperation } from './metadata-operation.mjs';
 import { beginActivity, observeActivity, diagnosticContext, countStoreRead } from '../diagnostic-activity.mjs';
 import { mergedDelivery } from '../merged-issue.mjs';
 import { existsSync, readFileSync, readdirSync, mkdirSync, writeFileSync, renameSync } from 'node:fs';
@@ -414,9 +415,8 @@ function activate(runtime) {
 }
 
 function synchronizeGrouped(runtime, fresh, scope) {
-  const transaction = runtime.ready && runtime.project.records.transaction;
   const run = () => synchronize(runtime, fresh, scope);
-  return transaction ? transaction(run) : run();
+  return runtime.ready ? runMetadataOperation(runtime.project, run) : run();
 }
 
 async function synchronize(runtime, fresh, scope) {

@@ -1,3 +1,4 @@
+import { runMetadataOperation } from './stores/metadata-operation.mjs';
 import {
   issueBlockModels,
   blockModelKind,
@@ -2532,8 +2533,7 @@ class IssueFlows {
     }
   }
   attemptMetadata(block, run) {
-    const records = this.service.projectStores?.records;
-    return block.kind === 'update-branch' && records?.transaction ? records.transaction(run) : run();
+    return block.kind === 'update-branch' ? runMetadataOperation(this.service.projectStores, run) : run();
   }
   async admitAttemptState(issue, flow, block, attempt, controller, purpose) {
     const owned = { blockId: block.id, attemptId: attempt.id, controller };

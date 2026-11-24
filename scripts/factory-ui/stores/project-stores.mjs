@@ -12,7 +12,7 @@ import {
   storeFailure,
   validIdentity,
 } from './coordination.mjs';
-import { installSnapshot, readSnapshot } from './snapshots.mjs';
+import { captureFlowGenerations, installSnapshot, readSnapshot } from './snapshots.mjs';
 import { moveIssue, moveProjectStore } from './migrations.mjs';
 import { deleteIssue, resumeDelete } from './deletion.mjs';
 
@@ -323,7 +323,8 @@ export function createProjectStores({
       },
       async refresh(options = {}) {
         try {
-          return installSnapshot(this.root, await this.snapshot(options));
+          const flowGenerations = captureFlowGenerations(this.root, options.issueIds);
+          return installSnapshot(this.root, await this.snapshot(options), { flowGenerations });
         } catch (error) {
           if (!options.allowCached) throw error;
           const cached = readSnapshot(this.root);

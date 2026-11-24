@@ -1,13 +1,36 @@
-import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync, renameSync, rmSync, statSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  unlinkSync,
+  writeFileSync,
+  renameSync,
+  rmSync,
+  statSync,
+  readdirSync,
+} from 'node:fs';
 import { join, dirname } from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
 import { cleanupDeletedCache } from './deletion-cache.mjs';
 import { validIdentity, assertStoreState, inputDigest } from './coordination.mjs';
+import { fileGeneration } from '../file-read-cache.mjs';
 
 const locations = { open: '.issues', closed: '.issues/closed', archive: '.issues/archive' };
 const snapshotPath = (root) => join(root, '.issues/store-runtime/snapshot.json');
 const bytesHash = (body) => createHash('sha256').update(body).digest('hex');
 const snapshotCache = new Map();
+
+export function captureFlowGenerations(root, issueIds) {
+  const directory = join(root, '.issues/flows');
+  const ids =
+    issueIds ??
+    (existsSync(directory)
+      ? readdirSync(directory, { withFileTypes: true })
+          .filter((entry) => entry.isDirectory())
+          .map((entry) => entry.name)
+      : []);
+  return new Map(ids.map((id) => [id, fileGeneration(join(directory, id, 'flow.json'))]));
+}
 
 function immutable(value) {
   if (value && typeof value === 'object' && !Object.isFrozen(value)) {
@@ -131,22 +154,32 @@ function draftChange(root, issue, prior, path) {
   if (!existsSync(file)) return { path: file, body: current };
 }
 
-function issueChanges(root, issue, previous) {
+function projectedFlow(root, issue, generations) {
+  const flowPath = join(root, '.issues/flows', issue.id, 'flow.json');
+  const existing = existsSync(flowPath) ? JSON.parse(readFileSync(flowPath, 'utf8')) : null;
+  const changed = generations && generations.get(issue.id) !== fileGeneration(flowPath);
+  const older = changed && existing && existing.revision > (issue.flow?.revision ?? 0);
+  const change = issue.flow && !older && inputDigest(existing) !== inputDigest(issue.flow);
+  return {
+    existing,
+    older,
+    change: change ? { path: flowPath, body: JSON.stringify(issue.flow, null, 2) + '\n' } : null,
+  };
+}
+
+function issueChanges(root, issue, previous, generations) {
+  const flow = projectedFlow(root, issue, generations);
+  if (flow.older && previous) return { issue: { ...previous, flow: flow.existing }, changes: [], retained: true };
   const path = reportPath(root, issue);
   const changes = [{ path, body: issue.report }];
   const draft = draftChange(root, issue, previous, path);
   if (draft) changes.unshift(draft);
-  if (issue.flow) {
-    const flowPath = join(root, '.issues/flows', issue.id, 'flow.json');
-    const existing = existsSync(flowPath) ? JSON.parse(readFileSync(flowPath, 'utf8')) : null;
-    if (inputDigest(existing) !== inputDigest(issue.flow))
-      changes.push({ path: flowPath, body: JSON.stringify(issue.flow, null, 2) + '\n' });
-  }
+  if (flow.change) changes.push(flow.change);
   if (previous && previous.location !== issue.location) {
     const old = reportPath(root, previous);
     if (existsSync(old) && readFileSync(old, 'utf8') === previous.report) changes.push({ path: old, body: null });
   }
-  return changes;
+  return { issue, changes, retained: false };
 }
 
 function numberChange(root, issues) {
@@ -203,7 +236,30 @@ function previousSnapshot(root, snapshot) {
   }
 }
 
-function prepareSnapshot(root, snapshot) {
+function retainSkippedIssues(snapshot, previous, issues, skipped) {
+  if (!skipped.size) return snapshot;
+  const records = (key) => [
+    ...(snapshot[key] || []).filter((entry) => !skipped.has(entry.issueId)),
+    ...(previous?.[key] || []).filter((entry) => skipped.has(entry.issueId)),
+  ];
+  return { ...snapshot, issues, claims: records('claims'), commands: records('commands') };
+}
+
+function projectIssues(root, snapshot, previous, byId, generations) {
+  const changes = [];
+  const skipped = new Set();
+  const issues = [];
+  for (const issue of snapshot.issues) {
+    assertStoreState(typeof issue.report === 'string', 'STORE_INVALID_SNAPSHOT', 'The snapshot report is missing.');
+    const projected = issueChanges(root, issue, byId.get(issue.id), generations);
+    changes.push(...projected.changes);
+    issues.push(projected.issue);
+    if (projected.retained) skipped.add(issue.id);
+  }
+  return { snapshot: retainSkippedIssues(snapshot, previous, issues, skipped), changes };
+}
+
+function prepareSnapshot(root, snapshot, generations) {
   assertStoreState(
     snapshot.version === 1 && Array.isArray(snapshot.issues),
     'STORE_INVALID_SNAPSHOT',
@@ -211,11 +267,9 @@ function prepareSnapshot(root, snapshot) {
   );
   const previous = previousSnapshot(root, snapshot);
   const byId = new Map((previous?.issues || []).map((issue) => [issue.id, issue]));
-  const changes = [];
-  for (const issue of snapshot.issues) {
-    assertStoreState(typeof issue.report === 'string', 'STORE_INVALID_SNAPSHOT', 'The snapshot report is missing.');
-    changes.push(...issueChanges(root, issue, byId.get(issue.id)));
-  }
+  const projected = projectIssues(root, snapshot, previous, byId, generations);
+  snapshot = projected.snapshot;
+  const changes = projected.changes;
   changes.push(numberChange(root, snapshot.issues));
   const merged = new Map(byId);
   for (const id of snapshot.deletedIssueIds || []) {
@@ -271,8 +325,8 @@ function applyGeneration(root, changes) {
   }
 }
 
-export function installSnapshot(root, snapshot) {
-  const prepared = prepareSnapshot(root, snapshot);
+export function installSnapshot(root, snapshot, { flowGenerations } = {}) {
+  const prepared = prepareSnapshot(root, snapshot, flowGenerations);
   applyGeneration(root, prepared.changes);
   if (snapshot.deletedIssueIds?.length) {
     cleanupDeletedCache(root, { ...prepared.saved, deletedIssueIds: snapshot.deletedIssueIds }, prepared.previous);

@@ -1,11 +1,7 @@
+import { runMetadataOperation } from './metadata-operation.mjs';
 import { prepareAttemptCommit } from './flow-evidence.mjs';
 import { makeBlock } from '../flow-store.mjs';
 import { redactValue } from '../activity.mjs';
-
-function metadataOperation(flows, run) {
-  const records = flows.service.projectStores.records;
-  return records.transaction ? records.transaction(run) : run();
-}
 
 function recordProgress(flows, issue, block, attempt, owner, value) {
   const text = redactValue(String(value));
@@ -105,7 +101,9 @@ export async function startOwnedOperation(
   const attempt = flows.makeAttempt(prepared, issue, block, catalog);
   let admitted;
   try {
-    admitted = await metadataOperation(flows, () => flows.admitAttempt(issue, prepared, block, attempt, controller));
+    admitted = await runMetadataOperation(flows.service.projectStores, () =>
+      flows.admitAttempt(issue, prepared, block, attempt, controller)
+    );
   } catch (error) {
     flows.active.delete(issue.id);
     throw error;
@@ -150,7 +148,9 @@ async function executeOperation(flows, { issue, admitted, block, attempt, contro
     await checkpoint();
   }
   const outcome = terminalOutcome(flows, issue, block, attempt, result, failure, controller);
-  await metadataOperation(flows, () => completeOperation(flows, issue, admitted, block, outcome));
+  await runMetadataOperation(flows.service.projectStores, () =>
+    completeOperation(flows, issue, admitted, block, outcome)
+  );
   if (flows.active.get(issue.id) === admitted.owned) flows.active.delete(issue.id);
   if (failure && !(outcome.mergedReceipt && failure.code === 'STORE_MERGED')) throw failure;
   return outcome;
