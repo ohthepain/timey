@@ -1242,9 +1242,9 @@ screenshots. Provider observations and execution results are disposable fixtures
 this does not establish live model entitlements or output quality.
 
 The PR repair-first step records V8 coverage under `.issues/repair-first-coverage`.
-The following strict static audit consumes that actual coverage before broad
-verification, so tested runtime helpers are evaluated with measured coverage.
-No changed repair plan means the focused step skips, as before.
+The early suite's Fallow audit consumes that coverage when the directory exists.
+The parallel test suites run without the early job's coverage settings.
+With no changed repair plan, the focused step skips.
 `node --test scripts/store-git-transaction.check.mjs` checks atomic Git metadata
 publication, rollback, competing writes, replay, lost push responses, pinned
 reads and detached callbacks. The manual operation tests in

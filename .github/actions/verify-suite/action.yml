@@ -49,13 +49,16 @@ runs:
     - name: Verify snapshot
       shell: bash
       env:
-        FALLOW_COVERAGE: ${{ github.workspace }}/.issues/repair-first-coverage
-        FALLOW_COVERAGE_ROOT: ${{ github.workspace }}
         AUDIT_BASE: ${{ steps.base.outputs.revision }}
         VERIFY_SUITE: ${{ inputs.suite }}
         TIMEY_FALLOW_ENFORCE: '1'
         TIMEY_FALLOW_WARNINGS: error
-      run: node scripts/verify.mjs --base "$AUDIT_BASE" --ci-suite "$VERIFY_SUITE"
+      run: |
+        coverage="$GITHUB_WORKSPACE/.issues/repair-first-coverage"
+        if [[ "$VERIFY_SUITE" == early && -d "$coverage" ]]; then
+          export FALLOW_COVERAGE="$coverage" FALLOW_COVERAGE_ROOT="$GITHUB_WORKSPACE"
+        fi
+        node scripts/verify.mjs --base "$AUDIT_BASE" --ci-suite "$VERIFY_SUITE"
     - name: Show exact verification failures
       if: failure()
       shell: bash

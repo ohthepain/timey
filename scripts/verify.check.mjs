@@ -226,6 +226,32 @@ void test('CI gates the parallel suites on early checks and keeps test as their 
   }
 });
 
+void test('CI passes repair coverage only to the early audit when coverage exists', (t) => {
+  const { root } = gitFixture(t, 'ci-coverage-');
+  const coverage = join(root, '.issues/repair-first-coverage');
+  const action = parse(readFileSync('.github/actions/verify-suite/action.yml', 'utf8'));
+  const verify = action.runs.steps.find(({ name }) => name === 'Verify snapshot');
+  assert.equal(Object.hasOwn(verify.env, 'FALLOW_COVERAGE'), false);
+  assert.equal(Object.hasOwn(verify.env, 'FALLOW_COVERAGE_ROOT'), false);
+  const run = (suite) =>
+    execFileSync(
+      'bash',
+      [
+        '--noprofile',
+        '--norc',
+        '-c',
+        'node() { printf "%s\\n" "${FALLOW_COVERAGE:-}" "${FALLOW_COVERAGE_ROOT:-}" "$@"; }\n' + verify.run,
+      ],
+      { encoding: 'utf8', env: { GITHUB_WORKSPACE: root, AUDIT_BASE: 'test-base', VERIFY_SUITE: suite } }
+    ).split('\n');
+  const command = (suite) => ['scripts/verify.mjs', '--base', 'test-base', '--ci-suite', suite, ''];
+  assert.deepEqual(run('early'), ['', '', ...command('early')]);
+  mkdirSync(coverage, { recursive: true });
+  assert.deepEqual(run('early'), [coverage, root, ...command('early')]);
+  for (const suite of Object.keys(ciSuites).filter((suite) => suite !== 'early'))
+    assert.deepEqual(run(suite), ['', '', ...command(suite)]);
+});
+
 function writeCISuite(folder, suite, candidate) {
   const runner = '/github/workspace/.issues/evidence';
   const checks = ciSuites[suite].checks.map((name) => {
