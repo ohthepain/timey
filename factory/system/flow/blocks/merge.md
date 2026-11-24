@@ -10,6 +10,22 @@ Temporary GitHub request failures get up to three retries with 1, 2 and 4 second
 
 Recover from local and GitHub check failures within the same run. Use the failed run’s retained logs, repair the candidate, verify it, push it, and check GitHub again. Make up to three different repair attempts per distinct blocker. Stop for a required decision, unavailable permission, an unchanged candidate, or a repeated failing source tree.
 
+Identify the exact failed test names, assertions and errors from the current
+candidate's verification evidence. Reproduce those cases with focused commands
+before editing. Include required predecessor scenarios when failure depends on
+test order, and match GitHub's environment when local results differ.
+
+Fix the demonstrated cause and run the failed cases first after every repair.
+Add or update a dedicated PR repair check that runs those cases before the broad
+suite and reports each result by name. Preserve the behavior and assertions the
+tests protect. Record the focused commands and their actual results.
+
+Commit the repair promptly once its focused checks pass. Factory performs the
+remaining required verification and publication; avoid repeating full suites
+inside the repair worker before that independent verification. Merge as soon as
+the current candidate satisfies required checks and approvals. Keep unrelated
+cleanup out of the repair.
+
 Use the local verification scope saved in Request when the attempt starts.
 Repeat the focused tests recorded by Work. Local verification commands have a
 15-minute deadline. GitHub's required checks still apply.
@@ -32,6 +48,14 @@ Repeat the focused tests recorded by Work. Local verification commands have a
 # System prompt
 
 Resolve straightforward conflicts and fix verification failures within the approved issue scope. Commit the repaired candidate in the issue checkout. Ask for human input if the fix needs a product decision, broader scope, or permission. Factory owns publication, verification, and the protected GitHub merge.
+
+For test failures, name and reproduce the exact failing cases first. Fix their
+demonstrated cause, rerun those cases before broader checks, and add them to the
+PR's dedicated repair check so GitHub tests them first. Include order-dependent
+predecessors and use GitHub's environment when needed. Preserve assertions,
+record focused commands and results, and return the committed repair promptly
+for Factory's independent verification. Avoid duplicate full-suite runs and
+unrelated cleanup. Merge promptly once required checks and approvals pass.
 
 Keep all work inside the saved issue checkout. Preserve unrelated changes. Report actual evidence and uncertainty. Do not turn advice into execution.
 

@@ -1,5 +1,6 @@
+import { importBrowserIssue, removeBrowserIssue } from './flow-browser-fixture.mjs';
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parse } from 'yaml';
 import { closedIssueState } from './factory-ui/data.mjs';
@@ -8,7 +9,7 @@ import { withBrowserScenarioFixture } from './flow-browser-scenario-fixture.mjs'
 const metadata = (path) => parse(readFileSync(path, 'utf8').match(/^---\r?\n([\s\S]*?)\r?\n---/)[1]);
 
 async function checkProjectSettings({ page, project, poll }) {
-  await page.getByRole('button', { name: 'Project settings', exact: true }).click();
+  await page.getByRole('button', { name: 'Factory settings', exact: true }).click();
   const settings = page.locator('#project-settings-dialog');
   await settings.locator('[data-settings-page="issues"]').click();
   const createDefaults = settings.getByRole('button', { name: 'Create project defaults', exact: true });
@@ -29,15 +30,8 @@ async function checkProjectSettings({ page, project, poll }) {
   await page.keyboard.press('Escape');
 }
 
-function removeFixtureIssues(project, ids) {
-  for (const id of ids)
-    for (const location of ['', 'closed', 'archive'])
-      rmSync(join(project, '.issues', location, id + '.md'), { force: true });
-}
-
-function writeFixtureIssues(project, ids, folderId) {
+async function writeFixtureIssues(project, ids, folderId) {
   const closedState = closedIssueState(project);
-  mkdirSync(join(project, '.issues/closed'), { recursive: true });
   for (const [index, id] of ids.entries()) {
     const closed = index > 1;
     const title = [
@@ -46,9 +40,11 @@ function writeFixtureIssues(project, ids, folderId) {
       'Archived success candidate',
       'Archive blocked candidate',
     ][index];
-    writeFileSync(
-      join(project, '.issues', ...(closed ? ['closed'] : []), id + '.md'),
-      `---\nid: ${id}\ntitle: ${title}\nstate: ${closed ? closedState : 'backlog'}\nfolder_id: ${folderId}\n---\n\nFull issue proof for ${title}.\n`
+    await importBrowserIssue(
+      project,
+      id,
+      `---\nid: ${id}\ntitle: ${title}\nstate: ${closed ? closedState : 'backlog'}\nfolder_id: ${folderId}\n---\n\nFull issue proof for ${title}.\n`,
+      closed ? 'closed' : 'open'
     );
   }
 }
@@ -153,7 +149,7 @@ export async function flowFolderSettingsBrowserChecks({ page, project, service, 
     await checkProjectSettings({ page, project, poll });
 
     const folderId = metadata(settingsPath).id;
-    writeFixtureIssues(project, ids, folderId);
+    await writeFixtureIssues(project, ids, folderId);
     await openFolder();
     await poll(
       () => page.locator('#folder-member-list input').count(),
@@ -263,7 +259,7 @@ export async function flowFolderSettingsBrowserChecks({ page, project, service, 
       revision: inbox.revision,
       makeDefault: true,
     });
-    removeFixtureIssues(project, ids);
+    for (const id of ids) await removeBrowserIssue(project, id);
     rmSync(join(project, 'user', folder), { recursive: true });
     await page.goto('/');
     await page.locator('#connection-status').filter({ hasText: 'Live' }).waitFor();

@@ -17,7 +17,7 @@ export async function blockModelsBrowserChecks({ page, project, service, poll, s
     close() {},
   };
   try {
-    writeBrowserIssue(project, { id, title: 'Choose the next block model', body: 'Preserve earlier attempts.' });
+    await writeBrowserIssue(project, { id, title: 'Choose the next block model', body: 'Preserve earlier attempts.' });
     const issue = service.flows.selected(id),
       flow = service.flows.read(issue);
     flow.settings = { model: 'anthropic:sonnet' };
@@ -60,6 +60,7 @@ export async function blockModelsBrowserChecks({ page, project, service, poll, s
       (value) => value === 'anthropic:opus',
       'Block model did not save.'
     );
+    await page.locator('#draft-note.saved-note').waitFor();
     assert.equal(service.flows.read(issue).blocks.find((b) => b.id === work.id).attempts[0].invalidatedAt, undefined);
     assert.equal(service.flows.active.has(id), false);
     enable(['anthropic:sonnet']);
@@ -88,6 +89,7 @@ export async function blockModelsBrowserChecks({ page, project, service, poll, s
       (value) => value === 'anthropic:sonnet',
       'Replacement model did not save.'
     );
+    await page.locator('#draft-note.saved-note').waitFor();
     assert.equal(await page.locator('#last-blocking-error').isVisible(), true);
     await page.locator('#run-block').click();
     await poll(

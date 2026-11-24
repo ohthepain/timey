@@ -10,10 +10,11 @@ import { lastBlockingError, retainBlockingError, resolveBlockingErrors } from '.
 import { guardProviderWork } from './provider-runtime.mjs';
 import { withDiagnosticContext } from './diagnostic-activity.mjs';
 import { storeUnavailable } from './stores/availability.mjs';
+import { sameOwner } from './stores/coordination.mjs';
 import { abortOwnedMerge, moveOwnedStartingPoint, updateOwnedWorktree } from './stores/manual-operations.mjs';
 import { prepareAttemptCommit } from './stores/flow-evidence.mjs';
 import { readSnapshot } from './stores/snapshots.mjs';
-import { resolveIssueStorage } from './stores/settings.mjs';
+import { inheritedIssueCaptureProfile, resolveIssueStorage } from './stores/settings.mjs';
 import { registeredProjectStores } from './stores/report-access.mjs';
 import { ensureProjectStores, hydrateProjectEvidence } from './stores/runtime.mjs';
 import { evidencePath, evidenceResolverGeneration } from './stores/evidence.mjs';
@@ -368,7 +369,10 @@ function validateCaptureSource(input, flows) {
 class IssueFlows {
   constructor(service, options) {
     this.service = service;
-    this.store = new FlowStore(service.root, { ownerForIssue: (id) => this.active.get(id)?.storeOwner });
+    this.store = new FlowStore(service.root, {
+      ownerForIssue: (id) => this.active.get(id)?.storeOwner,
+      onSaved: (id) => this.service.flowChanges?.notify('flow', id),
+    });
     this.catalog = new BlockCatalog(service.root);
     this.deliveryOptions = options.deliveryOptions || {};
     this.trashDirectory = options.trashDirectory || trashDirectory;
@@ -629,14 +633,13 @@ class IssueFlows {
       }
     }
     const folderSnapshot = createFolderSettingsSnapshot(this.service.root);
-    const folderSettings = requestOnly
-      ? folderSnapshot.folders.filter((folder) => folder.id && !folder.duplicate)
-      : folderSnapshot.folders;
+    const assignableFolders = folderSnapshot.folders.filter((folder) => folder.id && !folder.duplicate);
+    const folderSettings = requestOnly ? assignableFolders : folderSnapshot.folders;
     const resolveFolder = folderSnapshot.resolve;
     const index = requestOnly
       ? []
       : issues.map((issue) =>
-          this.indexIssue(issue, this.read(issue, catalog, folderSettings, resolveFolder), issues, resolveFolder)
+          this.indexIssue(issue, this.read(issue, catalog, assignableFolders, resolveFolder), issues, resolveFolder)
         );
     const data = {
       ...storage,
@@ -671,7 +674,7 @@ class IssueFlows {
     if (!id) return data;
     const issue = this.selected(id);
     const agentApprovals = this.agentApprovals(id);
-    const observedFlow = this.read(issue, catalog, folderSettings, resolveFolder);
+    const observedFlow = this.read(issue, catalog, assignableFolders, resolveFolder);
     this.service.flowChanges?.checkout(id, flowWorkspace(this.service, observedFlow)?.checkout);
     const environment = await this.observer.observe(observedFlow, { refresh });
     const savedFlow = await this.observedDelivery(issue, observedFlow, environment, catalog, {
@@ -736,7 +739,7 @@ class IssueFlows {
         closure: issue.closure,
       },
       flow,
-      blockModels: issueBlockModels(this.service, issue, savedFlow, issueSettings),
+      blockModels: issueBlockModels(this.service, issue, savedFlow, issueSettings, resolveFolder),
       lastBlockingError: lastBlockingError(savedFlow),
       humanInput: availableHumanInput(issue, flow, agentApprovals[0]),
       agentApprovals,
@@ -1191,6 +1194,7 @@ class IssueFlows {
         requestId: item.requestId,
         description,
         folder: retroFolder,
+        storageProfile: inheritedIssueCaptureProfile(this.service),
         needsApproval: true,
         sourceIssue,
       });
@@ -1198,6 +1202,7 @@ class IssueFlows {
   }
   pause(issueId, reason) {
     this.autoplay.set(issueId, { mode: 'paused', reason });
+    this.service.flowChanges?.notify('flow', issueId);
   }
   pauseAutoplay(issueId, reason) {
     const mode = this.autoplay.get(issueId)?.mode;
@@ -1270,6 +1275,15 @@ class IssueFlows {
   async action(input, { storesReady = false } = {}) {
     return this.withBlockingError(input, () => this.preparedAction(input, storesReady));
   }
+  async requireAvailableClaim(input) {
+    const claim = await this.service.projectStores.coordination.get('claims/' + input.issueId);
+    if (!claim) return;
+    const owner = this.active.get(input.issueId)?.storeOwner;
+    requireThat(
+      input.action === 'play' && sameOwner(claim.value, owner),
+      'Stop or explicitly recover the owning attempt before editing or starting this issue.'
+    );
+  }
   async preparedAction(input, storesReady) {
     if (!storesReady && this.actionNeedsFreshStore(input)) await prepareFlowActionStores(this.service, input);
     if (
@@ -1285,8 +1299,7 @@ class IssueFlows {
         'agent-answer',
       ].includes(input.action)
     ) {
-      const claim = await this.service.projectStores.coordination.get('claims/' + input.issueId);
-      requireThat(!claim, 'Stop or explicitly recover the owning attempt before editing or starting this issue.');
+      await this.requireAvailableClaim(input);
     }
     const waiting = this.autoplay.get(input.issueId);
     try {
@@ -2251,7 +2264,7 @@ class IssueFlows {
     if (preview.status === 'blocked' && this.autoplay.get(issue.id)?.blockId === block.id)
       this.pause(issue.id, preview.message);
     if (input.action === 'preview-publish' || preview.status === 'blocked' || preview.token !== input.previewToken)
-      return { publication: preview };
+      return { publication: { ...preview, flowRevision: flow.revision } };
     if (this.read(issue, catalog).revision !== flow.revision || this.selected(issue.id).title !== issue.title)
       return { previewChanged: true };
     return this.start(

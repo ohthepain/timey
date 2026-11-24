@@ -12,7 +12,12 @@ export default async function connectionBannerBrowserChecks(page) {
     const banner = page.locator('#connection-banner');
     await banner.getByText('Connection needs attention', { exact: true }).waitFor();
     if (await page.locator('#connection').isVisible()) throw Error('Connection warning remained in the header.');
-    if (!(await banner.evaluate((element) => element.nextElementSibling?.tagName === 'HEADER')))
+    if (
+      !(await banner.evaluate(
+        (element) =>
+          element.getBoundingClientRect().bottom === document.querySelector('header').getBoundingClientRect().top
+      ))
+    )
       throw Error('Connection warning banner is not directly above the header.');
     if ((await banner.evaluate((element) => getComputedStyle(element).backgroundColor)) !== 'rgb(153, 27, 27)')
       throw Error('Connection warning banner is not red.');

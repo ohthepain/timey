@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
-import { readFileSync, renameSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { renameStoredIssue } from './factory-ui/issue-report-storage.mjs';
 import { randomUUID } from 'node:crypto';
 import { resolveIssueStorage } from './factory-ui/stores/settings.mjs';
 
@@ -139,9 +138,7 @@ export async function interfaceStateBrowserChecks({ page, service, project, scre
   assert.ok(duringDrag.length > 5, 'The browser must create a real mouse selection.');
   async function changeIssueTitle(title) {
     const refreshed = page.waitForResponse((response) => new URL(response.url()).pathname === '/api/flow');
-    const report = join(project, '.issues', id + '.md');
-    writeFileSync(report + '.tmp', readFileSync(report, 'utf8').replace(/^title: .+$/m, 'title: ' + title));
-    renameSync(report + '.tmp', report);
+    await renameStoredIssue(project, service.flows.selected(id), title);
     await refreshed;
   }
   await changeIssueTitle('Preserve selection while dragging');

@@ -19,6 +19,8 @@
     "audit:diff": "node scripts/verify.mjs --audit-only",
     "audit:staged": "node scripts/verify.mjs --staged --audit-only",
     "audit:step": "node scripts/verify.mjs --step --audit-only",
+    "test:pr-repair": "node scripts/pr-repair-tests.mjs",
+    "test:pr-repair:control": "node --test scripts/pr-repair-tests.check.mjs",
     "fallow": "fallow --summary",
     "fallow:full": "fallow",
     "fallow:health": "fallow health --complexity --top 15",

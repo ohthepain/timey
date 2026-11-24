@@ -96,7 +96,7 @@ test('investigation creation starts nothing and either output runs independently
   const f = await fixture(t);
   assert.deepEqual(
     f.flow().blocks.map(({ kind }) => kind),
-    ['request', 'investigate', 'generate-report', 'create-issues']
+    ['request', 'investigate', 'create-issues', 'generate-report']
   );
   assert.equal(f.calls.length, 0);
   assert.deepEqual(
@@ -104,7 +104,7 @@ test('investigation creation starts nothing and either output runs independently
       .flow()
       .blocks.slice(2)
       .map(({ skill }) => skill),
-    ['generate-report', 'create-issues']
+    ['create-issues', 'generate-report']
   );
   await assert.rejects(f.run('generate-report'), /successfully completed investigation/);
   const inquiry = await f.run('investigate');
@@ -132,7 +132,10 @@ test('report failure pauses playback while Create Issues stays manually runnable
   for (let count = 0; count < 100 && f.flows.autoplay.get(f.issueId)?.mode === 'playing'; count++)
     await new Promise((resolve) => setTimeout(resolve, 10));
   assert.equal(f.flows.autoplay.get(f.issueId).mode, 'paused');
-  assert.equal(f.calls.filter(({ block }) => block.kind === 'create-issues').length, 0);
+  assert.deepEqual(
+    f.calls.map(({ block }) => block.kind),
+    ['investigate', 'create-issues', 'generate-report']
+  );
   const issues = await f.run('create-issues');
   assert.equal(issues.status, 'completed');
   assert.deepEqual(issues.supplementalFindings, []);

@@ -1,3 +1,4 @@
+import { importBrowserIssue } from './flow-browser-fixture.mjs';
 import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -7,8 +8,9 @@ export async function mergedIssueBrowserChecks({ page, project, service, screens
   initializeProjectLifecycle(service, { digest: readProjectSettings(project).lifecycle.digest });
   const id = '20261121-merged-readonly';
   const report = join(project, '.issues', id + '.md');
-  writeFileSync(
-    report,
+  await importBrowserIssue(
+    project,
+    id,
     `---\nid: ${id}\ntitle: Retain merged delivery\nstate: backlog\ncreated: 2026-11-21T00:00:00Z\n---\n\n## Original request\n\nKeep merged issues read-only.\n`
   );
   const flows = service.flows;
@@ -28,7 +30,7 @@ export async function mergedIssueBrowserChecks({ page, project, service, screens
         url: 'https://github.com/test/fixture/pull/91',
       },
     });
-  const saved = flows.store.save(flow, flow.revision);
+  const saved = await flows.store.save(flow, flow.revision);
   const before = readFileSync(flows.store.path(id), 'utf8');
   await page.goto('/?issue=' + id);
   await page.getByText('Merged. This issue is read-only. Close it when ready.', { exact: true }).waitFor();
@@ -46,7 +48,7 @@ export async function mergedIssueBrowserChecks({ page, project, service, screens
   const otherId = '20261121-unmerged-editable';
   const otherReport = join(project, '.issues', otherId + '.md');
   const otherText = `---\nid: ${otherId}\ntitle: Unmerged issue\nstate: backlog\ncreated: 2026-11-21T00:00:00Z\n---\n\n## Original request\n\nStill editable.\n`;
-  writeFileSync(otherReport, otherText);
+  await importBrowserIssue(project, otherId, otherText);
   for (const [path, data] of [
     ['flow-action', { issueId: id, revision: saved.revision, action: 'continue', blockId: 'merge' }],
     ['issue-priority', { issueId: id, priorityId: 'minor' }],

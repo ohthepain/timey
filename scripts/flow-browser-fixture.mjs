@@ -1,9 +1,43 @@
-import { writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import assert from 'node:assert/strict';
+import { dirname, join } from 'node:path';
+import { registeredProjectStores } from './factory-ui/stores/report-access.mjs';
+import { storedIssuePath } from './factory-ui/issue-report-storage.mjs';
+import { resolveIssueStorage } from './factory-ui/stores/settings.mjs';
 
 export function writeBrowserIssue(project, { id, title, body }) {
-  writeFileSync(
-    join(project, '.issues', id + '.md'),
-    `---\nid: ${id}\ntitle: ${title}\nstate: backlog\n---\n\n${body}\n`
-  );
+  const report = `---\nid: ${id}\ntitle: ${title}\nstate: backlog\n---\n\n${body}\n`;
+  return importBrowserIssue(project, id, report);
+}
+
+export async function importBrowserIssue(project, id, report, location = 'open') {
+  const stores = registeredProjectStores(project);
+  if (!stores) {
+    const path = storedIssuePath(project, id, location);
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, report);
+    return;
+  }
+  const { storeId, artifactStoreId } = resolveIssueStorage(project);
+  await stores.importIssue({ id, report, location, storeId, artifactStoreId, operationId: 'fixture-' + id });
+  await stores.refresh({ issueIds: [id] });
+}
+
+export async function removeBrowserIssue(project, id) {
+  const stores = registeredProjectStores(project);
+  if (!stores) {
+    for (const location of ['open', 'closed', 'archive'])
+      rmSync(storedIssuePath(project, id, location), { force: true });
+    rmSync(join(project, '.issues/flows', id), { recursive: true, force: true });
+    return;
+  }
+  const current = await stores.readIssue(id);
+  const result = await stores.deleteIssue({
+    issueId: id,
+    expectedRevision: current.revision,
+    operationId: 'delete-fixture-' + id,
+    purpose: current.location === 'archive' ? 'archive' : 'pending',
+  });
+  assert.equal(result.status, 'confirmed');
+  await stores.refresh({ issueIds: [id] });
 }

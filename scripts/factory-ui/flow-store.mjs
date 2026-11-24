@@ -199,9 +199,10 @@ export function rebuildRoute(flow, type, definition, nodes, catalog) {
 }
 
 export class FlowStore {
-  constructor(root, { ownerForIssue } = {}) {
+  constructor(root, { ownerForIssue, onSaved } = {}) {
     this.root = root;
     this.ownerForIssue = ownerForIssue;
+    this.onSaved = onSaved;
     this.staged = new Map();
     this.flushes = new Map();
     this.readCache = new FileReadCache((content) => JSON.parse(content));
@@ -244,6 +245,7 @@ export class FlowStore {
     });
     mkdirSync(join(this.directory, flow.issueId), { recursive: true });
     writeJson(this.path(flow.issueId), saved);
+    this.onSaved?.(flow.issueId);
     return saved;
   }
   stage(flow, expectedRevision) {
@@ -328,6 +330,7 @@ export class FlowStore {
     const saved = { ...flow, revision: current + 1, updatedAt: new Date().toISOString() };
     mkdirSync(join(this.directory, flow.issueId), { recursive: true });
     writeJson(path, saved);
+    this.onSaved?.(flow.issueId);
     return saved;
   }
 }
