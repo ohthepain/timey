@@ -329,3 +329,26 @@ test('Git overflow snapshots use one advertised head regardless of record count'
   const advertised = commands.filter((event) => event.argv.includes('ls-remote'));
   assert.equal(advertised.length, 1, 'Each overflow record must reuse the pinned relocation authority.');
 });
+
+test('standalone lists decode all overflow locations from the same fresh snapshot', async () => {
+  const old = artifactStore('old');
+  const moved = artifactStore('moved');
+  const original = await old.put({ body: JSON.stringify({ text: 'retained'.repeat(3000) }) });
+  const relocated = await moved.put({ body: JSON.stringify({ text: 'retained'.repeat(3000) }) });
+  old.bodies.clear();
+  const flow = { key: 'flows/one', revision: 'one', value: { encoding: 'artifact', ref: original } };
+  const location = 'artifact-locations/' + original.sha256;
+  const backend = memoryBackend([flow, encoded(location, { ref: relocated })]);
+  let records;
+  const router = createArtifactRouter({ active: old, stores: new Map([[moved.id, moved]]), records: () => records });
+  records = recordStore(backend, router);
+  const snapshot = backend.readSnapshot.bind(backend);
+  backend.readSnapshot = (read) =>
+    snapshot((pinned) => {
+      backend.replace([flow, encoded(location, { ref: { ...relocated, bytes: relocated.bytes + 1 } })]);
+      return read(pinned);
+    });
+  assert.equal((await records.list('flows/'))[0].value.text, 'retained'.repeat(3000));
+  assert.deepEqual(backend.reads, [], 'Decoding a list must not fan out fresh authority reads.');
+  await assert.rejects(records.list('flows/'), { code: 'STORE_ARTIFACT_REFERENCE' });
+});

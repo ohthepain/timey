@@ -210,11 +210,11 @@ async function retainFailedChecks(provider, error, head, checkout, onProgress) {
   await retainGitHubFailure(provider, error, head, checkout);
 }
 
-async function readMergeReadiness(ctx, workspace, provider, pr, state) {
+async function readMergeReadiness(ctx, workspace, provider, pr) {
   try {
     ctx.onProgress('Checking GitHub PR readiness before local verification.\n', true);
     const readiness = await provider.ready(pr, workspace.branch, pr.head.sha, {
-      waitForChecks: state.pushed === pr.head.sha,
+      waitForChecks: true,
     });
     return { readiness };
   } catch (readinessError) {
@@ -232,7 +232,8 @@ async function requireObservedChecks(ctx, workspace, provider, error, head) {
 }
 
 async function advanceMerge(service, ctx, workspace, provider, pr, invoke, options, state) {
-  const { readiness, readinessError } = await readMergeReadiness(ctx, workspace, provider, pr, state);
+  const { readiness, readinessError } = await readMergeReadiness(ctx, workspace, provider, pr);
+  if (readinessError?.code === 'STRATEGY_PENDING' && headOf(workspace) === pr.head.sha) throw readinessError;
   const target = await fetchTarget(ctx, workspace, invoke);
   await synchronize(workspace, target, invoke);
   const head = headOf(workspace);

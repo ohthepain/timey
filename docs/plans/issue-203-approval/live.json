@@ -1,0 +1,51 @@
+{
+  "cores": 10,
+  "load": [2.66357421875, 2.845703125, 2.71435546875],
+  "measurements": [
+    {
+      "run": 0,
+      "issueId": "20261124T075654744-49a8bfb9c4e46d55",
+      "startedAt": "2026-11-24T07:57:00.058Z",
+      "ms": 5926.748542,
+      "confirmed": true,
+      "closed": true
+    },
+    {
+      "run": 1,
+      "issueId": "20261124T075712638-4bc3b9c3ada0a09c",
+      "startedAt": "2026-11-24T07:57:17.641Z",
+      "ms": 6015.788125000003,
+      "confirmed": true,
+      "closed": true
+    },
+    {
+      "run": 2,
+      "issueId": "20261124T075730810-7d9e221177f1cc56",
+      "startedAt": "2026-11-24T07:57:35.800Z",
+      "ms": 5831.584833000001,
+      "confirmed": true,
+      "closed": true
+    },
+    {
+      "run": 3,
+      "issueId": "20261124T075748897-a0f618df7b42074e",
+      "startedAt": "2026-11-24T07:57:53.511Z",
+      "ms": 6324.726959000007,
+      "confirmed": true,
+      "closed": true
+    },
+    {
+      "run": 4,
+      "issueId": "20261124T075806135-567b1fb4178a77f5",
+      "startedAt": "2026-11-24T07:58:11.442Z",
+      "ms": 5942.990749999997,
+      "confirmed": true,
+      "closed": true
+    }
+  ],
+  "errors": 0,
+  "coordination": "postgres",
+  "issueStore": "git",
+  "artifactStore": "s3",
+  "runtimeRevision": "692a52608e374b162aacf2c7b4c91e4db4a2a0c6"
+}

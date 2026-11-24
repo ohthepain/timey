@@ -21,10 +21,9 @@ function readLocalSettings(root) {
   return existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : { issues: {} };
 }
 
-export function readModelSettings(root, { initialize = false } = {}) {
+export function readModelSettings(root, { initialize = false, resolveFolder = resolveFolderSettings } = {}) {
   if (initialize) initializeFolderSettings(root);
-  const { values, errors } = resolveFolderSettings(root, null);
-  const fields = folderSettingsFields(root, { branchChoices: false });
+  const { values, errors, fields = folderSettingsFields(root, { branchChoices: false }) } = resolveFolder(root, null);
   return {
     defaults: { model: values.model, effort: values.effort },
     errors,

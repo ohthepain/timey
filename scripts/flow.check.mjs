@@ -410,6 +410,37 @@ test('issue route Start runs Update Branch without confirmation and Pause lets t
   assert.deepEqual((await view()).autoplay, { mode: 'paused', reason: 'Flow complete' });
 });
 
+test('Flow notifies watchers when No new actions pauses a route after Work', async (t) => {
+  const { id, service } = fixture(t);
+  const work = Promise.withResolvers();
+  const reason = 'New work is paused. Turn off No new actions to start more work.';
+  let newActionsPaused = false;
+  service.serverControl = {
+    allow() {
+      if (newActionsPaused) throw Error(reason);
+    },
+  };
+  const flows = createIssueFlows(service, {
+    clarify: async () => ({ artifacts: { values: { type: 'bug', goal: 'Repair Save' } } }),
+    executor: executor(async () => {
+      await work.promise;
+      return { summary: 'Done' };
+    }),
+  });
+  t.after(() => flows.close());
+  const notifications = [];
+  service.flowChanges = { checkout() {}, notify: () => notifications.push(flows.autoplay.get(id)) };
+  await flows.action({ issueId: id, action: 'play', revision: flows.read(flows.selected(id)).revision });
+  const runningWork = flows.active.get(id);
+  assert.equal(runningWork.blockId, 'work');
+  newActionsPaused = true;
+  work.resolve();
+  await runningWork.task;
+  const paused = { mode: 'paused', reason };
+  assert.deepEqual((await flows.view(id)).autoplay, paused);
+  assert.ok(notifications.some((state) => state?.mode === paused.mode && state.reason === reason));
+});
+
 async function waitForNightSignal(signal, label) {
   let timer;
   try {
@@ -2120,15 +2151,20 @@ test('Retro links complete oversized evidence before dispatch without dropping m
   assert.equal(flow.blocks.find((block) => block.kind === 'work').attempts[0].output, large);
 });
 
-test('new investigations expose independent outputs without code delivery or closure blocks', (t) => {
+test('new investigations create issues before generating a report and omit code delivery and closure blocks', (t) => {
   fixture(t);
   const flow = newFlow(
     { id: '20261113-investigation', title: 'Understand the cache', request_type: 'investigation', content: '' },
     { branch: 'dev', remote: 'origin', base: 'base' }
   );
   assert.deepEqual(
-    flow.blocks.map((block) => block.kind),
-    ['request', 'investigate', 'generate-report', 'create-issues']
+    flow.blocks.map(({ kind, after }) => [kind, after]),
+    [
+      ['request', []],
+      ['investigate', ['request']],
+      ['create-issues', ['work']],
+      ['generate-report', ['create-issues']],
+    ]
   );
 });
 

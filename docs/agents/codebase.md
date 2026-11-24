@@ -795,6 +795,10 @@ Active attempt updates read the persisted graph directly through `FlowStore`.
 They retain revision checks without rediscovering folder settings or rebuilding
 the display. Group eligibility rejects issues with existing work before resolving
 their settings.
+`stores/recovered-flow.mjs` reconciles confirmed recovery receipts before a new
+flow action. Retirement preserves the interrupted request and publication evidence,
+and removes an overlay only for its exact owner. Publication confirmation errors
+retain an uncertain attempt for recovery instead of rejecting the background task.
 `flow-changes.mjs` sends change notifications over the authenticated Flow event
 stream. It batches notifications from server operations and watches issue
 records, UI definitions, Git metadata and selected checkouts. A visible Flow tab
@@ -882,8 +886,10 @@ records the agreed behavior and duration-estimate limits.
 Open conversation tabs stay in creation order; closing a tab marks its conversation
 closed and retains its saved history.
 
-`ai-text-ui.js` and `ai-text.css` provide shared top-right Copy, Bro and Dictate
-controls for AI text. Renderers mark AI content with `data-ai-text`, a stable
+`ai-text-ui.js` and `ai-text.css` provide shared Copy, Bro and Dictate controls
+beneath AI text. The row takes up space while the text or controls are hovered,
+while a control has keyboard focus, or on devices without hover.
+Renderers mark AI content with `data-ai-text`, a stable
 `data-ai-key` and its exact `data-ai-source`. Bro preserves the original and shows
 the simplified version until toggled off. `ai-text-bro.mjs` loads the installed bro
 skill and rewrites in a separate read-only model conversation. Dictating into an
@@ -1096,10 +1102,33 @@ and the Update Branch block, using the starting branch’s upstream. Conflict re
 update aborts a pending merge before fetching and retains the other Git-operation
 guards. `flow-merge-state.mjs` reads the pending local merge for the header
 control, whose explicit abort action is guarded by the flow service.
+Confirmed Flow saves notify subscribed readers directly through the existing
+flow-change channel. Filesystem watching remains the fallback for external writes.
+Manual owned operations and Update Branch blocks publish admission and completion
+through `stores/providers/git-transaction.mjs`. `git-read-set.mjs` checks record
+and list dependencies before retrying disjoint peer changes without replaying work.
+`git-github.mjs` publishes matching prepared Git objects with the configured App
+and conditionally updates the metadata ref. `stores/metadata-operation.mjs` scopes immutable payload reuse across an operation
+and uses the provider’s outer transaction when supported.
+`record-payloads.mjs` shares verified
+immutable payloads within one metadata operation. Standalone record lists use a
+fresh snapshot for both records and overflow relocation metadata, avoiding a
+remote authority lookup for each retained payload.
+Progress saves cannot overlap completion.
+`stores/snapshots.mjs` keeps the display API hydrated while persisting a small
+atomic index over immutable per-issue fragments. Selected refreshes serialize only
+the selected issues; legacy caches convert on installation. Full authoritative
+refreshes can repair damaged fragments while retaining local report drafts.
+PostgreSQL records and receipts up to 1 MiB use native JSONB; larger payloads retain
+the configured Artifact store.
+See the [Update Branch measurements](../plans/update-branch-performance.md).
 `flow-merge.mjs` shares the Git fetch and merge helpers for Destination, budgets recovery per blocker, stops repeated failing source trees, waits for GitHub checks, and binds approval to the exact issue commit
 and target revision. `flow-merge-github.mjs` bounds transient GitHub observation
 and merge retries, reconciling uncertain writes before repeating them. Merge
 checks GitHub first and retains matching verification across request failures.
+`github-closure-proof.mjs` imports verified GitHub reports for externally merged
+candidates during Close, retaining source provenance and the existing exact-tree,
+step-audit and evidence-hash guards.
 `flow-human-input.mjs` describes required PR review and derives the outstanding
 request from retained attempts, including legacy review blockers. Flow views and
 sidebar rows expose it separately from execution status; the UI offers explicit

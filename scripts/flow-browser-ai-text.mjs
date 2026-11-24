@@ -66,18 +66,33 @@ export async function aiTextBrowserChecks({ page, service, project, poll, screen
   await page.locator('#discuss-send').click();
   const block = page.locator('.discuss-message.assistant [data-ai-text]');
   await block.waitFor();
-  await block.hover();
+  const outside = page.locator('#project-tab-home');
+  await outside.hover();
+  const originalText = block.locator('[data-ai-original]');
+  const simplifiedText = block.locator('[data-ai-simplified]');
+  const collapsed = await textControlLayout(block);
+  assertCollapsed(collapsed);
+  await originalText.hover();
   const copy = block.locator('[data-ai-action="copy"]');
   const bro = block.locator('[data-ai-action="bro"]');
   const dictate = block.locator('[data-ai-action="dictate"]');
-  await copy.waitFor({ state: 'visible' });
-  const geometry = await block.evaluate((node) => {
-    const block = node.getBoundingClientRect();
-    const toolbar = node.querySelector('[data-ai-action="copy"]').parentElement.getBoundingClientRect();
-    return { block: { top: block.top, right: block.right }, toolbar: { top: toolbar.top, right: toolbar.right } };
-  });
-  assert.ok(Math.abs(geometry.toolbar.right - geometry.block.right) < 24);
-  assert.ok(Math.abs(geometry.toolbar.top - geometry.block.top) < 24);
+  const textHovered = await textControlLayout(block);
+  assertExpanded(textHovered, collapsed);
+  await copy.hover();
+  const copyHovered = await textControlLayout(block);
+  assertExpanded(copyHovered, collapsed);
+  assert.ok(copyHovered.buttons.find(({ action }) => action === 'copy').hovered);
+  await bro.hover();
+  const broHovered = await textControlLayout(block);
+  assertExpanded(broHovered, collapsed);
+  assert.ok(broHovered.buttons.find(({ action }) => action === 'bro').hovered);
+  await screenshot('ai-text-hover');
+  await outside.hover();
+  const pointerAway = await textControlLayout(block);
+  assertCollapsed(pointerAway);
+  assert.equal(pointerAway.blockHeight, collapsed.blockHeight);
+  await screenshot('ai-text-collapsed');
+  await originalText.hover();
   await copy.click();
   assert.equal(await page.evaluate(() => navigator.clipboard.readText()), source);
   await bro.click();
@@ -86,8 +101,12 @@ export async function aiTextBrowserChecks({ page, service, project, poll, screen
     (text) => text.includes(simplified),
     'Bro did not display the rewritten text.'
   );
-  await page.locator('#project-tab-home').hover();
+  await outside.hover();
+  const enabledPointerAway = await textControlLayout(block, '[data-ai-simplified]');
+  assertCollapsed(enabledPointerAway);
   assert.equal(await bro.getAttribute('aria-pressed'), 'true');
+  await simplifiedText.hover();
+  assertExpanded(await textControlLayout(block, '[data-ai-simplified]'), enabledPointerAway);
   const enabledStyle = await bro.evaluate((button) => ({
     color: getComputedStyle(button).color,
     background: getComputedStyle(button).backgroundColor,
@@ -100,7 +119,6 @@ export async function aiTextBrowserChecks({ page, service, project, poll, screen
     return b > r && b > g;
   });
   assert.ok(blue, 'Enabled bro must be blue.');
-  await block.hover();
   await copy.click();
   assert.equal(await page.evaluate(() => navigator.clipboard.readText()), simplified);
   await bro.click();
@@ -122,6 +140,7 @@ export async function aiTextBrowserChecks({ page, service, project, poll, screen
     node.focus();
     node.setSelectionRange(4, 4);
   });
+  await editor.hover();
   await dictate.click();
   await speech('caret ');
   const caretValue = source.slice(0, 4) + 'caret ' + source.slice(4) + ' appended';
@@ -146,7 +165,7 @@ export async function aiTextBrowserChecks({ page, service, project, poll, screen
   const proof = {
     source,
     simplified,
-    geometry,
+    hoverLayout: { collapsed, textHovered, copyHovered, broHovered, pointerAway, enabledPointerAway },
     enabledStyle,
     originalClipboard: source,
     simplifiedClipboard: simplified,
@@ -158,7 +177,7 @@ export async function aiTextBrowserChecks({ page, service, project, poll, screen
     provider: 'Injected deterministic provider; no live model or microphone used.',
   };
   await screenshot('ai-text-controls');
-  await block.hover();
+  await editor.hover();
   await bro.click();
   await poll(
     () => editor.inputValue(),
@@ -174,7 +193,7 @@ export async function aiTextBrowserChecks({ page, service, project, poll, screen
     'New AI source was not simplified while bro stayed enabled.'
   );
   assert.equal(await bro.getAttribute('aria-pressed'), 'true');
-  await block.hover();
+  await block.locator('[data-ai-editor], [data-ai-simplified]:not([hidden])').hover();
   await bro.click();
   assert.ok((await block.innerText()).includes(nextSource), 'Turning bro off restored stale source text.');
   proof.sourceUpdate = { source: nextSource, simplified: nextSimplified, restored: await block.innerText() };
@@ -219,8 +238,14 @@ export async function aiTextBrowserChecks({ page, service, project, poll, screen
   await homeMessage.locator('[data-ai-action="copy"]').click();
   assert.equal(await page.evaluate(() => navigator.clipboard.readText()), source);
   const draftField = page.locator('#home-automate-content');
-  await draftField.hover();
   const draftControls = page.locator('[data-ai-text]').filter({ has: draftField });
+  await page.locator('#home-automate-name').hover();
+  const draftCollapsed = await textControlLayout(draftControls, '#home-automate-content');
+  assertCollapsed(draftCollapsed);
+  await draftField.hover();
+  const draftHovered = await textControlLayout(draftControls, '#home-automate-content');
+  assertExpanded(draftHovered, draftCollapsed);
+  proof.draftLayout = { collapsed: draftCollapsed, hovered: draftHovered };
   await draftControls.locator('[data-ai-action="bro"]').click();
   await poll(
     () => draftField.inputValue(),
@@ -247,4 +272,47 @@ export async function aiTextBrowserChecks({ page, service, project, poll, screen
   proof.homeHoveredField = await reply.inputValue();
   await screenshot('ai-text-home');
   writeFileSync(join(dirname(project), 'ai-text-controls.json'), JSON.stringify(proof, null, 2) + '\n');
+}
+
+function textControlLayout(block, content = '[data-ai-original]') {
+  return block.evaluate((node, contentSelector) => {
+    const textBox = node.querySelector(contentSelector);
+    const text = textBox.getBoundingClientRect();
+    const content = textBox.closest('[data-ai-original]')?.getBoundingClientRect() ?? text;
+    const buttons = [...node.querySelectorAll('[data-ai-action="copy"], [data-ai-action="bro"]')];
+    return {
+      contentHeight: content.height,
+      blockHeight: node.getBoundingClientRect().height,
+      buttons: buttons.map((button) => {
+        const bounds = button.getBoundingClientRect();
+        return {
+          action: button.dataset.aiAction,
+          visible: button.checkVisibility({ checkOpacity: true, checkVisibilityCSS: true }),
+          hovered: button.matches(':hover'),
+          gap: bounds.top - text.bottom,
+          height: bounds.height,
+        };
+      }),
+    };
+  }, content);
+}
+
+function assertCollapsed(layout) {
+  assert.equal(layout.buttons.length, 2);
+  assert.ok(
+    layout.buttons.every((button) => !button.visible),
+    JSON.stringify(layout)
+  );
+  assert.equal(layout.blockHeight, layout.contentHeight, 'Hidden buttons must occupy no layout space.');
+}
+
+function assertExpanded(layout, collapsed) {
+  for (const button of layout.buttons) {
+    assert.ok(button.visible, `${button.action} must be visible.`);
+    assert.equal(button.gap, 0, `${button.action} must touch the bottom of its text box.`);
+    assert.ok(
+      layout.blockHeight - collapsed.blockHeight >= button.height,
+      `${button.action} must fit in the added space.`
+    );
+  }
 }

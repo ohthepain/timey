@@ -16,7 +16,11 @@ Agreed design for the Factory issue flow.
 - Automatic closure requires an explicit opt-in for the issue. It records
   Fixed after Factory's Merge block succeeds and the existing requirements
   for Fixed are satisfied. A merge outside Factory requires manual Close.
-  With auto-close off, the delivery sequence ends at Merge. The opt-in covers
+  With auto-close off, the delivery sequence ends at Merge. The flow shows a
+  **Close issue…** button before the Close block and explains that closing is
+  manual. The button opens the existing closure confirmation and remains
+  available after Merge. With auto-close on, this manual prompt is hidden. After closure, the merged notice no longer asks for Close.
+  The opt-in covers
   one delivery and includes removal of the eligible worktree. Later Cleanup
   can remove either branch with explicit selection. You can revoke the opt-in
   before automatic Close starts. Reopening clears it.
@@ -44,6 +48,11 @@ that acceptance in advance, conditional on the delivery satisfying the existing
 requirements for Fixed.
 
 ## Verification cases
+
+`node scripts/flow-browser.mjs --manual-close` checks the manual button's
+placement, an open issue after Merge, the existing confirmation and cancellation,
+and automatic Fixed closure without a prompt. It uses a fixture executor for
+external Merge and Cleanup operations.
 
 - Confirm manual Close with a non-Fixed reason while cleanup discovery is unavailable.
   Check that the issue closes, Cleanup removes the eligible worktree, and

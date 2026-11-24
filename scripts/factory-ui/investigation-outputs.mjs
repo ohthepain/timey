@@ -1,3 +1,4 @@
+import { inheritedIssueCaptureProfile } from './stores/settings.mjs';
 import { existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { z } from 'zod';
@@ -267,6 +268,7 @@ export class InvestigationOutputs {
       requestId: item.requestId,
       type: item.type,
       folder: item.folder,
+      storageProfile: inheritedIssueCaptureProfile(this.flows.service),
       needsApproval: true,
       sourceIssue: source.issueId,
       sourceAttempt: source.attemptId,

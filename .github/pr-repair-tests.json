@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "sourceRun": "https://github.com/ohthepain/timey/actions/runs/45240464918",
+  "tests": [
+    {
+      "name": "Initial issue loading does not wait for the live update stream",
+      "command": [
+        "node",
+        "--test",
+        "scripts/flow-startup.check.mjs",
+        "scripts/flow-progress.check.mjs",
+        "scripts/flow-view-settings.check.mjs"
+      ]
+    },
+    {
+      "name": "Named browser selection and focused-command guards",
+      "command": ["node", "--test", "scripts/browser-scenario-policy.check.mjs"]
+    },
+    {
+      "name": "Previously failing capture chooses the configured Issue storage profile",
+      "command": ["node", "scripts/factory-browser.mjs", "--scenario=factory-browser-capture-start.mjs"]
+    },
+    {
+      "name": "Previously blocked Project Home and archive deletion workflow",
+      "command": ["node", "scripts/flow-browser.mjs", "--project-home"]
+    },
+    {
+      "name": "Copy and Bro sit flush below text and remain visible across pointer transitions",
+      "command": ["node", "scripts/flow-browser.mjs", "--ai-text"]
+    },
+    {
+      "name": "Closed issues stop asking for Close after manual or automatic delivery",
+      "command": ["node", "scripts/flow-browser.mjs", "--manual-close"]
+    },
+    {
+      "name": "Closure validates the merged PR base while preserving the original workspace base",
+      "command": ["node", "--test", "scripts/github-closure-proof.check.mjs"]
+    },
+    {
+      "name": "Pending CI registers before source fetching or repair work",
+      "command": ["node", "--test", "--test-name-pattern=Merge waits", "scripts/flow-executor.check.mjs"]
+    },
+    {
+      "name": "Ownership form stays hidden until its claim is ready",
+      "command": ["node", "--test", "scripts/issue-ownership-ui.check.mjs"]
+    },
+    {
+      "name": "Publication conflicts retain uncertain results without a rejected background task",
+      "command": [
+        "node",
+        "--test",
+        "--test-name-pattern=publication conflict|late.*snapshot",
+        "scripts/project-stores-flow.check.mjs"
+      ]
+    },
+    {
+      "name": "Confirmed recovery and interrupted-save cancellation preserve exact owner and evidence guards",
+      "command": ["node", "--test", "scripts/store-recovery.check.mjs"]
+    }
+  ]
+}

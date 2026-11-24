@@ -30,8 +30,16 @@ jobs:
       - name: Install browser
         run: pnpm exec playwright-cli install-browser chromium --with-deps
 
+      - name: Previously failing PR tests first
+        env:
+          NODE_V8_COVERAGE: ${{ github.workspace }}/.issues/repair-first-coverage
+          AUDIT_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: node scripts/pr-repair-tests.mjs --base "$AUDIT_BASE"
+
       - name: Verify snapshot
         env:
+          FALLOW_COVERAGE: ${{ github.workspace }}/.issues/repair-first-coverage
+          FALLOW_COVERAGE_ROOT: ${{ github.workspace }}
           AUDIT_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
           TIMEY_FALLOW_ENFORCE: '1'
           TIMEY_FALLOW_WARNINGS: error
@@ -40,6 +48,32 @@ jobs:
             AUDIT_BASE="$(git rev-list --max-parents=0 HEAD | tail -1)"
           fi
           pnpm run verify -- --base "$AUDIT_BASE"
+
+      - name: Show exact verification failures
+        if: failure()
+        run: |
+          node --input-type=module <<'JS'
+          import { readdirSync, readFileSync, existsSync } from 'node:fs';
+          const directory = '.issues/evidence';
+          const summaries = existsSync(directory) ? readdirSync(directory).filter(name => name.endsWith('-summary.json')) : [];
+          for (const file of summaries) {
+            const report = JSON.parse(readFileSync(directory + '/' + file));
+            for (const check of report.checks.filter(check => !check.passed)) {
+              console.log('FAILED CHECK: ' + check.name + ' — ' + (check.command || []).join(' '));
+              if (check.log && existsSync(check.log)) {
+                const lines = readFileSync(check.log, 'utf8').split('\n').filter(line => line.length < 1000);
+                console.log(lines.slice(-45).join('\n'));
+              }
+              for (const artifact of check.artifacts || []) {
+                if (!artifact.path.endsWith('/results.json') || !existsSync(artifact.path)) continue;
+                const result = JSON.parse(readFileSync(artifact.path));
+                for (const scenario of result.results || []) {
+                  if (!scenario.passed) console.log('FAILED SCENARIO: ' + scenario.name + '\n' + scenario.error);
+                }
+              }
+            }
+          }
+          JS
 
       - name: Preserve verification evidence
         if: always()

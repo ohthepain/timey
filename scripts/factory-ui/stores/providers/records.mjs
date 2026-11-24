@@ -1,6 +1,7 @@
 import { observeActivity } from '../../diagnostic-activity.mjs';
 import { createHash } from 'node:crypto';
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { recordPayload, withRecordPayloads } from './record-payloads.mjs';
 
 const readScopes = new AsyncLocalStorage();
 
@@ -113,9 +114,9 @@ export function checkExpected(expected, records) {
   }
 }
 
-async function pack(value, artifacts, allowInlineLarge) {
+async function pack(value, artifacts, allowInlineLarge, inlineLimit) {
   const body = Buffer.from(canonical(value));
-  if (body.length <= 16_384 || (!artifacts && allowInlineLarge))
+  if (body.length <= inlineLimit || (!artifacts && allowInlineLarge))
     return { encoding: 'json', value: JSON.parse(body.toString()) };
   assertStore(artifacts?.put && artifacts?.get, 'Large store values require a configured Artifact store.');
   return { encoding: 'artifact', ref: await artifacts.put({ body, mediaType: 'application/json' }) };
@@ -228,13 +229,22 @@ function retirementRequest(input) {
   return { ...input, receipts, inputDigest, receipt: { inputDigest, result: { encoding: 'json', value: result } } };
 }
 
+function writtenValues(request, records) {
+  const values = new Map(request.writes.map(({ key, value }) => [key, value]));
+  return {
+    operationId: request.operationId,
+    records: records.map((record) => ({ ...record, value: values.get(record.key) })),
+  };
+}
+
 export function recordStore(backend, artifacts, { allowInlineLarge = false, storeId } = {}) {
   const identity = {};
+  const inlineLimit = backend.inlineLimit ?? 16_384;
   const decode = async (record) => {
     if (!record) return record;
     const scope = readScopes.getStore();
-    const value = await readScopes.run({ readers: scope?.readers, decoding: true }, () =>
-      unpack(record.value, artifacts)
+    const value = await recordPayload(identity, record.value, () =>
+      readScopes.run({ readers: scope?.readers, decoding: true }, () => unpack(record.value, artifacts))
     );
     return { ...record, value };
   };
@@ -248,6 +258,12 @@ export function recordStore(backend, artifacts, { allowInlineLarge = false, stor
   }
   return {
     id: storeId,
+    ...(backend.transaction && {
+      transaction: (run) =>
+        observeActivity('stores', 'Metadata transaction', { store: storeId }, () =>
+          withRecordPayloads(() => backend.transaction(run))
+        ),
+    }),
     ...(backend.readSnapshot && {
       async readSnapshot(read) {
         return observeActivity('stores', 'Read snapshot', { store: storeId }, () =>
@@ -277,6 +293,7 @@ export function recordStore(backend, artifacts, { allowInlineLarge = false, stor
     },
     async list(prefix = '') {
       assertStore(typeof prefix === 'string' && !prefix.includes('\0'), 'A record prefix is required.');
+      if (backend.readSnapshot) return readCurrent(() => this.readSnapshot((pinned) => pinned.list(prefix)));
       return readCurrent(() =>
         observeActivity('stores', 'List records', { store: storeId }, async () =>
           Promise.all((await reader().list(prefix)).map(decode))
@@ -336,18 +353,19 @@ export function recordStore(backend, artifacts, { allowInlineLarge = false, stor
                 : {
                     key,
                     revision: revisionFor(request.operationId, key),
-                    value: await pack(value, artifacts, allowInlineLarge),
+                    value: await pack(value, artifacts, allowInlineLarge, inlineLimit),
                   },
           }))
         );
         const records = writes.flatMap((item) => (item.record ? [item.record] : []));
         const receipt = {
           inputDigest: request.inputDigest,
-          result: await pack({ operationId: request.operationId, records }, artifacts, allowInlineLarge),
+          result: await pack({ operationId: request.operationId, records }, artifacts, allowInlineLarge, inlineLimit),
         };
         const committed = await observeActivity('stores', 'Write records', { store: storeId }, () =>
           backend.commit({ ...request, writes, receipt })
         );
+        if (committed === receipt) return writtenValues(request, records);
         const result = await unpack(committed.result, artifacts);
         return {
           ...result,

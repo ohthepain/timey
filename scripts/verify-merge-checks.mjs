@@ -8,6 +8,10 @@ const nodeTestFile = (value) => localPath(value) && /\.(?:mjs|cjs|js)$/.test(val
 const focusedCommands = new Map([
   ['node --test', (args) => args.some(nodeTestFile) && args.every(nodeTestArgument)],
   ['node scripts/flow-browser.mjs', (args) => args.length > 0 && args.every((arg) => /^--[\w-]+$/.test(arg))],
+  [
+    'node scripts/factory-browser.mjs',
+    (args) => args.length === 1 && /^--scenario=factory-browser-[\w-]+\.mjs$/.test(args[0]),
+  ],
   ['pnpm run', (args) => args.length === 1 && /^test:[\w:-]+$/.test(args[0]) && !aggregateScripts.has(args[0])],
   [
     'pnpm exec',

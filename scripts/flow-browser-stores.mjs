@@ -130,12 +130,21 @@ async function checkOwnershipRecovery({ page, service, issueId, poll, screenshot
     element.open = true;
   });
   await page.locator('#issue-ownership-controls').waitFor({ state: 'visible' });
-  assert.equal(await page.locator('#issue-ownership-confirmed').isChecked(), false);
-  await page
-    .locator('#issue-ownership-reason')
-    .fill('Fixture runner has stopped; its synthetic attempt executed no external work.');
-  await page.locator('#issue-ownership-confirmed').check();
+  const confirmed = page.locator('#issue-ownership-confirmed');
+  const reason = page.locator('#issue-ownership-reason');
+  const recoveryReason = 'Fixture runner has stopped; its synthetic attempt executed no external work.';
+  assert.equal(await confirmed.isChecked(), false);
+  await confirmed.check();
+  await reason.fill(recoveryReason);
+  assert.equal(await reason.inputValue(), recoveryReason);
+  assert.equal(await confirmed.isChecked(), true);
+  const recovery = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === '/api/issue-store-recovery' && response.request().method() === 'POST'
+  );
   await page.locator('#issue-ownership-form button[type="submit"]').click();
+  const response = await recovery;
+  assert.equal(response.status(), 200, await response.text());
   await poll(
     () => stores.records.get('claims/' + issueId),
     (claim) => claim === null,
@@ -410,7 +419,7 @@ export async function issueStoresBrowserChecks({ page, project, service, poll, s
   };
   Object.assign(records, { get: unavailable, list: unavailable, readSnapshot: unavailable });
   try {
-    await page.reload();
+    await page.locator('#refresh').click();
     await page
       .getByText(
         'Shared storage is unavailable. Browse cached history and keep local drafts; shared changes and new runs are paused.',
@@ -425,6 +434,8 @@ export async function issueStoresBrowserChecks({ page, project, service, poll, s
     await screenshot('issue-store-cached-outage');
   } finally {
     Object.assign(records, original);
+    await page.locator('#refresh').click();
+    await page.locator('#error-banner').waitFor({ state: 'hidden' });
   }
   return { issueId: issue.id, createdStore: storeId, movedStore: 'files', sourceUnchanged: true };
 }

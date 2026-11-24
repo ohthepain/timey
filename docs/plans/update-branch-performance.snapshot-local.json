@@ -1,0 +1,68 @@
+{
+  "cores": 10,
+  "load": [3.640625, 3.07080078125, 2.69970703125],
+  "sourceBytes": 120158454,
+  "errors": 0,
+  "measurements": [
+    {
+      "run": 0,
+      "version": "before",
+      "ms": 1236.5502500000002,
+      "indexBytes": 120158455
+    },
+    {
+      "run": 0,
+      "version": "after",
+      "ms": 743.933708,
+      "indexBytes": 5868
+    },
+    {
+      "run": 1,
+      "version": "after",
+      "ms": 8.748833999999988,
+      "indexBytes": 5868
+    },
+    {
+      "run": 1,
+      "version": "before",
+      "ms": 1000.5854169999998,
+      "indexBytes": 120158455
+    },
+    {
+      "run": 2,
+      "version": "before",
+      "ms": 934.1821250000003,
+      "indexBytes": 120158455
+    },
+    {
+      "run": 2,
+      "version": "after",
+      "ms": 9.680167000000438,
+      "indexBytes": 5868
+    },
+    {
+      "run": 3,
+      "version": "after",
+      "ms": 8.840375000000677,
+      "indexBytes": 5868
+    },
+    {
+      "run": 3,
+      "version": "before",
+      "ms": 1039.5107910000006,
+      "indexBytes": 120158455
+    },
+    {
+      "run": 4,
+      "version": "before",
+      "ms": 1035.1867920000004,
+      "indexBytes": 120158455
+    },
+    {
+      "run": 4,
+      "version": "after",
+      "ms": 10.953125,
+      "indexBytes": 5868
+    }
+  ]
+}

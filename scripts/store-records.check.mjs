@@ -1,3 +1,4 @@
+import { runMetadataOperation } from './factory-ui/stores/metadata-operation.mjs';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
@@ -708,3 +709,154 @@ for (const kind of providers) {
     await f.checkSource();
   });
 }
+
+test('fresh Git writes return their acknowledged values without downloading the uploaded payload again', async (t) => {
+  const f = await fixture(t, 'git');
+  const store = await f.open();
+  const get = f.artifacts.get.bind(f.artifacts);
+  let downloads = 0;
+  f.artifacts.get = async (ref) => {
+    downloads++;
+    return get(ref);
+  };
+  const value = { text: 'large payload'.repeat(5000) };
+  const request = {
+    operationId: 'fresh-large',
+    expected: [{ key: 'value', revision: null }],
+    writes: [{ key: 'value', value }],
+  };
+  const result = await store.commit(request);
+  assert.deepEqual(result.records[0].value, value);
+  assert.equal(downloads, 0, 'A confirmed new write already has its exact canonical values.');
+  assert.deepEqual((await store.get('value')).value, value);
+  assert.ok(downloads > 0, 'Subsequent reads still verify retained artifact bytes.');
+  const beforeReplay = downloads;
+  assert.deepEqual(await store.commit(request), result);
+  assert.ok(downloads > beforeReplay, 'Replayed receipts are read from retained storage.');
+});
+
+test('Git metadata transactions reuse verified payload bytes and expire them before the next action', async (t) => {
+  const f = await fixture(t, 'git');
+  const store = await f.open();
+  const value = { text: 'immutable payload'.repeat(5000) };
+  await store.commit({
+    operationId: 'seed-payload',
+    expected: [{ key: 'value', revision: null }],
+    writes: [{ key: 'value', value }],
+  });
+  const get = f.artifacts.get.bind(f.artifacts);
+  let downloads = 0;
+  f.artifacts.get = async (ref) => {
+    downloads++;
+    return get(ref);
+  };
+  await store.transaction(async () => {
+    const first = await store.get('value');
+    first.value.text = 'caller edit';
+    assert.deepEqual((await store.get('value')).value, value);
+    assert.equal(downloads, 1);
+  });
+  f.artifacts.get = async () => {
+    throw Error('Retained payload unavailable');
+  };
+  await assert.rejects(store.get('value'), /Retained payload unavailable/);
+});
+
+test('Git payload caching retries failed reads and does not leak into detached callbacks', async (t) => {
+  const f = await fixture(t, 'git');
+  const store = await f.open();
+  await store.commit({
+    operationId: 'payload-lifetime',
+    expected: [{ key: 'value', revision: null }],
+    writes: [{ key: 'value', value: { text: 'large'.repeat(5000) } }],
+  });
+  const get = f.artifacts.get.bind(f.artifacts);
+  let downloads = 0;
+  f.artifacts.get = async (ref) => {
+    downloads++;
+    if (downloads === 1) throw Error('Temporary payload failure');
+    return get(ref);
+  };
+  const release = Promise.withResolvers();
+  let detached;
+  await store.transaction(async () => {
+    await assert.rejects(store.get('value'), /Temporary payload failure/);
+    assert.ok((await store.get('value')).value.text);
+    detached = (async () => {
+      await release.promise;
+      return store.get('value');
+    })();
+  });
+  f.artifacts.get = async () => {
+    throw Error('Payload unavailable after completion');
+  };
+  release.resolve();
+  await assert.rejects(detached, /Payload unavailable after completion/);
+});
+
+test('metadata phases reuse immutable payloads on file stores while still observing changed records', async (t) => {
+  const f = await fixture(t, 'files');
+  const store = await f.open();
+  const peer = await f.open(1);
+  const value = { text: 'first'.repeat(5000) };
+  await store.commit({
+    operationId: 'first',
+    expected: [{ key: 'value', revision: null }],
+    writes: [{ key: 'value', value }],
+  });
+  const get = f.artifacts.get.bind(f.artifacts);
+  let downloads = 0;
+  f.artifacts.get = async (ref) => {
+    downloads++;
+    return get(ref);
+  };
+  await runMetadataOperation({ records: store }, async () => {
+    const first = await store.get('value');
+    assert.deepEqual((await store.get('value')).value, value);
+    assert.equal(downloads, 1);
+    const next = { text: 'second'.repeat(5000) };
+    await peer.commit({
+      operationId: 'second',
+      expected: [{ key: 'value', revision: first.revision }],
+      writes: [{ key: 'value', value: next }],
+    });
+    assert.deepEqual((await store.get('value')).value, next);
+  });
+});
+
+test('native record capacity retains ordinary flows without artifact I/O and still overflows larger values', async (t) => {
+  const { openFilesRecords } = await import('./factory-ui/stores/providers/files.mjs');
+  const { recordStore } = await import('./factory-ui/stores/providers/records.mjs');
+  const f = await fixture(t, 'files');
+  const backend = await openFilesRecords(
+    { id: 'native', kind: 'files' },
+    { root: f.roots[0], projectId: 'native-capacity' }
+  );
+  backend.inlineLimit = 1_048_576;
+  const store = recordStore(backend, f.artifacts);
+  const value = { text: 'flow'.repeat(60_000) };
+  let downloads = 0;
+  const get = f.artifacts.get.bind(f.artifacts);
+  f.artifacts.get = async (ref) => {
+    downloads++;
+    return get(ref);
+  };
+  const input = {
+    operationId: 'native',
+    expected: [{ key: 'flow', revision: null }],
+    writes: [{ key: 'flow', value }],
+  };
+  const saved = await store.commit(input);
+  assert.deepEqual((await store.get('flow')).value, value);
+  assert.deepEqual(await store.commit(input), saved);
+  assert.equal(downloads, 0);
+  const large = { text: 'flow'.repeat(300_000) };
+  await store.commit({
+    operationId: 'overflow',
+    expected: [{ key: 'large', revision: null }],
+    writes: [{ key: 'large', value: large }],
+  });
+  assert.deepEqual((await store.get('large')).value, large);
+  assert.ok(downloads > 0);
+  await store.close();
+});

@@ -1,8 +1,8 @@
 # Investigation outputs and retained reports
 
 Investigations use the ordinary flow workspace. Request and Investigate precede
-independently optional Generate report and Create Issues blocks. The saved array
-controls execution order. Both outputs depend on completed inquiry findings;
+independently runnable Generate report and Create Issues blocks. The default
+route runs Create Issues before Generate report. Both outputs use completed inquiry findings;
 Create Issues also receives findings from successfully completed report attempts.
 Report failure pauses the route without preventing manual issue output.
 Saved-output discovery lists report references rather than forwarding report
