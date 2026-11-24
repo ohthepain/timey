@@ -1110,12 +1110,13 @@ test('Merge repairs a target conflict in its owning checkout before it verifies 
   assert.equal(readFileSync(join(checkout, 'source.txt'), 'utf8'), 'Issue and target changes.\n');
 });
 
-test('Merge asks its worker to repair an inherited browser failure and verifies the repaired commit', async (t) => {
+test('Merge preserves each inherited browser failure and verifies all three repair candidates in order', async (t) => {
   let failedEvidence;
+  let repairs = 0;
   const f = mergeFixture(t, {
-    beforeVerify({ checkout }) {
-      if (readFileSync(join(checkout, 'source.txt'), 'utf8') === 'Initial source.\n') {
-        const folder = join(f.root, '.issues/failed-merge');
+    beforeVerify() {
+      if (repairs < 3) {
+        const folder = join(f.root, '.issues/failed-merge-' + repairs);
         mkdirSync(folder, { recursive: true });
         const log = join(folder, 'browser.log');
         const commandLog = join(folder, 'command.log');
@@ -1131,21 +1132,21 @@ test('Merge asks its worker to repair an inherited browser failure and verifies 
             ],
           })
         );
-        failedEvidence = [
+        const evidence = [
           { key: 'log', path: commandLog, label: 'Verification command output' },
           { path: summary, label: 'Verification summary' },
           { path: log, label: 'Failed verification checkpoint' },
         ].map((item) => ({ ...item, sha256: digest(readFileSync(item.path)) }));
+        failedEvidence ??= evidence;
         throw Object.assign(Error('Closure waited for background resource checks.'), {
           verificationFailure: { summaries: [summary], logs: [log] },
-          evidence: structuredClone(failedEvidence),
+          evidence,
         });
       }
     },
   });
   await f.run('understand');
   const turn = f.connection.turn.bind(f.connection);
-  let repairs = 0;
   f.connection.turn = async (...args) => {
     const [, checkout, prompt] = args;
     assert.match(prompt, /repair inherited test failures/);
@@ -1162,17 +1163,24 @@ test('Merge asks its worker to repair an inherited browser failure and verifies 
     assert.equal(failed.exit, 1);
     assert.match(readFileSync(failed.log, 'utf8'), /Only explicit Send starts a reply/);
     repairs++;
-    writeFileSync(join(checkout, 'source.txt'), 'Browser scenario repaired.\n');
+    writeFileSync(join(checkout, 'source.txt'), 'Browser repair ' + repairs + '\n');
     execFileSync('git', ['-C', checkout, 'commit', '-am', 'Repair inherited browser failure']);
-    return turn(...args);
+    await turn(...args);
+    const files = { result: '.issues/result.json', log: '.issues/merge.log' };
+    for (const [key, file] of Object.entries(files))
+      writeFileSync(join(checkout, file), JSON.stringify({ key, round: repairs }) + '\n');
+    return 'Repair ' + repairs + '\n```flow-result\n' + JSON.stringify({ files }) + '\n```';
   };
   const result = await f.run('merge', {
     definition: {
       mergeWorkflow: { policy: 'automatic', pollSeconds: 5, checkTimeoutSeconds: 900, repairAttempts: 3 },
-      artifacts: [{ key: 'log', kind: 'file', label: 'Target fetch and merge output' }],
+      artifacts: [
+        { key: 'result', kind: 'file', label: 'Repair result' },
+        { key: 'log', kind: 'file', label: 'Target fetch and merge output' },
+      ],
     },
   });
-  assert.equal(repairs, 1);
+  assert.equal(repairs, 3);
   assert.equal(result.result.revision, 'actual-merge');
   const selectedLog = result.artifacts.files.log;
   assert.ok(selectedLog.path.endsWith('/merge.log'));
@@ -1184,9 +1192,69 @@ test('Merge asks its worker to repair an inherited browser failure and verifies 
   }
   assert.equal(readFileSync(failedEvidence[0].path, 'utf8'), 'Initial verification failed.\n');
   assert.deepEqual(
-    f.observations.map(({ operation }) => operation),
-    ['ready', 'ready', 'verify', 'push', 'ready', 'ready', 'merge']
+    f.observations.filter(({ operation }) => operation === 'verify').map(({ head }) => head),
+    [result.result.head]
   );
+  const index = result.evidence.find(({ label }) => label === 'Merge repair index');
+  const retrieve = ({ path, sha256 }) => {
+    const bytes = readFileSync(path);
+    assert.equal(digest(bytes), sha256);
+    return bytes.toString();
+  };
+  const { attempts, attemptId } = JSON.parse(retrieve(index));
+  assert.deepEqual(
+    attempts.map(({ round }) => round),
+    [1, 2, 3]
+  );
+  const messages = conversationMessages(f.root, f.issue.id);
+  for (const [i, record] of attempts.entries()) {
+    const { round, candidate, conversation, verification } = record;
+    const { evidence } = JSON.parse(retrieve(record.result));
+    const requestId = 'flow-request-' + attemptId + '-repair-' + round;
+    const responseId = 'flow-result-' + attemptId + '-repair-' + round;
+    assert.deepEqual(conversation, {
+      threadId: 'the-one-issue-chat',
+      requestId,
+      responseId,
+      requestedAt: messages.find(({ id }) => id === requestId).at,
+      respondedAt: messages.find(({ id }) => id === responseId).at,
+    });
+    assert.ok(record.startedAt <= conversation.requestedAt);
+    assert.ok(conversation.requestedAt <= conversation.respondedAt);
+    assert.ok(conversation.respondedAt <= record.finishedAt);
+    assert.ok(record.finishedAt <= verification[0].at);
+    assert.equal(verification[0].status, round === 3 ? 'passed' : 'failed');
+    if (round === 3) {
+      assert.equal(candidate, result.result.head);
+      assert.deepEqual(
+        verification[0].summaries.map((file) => JSON.parse(retrieve(file)).checkpoint),
+        ['verification', 'step']
+      );
+    } else {
+      assert.equal(candidate, attempts[i + 1].failedHead);
+      assert.ok(verification[0].at <= attempts[i + 1].startedAt);
+      assert.equal(JSON.parse(retrieve(verification[0].summaries[0])).checks[1].passed, false);
+    }
+    assert.match(retrieve(record.log), /\$ git fetch /);
+    for (const file of record.failure.evidence) retrieve(file);
+    for (const key of ['result', 'log']) {
+      const file = evidence.find(({ path }) =>
+        path.endsWith('artifact-' + key + '-' + (key === 'log' ? 'merge.log' : 'result.json'))
+      );
+      assert.ok(file.path.includes('/repair-' + round + '/'));
+      assert.deepEqual(JSON.parse(retrieve(file)), { key, round });
+    }
+    t.diagnostic(
+      JSON.stringify({
+        round,
+        candidate,
+        conversation,
+        verification: verification[0].status,
+        resultSha256: record.result.sha256,
+        logSha256: record.log.sha256,
+      })
+    );
+  }
 });
 
 for (const thrown of [false, true])

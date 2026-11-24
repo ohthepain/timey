@@ -1,7 +1,66 @@
-import { mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { join, sep } from 'node:path';
-import { digest, requireThat } from './common.mjs';
+import { digest, requireThat, writeJson } from './common.mjs';
 import { redactValue } from './activity.mjs';
+
+export function mergeRepairHistory(folder, attemptId, log) {
+  const attempts = [];
+  const index = join(folder, 'repair-index.json');
+  const save = () => writeJson(index, { attemptId, attempts });
+  return {
+    start(round, failedHead, message) {
+      const directory = join(folder, 'repair-' + round);
+      mkdirSync(directory, { mode: 0o700 });
+      const record = {
+        round,
+        failedHead,
+        startedAt: new Date().toISOString(),
+        failure: { message },
+        log: existsSync(log) ? retainRepairFile(directory, 'merge.log', readFileSync(log)) : null,
+        conversation: {},
+        verification: [],
+      };
+      attempts.push(record);
+      save();
+      return {
+        folder: directory,
+        conversation: record.conversation,
+        finish(outcome) {
+          record.finishedAt = new Date().toISOString();
+          record.failure.evidence = outcome.failureEvidence;
+          record.candidate = outcome.candidate;
+          record.result = retainRepairFile(
+            directory,
+            'result.json',
+            JSON.stringify({ ...outcome, conversation: record.conversation }, null, 2) + '\n'
+          );
+          save();
+        },
+      };
+    },
+    verification(head, status, summaries = []) {
+      const record = attempts.at(-1);
+      if (record?.candidate !== head) return;
+      record.verification.push({ at: new Date().toISOString(), status, summaries: summaries.map(summaryReference) });
+      save();
+    },
+    evidence() {
+      return attempts.length ? [{ path: index, label: 'Merge repair index', sha256: digest(readFileSync(index)) }] : [];
+    },
+  };
+}
+
+function summaryReference(summary) {
+  if (typeof summary !== 'string') return summary;
+  if (!existsSync(summary)) return { originalPath: summary, unavailable: 'missing' };
+  return { path: summary, sha256: digest(readFileSync(summary)) };
+}
+
+function retainRepairFile(folder, name, bytes) {
+  const path = join(folder, name);
+  writeFileSync(path, bytes, { mode: 0o600, flag: 'wx' });
+  return { path, sha256: digest(bytes) };
+}
 
 export function retainMergeRepairEvidence(root, checkout, attemptId, error, round) {
   const folder = join(checkout, '.issues/evidence', `merge-repair-${attemptId}-${round}`);
