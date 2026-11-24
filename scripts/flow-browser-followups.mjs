@@ -42,5 +42,6 @@ export async function flowFollowupsBrowserChecks({ page, service, logs, screensh
   assert.equal(await dialog.locator('[data-proposal]:disabled').count(), 1);
   assert.equal(service.flows.issues().length, before + 1);
   await dialog.getByRole('button', { name: 'Close follow-up review' }).click();
+  await page.goto('about:blank');
   for (const id of [child.id, source.issueId]) await removeBrowserIssue(service.root, id);
 }
