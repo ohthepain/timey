@@ -1,3 +1,4 @@
+import { masterIssueBrowserChecks } from './flow-browser-master-issues.mjs';
 import { blockModelsBrowserChecks } from './flow-browser-block-models.mjs';
 import { providerSettingsBrowserChecks } from './flow-browser-provider-settings.mjs';
 import { activityBrowserChecks } from './flow-browser-activity.mjs';
@@ -115,6 +116,9 @@ const assets = [
   'view-state.js',
   'activity-indicator-ui.js',
   'flow.html',
+  'index.html',
+  'issue-group.css',
+  'issue-group-ui.js',
   'flow.css',
   'flow-ui.js',
   'issue-store-ui.js',
@@ -162,6 +166,7 @@ const fingerprint = () =>
 const candidate = { revision: git(root, 'rev-parse', 'HEAD'), assets: fingerprint() };
 const results = [];
 const {
+  '--master-issues': masterIssuesCheck,
   '--folder-settings': folderSettingsCheck,
   '--block-deletion': blockDeletionCheck,
   '--investigation-followups': followupsCheck,
@@ -632,6 +637,7 @@ try {
   await check('Closed issue selections archive together and issue links open the normal view', () =>
     projectIssuesBrowserChecks({ page, project, root, output })
   );
+  await check(masterIssuesCheck, () => masterIssueBrowserChecks({ page, project, root, output }));
   await check(navigationCheck, () =>
     withQueueConfiguration({ page, project, root }, () => projectNavigationBrowserChecks({ page, screenshot }))
   );

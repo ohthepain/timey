@@ -10,6 +10,7 @@ import {
   storedIssuePath,
 } from './issue-report-storage.mjs';
 import { readSavedReport } from './report-document.mjs';
+import { groupMaster } from './issue-group.mjs';
 import { investigationReport } from './investigation-records.mjs';
 
 function displayNumbers(root) {
@@ -39,6 +40,7 @@ export function listIssueStorage(service, location) {
     const header = reportHeader(content);
     const checkpoint = service.sharedIssues?.storageStatus(id);
     return {
+      header,
       id,
       title: header.title,
       issueNumber: numbers[id],
@@ -48,7 +50,15 @@ export function listIssueStorage(service, location) {
       error: checkpoint?.error,
     };
   });
-  return { issues };
+  const masters = issues.map(({ header }) => header).filter((header) => header.issue_group);
+  const closedState = configuredClosedState(service.root);
+  return {
+    issues: issues.map(({ header, ...issue }) => ({
+      ...issue,
+      masterId: groupMaster(masters, issue.id, closedState)?.id,
+      isMaster: Boolean(header.issue_group),
+    })),
+  };
 }
 
 export function readIssueStorageReport(root, id, location) {

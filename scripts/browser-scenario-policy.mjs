@@ -18,6 +18,7 @@ export const flowBrowserScenarioNames = {
   '--automate-activity': 'Automate me dots follow each active response',
   '--issue-scrollbar': 'Issue flow scrollbar appears only while scrolling',
   '--issue-status-folders': 'Status pseudo-folders track project issues without moving them',
+  '--master-issues': 'Master issue hierarchy and badges across the workspace',
   '--project-issues': 'Closed issue selections archive together and issue links open the normal view',
   '--actions-menu': 'Actions menu lists two running Flow blocks',
   '--merged-issue': 'Merged issues preserve history and expose only closure controls',

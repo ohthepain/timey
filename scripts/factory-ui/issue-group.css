@@ -1,0 +1,29 @@
+:root {
+  --sub-issue-indent: 16px;
+}
+
+.master-badge {
+  display: inline-block;
+  flex: none;
+  border-radius: 999px;
+  padding: 2px 7px;
+  color: #382600;
+  background: #facc15;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+  vertical-align: middle;
+}
+
+.master-badge[data-compact] {
+  padding: 1px 5px;
+  font-size: 10px;
+}
+
+button[data-sub-issue] {
+  --issue-row-indent: var(--sub-issue-indent);
+}
+
+[data-issue-row][data-sub-issue] {
+  padding-inline-start: var(--sub-issue-indent);
+}

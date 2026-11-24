@@ -2150,6 +2150,8 @@
     <script src="/provider-settings-ui.js"></script>
     <script src="/hotkeys-ui.js"></script>
     <script src="/ai-text-ui.js"></script>
+    <link rel="stylesheet" href="/issue-group.css" />
+    <script src="/issue-group-ui.js"></script>
     <script src="/view-state.js"></script>
     <script src="/activity-indicator-ui.js"></script>
     <script src="/issue-store-ui.js"></script>
@@ -3005,6 +3007,14 @@
       function issueSidebar(selectedId) {
         const projectIssuesEmbed = document.documentElement.dataset.projectIssuesEmbed === 'true';
         const issues = queueIssues();
+        const rows = projectIssuesEmbed
+          ? window.issueGroupUI
+              .issueGroups(issues)
+              .flatMap(({ issue, children }) => [
+                { item: issue },
+                ...children.map((item) => ({ item, subIssue: true })),
+              ])
+          : issues.map((item) => ({ item }));
         const heading = projectIssuesEmbed || selectedId ? 'Issues' : 'Issue queue';
         const allVisibleSelected = issues.length > 0 && issues.every((issue) => selectedProjectIssueIds.has(issue.id));
         const folderButton = (id, label, count, drop = false) =>
@@ -3017,10 +3027,10 @@
           : `<button id="model-settings-open" class="settings-button" type="button" aria-label="Open model and effort settings" title="Model and effort settings">⚙</button>${queueRefreshButton()}<button id="create-issue" class="create-issue" type="button" aria-label="Create issue">+</button>`;
         return `<aside class="issue-sidebar" aria-label="${heading}"><div class="issue-sidebar-heading"><h2>${heading}</h2><span class="issue-sidebar-actions">${headingActions}</span></div>${folderMarkup}${projectIssueModeControls(projectIssuesEmbed)}${projectIssueArchiveControls(projectIssuesEmbed)}<div class="issue-sidebar-controls"><form id="queue-search" class="queue-search" role="search"><input id="search" type="search" aria-label="Search issues" placeholder="Search issues" value="${esc(queueFilters.search)}"></form><div class="toolbar">${queueSortUI.controls(queueFilters)}</div>${issueRoleControls(projectIssuesEmbed)}</div>${
           issues.length
-            ? `<nav aria-label="Issues">${projectIssuesEmbed ? `<label class="project-issue-select-all-row"><input type="checkbox" data-select-visible-issues ${allVisibleSelected ? 'checked' : ''}><span class="project-issue-select-all">Select all</span></label>` : ''}${issues
+            ? `<nav aria-label="Issues">${projectIssuesEmbed ? `<label class="project-issue-select-all-row"><input type="checkbox" data-select-visible-issues ${allVisibleSelected ? 'checked' : ''}><span class="project-issue-select-all">Select all</span></label>` : ''}${rows
                 .map(
-                  (item) =>
-                    `<div class="issue-sidebar-item${projectIssuesEmbed ? ' has-selector' : ' has-drag-handle'}" data-issue-row="${esc(item.id)}"${projectIssuesEmbed && queueFilters.sort === 'implementationOrder' ? ' draggable="true"' : ''}>${projectIssuesEmbed ? `<input class="project-issue-select" type="checkbox" data-select-issue="${esc(item.id)}" aria-label="Select #${esc(item.issueNumber)} ${esc(item.title || 'Untitled issue')}" ${selectedProjectIssueIds.has(item.id) ? 'checked' : ''}>` : `<button class="implementation-drag-handle" type="button" draggable="true" data-implementation-drag="${esc(item.id)}" aria-label="Drag to organize ${esc(item.title || 'Untitled issue')}" title="Drag to move or reorder">⠿</button>`}<a class="issue-sidebar-link" ${projectIssueLinkAttributes(item, projectIssuesEmbed)} aria-label="#${esc(item.issueNumber)} ${esc(item.title || 'Untitled issue')}" aria-describedby="issue-sidebar-status-${encodeURIComponent(item.id)}" ${item.id === selectedId ? 'aria-current="page"' : ''}><span>#${esc(item.issueNumber)} · ${esc(item.title || 'Untitled issue')}</span><small id="issue-sidebar-status-${encodeURIComponent(item.id)}">${esc(issueSidebarStatus(item))}</small></a></div>`
+                  ({ item, subIssue }) =>
+                    `<div class="issue-sidebar-item${projectIssuesEmbed ? ' has-selector' : ' has-drag-handle'}" data-issue-row="${esc(item.id)}"${subIssue ? ' data-sub-issue' : ''}${projectIssuesEmbed && queueFilters.sort === 'implementationOrder' ? ' draggable="true"' : ''}>${projectIssuesEmbed ? `<input class="project-issue-select" type="checkbox" data-select-issue="${esc(item.id)}" aria-label="Select #${esc(item.issueNumber)} ${esc(item.title || 'Untitled issue')}" ${selectedProjectIssueIds.has(item.id) ? 'checked' : ''}>` : `<button class="implementation-drag-handle" type="button" draggable="true" data-implementation-drag="${esc(item.id)}" aria-label="Drag to organize ${esc(item.title || 'Untitled issue')}" title="Drag to move or reorder">⠿</button>`}<a class="issue-sidebar-link" ${projectIssueLinkAttributes(item, projectIssuesEmbed)} aria-label="#${esc(item.issueNumber)} ${esc(item.title || 'Untitled issue')}${projectIssuesEmbed && item.isMaster ? ', Master' : ''}" aria-describedby="issue-sidebar-status-${encodeURIComponent(item.id)}" ${item.id === selectedId ? 'aria-current="page"' : ''}><span>#${esc(item.issueNumber)} · ${esc(item.title || 'Untitled issue')}${projectIssuesEmbed && item.isMaster ? ' ' + window.issueGroupUI.masterBadge() : ''}</span><small id="issue-sidebar-status-${encodeURIComponent(item.id)}">${esc(issueSidebarStatus(item))}</small></a></div>`
                 )
                 .join('')}</nav>`
             : '<p class="issue-sidebar-empty">No issues yet.</p>'

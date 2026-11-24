@@ -24,6 +24,7 @@ void test('Flow focused commands keep selections and modifiers on the intended s
   const command = ['node', 'scripts/flow-browser.mjs'];
   const noChanges = 'Publication with no changes offers Cannot Reproduce closure';
   const folderSettings = 'Folder settings inherit, repair, search and act on selected open or closed issues';
+  const masterIssues = 'Master issue hierarchy and badges across the workspace';
   const proposals = 'Pending proposals can be approved or deleted after confirmation without starting work';
   const cases = [
     [
@@ -32,12 +33,15 @@ void test('Flow focused commands keep selections and modifiers on the intended s
     ],
     [['--proposals'], [proposals]],
     [['--delayed-delete'], [proposals]],
+    [['--master-issues'], [masterIssues]],
   ];
   for (const [args, expected] of cases) {
     const argv = command.concat(args);
     assert.deepEqual(normalizeFocusedTests([argv]), [argv]);
     assert.deepEqual(
-      [noChanges, folderSettings, proposals].filter((scenario) => flowBrowserScenarioSelected(scenario, args)),
+      [noChanges, folderSettings, proposals, masterIssues].filter((scenario) =>
+        flowBrowserScenarioSelected(scenario, args)
+      ),
       expected
     );
   }

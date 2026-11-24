@@ -44,6 +44,10 @@
       "command": ["node", "--test", "scripts/browser-scenario-policy.check.mjs"]
     },
     {
+      "name": "Master issue hierarchy and badges across the workspace",
+      "command": ["node", "scripts/flow-browser.mjs", "--master-issues"]
+    },
+    {
       "name": "Pending proposal deletion honors confirmation and handles a delayed request",
       "command": ["node", "scripts/flow-browser.mjs", "--delayed-delete"]
     },
