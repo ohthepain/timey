@@ -11,6 +11,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { execFile } from 'node:child_process';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
+import { setTimeout as delay } from 'node:timers/promises';
 import { cleanEnvironment, digest, git, requireThat, writeJson } from './common.mjs';
 import { validateSummary } from './checks.mjs';
 import { StrategyProvider } from './strategy-provider.mjs';
@@ -447,7 +448,7 @@ export async function publishFlowPR(service, ctx, workspace, folder, options) {
     ctx.signal.throwIfAborted();
     requirePreviewHead();
     ctx.onProgress('Writing the GitHub PR.\n', true);
-    const published = await updateFlowPR(ctx, workspace, provider, pr, preview);
+    const published = await updateFlowPR(ctx, workspace, provider, pr, preview, options);
     return {
       result: { ...result(published), title: published.title || preview.title },
       evidence,
@@ -473,16 +474,31 @@ export async function publishFlowPR(service, ctx, workspace, folder, options) {
   }
 }
 
-async function updateFlowPR(ctx, workspace, provider, pr, preview) {
-  const latest = await lookupFlowPR(provider, workspace.branch, pr?.number);
-  requireThat(
+function publicationMatches(pr, latest, preview, head) {
+  return (
     (latest?.number ?? null) === (pr?.number ?? null) &&
-      (!latest ||
-        (latest.state === 'open' &&
-          !latest.draft &&
-          latest.base.ref === preview.target &&
-          latest.title === pr.title &&
-          latest.head.sha === preview.head)),
+    (!latest ||
+      (latest.state === 'open' &&
+        !latest.draft &&
+        latest.base.ref === preview.target &&
+        latest.title === pr.title &&
+        latest.head.sha === head))
+  );
+}
+
+async function updateFlowPR(ctx, workspace, provider, pr, preview, options) {
+  let latest = await lookupFlowPR(provider, workspace.branch, pr?.number);
+  for (
+    let poll = 0;
+    poll < 15 && pr && preview.push && publicationMatches(pr, latest, preview, preview.previousHead);
+    poll++
+  ) {
+    ctx.onProgress('Waiting for GitHub to observe the pushed PR commit.\n', true);
+    await (options.publicationDelay ?? delay)(1000, undefined, { signal: ctx.signal });
+    latest = await lookupFlowPR(provider, workspace.branch, pr.number);
+  }
+  requireThat(
+    publicationMatches(pr, latest, preview, preview.head),
     'The GitHub PR changed during publication. Review Publish again.'
   );
   ctx.signal.throwIfAborted();

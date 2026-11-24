@@ -3,6 +3,15 @@
   "sourceRun": "https://github.com/ohthepain/timey/pull/112",
   "tests": [
     {
+      "name": "Publish waits only for its own pushed candidate and preserves concurrent-change guards",
+      "command": [
+        "node",
+        "--test",
+        "--test-name-pattern=publication waits only|repeat publication|publication rejects|publication refuses|publication preserves",
+        "scripts/flow-delivery.check.mjs"
+      ]
+    },
+    {
       "name": "Manual Close stays before Close and uses the existing confirmation",
       "command": ["node", "scripts/flow-browser.mjs", "--manual-close"]
     },
