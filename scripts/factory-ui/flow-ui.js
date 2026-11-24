@@ -3762,7 +3762,7 @@
       ...(await json('/api/issue-closure?issue=' + encodeURIComponent(issue.id))),
       kind: 'close',
       flowRevision,
-      offerClosureRetro: flow.blocks.some((block) => block.kind === 'retro'),
+      fixedRetroDefault: flow.blocks.find((block) => block.kind === 'request')?.data.runRetro === true,
       suggestedResolution,
     }));
   }

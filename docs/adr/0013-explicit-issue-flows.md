@@ -221,7 +221,9 @@ Explicit acceptance and cleanup ownership checks remain separate.
 
 An open, approved issue has **Close** beside **Worktree**. The header and Close
 block use the same dialog and start a separate closure sequence in the issue
-flow. Close records the selected reason, then Retro runs if enabled in Request.
+flow. Close records the selected reason, then Retro runs if selected for that
+closure. The dialog defaults to the Request setting for Fixed and to off for
+all other reasons.
 Cleanup runs last. If Retro fails, Cleanup waits for a retry or an explicit
 choice to continue. Closing as **Fixed** still requires retained evidence and
 all acceptance checks. Auto-close requires explicit consent for the delivery

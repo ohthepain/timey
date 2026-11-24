@@ -467,6 +467,18 @@ verification command after 15 minutes. Evidence reuse requires matching inputs,
 including focused commands and the required scope. GitHub CI retains its full
 suite and existing branch protection.
 
+GitHub runs Early checks first, followed by Non-browser tests, Classic Factory
+browser, and Flow browser in parallel. The required `test` job passes after all
+four jobs pass and their evidence matches the same Actions revision, base, and
+tree. **Re-run failed jobs** reuses the successful job results and their evidence
+for that workflow candidate. A new commit starts a new verification run.
+
+Factory Merge waits 15 minutes by default after pushing the candidate or first
+seeing pending checks. Each completed Verify suite adds five minutes once for
+that PR head, up to 30 minutes from the start of the wait. Factory refreshes the
+PR and its checks once more when the deadline expires. Pending checks still
+block merge. The timeout does not cancel GitHub jobs.
+
 For a PR repairing failed CI tests, record the exact regression commands in
 `.github/pr-repair-tests.json`. `pnpm run test:pr-repair` runs them by name and
 stops at the first failure. CI runs this plan before broad verification while

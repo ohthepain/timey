@@ -149,7 +149,7 @@ test('opening Close uses saved issue context while confirmation still waits for 
   assert.equal(decisions, 1);
 });
 
-test('Close shows loading feedback until context is ready and keeps confirmation guarded on failure', async (t) => {
+async function closureDialogFixture(t) {
   const { JSDOM } = await import('jsdom');
   const { readFileSync } = await import('node:fs');
   const dom = new JSDOM('<dialog><div id="panel"></div><button id="approve"></button><div id="error"></div></dialog>', {
@@ -174,6 +174,11 @@ test('Close shows loading feedback until context is ready and keeps confirmation
       throw Error('Unexpected cleanup request.');
     },
   });
+  return { dom, panel, approve, error, ui };
+}
+
+test('Close shows loading feedback until context is ready and keeps confirmation guarded on failure', async (t) => {
+  const { panel, approve, error, ui } = await closureDialogFixture(t);
   const context = Promise.withResolvers();
   const opening = ui.open(() => context.promise);
   assert.equal(panel.querySelector('[role="status"]').textContent, 'Loading issue details…');
@@ -187,6 +192,45 @@ test('Close shows loading feedback until context is ready and keeps confirmation
   assert.equal(panel.querySelector('[role="status"]'), null);
   assert.equal(approve.disabled, true);
   assert.equal(error.textContent, 'Saved context unavailable.');
+});
+
+test('Close defaults Retro from the issue only for Fixed and submits the current choice', async (t) => {
+  const { dom, panel, ui } = await closureDialogFixture(t);
+  const closureReasons = [
+    { id: 'fixed', label: 'Fixed' },
+    { id: 'duplicate', label: 'Duplicate' },
+    { id: 'wont-do', label: 'Won’t Do' },
+  ];
+  const open = (fixedRetroDefault, suggestedResolution) =>
+    ui.open(() => ({ issueId: 'one', closureReasons, fixedRetroDefault, suggestedResolution }));
+
+  await open(true);
+  const retro = panel.querySelector('#run-closure-retro');
+  const select = panel.querySelector('#closure-reason');
+  const choose = (resolution) => {
+    select.value = resolution;
+    select.dispatchEvent(new dom.window.Event('change'));
+  };
+  assert.equal(retro.closest('label').hidden, false);
+  assert.equal(retro.checked, true);
+  retro.click();
+  assert.equal(ui.decision().runClosureRetro, false);
+
+  choose('duplicate');
+  assert.equal(retro.checked, false);
+  retro.click();
+  assert.equal(ui.decision().runClosureRetro, true);
+  choose('wont-do');
+  assert.equal(ui.decision().runClosureRetro, false);
+  choose('fixed');
+  assert.equal(ui.decision().runClosureRetro, true);
+
+  await open(true, 'duplicate');
+  assert.equal(ui.decision().runClosureRetro, false);
+  await open(false);
+  assert.equal(ui.decision().runClosureRetro, false);
+  panel.querySelector('#run-closure-retro').click();
+  assert.equal(ui.decision().runClosureRetro, true);
 });
 
 test('confirmed report publication refreshes only its issue and preserves other saved issues', async (t) => {

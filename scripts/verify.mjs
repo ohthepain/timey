@@ -4,6 +4,7 @@ import { fallowAuditScope } from './verify-scope.mjs';
 import { runVerificationProcess } from './verify-process.mjs';
 import { factoryCheckCommand, focusedCheckName, mergeCheckPlan, mergeCheckTimeoutMs } from './verify-merge-checks.mjs';
 import { retainBrowserEvidence } from './verify-browser-evidence.mjs';
+import { ciSuites } from './verify-ci-suites.mjs';
 import { execFileSync } from 'node:child_process';
 import {
   cpSync,
@@ -34,6 +35,11 @@ const workChecks = args.includes('--work-checks');
 const writeFormat = workChecks && args.includes('--write-format');
 const step = args.includes('--step');
 const baseIndex = args.indexOf('--base');
+const ciIndex = args.indexOf('--ci-suite');
+const ciSuite = ciIndex < 0 ? null : args[ciIndex + 1];
+if (ciIndex >= 0 && (!Object.hasOwn(ciSuites, ciSuite) || staged || auditOnly || workChecks || step || mergeChecks))
+  throw Error('Run exactly one recognized CI suite using --ci-suite.');
+const isBrowserCheck = (name) => ['browser', 'flow-browser'].includes(name);
 // Preserve the source index (including an alternate hook index), but never leak
 // repository-local Git variables into the disposable clone or child checks.
 const sourceEnv = { ...process.env };
@@ -57,12 +63,13 @@ const stamp = new Date().toISOString().replaceAll(':', '-') + '-' + randomUUID()
 const browserOutput = join(snapshot, '.issues/evidence', stamp + '-browser');
 const report = {
   revision: head,
-  checkpoint: workChecks ? 'work' : staged ? 'commit' : step ? 'step' : 'verification',
+  checkpoint: ciSuite ? 'ci-suite' : workChecks ? 'work' : staged ? 'commit' : step ? 'step' : 'verification',
   snapshot: staged ? 'index' : 'working-tree',
   startedAt: new Date().toISOString(),
   phases: [],
   checks: [],
   ...(mergeChecks ? { mergeChecks } : {}),
+  ...(ciSuite ? { ciSuite } : {}),
 };
 let failure = false;
 const cancellation = new AbortController();
@@ -115,7 +122,7 @@ function recordCheck(name, command, result) {
     command,
     cwd: snapshot,
     log,
-    ...(name === 'browser'
+    ...(isBrowserCheck(name)
       ? { artifacts: retainBrowserEvidence(browserOutput, join(reportDir, stamp + '-browser')) }
       : {}),
     pid: result.pid,
@@ -153,14 +160,13 @@ async function run(name, command, commandArgs) {
       streamOutput: true,
       timeoutMs,
       encoding: 'utf8',
-      env:
-        name === 'browser'
-          ? {
-              ...isolatedEnv,
-              TIMEY_BROWSER_OUTPUT: browserOutput,
-              TIMEY_FLOW_BROWSER_OUTPUT: join(browserOutput, 'flow'),
-            }
-          : isolatedEnv,
+      env: isBrowserCheck(name)
+        ? {
+            ...isolatedEnv,
+            TIMEY_BROWSER_OUTPUT: browserOutput,
+            TIMEY_FLOW_BROWSER_OUTPUT: join(browserOutput, 'flow'),
+          }
+        : isolatedEnv,
     },
     join(reportDir, `${stamp}-${name}.log`)
   );
@@ -207,6 +213,37 @@ function copySourceFile(name) {
 }
 
 const bin = (name) => join(root, 'node_modules', '.bin', name);
+
+function verificationCommands() {
+  const commands = {
+    browser: ciSuite ? [process.execPath, 'scripts/factory-browser.mjs'] : ['pnpm', 'run', 'test:browser'],
+    'flow-browser': [process.execPath, 'scripts/flow-browser.mjs'],
+    factory: factoryCheckCommand(mergeChecks?.scope),
+    typecheck: [bin('tsc'), '--noEmit'],
+    tests: [bin('vp'), 'test', 'run'],
+    build: ['pnpm', 'run', 'build'],
+  };
+  const names = ciSuite
+    ? ciSuites[ciSuite].checks.filter((name) => name !== 'fallow')
+    : ['browser', 'factory', 'typecheck', 'tests', 'build'];
+  return names.map((name) => [name, ...commands[name]]);
+}
+
+async function checkExecutionPreflight() {
+  const preflight = { name: 'execution-preflight', startedAt: new Date().toISOString(), passed: false };
+  report.phases.push(preflight);
+  await listenerPreflight();
+  Object.assign(preflight, { finishedAt: new Date().toISOString(), passed: true });
+}
+
+async function runVerificationChecks() {
+  if (ciSuite !== 'early') await checkExecutionPreflight();
+  if (mergeChecks) {
+    console.log(`Merge verification scope: ${mergeChecks.scope}`);
+    await runFocusedChecks();
+  }
+  for (const [name, command, ...args] of verificationCommands()) await run(name, command, args);
+}
 
 async function checkFormatting(base) {
   const names = git(snapshot, 'diff', '--cached', '--name-only', '--diff-filter=ACMR', '-z', base)
@@ -271,7 +308,7 @@ try {
   git(snapshot, 'cat-file', '-e', base + '^{commit}');
   git(snapshot, 'cat-file', '-e', report.snapshot_tree + '^{tree}');
   Object.assign(report.phases.at(-1), { finishedAt: new Date().toISOString(), passed: true });
-  if (!auditOnly) await checkFormatting(base);
+  if (!auditOnly && (!ciSuite || ciSuite === 'early')) await checkFormatting(base);
   if (failure) throw Error('Fix changed-file formatting before continuing verification.');
   // Tests may substitute the pinned binary without changing node_modules.
   const fallowCommand = isolatedEnv.TIMEY_FALLOW_COMMAND || bin('fallow');
@@ -281,24 +318,11 @@ try {
   if (fallowEnforced()) fallowArgs.push('--no-cache');
   if (report.changed_files.length === 0) fallowArgs.push('--gate', 'all');
   else fallowArgs.push(fallowAuditScope(report.changed_files));
-  if (fallowEnforced()) await run('fallow', fallowCommand, fallowArgs);
-  else recordSkippedFallow();
-  if (!auditOnly && !workChecks && !failure) {
-    const preflight = { name: 'execution-preflight', startedAt: new Date().toISOString(), passed: false };
-    report.phases.push(preflight);
-    await listenerPreflight();
-    Object.assign(preflight, { passed: true, finishedAt: new Date().toISOString() });
-    if (mergeChecks) {
-      console.log(`Merge verification scope: ${mergeChecks.scope}`);
-      await runFocusedChecks();
-    }
-    await run('browser', 'pnpm', ['run', 'test:browser']);
-    const [factory, ...factoryArgs] = factoryCheckCommand(mergeChecks?.scope);
-    await run('factory', factory, factoryArgs);
-    await run('typecheck', bin('tsc'), ['--noEmit']);
-    await run('tests', bin('vp'), ['test', 'run']);
-    await run('build', 'pnpm', ['run', 'build']);
+  if (!ciSuite || ciSuite === 'early') {
+    if (fallowEnforced()) await run('fallow', fallowCommand, fallowArgs);
+    else recordSkippedFallow();
   }
+  if (!auditOnly && !workChecks && !failure) await runVerificationChecks();
 } catch (error) {
   failure = true;
   report.error = error.message;

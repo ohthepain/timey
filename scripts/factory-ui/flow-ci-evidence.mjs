@@ -53,7 +53,9 @@ async function runEvidence(provider, id, head, folder) {
       '--dir',
       folder,
     ]);
-    const summaries = retainSummaries(folder);
+    const summaries = retainSummaries(folder).filter((path) =>
+      JSON.parse(readFileSync(path, 'utf8')).checks.some((check) => !check.passed)
+    );
     if (summaries.length) return { summaries, evidence: [] };
   } catch (error) {
     writeFileSync(join(folder, 'artifact-download-error.txt'), error.message);

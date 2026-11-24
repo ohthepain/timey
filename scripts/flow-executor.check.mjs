@@ -911,7 +911,7 @@ function verificationResult(workspace, folder) {
 
 function mergeFixture(
   t,
-  { merged = false, onWait, repair, beforeVerify, onGit, onReady, onLookup, onMerge, onInspect, github } = {}
+  { merged = false, onWait, repair, beforeVerify, onGit, onReady, onLookup, onMerge, onInspect, github, mergeNow } = {}
 ) {
   const verificationInput = () => 'fixture-input';
   const observations = [];
@@ -933,8 +933,9 @@ function mergeFixture(
   const f = fixture(t, {
     repair,
     verificationInput,
-    async mergeDelay() {
-      await onWait?.(advanceTarget);
+    mergeNow,
+    async mergeDelay(interval) {
+      await onWait?.(advanceTarget, interval);
     },
     async execute({ cwd, args, log }) {
       if (log) writeFileSync(log, '$ git ' + args.join(' ') + '\n', { flag: 'a' });
@@ -2273,6 +2274,91 @@ test('Merge waits for pending GitHub tests without rerunning local verification'
   await f.run('understand');
   assert.equal((await f.run('merge')).result.revision, 'actual-merge');
   assert.equal(f.observations.filter(({ operation }) => operation === 'verify').length, 1);
+});
+
+void test('Merge extends for fresh suite progress once and accepts passing checks on the final poll', async (t) => {
+  const minute = 60_000;
+  const observations = [0, 15, 20, 25, 30, 30];
+  const completions = [
+    [],
+    ['Early checks'],
+    ['Early checks', 'Non-browser tests'],
+    ['Early checks', 'Non-browser tests', 'Classic Factory browser'],
+    ['Early checks', 'Non-browser tests', 'Classic Factory browser', 'Flow browser'],
+  ];
+  let time = 0;
+  let polls = 0;
+  let waits = 0;
+  const f = mergeFixture(t, {
+    mergeNow: () => time,
+    onReady(_pr, _branch, head, { waitForChecks } = {}) {
+      if (!waitForChecks) return;
+      assert.equal(time, observations[polls] * minute, 'Readiness is checked again at the hard cap');
+      const completedSuites = completions[polls++];
+      if (!completedSuites) return;
+      throw Object.assign(Error('Required check test is pending.'), {
+        code: 'STRATEGY_PENDING',
+        ciProgress: { head, completedSuites },
+      });
+    },
+    onWait() {
+      time = observations[++waits] * minute;
+    },
+  });
+  await f.run('understand');
+  assert.equal((await f.run('merge')).result.revision, 'actual-merge');
+  assert.equal(polls, 6);
+  assert.equal(waits, 4);
+});
+
+void test('Merge ignores completed suites for other heads and times out after one fresh observation', async (t) => {
+  let time = 0;
+  let polls = 0;
+  let waits = 0;
+  const f = mergeFixture(t, {
+    mergeNow: () => time,
+    onReady() {
+      polls++;
+      throw Object.assign(Error('Required check test is pending.'), {
+        code: 'STRATEGY_PENDING',
+        ciProgress: { head: 'a different commit', completedSuites: ['Early checks', 'Non-browser tests'] },
+      });
+    },
+    onWait() {
+      waits++;
+      time += 15 * 60_000;
+    },
+  });
+  await f.run('understand');
+  await assert.rejects(f.run('merge'), /GitHub checks did not finish in time/);
+  assert.equal(polls, 3);
+  assert.equal(waits, 1);
+  assert.equal(f.observations.filter(({ operation }) => operation === 'verify').length, 0);
+});
+
+void test('Merge counts a completed CI suite only once after repeated or rerun observations', async (t) => {
+  const minute = 60_000;
+  const observations = [0, 15, 20, 20];
+  let time = 0;
+  let waits = 0;
+  let polls = 0;
+  const f = mergeFixture(t, {
+    mergeNow: () => time,
+    onReady(_pr, _branch, head) {
+      assert.equal(time, observations[polls] * minute);
+      throw Object.assign(Error('Required check test is pending.'), {
+        code: 'STRATEGY_PENDING',
+        ciProgress: { head, completedSuites: polls++ ? ['Early checks'] : [] },
+      });
+    },
+    onWait() {
+      time = observations[++waits] * minute;
+    },
+  });
+  await f.run('understand');
+  await assert.rejects(f.run('merge'), /GitHub checks did not finish in time/);
+  assert.equal(polls, 4);
+  assert.equal(waits, 2);
 });
 
 test('Merge bounds unsuccessful merge requests while preserving completed verification', async (t) => {
