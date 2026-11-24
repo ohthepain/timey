@@ -69,6 +69,69 @@ test('Merge uses the Request setting and records only completed upstream focused
     assert.throws(() => normalizeFocusedTests([invalid]), /Record focused test commands/);
 });
 
+test('focused test validation preserves the recorded Node pattern and standalone browser check', () => {
+  const commands = [
+    [
+      'node',
+      '--test',
+      '--test-name-pattern=capture retains the chosen grilling skill|capture saves independent Grill',
+      'scripts/factory-capture.check.mjs',
+    ],
+    ['node', 'scripts/capture-grilling-browser.mjs'],
+    ['pnpm', 'run', 'test:pr-repair:control'],
+    ['pnpm', 'exec', 'vp', 'test', 'run', 'src/example.test.ts'],
+  ];
+  assert.deepEqual(normalizeFocusedTests(commands), commands);
+});
+
+test('focused test validation identifies the exact rejected argument and rule', () => {
+  const valid = ['node', '--test', 'scripts/one.check.mjs'];
+  const rejected = [
+    [['sh', '-c', 'test'], 'argument 1 "sh". Use node or pnpm as the command.'],
+    [
+      ['node', '--test', '--import', 'scripts/one.check.mjs'],
+      'argument 3 "--import". Use a local JavaScript test file or --test-name-pattern=<pattern>.',
+    ],
+    [
+      ['node', '--test', '--test-name-pattern=sample'],
+      'argument 4 is missing. Provide at least one local JavaScript test file.',
+    ],
+    [
+      ['node', 'scripts/flow-browser.mjs', '--project-discuss', '--import=other.mjs'],
+      'argument 4 "--import=other.mjs". Use a recognized Flow browser scenario flag or --reverse-fixture-scenarios with a scenario.',
+    ],
+    [
+      ['node', 'scripts/flow-browser.mjs', '--bogus'],
+      'argument 3 "--bogus". Use a recognized Flow browser scenario flag or --reverse-fixture-scenarios with a scenario.',
+    ],
+    [
+      ['node', 'scripts/flow-browser.mjs', '--reverse-fixture-scenarios'],
+      'argument 4 is missing. Provide at least one Flow browser scenario flag.',
+    ],
+    [
+      ['node', 'scripts/capture-grilling-browser.mjs', '--all'],
+      'argument 3 "--all". Standalone browser checks take no arguments.',
+    ],
+    [
+      ['pnpm', 'run', 'test:factory'],
+      'argument 3 "test:factory". Aggregate suites are reserved for full verification.',
+    ],
+    [
+      ['pnpm', 'exec', 'vp test run', 'src/example.test.ts'],
+      'argument 3 "vp test run". Use the literal argument "vp" here.',
+    ],
+    [
+      ['node', '--test', 'scripts/one\n.check.mjs'],
+      'argument 3 "scripts/one\\n.check.mjs". Arguments cannot contain line breaks or NUL characters.',
+    ],
+  ];
+  for (const [command, diagnostic] of rejected) {
+    assert.throws(() => normalizeFocusedTests([valid, command]), {
+      message: `Record focused test commands as argument arrays. Command 2, ${diagnostic}`,
+    });
+  }
+});
+
 test('Merge evidence checks the regression scope and the exact focused commands', (t) => {
   const { root } = gitFixture(t, 'merge-scope-');
   const { proof, browser, factory } = Object.fromEntries(
@@ -265,6 +328,7 @@ function auditFixture(t, extraFiles = {}) {
     'verify-scope.mjs',
     'verify-process.mjs',
     'verify-merge-checks.mjs',
+    'browser-scenario-policy.mjs',
     'verify-preflight.mjs',
     'audit-result.mjs',
   ])

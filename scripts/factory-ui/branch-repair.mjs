@@ -15,6 +15,9 @@ import {
   applyBranchRepair,
 } from './branch-repair-workspace.mjs';
 import { runBranchRepair, reconcileBranchRepair } from './branch-repair-runner.mjs';
+import { newChatModelSettings } from './model-settings.mjs';
+import { assertProviderModelReady } from './provider-runtime.mjs';
+import { agentModel } from './agent-models.mjs';
 
 const running = new Set(['running', 'stopping']);
 const unreconciled = new Set([...running, 'uncertain']);
@@ -204,7 +207,7 @@ export class BranchRepairs {
       runtimeVersion: process.version,
       status: 'running',
       startedAt: new Date().toISOString(),
-      step: 'Preparing isolated branch repair',
+      step: 'Checking branch repair provider',
       output: '',
     };
     requireThat(/^[a-f0-9]{40}$/.test(record.comparisonBase || ''), 'The issue needs a saved comparison revision.');
@@ -314,6 +317,21 @@ export class BranchRepairs {
   }
 }
 
+function prepareRepair(repairs, record, signal) {
+  record.modelSettings = newChatModelSettings(repairs.root);
+  const { model } = record.modelSettings;
+  requireThat(
+    agentModel(model).provider === 'codex',
+    'Fix Branch requires a Codex model. Choose one in Factory settings before retrying.'
+  );
+  assertProviderModelReady(repairs.root, model);
+  signal.throwIfAborted();
+  repairs.save(record, { step: 'Preparing isolated branch repair' });
+  record.snapshotBase = prepareBranchRepair(record.original, record.source, record.checkout);
+  repairs.save(record);
+  signal.throwIfAborted();
+}
+
 async function executeRepair(repairs, record, definition, controller, onProgress) {
   const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(2700000)]);
   const retain = (changes) => repairs.save(record, changes);
@@ -325,10 +343,10 @@ async function executeRepair(repairs, record, definition, controller, onProgress
     });
   };
   try {
-    record.snapshotBase = prepareBranchRepair(record.original, record.source, record.checkout);
-    repairs.save(record);
+    prepareRepair(repairs, record, signal);
     await repairs.run({
       run: record,
+      root: repairs.root,
       definition,
       signal,
       retain,

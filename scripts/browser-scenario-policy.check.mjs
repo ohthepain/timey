@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { browserScenarioSelected } from './browser-scenario-policy.mjs';
+import { browserScenarioSelected, flowBrowserScenarioSelected } from './browser-scenario-policy.mjs';
 import { normalizeFocusedTests } from './verify-merge-checks.mjs';
 
 void test('a named Factory capture scenario runs without other browser cases', () => {
@@ -18,6 +18,28 @@ void test('repair-first accepts one named Factory case while rejecting its aggre
   assert.deepEqual(normalizeFocusedTests([command]), [command]);
   for (const args of [[], ['--scenario=../outside.mjs'], ['--scenario='], [command[2], command[2]]])
     assert.throws(() => normalizeFocusedTests([command.slice(0, 2).concat(args)]), /Record focused test commands/);
+});
+
+void test('Flow focused commands keep selections and modifiers on the intended scenarios', () => {
+  const command = ['node', 'scripts/flow-browser.mjs'];
+  const noChanges = 'Publication with no changes offers Cannot Reproduce closure';
+  const folderSettings = 'Folder settings inherit, repair, search and act on selected open or closed issues';
+  const proposals = 'Pending proposals can be approved or deleted in one click without starting work';
+  const cases = [
+    [
+      ['--no-changes', '--folder-settings', '--reverse-fixture-scenarios'],
+      [noChanges, folderSettings],
+    ],
+    [['--delayed-delete'], [proposals]],
+  ];
+  for (const [args, expected] of cases) {
+    const argv = command.concat(args);
+    assert.deepEqual(normalizeFocusedTests([argv]), [argv]);
+    assert.deepEqual(
+      [noChanges, folderSettings, proposals].filter((scenario) => flowBrowserScenarioSelected(scenario, args)),
+      expected
+    );
+  }
 });
 
 const dragScenarios = [

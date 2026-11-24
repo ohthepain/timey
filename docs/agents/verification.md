@@ -541,8 +541,11 @@ Merge requires. Add a focused test when needed. Factory rechecks formatting and
 Fallow after Work's response.
 
 A standalone focused browser check can be recorded as `node scripts/<name>-browser.mjs`
-without extra arguments. The main Flow browser runner still requires a scenario
-flag, and the aggregate Factory browser runner belongs to full verification.
+without extra arguments. A focused Flow browser command requires a recognized
+scenario flag. You can add `--reverse-fixture-scenarios` to change fixture order.
+The aggregate Factory browser runner belongs to full verification.
+When Factory rejects a focused command, its diagnostic identifies the entry in
+`focusedTests`, the rejected argument when present, and the rule it violated.
 
 Fallow 3.35.0 can miss CSS consumers in plain JavaScript HTML strings, and its
 source-location attribution can mark unchanged findings as introduced when an

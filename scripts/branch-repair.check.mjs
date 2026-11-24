@@ -1,12 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { BranchRepairs, branchCheckFailure } from './factory-ui/branch-repair.mjs';
 import { branchRepairSource } from './factory-ui/branch-repair-workspace.mjs';
 import { BlockCatalog } from './factory-ui/block-catalog.mjs';
 import { git } from './factory-ui/common.mjs';
+import { initializeProviderConfig } from './factory-ui/provider-config.mjs';
+import { modelAvailability, observeProvider, saveProviderSettings } from './factory-ui/provider-runtime.mjs';
 
 function fixture(t, run) {
   const root = mkdtempSync(join(tmpdir(), 'timey-branch-repair-check-'));
@@ -63,13 +65,92 @@ function deferred() {
   return { promise, resolve };
 }
 
+test('branch repair checks provider readiness before checkout and starts one session on retry', async (t) => {
+  const { runBranchRepair } = await import('./factory-ui/branch-repair-runner.mjs');
+  const model = 'gpt-6-luna';
+  const started = deferred();
+  const release = deferred();
+  const sessions = [];
+  const connection = {
+    ready: async () => {},
+    call: async () => ({ data: [] }),
+    async start(_cwd, _sandbox, retain) {
+      const threadId = 'codex-repair-session';
+      sessions.push(threadId);
+      retain({ status: 'ready', threadId });
+      return threadId;
+    },
+    async turn() {
+      const availability = modelAvailability(f.root, model);
+      if (availability.status === 'unavailable')
+        throw Object.assign(Error(availability.reason), { turnRejected: true });
+      started.resolve();
+      return release.promise;
+    },
+    close() {},
+  };
+  const f = fixture(t, (input) =>
+    runBranchRepair(
+      { ...input, definition: { ...input.definition, defaultSkill: null } },
+      { connection, verify: async () => ({ evidence: [] }) }
+    )
+  );
+  writeFileSync(join(f.root, 'folder.md'), `---\nmodel: "${model}"\n---\n`);
+  const config = initializeProviderConfig(f.root);
+  config.providers.codex.allowUnmonitored = true;
+  saveProviderSettings(f.root, config);
+
+  await f.start();
+  await f.finish();
+  const failed = f.repairs.read(f.issue.id);
+  t.diagnostic(
+    JSON.stringify({
+      status: failed.status,
+      setupError: failed.error,
+      checkoutCreated: existsSync(failed.checkout),
+      sessionCount: sessions.length,
+    })
+  );
+  assert.equal(failed.status, 'failed');
+  assert.equal(failed.error, 'Set up this provider in Factory settings.');
+  assert.equal(f.repairs.view(f.issue, f.flow).error, failed.error);
+  assert.equal(JSON.parse(readFileSync(join(failed.folder, 'run.json'), 'utf8')).error, failed.error);
+  assert.equal(existsSync(failed.checkout), false, 'provider setup failure must precede the isolated checkout');
+  assert.equal(failed.snapshotBase, undefined);
+  assert.equal(failed.startup, undefined);
+  assert.equal(sessions.length, 0);
+
+  observeProvider(f.root, 'codex', { ready: true, models: [{ id: model, name: 'GPT-6 Luna' }] });
+  await f.start();
+  const active = f.repairs.active.get(f.issue.id);
+  await Promise.race([started.promise, active.task]);
+  const running = f.repairs.read(f.issue.id);
+  assert.equal(running.status, 'running', running.error);
+  assert.equal(existsSync(running.checkout), true);
+  assert.equal(running.startup.status, 'ready');
+  await assert.rejects(f.start(), /already running/);
+  release.resolve('Repair complete.');
+  await f.finish();
+  assert.equal(f.repairs.view(f.issue, f.flow).status, 'passed');
+  assert.deepEqual(sessions, [running.threadId]);
+  t.diagnostic(
+    JSON.stringify({
+      configuredStatus: f.repairs.read(f.issue.id).status,
+      configuredCheckoutCreated: existsSync(running.checkout),
+      configuredSessionCount: sessions.length,
+    })
+  );
+});
+
 test('repair progress survives reads and approval applies only the reviewed delta, preserving staged and uncommitted work', async (t) => {
+  const started = deferred();
   const release = deferred();
   const f = fixture(t, async ({ run, progress, step, retain }) => {
     assert.equal(readFileSync(join(run.checkout, 'source.txt'), 'utf8'), 'User edit\n');
     assert.equal(readFileSync(join(run.checkout, 'staged.txt'), 'utf8'), 'Staged by user\n');
     progress('Fallow: checking source\n');
     step('Repairing Fallow');
+    started.resolve();
     await release.promise;
     writeFileSync(join(run.checkout, 'repair.txt'), 'Repair\n');
     retain({ checks: [{ label: 'Work formatting and Fallow output' }] });
@@ -79,6 +160,7 @@ test('repair progress survives reads and approval applies only the reviewed delt
   writeFileSync(join(f.checkout, 'source.txt'), 'User edit\n');
   const before = branchRepairSource(f.checkout);
   await f.start();
+  await Promise.race([started.promise, f.repairs.active.get(f.issue.id)?.task]);
   const progress = f.repairs.view(f.issue, f.flow);
   assert.equal(progress.status, 'running');
   assert.match(progress.output, /Fallow: checking/);
@@ -138,12 +220,17 @@ test('failed checks retain their cause and never expose an approvable candidate'
 });
 
 test('Stop ends the repair while keeping issue work untouched', async (t) => {
-  const f = fixture(
-    t,
-    async ({ signal }) => new Promise((resolve) => signal.addEventListener('abort', resolve, { once: true }))
-  );
+  const started = deferred();
+  const f = fixture(t, async ({ signal }) => {
+    signal.throwIfAborted();
+    return new Promise((resolve) => {
+      signal.addEventListener('abort', resolve, { once: true });
+      started.resolve();
+    });
+  });
   const before = branchRepairSource(f.checkout);
   await f.start();
+  await Promise.race([started.promise, f.repairs.active.get(f.issue.id)?.task]);
   await f.repairs.action(f.issue, f.flow, { action: 'branch-repair-stop' });
   await f.finish();
   assert.equal(f.repairs.view(f.issue, f.flow).status, 'stopped');
