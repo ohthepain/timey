@@ -943,10 +943,10 @@ function mergeFixture(
         await onLookup?.();
         return pullRequest(branch);
       },
-      async ready(pr, branch, head) {
+      async ready(pr, branch, head, settings) {
         assert.equal(head, pr.head.sha);
         observations.push({ operation: 'ready', head });
-        await onReady?.(pr, branch, head);
+        await onReady?.(pr, branch, head, settings);
         return {
           head,
           merged,
@@ -2089,6 +2089,78 @@ test('Stop interrupts GitHub retry backoff without checking or repairing tests',
   await assert.rejects(f.run('merge', { signal: controller.signal }), /aborted/i);
   assert.equal(requests, 1);
   assert.deepEqual(f.observations, []);
+});
+
+void test('Merge waits for newly published checks to register before local verification', async (t) => {
+  const { inspectReadiness } = await import('./factory-ui/strategy-readiness.mjs');
+  let waiting = true;
+  let waits = 0;
+  const f = mergeFixture(t, {
+    onReady(pr, branch, head, settings) {
+      const required = {
+        __typename: 'CheckRun',
+        name: 'test',
+        isRequired: true,
+        status: 'COMPLETED',
+        conclusion: 'SUCCESS',
+      };
+      const view = {
+        headRefOid: head,
+        baseRefName: 'dev',
+        baseRefOid: f.git('rev-parse', 'dev'),
+        mergeStateStatus: waiting ? 'BLOCKED' : 'CLEAN',
+        reviewDecision: '',
+        commits: { nodes: [{ commit: { statusCheckRollup: { contexts: { nodes: waiting ? [] : [required] } } } }] },
+      };
+      const provider = {
+        config: { repository: 'test/fixture', target: 'dev' },
+        gh: async () => JSON.stringify([{ data: { repository: { pullRequest: view } } }]),
+      };
+      return inspectReadiness(provider, pr, branch, head, undefined, settings?.waitForChecks);
+    },
+    onWait() {
+      waits++;
+      assert.equal(f.observations.filter(({ operation }) => operation === 'verify').length, 0);
+      waiting = false;
+    },
+  });
+  await f.run('understand');
+  assert.equal((await f.run('merge')).result.revision, 'actual-merge');
+  assert.equal(waits, 1);
+  assert.equal(f.observations.filter(({ operation }) => operation === 'verify').length, 1);
+  assert.equal(
+    f.calls.filter(({ method }) => method === 'turn').length,
+    1,
+    'Pending CI must not invoke a repair worker.'
+  );
+});
+
+void test('Merge waits for CI without refetching source and still incorporates a target advanced during the wait', async (t) => {
+  let pending = 3;
+  let fetches = 0;
+  const f = mergeFixture(t, {
+    onReady() {
+      if (pending) throw Object.assign(Error('Required checks pending'), { code: 'STRATEGY_PENDING' });
+    },
+    onGit(args) {
+      if (args[0] === 'fetch') fetches++;
+    },
+    onWait(advance) {
+      if (!pending) return;
+      assert.equal(fetches, 0, 'Do not refetch an unchanged issue candidate while CI is still pending.');
+      assert.equal(
+        f.observations.some(({ operation }) => operation === 'verify'),
+        false
+      );
+      if (--pending === 0) advance();
+    },
+  });
+  await f.run('understand');
+  const result = await f.run('merge');
+  assert.equal(result.result.revision, 'actual-merge');
+  f.git('-C', f.flow.workspace.checkout, 'merge-base', '--is-ancestor', f.git('rev-parse', 'dev'), 'HEAD');
+  assert.equal(f.observations.filter(({ operation }) => operation === 'verify').length, 1);
+  assert.equal(f.observations.filter(({ operation }) => operation === 'push').length, 1);
 });
 
 test('Merge waits for pending GitHub tests without rerunning local verification', async (t) => {

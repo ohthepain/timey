@@ -1248,3 +1248,17 @@ Closure recovery checks the merged PR comparison base from GitHub, its ancestry,
 and both the CI report and local step audit for that base and exact candidate
 tree. It retains the original workspace base. The proof suite covers target
 updates, changed PR identity and invalid comparison bases.
+
+### Interrupted flow recovery and pending CI
+
+Run the focused repair plan in `.github/pr-repair-tests.json` before full delivery
+checks. `flow-executor.check.mjs` covers pending checks without repeated source
+fetching, including the interval before GitHub registers required checks.
+`issue-ownership-ui.check.mjs` holds claim lookup open to verify that recovery
+controls remain hidden until their owner is known.
+
+`project-stores-flow.check.mjs` verifies that publication conflicts retain uncertain
+results without rejecting background work. `store-recovery.check.mjs` checks
+confirmed receipt reconciliation and explicit interrupted-save cancellation: retain
+request evidence, reject changed revisions and owners, and release only the matching
+publication claim. Cancellation leaves issue reports and current flows unchanged.

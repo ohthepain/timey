@@ -1,7 +1,8 @@
-import { validIdentity, storeFailure } from './coordination.mjs';
+import { validIdentity, storeFailure, sameOwner, inputDigest } from './coordination.mjs';
 import { readSnapshot } from './snapshots.mjs';
 import { registeredProjectStores } from './report-access.mjs';
 import { mergedDelivery } from '../merged-issue.mjs';
+import { reconcileRecoveredProgress } from './recovered-flow.mjs';
 
 const observed = new WeakMap();
 
@@ -86,6 +87,7 @@ export async function readOwnership(service, { issueId }) {
   validIdentity(issueId);
   if (service.storeStatus?.unavailable) return cachedOwnership(service, issueId);
   try {
+    await reconcileRecoveredProgress(service, project(service), issueId);
     const view = ownershipView(service, issueId, await currentOwnership(project(service), issueId), true);
     if (!observed.has(service)) observed.set(service, new Map());
     observed.get(service).set(issueId, view);
@@ -157,4 +159,102 @@ export async function recoverOwnership(service, input) {
   await stores.recoverAttempt({ ...requested, operationId: id, confirmed: true });
   await stores.refresh({ issueIds: [requested.issueId] });
   return { ...(await readOwnership(service, requested)), recovered: true, recoveredAttemptId: requested.attemptId };
+}
+
+function publicationCancellation(input) {
+  if (input.confirmed !== true || typeof input.reason !== 'string' || input.reason.trim().length < 8)
+    throw storeFailure(
+      'STORE_RECOVERY_CONFIRMATION',
+      'Confirm the original publication stopped and record why it is being cancelled.'
+    );
+  validIdentity(input.issueId);
+  validIdentity(input.operationId);
+  if (
+    typeof input.publicationId !== 'string' ||
+    input.publicationId.length === 0 ||
+    input.publicationId.length >= 500 ||
+    input.reason.length > 2000 ||
+    typeof input.operationRevision !== 'string' ||
+    ![input.flowRevision, input.claimRevision].every((revision) => revision === null || typeof revision === 'string')
+  )
+    throw storeFailure(
+      'STORE_INVALID_OPERATION',
+      'Supply the exact bounded publication and observed record revisions.'
+    );
+  return {
+    id: input.operationId,
+    reason: input.reason.trim(),
+    operationRevision: input.operationRevision,
+    flowRevision: input.flowRevision,
+    claimRevision: input.claimRevision,
+  };
+}
+
+function requirePendingPublication(operation, input) {
+  const value = operation?.value;
+  if (
+    value?.kind !== 'save-flow' ||
+    value.status !== 'pending' ||
+    value.input.issueId !== input.issueId ||
+    value.input.owner ||
+    operation.revision !== input.operationRevision
+  )
+    throw storeFailure(
+      'STORE_CONFLICT',
+      'The pending ownerless flow publication changed. Refresh before cancellation.'
+    );
+}
+
+async function requirePublicationClaim(stores, operation, input) {
+  const { claim, flow } = await currentOwnership(stores, input.issueId);
+  const flowRecord = await stores.records.get('flows/' + input.issueId);
+  if ((claim?.revision ?? null) !== input.claimRevision || (flowRecord?.revision ?? null) !== input.flowRevision)
+    throw storeFailure('STORE_CONFLICT', 'The publication claim or flow changed. Refresh before cancellation.');
+  if (claim && !sameOwner(claim.value, stores.coordination.owner(operation, input.issueId)))
+    throw storeFailure('STORE_NOT_OWNER', 'Another operation owns this issue.');
+  if (claim && attemptIn(flow, claim.value.attemptId))
+    throw storeFailure('STORE_ACTIVE_RUN', 'This claim belongs to an execution attempt, not an unpublished flow save.');
+  return claim;
+}
+
+export async function cancelPendingFlowSave(service, input) {
+  service.ownServer();
+  const recovery = publicationCancellation(input);
+  const stores = project(service);
+  const key = 'operations/' + encodeURIComponent(input.publicationId);
+  const operation = await stores.records.get(key);
+  const value = operation?.value;
+  if (
+    value?.status === 'rejected' &&
+    value.errorCode === 'STORE_PUBLICATION_CANCELLED' &&
+    inputDigest(value.recovery) === inputDigest(recovery)
+  )
+    return { cancelled: true };
+  if (service.flows?.active?.has(input.issueId))
+    throw storeFailure('STORE_ACTIVE_RUN', 'Stop the local publication before cancelling it.');
+  requirePendingPublication(operation, input);
+  const claim = await requirePublicationClaim(stores, operation, input);
+  await stores.coordination.commit(
+    'cancel-publication-' + input.operationId,
+    [
+      { key, revision: operation.revision },
+      { key: 'flows/' + input.issueId, revision: input.flowRevision },
+      { key: 'claims/' + input.issueId, revision: input.claimRevision },
+    ],
+    [
+      {
+        key,
+        value: {
+          ...value,
+          status: 'rejected',
+          errorCode: 'STORE_PUBLICATION_CANCELLED',
+          error: 'The interrupted flow publication was explicitly cancelled.',
+          rejectedAt: new Date().toISOString(),
+          recovery,
+        },
+      },
+      ...(claim ? [{ key: claim.key, value: null }] : []),
+    ]
+  );
+  return { cancelled: true };
 }
