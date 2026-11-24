@@ -51,7 +51,7 @@ export const flowBrowserScenarioNames = {
   '--folder-settings': 'Folder settings inherit, repair, search and act on selected open or closed issues',
   '--issue-results': 'Issue results appear below the banner without replacing playback status',
   '--human-input': 'Required PR review is visible and continues only after an explicit action',
-  '--merge-settings': 'Request saves the regression choice and the block palette hides Verify',
+  '--merge-settings': 'Request leaves merge checks to GitHub and the block palette hides Verify',
   '--request-save': 'Saving Your words releases issue controls while Request clarification runs',
   '--block-inspection': 'On-demand refresh preserves drafts; Codex popup resets history without moving the sidebar',
   '--storage-status': 'Storage startup and recovery messages follow confirmed availability',

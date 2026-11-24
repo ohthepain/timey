@@ -348,9 +348,12 @@ async function connectionRecoveryIssue() {
   });
   return id;
 }
-async function check(name, run, selectorName = name) {
-  if (ciPart && ciPart !== part) return;
-  if (!flowBrowserScenarioSelected(selectorName) && !flowBrowserScenarioSelected(name)) return;
+function checkSelected(name) {
+  return (!ciPart || ciPart === part) && flowBrowserScenarioSelected(name);
+}
+
+async function check(name, run) {
+  if (!checkSelected(name)) return;
   try {
     await run();
     results.push({ name, passed: true });
@@ -760,30 +763,26 @@ try {
   );
   if (process.argv.includes(flowBrowserOrderModifier)) await noChangesCheck();
   await check(followupsCheck, () => flowFollowupsBrowserChecks({ page, service, logs, screenshot }));
-  await check(
-    'Request leaves merge checks to GitHub and the block palette hides Verify',
-    async () => {
-      const id = '20261119-merge-settings-fixture';
-      await importBrowserIssue(
-        project,
-        id,
-        `---\nid: ${id}\ntitle: Merge verification settings\nstate: backlog\n---\n\nUse GitHub checks before merging.\n`
-      );
-      const request = service.flows.read(service.flows.selected(id)).blocks.find(({ kind }) => kind === 'request');
-      await page.goto('/?issue=' + id);
-      await block(request.id);
-      assert.equal(await page.getByRole('checkbox', { name: 'Run full regression suite' }).count(), 0);
-      await page.getByRole('button', { name: 'Add a step' }).click();
-      const palette = page.locator('#palette-dialog');
-      await palette
-        .getByRole('button', { name: /^Work\b/ })
-        .first()
-        .waitFor();
-      assert.equal(await palette.locator('[data-add-kind="verify"]').count(), 0);
-      await palette.getByRole('button', { name: 'Close block palette' }).click();
-    },
-    mergeSettingsCheck
-  );
+  await check(mergeSettingsCheck, async () => {
+    const id = '20261119-merge-settings-fixture';
+    await importBrowserIssue(
+      project,
+      id,
+      `---\nid: ${id}\ntitle: Merge verification settings\nstate: backlog\n---\n\nUse GitHub checks before merging.\n`
+    );
+    const request = service.flows.read(service.flows.selected(id)).blocks.find(({ kind }) => kind === 'request');
+    await page.goto('/?issue=' + id);
+    await block(request.id);
+    assert.equal(await page.getByRole('checkbox', { name: 'Run full regression suite' }).count(), 0);
+    await page.getByRole('button', { name: 'Add a step' }).click();
+    const palette = page.locator('#palette-dialog');
+    await palette
+      .getByRole('button', { name: /^Work\b/ })
+      .first()
+      .waitFor();
+    assert.equal(await palette.locator('[data-add-kind="verify"]').count(), 0);
+    await palette.getByRole('button', { name: 'Close block palette' }).click();
+  });
   await check('Opening the workspace starts no work and loads no skills', async () => {
     await page.goto('/');
     await page.locator('#connection-status').filter({ hasText: 'Live' }).waitFor();
