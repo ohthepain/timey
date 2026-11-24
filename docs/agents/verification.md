@@ -487,6 +487,16 @@ identifies failed checks separately from successful checks and references the
 local copies. Original records remain unchanged. The regression in
 `scripts/flow-executor.check.mjs` covers a passing build followed by a browser
 failure whose original logs are outside the worker checkout.
+GitHub artifact downloads have a two-minute transfer deadline; ordinary GitHub
+CLI requests retain their 30-second deadline. This lets large failure evidence
+finish transferring before the repair worker is invoked.
+
+Close can reuse a successful GitHub verification report for an externally merged
+candidate when local delivery proof is absent. `github-closure-proof.mjs` binds
+the run to the merged head, validates its base and exact tree through the normal
+summary validator, checks downloaded artifact hashes and paths, and retains the
+original report alongside its relocated copy. A matching passing step audit is
+still required. Existing corrupt or mismatched retained proof remains blocking.
 
 The Notes browser scenario leaves a pending Discuss draft, unloads the preceding
 page, and closes its Discuss service before installing its own injected provider.
@@ -1184,3 +1194,8 @@ selection and reload. Saving an available replacement starts no work; explicit
 Run resolves the blocker. The scenario saves unavailable and recovered
 screenshots. Provider observations and execution results are disposable fixtures;
 this does not establish live model entitlements or output quality.
+
+The PR repair-first step records V8 coverage under `.issues/repair-first-coverage`.
+The following strict static audit consumes that actual coverage before broad
+verification, so tested runtime helpers are evaluated with measured coverage.
+No changed repair plan means the focused step skips, as before.
