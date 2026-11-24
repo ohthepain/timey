@@ -447,6 +447,15 @@ verification command after 15 minutes. Evidence reuse requires matching inputs,
 including focused commands and the required scope. GitHub CI retains its full
 suite and existing branch protection.
 
+For a PR repairing failed CI tests, record the exact regression commands in
+`.github/pr-repair-tests.json`. `pnpm run test:pr-repair` runs them by name and
+stops at the first failure. CI runs this plan before broad verification while
+the manifest differs from the PR base; after it merges, unchanged plans are
+skipped. Use `node scripts/flow-browser.mjs --timers` for the isolated attempt
+timer scenario. Repair workers reproduce the named failures, include necessary
+predecessor scenarios, and return after focused proof instead of repeating
+Factory's independent full verification.
+
 To verify an update, open the latest **Update Branch** attempt in Flow. Confirm
 that it shows `completed` and records `containsFetchedCommit: true`. Copy the
 exact `fetchedCommit` hash from the result.

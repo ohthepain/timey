@@ -30,6 +30,11 @@ jobs:
       - name: Install browser
         run: pnpm exec playwright-cli install-browser chromium --with-deps
 
+      - name: Previously failing PR tests first
+        env:
+          AUDIT_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: node scripts/pr-repair-tests.mjs --base "$AUDIT_BASE"
+
       - name: Verify snapshot
         env:
           AUDIT_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}

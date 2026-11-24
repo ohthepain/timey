@@ -369,7 +369,10 @@ function validateCaptureSource(input, flows) {
 class IssueFlows {
   constructor(service, options) {
     this.service = service;
-    this.store = new FlowStore(service.root, { ownerForIssue: (id) => this.active.get(id)?.storeOwner });
+    this.store = new FlowStore(service.root, {
+      ownerForIssue: (id) => this.active.get(id)?.storeOwner,
+      onSaved: (id) => this.service.flowChanges?.notify('flow', id),
+    });
     this.catalog = new BlockCatalog(service.root);
     this.deliveryOptions = options.deliveryOptions || {};
     this.trashDirectory = options.trashDirectory || trashDirectory;

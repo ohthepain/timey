@@ -168,6 +168,7 @@ const blockInspectionCheck =
   'On-demand refresh preserves drafts; Codex popup resets history without moving the sidebar';
 const storageStatusCheck = 'Storage startup and recovery messages follow confirmed availability';
 const pollingCheck = 'Polling preserves expanded text and the Closed issues list';
+const timersCheck = 'Block timers reset for each attempt and stop at the last saved time after disconnect';
 let requestClarification;
 const pendingResponses = [];
 const logs = {
@@ -378,6 +379,7 @@ function checkExcluded(name) {
     ['--block-inspection', blockInspectionCheck],
     ['--storage-status', storageStatusCheck],
     ['--polling', pollingCheck],
+    ['--timers', timersCheck],
   ];
   const selected = selections.filter(([flag]) => process.argv.includes(flag));
   return selected.length > 0 && !selected.some(([, scenario]) => name === scenario);
@@ -2768,8 +2770,16 @@ try {
     await flowBlockDeletionBrowserChecks(page, service, deletionIssueId);
     if (issueId) await page.goto('/?issue=' + issueId);
   });
-  await check('Block timers reset for each attempt and stop at the last saved time after disconnect', async () => {
-    const issue = service.flows.selected(issueId);
+  await check(timersCheck, async () => {
+    const timerIssueId = '20261124-flow-timers-fixture';
+    await importBrowserIssue(
+      project,
+      timerIssueId,
+      `---\nid: ${timerIssueId}\ntitle: Attempt timers\nstate: backlog\n---\n\nVerify each saved attempt duration.\n`
+    );
+    await page.goto('/?issue=' + timerIssueId);
+    await page.locator('#connection-status').filter({ hasText: 'Live' }).waitFor();
+    const issue = service.flows.selected(timerIssueId);
     let flow = service.flows.read(issue);
     const request = () => flow.blocks.find((item) => item.kind === 'request');
     const badge = page.locator('[data-block="' + request().id + '"] .block-status');
