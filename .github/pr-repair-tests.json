@@ -41,6 +41,10 @@
       "command": ["node", "scripts/flow-browser.mjs", "--project-discuss"]
     },
     {
+      "name": "Branch repair progress survives reload and requires candidate approval",
+      "command": ["node", "scripts/flow-browser.mjs", "--branch-repair"]
+    },
+    {
       "name": "Closure validates the merged PR base while preserving the original workspace base",
       "command": ["node", "--test", "scripts/github-closure-proof.check.mjs"]
     },

@@ -269,8 +269,8 @@ injected model and check responses. It preserves staged and uncommitted edits.
 red check-failure state, progress after reload, candidate diff, and explicit
 approval in a disposable checkout. It holds an explicit issue refresh and
 checks that repair controls remain available, then releases the refresh before
-accepting a repair command. The scenario uses an injected repair worker in the
-disposable checkout.
+accepting a repair command. It waits for the injected repair worker to save
+progress before reloading and checks that the reopened dialog shows that output.
 
 `node --test scripts/block-skills.check.mjs scripts/flow-folder-settings.check.mjs`
 checks per-block defaults, personal/project extensions and explicit skill choices.
