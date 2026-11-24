@@ -167,6 +167,7 @@ const requestSaveCheck = 'Saving Your words releases issue controls while Reques
 const blockInspectionCheck =
   'On-demand refresh preserves drafts; Codex popup resets history without moving the sidebar';
 const storageStatusCheck = 'Storage startup and recovery messages follow confirmed availability';
+const pollingCheck = 'Polling preserves expanded text and the Closed issues list';
 let requestClarification;
 const pendingResponses = [];
 const logs = {
@@ -376,6 +377,7 @@ function checkExcluded(name) {
     ['--request-save', requestSaveCheck],
     ['--block-inspection', blockInspectionCheck],
     ['--storage-status', storageStatusCheck],
+    ['--polling', pollingCheck],
   ];
   const selected = selections.filter(([flag]) => process.argv.includes(flag));
   return selected.length > 0 && !selected.some(([, scenario]) => name === scenario);
@@ -1664,22 +1666,42 @@ try {
       assert.deepEqual(data.flow.blocks.find((block) => block.kind === 'request').attempts, expected);
     }
   });
-  await check('Polling preserves expanded text and the Closed issues list', async () => {
-    const system = page
-      .locator('#inspector-body details')
-      .filter({ has: page.getByText('System prompt', { exact: true }) });
-    const inputs = page
-      .locator('#inspector-body details')
-      .filter({ has: page.getByText('Details used', { exact: true }) });
-    const closed = page.locator('#closed-issues');
-    for (const section of [system, inputs, closed]) {
-      if ((await section.getAttribute('open')) === null) await section.locator('summary').click();
+  await check(pollingCheck, async () => {
+    const id = '20261124-flow-polling-fixture';
+    const body = 'Keep expanded sections open.\ntype: feature\ngoal: Keep the request details visible.';
+    await writeBrowserIssue(project, { id, title: 'Read the request while the flow changes', body });
+    const flow = service.flows.read(service.flows.selected(id));
+    const prepared = await service.flows.action({
+      action: 'request',
+      issueId: id,
+      revision: flow.revision,
+      wording: body,
+    });
+    const reader = await context.newPage();
+    reader.setDefaultTimeout(15000);
+    try {
+      await reader.goto('/?issue=' + id);
+      const sections = [
+        reader.locator('#inspector-body details').filter({ has: reader.getByText('System prompt', { exact: true }) }),
+        reader.locator('#inspector-body details').filter({ has: reader.getByText('Details used', { exact: true }) }),
+        reader.locator('#closed-issues'),
+      ];
+      for (const section of sections) {
+        if ((await section.getAttribute('open')) === null) await section.locator('summary').click();
+      }
+      const regression = reader.locator('#full-regression-setting');
+      assert.equal(await regression.isChecked(), false);
+      const changed = await reader.request.post('/api/flow-action', {
+        headers: { origin: baseURL, 'x-factory-action': 'manual' },
+        data: { action: 'full-regression-setting', issueId: id, revision: prepared.flow.revision, enabled: true },
+      });
+      assert.equal(changed.status(), 200, await changed.text());
+      await reader.locator('#full-regression-setting:checked').waitFor();
+      for (const section of sections) assert.notEqual(await section.getAttribute('open'), null);
+    } finally {
+      await reader.close();
+      await removeBrowserIssue(project, id);
     }
-    const flow = service.flows.read(service.flows.selected(issueId));
-    flow.blocks.find((block) => block.kind === 'request').attempts.at(-1).summary = 'Updated while reading.';
-    await service.flows.store.save(flow, flow.revision);
-    await page.locator('#inspector-body').getByText('Updated while reading.', { exact: true }).waitFor();
-    for (const section of [system, inputs, closed]) assert.notEqual(await section.getAttribute('open'), null);
   });
   await check('Folders can be created and assigned without running work', async () => {
     await page.locator('#new-folder').click();
