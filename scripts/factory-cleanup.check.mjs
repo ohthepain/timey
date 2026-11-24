@@ -545,6 +545,45 @@ test('cleanup failure does not undo closure and Retry cleanup retains results', 
   assert.ok(calls.some(([method]) => method === 'thread/archive'));
 });
 
+void test('cleanup retains the selected identity across an unavailable retry', async (t) => {
+  const f = fixture(t);
+  const id = f.issue.id;
+  markClosed(f.queue.root, id);
+  f.service.store.runs.push({
+    issueId: id,
+    threadId: 'issue-thread',
+    kind: 'issue-work',
+    status: 'completed',
+  });
+  let state = 'idle';
+  let failArchive = true;
+  let archived = 0;
+  f.service.codex.call = async (method) => {
+    if (method === 'thread/read') return { thread: { status: { type: state } } };
+    if (method === 'thread/archive') {
+      if (failArchive) throw Error('temporary archive failure');
+      archived += 1;
+    }
+    return {};
+  };
+  const preview = await previewIssueCleanup(f.service, id, 'wont-do');
+  const chat = preview.resources.find((item) => item.kind === 'chat');
+  await executeIssueCleanup(f.service, id, {
+    basis: preview.basis,
+    resolution: 'wont-do',
+    selected: [chat.id],
+  });
+  state = 'active';
+  const unavailable = await retryIssueCleanup(f.service, id);
+  assert.equal(unavailable.cleanup.status, 'incomplete');
+  assert.equal(archived, 0);
+  state = 'idle';
+  failArchive = false;
+  const recovered = await retryIssueCleanup(f.service, id);
+  assert.equal(recovered.cleanup.status, 'complete');
+  assert.equal(archived, 1);
+});
+
 test('incomplete cleanup can retry one failed resource without retrying other failures', async (t) => {
   const f = fixture(t);
   const id = f.issue.id;

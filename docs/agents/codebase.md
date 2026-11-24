@@ -1101,6 +1101,9 @@ flow-change channel. Filesystem watching remains the fallback for external write
 and target revision. `flow-merge-github.mjs` bounds transient GitHub observation
 and merge retries, reconciling uncertain writes before repeating them. Merge
 checks GitHub first and retains matching verification across request failures.
+`github-closure-proof.mjs` imports verified GitHub reports for externally merged
+candidates during Close, retaining source provenance and the existing exact-tree,
+step-audit and evidence-hash guards.
 `flow-human-input.mjs` describes required PR review and derives the outstanding
 request from retained attempts, including legacy review blockers. Flow views and
 sidebar rows expose it separately from execution status; the UI offers explicit

@@ -27,7 +27,7 @@ export class StrategyProvider {
           cwd: this.root,
           env,
           encoding: 'utf8',
-          timeout: 30000,
+          timeout: args[0] === 'run' && args[1] === 'download' ? 120000 : 30000,
           maxBuffer: 8 * 1024 * 1024,
         },
         this.config.repository
