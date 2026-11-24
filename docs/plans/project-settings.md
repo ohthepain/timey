@@ -21,12 +21,13 @@ tests use the existing credential resolver and report authentication and require
 contents and pull request permissions. Maintenance buttons open the existing Admin
 operations, retaining their previews, confirmations and guards.
 
-Issue Storage shows local Markdown or the existing GitHub queue provider. Supported
-GitHub publication options can be saved. Provider selection and issue migration
-are separate operations. Saving Settings does not move reports. Publication option changes take effect after
-Factory restarts, which the page and saved status explain. Incomplete GitHub
-configuration is shown as a status without blocking the other Settings pages. Secret names and
-values cannot be edited. No PostgreSQL or DynamoDB provider is added.
+Issue Storage shows named destinations, per-issue storage profiles, project role
+selections, and existing Git publication options. Changing a role uses a checked
+migration. Profile edits affect future selections. Existing issues move through
+their own controls. See [Configure and move Factory stores](../agents/issue-stores.md).
+Publication option changes take effect after Factory restarts. Incomplete GitHub
+configuration appears as a status without blocking the other Settings pages.
+Secret values cannot be edited.
 
 Skills uses the installed skill catalogue and checks every declared member of the
 required libraries in `user/skills/requirements.json`.
@@ -45,6 +46,14 @@ before navigation completes. Validation failures and Cancel retain the draft.
 Restore actions also remain drafts until Save. Concurrent saved edits are checked
 using configuration revisions. Browser unload uses its native unsaved-change guard.
 
+Save uses the confirmed write response to update the form, revision, and saved
+baseline. Closing after a successful save requires no further settings or hotkey
+reads. Saving unchanged fields performs no write. Storage configuration saves
+return the confirmed local configuration without reading shared coordination.
+Changing only a project storage role skips the configuration write and uses the
+checked migration. Failed migrations retain their selected destination as a draft.
+Hotkey saves apply the confirmed bindings directly.
+
 Hotkeys stores project bindings for Dictate HOT, Dictate COLD, New Note and New Issue. Defaults
 reflect the existing Alt+D dictation, Alt+N note capture and N issue capture.
 Duplicate combinations are rejected after normalization. Dictate HOT records while
@@ -61,6 +70,8 @@ Run the required formatting and Fallow checkpoint before these checks.
   sources, secret redaction, safe storage saves and connection results.
 - `node --test scripts/project-preferences.check.mjs` checks project isolation,
   prompt overrides, duplicate bindings, restoration and stale saves.
+- `node --test scripts/project-settings-save.check.mjs scripts/store-settings.check.mjs`
+  checks save completion, closing, retries, and storage saves during a coordination outage.
 - `node scripts/flow-browser.mjs --project-settings` exercises actual browser
   navigation, drafts, explicit saves, hotkey changes and sources. It saves
   `project-settings-proof.json` and screenshots in its reported evidence directory.

@@ -194,7 +194,7 @@ function configuredInput(value) {
 async function configure(service, input) {
   const { config, revision } = configuredInput(input.config);
   writeStoreConfig(service.root, config, { expectedRevision: input.revision || revision });
-  return { ...(await issueStoresView(service)), configurationChanged: true };
+  return { ...safeStoreView(service.root), ...unavailableStatus(service), configurationChanged: true };
 }
 
 async function moveRole(service, input, stores) {

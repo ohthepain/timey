@@ -112,7 +112,8 @@ from `guard.mjs` and provides explicit setup of a missing lifecycle file from th
 pinned local-issues template. The Flow header's gear opens the categorized Settings window.
 `project-settings-overview.mjs` projects lifecycle sources, connection references
 and supported storage options without exposing secrets. `project-settings-ui.js`
-owns direct page URLs and draft navigation. `project-preferences.mjs` owns project
+owns direct page URLs, draft navigation, and save completion from confirmed write
+responses without follow-up settings reads. `project-preferences.mjs` owns project
 chat prompt overrides and hotkey validation in `user/factory-preferences.json`.
 The settings endpoint does not accept changes to the trusted human-input policy.
 See [project Settings](../plans/project-settings.md).

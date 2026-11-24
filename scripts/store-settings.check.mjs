@@ -48,6 +48,30 @@ function configured(root) {
   );
 }
 
+test('saving storage configuration returns its confirmed values without waiting for shared coordination reads', async (t) => {
+  const { root } = fixture(t);
+  const { revision, ...config } = readStoreConfig(root);
+  config.profiles[0].label = 'Renamed profile';
+  let reads = 0;
+  const service = {
+    root,
+    ownServer() {},
+    projectStores: {
+      records: {
+        list: async () => [],
+        get: async () => {
+          reads++;
+          throw Error('Coordination read unavailable.');
+        },
+      },
+    },
+  };
+  const result = await handleStoreAction(service, { action: 'configure', revision, config });
+  assert.equal(result.profiles[0].label, 'Renamed profile');
+  assert.equal(result.revision, readStoreConfig(root).revision);
+  assert.equal(reads, 0);
+});
+
 test('Git remains the remote project default and normalized repository identity survives independent clones', (t) => {
   const a = fixture(t),
     b = fixture(t);

@@ -40,6 +40,7 @@
     let page = null;
     let data = null;
     let baseline = '';
+    let savedStoreConfiguration = '';
     let busy = false;
     let pending = null;
     let sequence = 0;
@@ -257,22 +258,33 @@
       render();
       baseline = original;
     }
-    async function saveStoreSettings(fields) {
-      retainStoreFields(fields);
-      retainProfileFields(fields);
-      const registry = data.storeRegistry;
-      const next = Object.fromEntries(
+    function storeConfiguration(registry) {
+      const config = Object.fromEntries(
         ['version', 'projectId', 'mode', 'profileDefault', 'coordination', 'artifacts', 'profiles', 'stores'].map(
           (key) => [key, registry[key]]
         )
       );
-      next.stores = next.stores.map(({ unsaved: _unsaved, ...store }) => store);
-      const saved = await post('/api/issue-store-action', {
-        action: 'configure',
-        revision: registry.revision,
-        config: next,
-      });
-      Object.assign(registry, saved);
+      config.stores = config.stores.map(({ unsaved: _unsaved, references: _references, ...store }) => store);
+      return config;
+    }
+    async function saveStoreConfiguration(fields) {
+      const registry = data.storeRegistry;
+      retainStoreFields(fields);
+      retainProfileFields(fields);
+      const next = storeConfiguration(registry);
+      if (JSON.stringify(next) !== savedStoreConfiguration) {
+        const saved = await post('/api/issue-store-action', {
+          action: 'configure',
+          revision: registry.revision,
+          config: next,
+        });
+        Object.assign(registry, saved);
+        savedStoreConfiguration = JSON.stringify(storeConfiguration(registry));
+      }
+      return registry;
+    }
+    async function saveStoreSettings(fields) {
+      const registry = await saveStoreConfiguration(fields);
       const changes = Object.fromEntries(
         data.storage.editableFields
           .filter((key) => fields[key] !== String(data.storage.configuration[key]))
@@ -297,10 +309,12 @@
         });
         const confirmed = await request('/api/issue-stores');
         Object.assign(registry, confirmed);
+        savedStoreConfiguration = JSON.stringify(storeConfiguration(registry));
         if (result.status !== 'confirmed' || confirmed[role] !== storeId)
           throw Error('Project storage move is pending reconciliation. Refresh its status before continuing.');
         issueStoreUI.finishMigration(confirmed, input);
       }
+      return data;
     }
     function storeToTest(button) {
       const role = button.dataset.storeTestRole;
@@ -417,7 +431,10 @@
         const result = await request(endpoints[value] || '/api/project-settings');
         if (ticket !== sequence) return;
         data = result;
-        if (value === 'storage') data.storeRegistry = await request('/api/issue-stores');
+        if (value === 'storage') {
+          data.storeRegistry = await request('/api/issue-stores');
+          savedStoreConfiguration = JSON.stringify(storeConfiguration(data.storeRegistry));
+        }
         if (ticket !== sequence) return;
         render();
         dialog.querySelector('.settings-body').scrollTop = preserveScroll ? scrollTop : 0;
@@ -433,13 +450,30 @@
       window.dispatchEvent(new Event('factory-provider-settings-saved'));
       content
         .querySelector('[data-settings-status]')
-        ?.append(page === 'storage' ? 'Saved. Restart Factory to apply publication options.' : 'Saved');
+        ?.replaceChildren(page === 'storage' ? 'Saved. Restart Factory to apply publication options.' : 'Saved');
     }
-    async function save() {
+    function renderSavedSettings() {
+      resetPrompts.clear();
+      const body = dialog.querySelector('.settings-body');
+      const scrollTop = body.scrollTop;
+      render();
+      body.scrollTop = scrollTop;
+      if (page === 'hotkeys') window.FactoryHotkeys.apply(data.hotkeys.values);
+      notifySaved();
+    }
+    function save() {
       if (busy || !form()) return false;
+      if (!dirty()) {
+        notifySaved();
+        return true;
+      }
+      return persistDraft();
+    }
+    async function persistDraft() {
       busy = true;
       dialog.inert = true;
       showError();
+      content.querySelector('[data-settings-status]').textContent = 'Saving…';
       try {
         const fields = values();
         const saves = {
@@ -458,13 +492,11 @@
           hotkeys: () => post('/api/project-preferences', { revision: data.revision, hotkeys: fields }),
           storage: () => saveStoreSettings(fields),
         };
-        await saves[page]();
-        resetPrompts.clear();
-        await load(page, { preserveScroll: true });
-        await window.FactoryHotkeys.refresh();
-        notifySaved();
+        data = await saves[page]();
+        renderSavedSettings();
         return true;
       } catch (failure) {
+        content.querySelector('[data-settings-status]').textContent = 'Not saved';
         showError(failure.message);
         return false;
       } finally {
