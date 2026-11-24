@@ -7,6 +7,7 @@ import { openRecordStore, openIssueStore } from './factory-ui/stores/providers.m
 import { openArtifactStore } from './factory-ui/stores/artifacts.mjs';
 import { createProjectStores } from './factory-ui/stores/project-stores.mjs';
 import { readOwnership, recoverOwnership, cancelPendingFlowSave } from './factory-ui/stores/recovery.mjs';
+import { handleStoreAction } from './factory-ui/stores/routes.mjs';
 import { sealCoordination } from './factory-ui/stores/coordination.mjs';
 import { registerProjectStores } from './factory-ui/stores/report-access.mjs';
 import { FlowStore } from './factory-ui/flow-store.mjs';
@@ -386,4 +387,37 @@ void test('publication cancellation rejects absent confirmation, local activity 
     assert.deepEqual(await f.records.get('flows/' + f.id), f.originalFlow);
     assert.ok(await f.records.get('claims/' + f.id));
   }
+});
+
+void test('storage recovery reconciles only a superseded owner-bound save and keeps its history', async (t) => {
+  const f = await fixture(t);
+  const { flow } = await f.other.readIssue(f.id);
+  const input = {
+    issueId: f.id,
+    flow,
+    expectedRevision: flow.revision,
+    owner: f.owner,
+    purpose: 'edit',
+  };
+  const saved = await f.other.coordination.operation('stale-save', 'save-flow', input);
+  const command = { action: 'reconcile-flow-save', operationId: 'stale-save' };
+  await assert.rejects(handleStoreAction(f.service, command), { code: 'STORE_BUSY' });
+  assert.equal((await f.records.get(saved.key)).value.status, 'pending');
+
+  await recoverOwnership(f.service, f.input);
+  const current = await f.records.get('flows/' + f.id);
+  const currentInput = { ...input, flow: current.value, expectedRevision: current.value.revision };
+  await f.other.coordination.operation('current-save', 'save-flow', currentInput);
+  await assert.rejects(handleStoreAction(f.service, { ...command, operationId: 'current-save' }), {
+    code: 'STORE_CONFLICT',
+  });
+  assert.deepEqual(await handleStoreAction(f.service, command), { reconciled: true });
+  assert.deepEqual(await handleStoreAction(f.service, command), { reconciled: true });
+  const rejected = await f.records.get(saved.key);
+  assert.equal(rejected.value.status, 'rejected');
+  assert.deepEqual(rejected.value.input, saved.value.input);
+  assert.deepEqual(await f.records.get('flows/' + f.id), current);
+  await assert.rejects(f.other.saveFlow({ ...input, operationId: 'stale-save' }), {
+    code: 'STORE_SUPERSEDED_FLOW_SAVE',
+  });
 });

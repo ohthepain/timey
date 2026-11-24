@@ -1,5 +1,10 @@
 # Verification
 
+`node --test --test-name-pattern='late provider output' scripts/flow-executor.check.mjs`
+delivers response fragments during connection shutdown and after completion.
+The completed investigation response must keep its original bytes and checksum,
+so Generate report can verify and reuse its findings.
+
 `node scripts/flow-browser.mjs --investigation-reports` checks retained Markdown
 and HTML reports in the actual reader. The editorial HTML fixture checks embedded
 styles, mobile width, hidden mobile navigation, scroll restoration, retained and

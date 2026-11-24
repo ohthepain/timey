@@ -15,6 +15,7 @@ import {
 import { captureFlowGenerations, installSnapshot, readSnapshot } from './snapshots.mjs';
 import { moveIssue, moveProjectStore } from './migrations.mjs';
 import { deleteIssue, resumeDelete } from './deletion.mjs';
+import { withRecordPayloads } from './providers/record-payloads.mjs';
 
 const asMap = (value) => (value instanceof Map ? value : new Map(Object.entries(value || {})));
 const reportText = (value) => (typeof value === 'string' ? value : Buffer.from(value).toString('utf8'));
@@ -1088,10 +1089,10 @@ export function createProjectStores({
         throw error;
       },
       deleteIssue(input) {
-        return deleteIssue(this, input);
+        return withRecordPayloads(() => deleteIssue(this, input));
       },
       resumeDelete(input) {
-        return resumeDelete(this, input);
+        return withRecordPayloads(() => resumeDelete(this, input));
       },
       async claimForOperation(op, issueId, owner) {
         const claimOwner = owner || this.coordination.owner(op, issueId);

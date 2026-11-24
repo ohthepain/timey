@@ -509,6 +509,28 @@ test('investigations inspect committed snapshots, retain proof, and remove tempo
   assert.equal(result.workspace, undefined);
 });
 
+test('late provider output cannot change a completed investigation response or its retained checksum', async (t) => {
+  const f = fixture(t);
+  f.flow.routeType = 'investigation';
+  f.connection.close = () =>
+    f.emit({ method: 'item/agentMessage/delta', params: { threadId: 'the-one-issue-chat', delta: 'late fragment' } });
+  const result = await f.run('understand', {
+    definition: {
+      usable: true,
+      prompt: 'Investigate only.',
+      artifacts: [{ key: 'response', kind: 'file', label: 'Block response' }],
+    },
+  });
+  const response = result.artifacts.files.response;
+  assert.equal(readFileSync(response.path, 'utf8'), result.output);
+  assert.equal(digest(readFileSync(response.path)), response.sha256);
+  f.emit({
+    method: 'item/agentMessage/delta',
+    params: { threadId: 'the-one-issue-chat', delta: 'another late fragment' },
+  });
+  assert.equal(digest(readFileSync(response.path)), response.sha256);
+});
+
 test('failed investigation removes its temporary snapshot and retains its response evidence', async (t) => {
   const f = fixture(t);
   f.flow.routeType = 'investigation';

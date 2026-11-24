@@ -17,6 +17,10 @@
       "command": ["node", "--test", "scripts/browser-scenario-policy.check.mjs"]
     },
     {
+      "name": "Pending proposal deletion honors confirmation and handles a delayed request",
+      "command": ["node", "scripts/flow-browser.mjs", "--delayed-delete"]
+    },
+    {
       "name": "Previously failing capture chooses the configured Issue storage profile",
       "command": ["node", "scripts/factory-browser.mjs", "--scenario=factory-browser-capture-start.mjs"]
     },

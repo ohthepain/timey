@@ -2488,6 +2488,13 @@ try {
     const row = page.locator(`#open-issues [data-issue="${proposal.id}"]`);
     await page.goto(new URL('/?issue=' + proposal.id, page.url()).href);
     await row.waitFor();
+    const canceled = page.waitForEvent('dialog');
+    const cancelClick = remove.click();
+    const confirmation = await canceled;
+    assert.match(confirmation.message(), /Permanently delete .*Discard an idle retro proposal/);
+    await confirmation.dismiss();
+    await cancelClick;
+    assert.equal(existsSync(reportPath), true);
     let delayedDelete = Promise.resolve();
     const delayDelete = (route) => {
       if (route.request().postDataJSON()?.action !== 'delete-pending-issue') return route.continue();
@@ -2495,6 +2502,7 @@ try {
       return delayedDelete;
     };
     if (process.argv.includes('--delayed-delete')) await page.route('**/api/flow-action', delayDelete);
+    page.once('dialog', (dialog) => void dialog.accept());
     try {
       await clickAction(remove);
     } finally {

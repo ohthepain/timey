@@ -24,12 +24,13 @@ void test('Flow focused commands keep selections and modifiers on the intended s
   const command = ['node', 'scripts/flow-browser.mjs'];
   const noChanges = 'Publication with no changes offers Cannot Reproduce closure';
   const folderSettings = 'Folder settings inherit, repair, search and act on selected open or closed issues';
-  const proposals = 'Pending proposals can be approved or deleted in one click without starting work';
+  const proposals = 'Pending proposals can be approved or deleted after confirmation without starting work';
   const cases = [
     [
       ['--no-changes', '--folder-settings', '--reverse-fixture-scenarios'],
       [noChanges, folderSettings],
     ],
+    [['--proposals'], [proposals]],
     [['--delayed-delete'], [proposals]],
   ];
   for (const [args, expected] of cases) {

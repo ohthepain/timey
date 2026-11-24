@@ -348,13 +348,21 @@
       const subject = move.kind === 'move-issue' ? `${move.issueIds.length} issue(s)` : move.role;
       return `<p>${esc(subject)} · ${esc(move.storeId)} <button type="button" class="small-button" data-store-resume-move="${esc(move.operationId)}">Resume storage move</button></p>`;
     }
-    function renderDiscoveredMoves(section, found) {
-      const moves = found.pendingMigrations || [];
+    function storageUpdateSummary({ kind, operationId, issueId, ownerBound }) {
+      const issue = issueId ? ` · <a href="/?issue=${encodeURIComponent(issueId)}">Open issue</a>` : '';
+      const reconcile = ownerBound
+        ? ` <button type="button" class="small-button" data-store-reconcile-flow="${esc(operationId)}">Reconcile stale save</button>`
+        : '';
+      return `<p>Pending ${esc(kind)} · ${esc(operationId)}${issue}${reconcile}</p>`;
+    }
+    function renderDiscoveredMoves(section, { pendingMigrations: moves, pendingUpdates, pendingDeletions }) {
+      const updates = [...pendingUpdates, ...pendingDeletions];
+      const entries = moves.map(storageMoveSummary).concat(updates.map(storageUpdateSummary)).join('');
       data.storeRegistry.pendingMigrations = moves;
-      section.querySelector('[data-pending-storage-moves]').innerHTML = moves.map(storageMoveSummary).join('');
-      section.querySelector('[data-store-discovery-status]').textContent = moves.length
-        ? 'Unfinished storage moves found.'
-        : 'No unfinished storage moves found.';
+      section.querySelector('[data-pending-storage-moves]').innerHTML = entries;
+      section.querySelector('[data-store-discovery-status]').textContent = entries
+        ? 'Unfinished storage operations found.'
+        : 'No unfinished storage operations found.';
     }
     async function discoverStorageMoves(button) {
       const ticket = sequence;
@@ -419,6 +427,20 @@
       } catch (failure) {
         showError(failure.message);
       } finally {
+        button.disabled = false;
+      }
+    }
+    async function reconcileFlowSave(button) {
+      button.disabled = true;
+      showError();
+      try {
+        await post('/api/issue-store-action', {
+          action: 'reconcile-flow-save',
+          operationId: button.dataset.storeReconcileFlow,
+        });
+        button.parentElement.textContent = 'Superseded flow save reconciled. Its history was retained.';
+      } catch (failure) {
+        showError(failure.message);
         button.disabled = false;
       }
     }
@@ -643,6 +665,7 @@
       ['[data-store-discover]', discoverStorageMoves],
       ['[data-store-resume-move]', (button) => leave(() => void resumeStorageMove(button))],
       ['[data-store-resume-delete]', (button) => leave(() => void resumeDeletion(button))],
+      ['[data-store-reconcile-flow]', (button) => leave(() => void reconcileFlowSave(button))],
       [
         '[data-settings-admin]',
         (button) =>

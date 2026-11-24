@@ -36,7 +36,8 @@ async function cachedPayload(scope, identity, payload, load) {
     values = new Map();
     scope.readers.set(identity, values);
   }
-  const key = JSON.stringify(payload.ref);
+  const { storeId, key: path, sha256, bytes } = payload.ref;
+  const key = JSON.stringify([storeId, path, sha256, bytes]);
   if (!values.has(key)) values.set(key, loadPayload(scope, values, key, load));
   return structuredClone(await values.get(key));
 }

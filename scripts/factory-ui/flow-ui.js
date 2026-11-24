@@ -3777,10 +3777,16 @@
   $('approve-issue').addEventListener('click', async () => {
     if (await action('approve-issue')) void load(true);
   });
-  $('delete-pending-issue').addEventListener('click', async () => {
+  $('delete-pending-issue').addEventListener('click', async (event) => {
     const issue = state.view?.issue;
     if (issue?.state !== 'needs-approval') return;
-    const result = await action('delete-pending-issue', { title: issue.title });
+    if (!confirm(`Permanently delete “${issue.title}” and its exclusively owned evidence? This cannot be undone.`))
+      return;
+    const button = event.currentTarget;
+    button.textContent = 'Deleting…';
+    const result = await action('delete-pending-issue', { title: issue.title }).finally(() => {
+      button.textContent = 'Delete';
+    });
     if (!result) return;
     if (result.publication) {
       toast(

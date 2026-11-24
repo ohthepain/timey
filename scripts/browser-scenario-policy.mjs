@@ -11,7 +11,7 @@ export function browserScenarioSelected(name, args = process.argv) {
   return args.includes('--drag-and-drop') ? dragAndDrop : !dragAndDrop;
 }
 
-const proposalsCheck = 'Pending proposals can be approved or deleted in one click without starting work';
+const proposalsCheck = 'Pending proposals can be approved or deleted after confirmation without starting work';
 
 export const flowBrowserScenarioNames = {
   '--activity-indicators': 'Activity dots stay anchored and reflect actual work',

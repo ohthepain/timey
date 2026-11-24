@@ -1,4 +1,4 @@
-import { validIdentity, storeFailure, sameOwner, inputDigest } from './coordination.mjs';
+import { validIdentity, storeFailure, sameOwner, inputDigest, assertStoreState } from './coordination.mjs';
 import { readSnapshot } from './snapshots.mjs';
 import { registeredProjectStores } from './report-access.mjs';
 import { mergedDelivery } from '../merged-issue.mjs';
@@ -257,4 +257,61 @@ export async function cancelPendingFlowSave(service, input) {
     ]
   );
   return { cancelled: true };
+}
+
+function requireOwnerBoundSave({ kind, status, input = {} } = {}) {
+  assertStoreState(
+    kind === 'save-flow' && status === 'pending' && input.owner,
+    'STORE_CONFLICT',
+    'Choose a pending flow save from a previously owned attempt.'
+  );
+}
+
+function requireAdvancedFlow(flow, expectedRevision) {
+  if (!Number.isSafeInteger(expectedRevision) || !(flow?.value.revision > expectedRevision))
+    throw storeFailure('STORE_CONFLICT', 'The current flow must be newer than the pending save.');
+}
+
+async function supersededSaveConditions(service, coordination, { issueId, expectedRevision }) {
+  validIdentity(issueId);
+  const flowKey = 'flows/' + issueId;
+  const claimKey = 'claims/' + issueId;
+  const [flow, claim] = await Promise.all([coordination.get(flowKey), coordination.get(claimKey)]);
+  assertStoreState(
+    !claim && !service.flows?.active?.has(issueId),
+    'STORE_BUSY',
+    'Wait until the issue has no active work or shared claim.'
+  );
+  requireAdvancedFlow(flow, expectedRevision);
+  return [
+    { key: flowKey, revision: flow.revision },
+    { key: claimKey, revision: null },
+  ];
+}
+
+export async function reconcileSupersededFlowSave(service, { operationId }) {
+  const { coordination } = project(service);
+  const key = 'operations/' + encodeURIComponent(operationId);
+  const operation = await coordination.get(key);
+  const saved = operation?.value;
+  if (saved?.errorCode === 'STORE_SUPERSEDED_FLOW_SAVE') return { reconciled: true };
+  requireOwnerBoundSave(saved);
+  const conditions = await supersededSaveConditions(service, coordination, saved.input);
+  await coordination.commit(
+    'reconcile-superseded-' + operationId,
+    [{ key, revision: operation.revision }, ...conditions],
+    [
+      {
+        key,
+        value: {
+          ...saved,
+          status: 'rejected',
+          errorCode: 'STORE_SUPERSEDED_FLOW_SAVE',
+          error: 'The issue advanced and the originating claim was released.',
+          rejectedAt: coordination.now(),
+        },
+      },
+    ]
+  );
+  return { reconciled: true };
 }

@@ -117,7 +117,7 @@ async function checkOwnershipRecovery({ page, service, issueId, poll, screenshot
   const issue = service.flows.selected(issueId);
   const block = saved.flow.blocks.find((entry) => entry.kind !== 'request');
   const attempt = service.flows.makeAttempt(saved.flow, issue, block, service.flows.catalog.read().entries);
-  await stores.beginAttempt({
+  const { owner } = await stores.beginAttempt({
     issueId,
     blockId: block.id,
     attempt,
@@ -151,6 +151,27 @@ async function checkOwnershipRecovery({ page, service, issueId, poll, screenshot
     'Explicit ownership recovery did not release the fenced attempt.'
   );
   await screenshot('issue-store-explicit-recovery');
+  await checkStaleFlowSave({ page, stores, issueId, owner, flow: saved.flow, screenshot });
+}
+
+async function checkStaleFlowSave({ page, stores, issueId, owner, flow, screenshot }) {
+  const operationId = 'browser-superseded-save';
+  const saved = await stores.coordination.operation(operationId, 'save-flow', {
+    issueId,
+    owner,
+    flow,
+    expectedRevision: flow.revision,
+    purpose: 'edit',
+  });
+  await page.goto('/?settings=storage');
+  await page.locator('[data-store-discover]').click();
+  await page.getByRole('button', { name: 'Reconcile stale save' }).click();
+  await page.getByText('Superseded flow save reconciled. Its history was retained.').waitFor();
+  const actual = await stores.records.get(saved.key);
+  assert.equal(actual.value.status, 'rejected');
+  assert.deepEqual(actual.value.input, saved.value.input);
+  await screenshot('issue-store-superseded-save-reconciled');
+  await page.goto('/?issue=' + issueId);
 }
 
 async function expectIssueHome(page, poll, storeId, message) {

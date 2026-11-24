@@ -874,6 +874,7 @@ async function runModel(service, ctx, owned, options) {
   const outputPath = join(folder, 'output.txt');
   writeFileSync(outputPath, '', { mode: 0o600 });
   let liveText = '';
+  let finished = false;
   const progress = modelCommandProgress(ctx);
   let rejectInput;
   const inputRequired = new Promise((_, reject) => {
@@ -887,6 +888,7 @@ async function runModel(service, ctx, owned, options) {
     threadId: binding.threadId,
     experimentalApi: Boolean(outputExecution),
     onEvent(message) {
+      if (finished) return;
       ctx.onEvent?.(message);
       const params = message.params || {};
       if (message.method === 'item/agentMessage/delta') {
@@ -949,7 +951,6 @@ async function runModel(service, ctx, owned, options) {
   let terminalObserved = false;
   let rejectStopped;
   let interruptTimer;
-  let finished = false;
   const stopped = new Promise((_, reject) => {
     rejectStopped = reject;
   });

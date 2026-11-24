@@ -174,9 +174,8 @@ function artifactReceipt(entry, ref, storeId) {
   });
 }
 
-async function retainedPayloads(backend, artifacts, { excludeArtifactInventory, storeId }) {
+async function retainedPayloads(backend, decode, unpackPayload, { excludeArtifactInventory, storeId }) {
   const raw = await backend.retainedPayloads();
-  const decode = async (record) => ({ ...record, value: await unpack(record.value, artifacts) });
   const records = [];
   const receipts = [];
   for (const record of raw.records) {
@@ -186,7 +185,7 @@ async function retainedPayloads(backend, artifacts, { excludeArtifactInventory, 
   }
   for (const entry of raw.receipts) {
     const receipt = entry.receipt;
-    const result = receipt.deleted ? { records: [] } : await unpack(receipt.result, artifacts);
+    const result = receipt.deleted ? { records: [] } : await unpackPayload(receipt.result);
     assertStore(Array.isArray(result.records), 'The retained operation result is invalid.');
     const decoded = await Promise.all(result.records.map(decode));
     if (excludeArtifactInventory && decoded.length && decoded.every((record) => inventoryRecord(record, storeId)))
@@ -240,14 +239,13 @@ function writtenValues(request, records) {
 export function recordStore(backend, artifacts, { allowInlineLarge = false, storeId } = {}) {
   const identity = {};
   const inlineLimit = backend.inlineLimit ?? 16_384;
-  const decode = async (record) => {
-    if (!record) return record;
+  const unpackPayload = (payload) => {
     const scope = readScopes.getStore();
-    const value = await recordPayload(identity, record.value, () =>
-      readScopes.run({ readers: scope?.readers, decoding: true }, () => unpack(record.value, artifacts))
+    return recordPayload(identity, payload, () =>
+      readScopes.run({ readers: scope?.readers, decoding: true }, () => unpack(payload, artifacts))
     );
-    return { ...record, value };
   };
+  const decode = async (record) => record && { ...record, value: await unpackPayload(record.value) };
   function reader() {
     const scope = readScopes.getStore();
     const selected = scope?.decoding && scope.readers?.get(identity);
@@ -309,7 +307,7 @@ export function recordStore(backend, artifacts, { allowInlineLarge = false, stor
       });
     },
     async retainedPayloads({ excludeArtifactInventory = false } = {}) {
-      return retainedPayloads(backend, artifacts, {
+      return retainedPayloads(backend, decode, unpackPayload, {
         excludeArtifactInventory,
         storeId,
       });

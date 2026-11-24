@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
-import { digest, requireThat } from './common.mjs';
+import { digest, git, requireThat } from './common.mjs';
 import { latestCurrentAttempt, upstreamBlocks } from './flow-block-data.mjs';
+import { issueNumberLabel, savedIssueNumbers } from './issue-numbers.mjs';
 import { groupChildren } from './issue-group.mjs';
 import { evidencePath } from './stores/evidence.mjs';
 
@@ -42,12 +43,12 @@ function readProof(file, root) {
   }
 }
 
-function groupProofAttempts(flow, tree, block) {
+function groupProofAttempts(flow, tree, block, rechecked) {
   return upstreamBlocks(block, flow.blocks)
     .filter(({ kind }) => supportedBlocks.has(kind))
     .map(latestCurrentAttempt)
     .filter((attempt) => ['completed', 'failed', 'blocked'].includes(attempt?.status))
-    .filter((attempt) => !tree || attempt.result?.tree === tree)
+    .filter((attempt) => matchesProofTree(attempt, tree, rechecked))
     .sort((left, right) => (left.endedAt ?? '').localeCompare(right.endedAt ?? ''));
 }
 
@@ -58,20 +59,95 @@ function groupAttemptRows(attempt, tree, root) {
     .map((entry) => [entry.id, { ...entry, file }]);
 }
 
-export function groupProofRows(flow, tree, block = {}, root) {
-  return new Map(groupProofAttempts(flow, tree, block).flatMap((attempt) => groupAttemptRows(attempt, tree, root)));
+export function groupProofRows(flow, tree, block = {}, root, rechecked) {
+  return new Map(
+    groupProofAttempts(flow, tree, block, rechecked).flatMap((attempt) => groupAttemptRows(attempt, tree, root))
+  );
 }
 
-export function requireGroupProof(issue, flow, candidateTree, block, root) {
+export function requireGroupProof(issue, flow, candidateTree, block, root, rechecked) {
   const children = groupChildren(issue);
   if (!children.length) return [];
-  const proofs = groupProofRows(flow, candidateTree, block, root);
+  const proofs = groupProofRows(flow, candidateTree, block, root, rechecked);
   const missing = children.filter(({ id }) => proofs.get(id)?.status !== 'passed');
   requireThat(
     !missing.length,
     'The current candidate needs passing proof for these sub-issues: ' +
-      missing.map(({ title, id }) => title || id).join(', ') +
+      missingProofLabels(root, missing) +
       '. Continue on the master or detach the issues that remain open.'
   );
   return [...new Set(children.map(({ id }) => proofs.get(id).file))];
+}
+
+function matchesProofTree(attempt, tree, rechecked = () => false) {
+  if (!tree) return true;
+  return attempt.result?.tree === tree || rechecked(attempt);
+}
+
+function missingProofLabels(root, missing) {
+  if (!missing.length) return '';
+  const numbers = root
+    ? savedIssueNumbers(
+        root,
+        missing.map(({ id }) => id)
+      )
+    : {};
+  return missing.map((issue) => missingProofLabel(issue, numbers[issue.id])).join(', ');
+}
+
+function missingProofLabel(issue, number) {
+  const title = issue.title || issue.id;
+  const issueNumber = number ?? issue.issueNumber;
+  if (!Number.isSafeInteger(issueNumber)) return title;
+  return issueNumberLabel({ ...issue, issueNumber }) + ' ' + title;
+}
+
+function changedPaths(checkout, from, to) {
+  return git(checkout, 'diff', '--name-only', '--no-renames', '-z', from, to, '--').split('\0').filter(Boolean);
+}
+
+function verifiedFocusedCommands(proof, tree, root) {
+  const bytes = readFileSync(evidencePath(root, proof.path, proof.sha256));
+  if (digest(bytes) !== proof.sha256) return [];
+  const summary = JSON.parse(bytes);
+  if (summary.checkpoint !== 'verification' || summary.snapshot_tree !== tree) return [];
+  return summary.checks
+    .filter(({ passed, name }) => passed && /^focused-\d+$/.test(name))
+    .map(({ command }) => JSON.stringify(command));
+}
+
+function sameImplementation(checkout, result, candidate) {
+  const { base, head, tree } = result;
+  try {
+    git(checkout, 'merge-base', '--is-ancestor', base, head);
+    git(checkout, 'merge-base', '--is-ancestor', head, candidate.head);
+    if (git(checkout, 'rev-parse', head + '^{tree}') !== tree) return false;
+    const updated = new Set(changedPaths(checkout, head, candidate.head));
+    const implementation = changedPaths(checkout, base, head).filter((path) => !path.startsWith('docs/'));
+    return implementation.length > 0 && implementation.every((path) => !updated.has(path));
+  } catch {
+    return false;
+  }
+}
+
+function hasRecheckedCommands(focused, commands) {
+  return (
+    Array.isArray(focused) && focused.length > 0 && focused.every((command) => commands.has(JSON.stringify(command)))
+  );
+}
+
+function recheckedAttempt(attempt, commands, checkout, candidate) {
+  const result = attempt.result ?? {};
+  const eligible = [
+    attempt.status === 'completed',
+    !result.uncommitted,
+    hasRecheckedCommands(result.focusedTests, commands),
+  ];
+  return eligible.every(Boolean) && sameImplementation(checkout, result, candidate);
+}
+
+export function recheckedGroupProof(checkout, candidate, root) {
+  const summaries = candidate.verification?.proof ?? [];
+  const commands = new Set(summaries.flatMap((proof) => verifiedFocusedCommands(proof, candidate.tree, root)));
+  return (attempt) => recheckedAttempt(attempt, commands, checkout, candidate);
 }

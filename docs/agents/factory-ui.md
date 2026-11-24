@@ -1490,8 +1490,10 @@ closure to reach the shared queue.
 
 Create issue offers **Run a retro** and **Needs approval**. Both start unchecked.
 Retro files follow-ups in **Retro items** as **Needs approval**. **Approve**
-keeps the item in its folder and restores normal controls. **Delete** removes
-the proposal with one click. [Issue retros](../plans/issue-retros.md)
+keeps the item in its folder and restores normal controls. **Delete** names the
+proposal in a permanent-deletion confirmation and shows **Deleting…** while
+Factory checks and removes the proposal and its exclusively owned evidence.
+[Issue retros](../plans/issue-retros.md)
 
 When an open issue has a saved strategy PR and checkout, **Verify this commit again**
 appears beside **Close with reason…**. It reruns the required local checks against
