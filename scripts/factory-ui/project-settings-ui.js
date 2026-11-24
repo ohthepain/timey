@@ -172,7 +172,7 @@
       const registry = data.storeRegistry;
       if (!registry) return '<p>Store configuration is unavailable.</p>';
       const kinds = registry.mode === 'local' ? ['files'] : ['git', 'postgres', 'dynamodb', 's3'];
-      return `<h3>Project storage</h3><p>Profiles select Issue and Artifact destinations for new issues. Existing issues keep their saved destinations. Changing project Coordination storage performs a checked migration.</p>${pendingDeletions(registry)}<form data-settings-form data-store-settings><p>Project storage mode · ${registry.mode === 'local' ? 'Local' : 'Remote'}</p><p>Changing modes requires preparing a compatible project configuration before startup.</p>${roleChoice('coordination', 'Coordination store', registry.coordination)}${roleChoice('artifact', 'Coordination artifact store', registry.artifacts)}<h3>Issue storage profiles</h3><label class="field">Project profile default<select name="profileDefault" required><option value="">Choose a profile</option>${registry.profiles
+      return `<h3>Project storage</h3><p>Profiles select Issue and Artifact destinations for new issues. Existing issues keep their saved destinations. Changing project Coordination storage performs a checked migration.</p>${pendingDeletions(registry)}<section data-storage-recovery><button type="button" class="small-button" data-store-discover>Find unfinished storage moves</button><p data-store-discovery-status role="status"></p><div data-pending-storage-moves></div></section><form data-settings-form data-store-settings><p>Project storage mode · ${registry.mode === 'local' ? 'Local' : 'Remote'}</p><p>Changing modes requires preparing a compatible project configuration before startup.</p>${roleChoice('coordination', 'Coordination store', registry.coordination)}${roleChoice('artifact', 'Coordination artifact store', registry.artifacts)}<h3>Issue storage profiles</h3><label class="field">Project profile default<select name="profileDefault" required><option value="">Choose a profile</option>${registry.profiles
         .filter((profile) => !profile.retired)
         .map(
           (profile) =>
@@ -336,6 +336,70 @@
         output.textContent = result.message || 'Connection verified.';
       } catch (failure) {
         output.textContent = failure.message;
+      } finally {
+        button.disabled = false;
+      }
+    }
+    function requireStorageDiscovery(found) {
+      if (found.unavailable)
+        throw Error(found.warning || 'Storage is unavailable. Retry discovery after restoring its connection.');
+    }
+    function storageMoveSummary(move) {
+      const subject = move.kind === 'move-issue' ? `${move.issueIds.length} issue(s)` : move.role;
+      return `<p>${esc(subject)} · ${esc(move.storeId)} <button type="button" class="small-button" data-store-resume-move="${esc(move.operationId)}">Resume storage move</button></p>`;
+    }
+    function renderDiscoveredMoves(section, found) {
+      const moves = found.pendingMigrations || [];
+      data.storeRegistry.pendingMigrations = moves;
+      section.querySelector('[data-pending-storage-moves]').innerHTML = moves.map(storageMoveSummary).join('');
+      section.querySelector('[data-store-discovery-status]').textContent = moves.length
+        ? 'Unfinished storage moves found.'
+        : 'No unfinished storage moves found.';
+    }
+    async function discoverStorageMoves(button) {
+      const ticket = sequence;
+      const section = button.closest('[data-storage-recovery]');
+      const output = section.querySelector('[data-store-discovery-status]');
+      button.disabled = true;
+      output.textContent = 'Searching retained storage history…';
+      try {
+        const found = await issueStoreUI.read({ discoverMigrations: true });
+        if (ticket !== sequence) return;
+        requireStorageDiscovery(found);
+        renderDiscoveredMoves(section, found);
+      } catch (failure) {
+        output.textContent = failure.message;
+      } finally {
+        button.disabled = false;
+      }
+    }
+    async function resumeProjectStorageMove(move) {
+      const result = await post('/api/issue-store-action', {
+        action: 'move-role',
+        role: move.role,
+        storeId: move.storeId,
+        operationId: move.operationId,
+      });
+      if (result.status !== 'confirmed')
+        throw Error('Storage move is still pending. Retry after storage is available.');
+    }
+    function continueStorageMove(move) {
+      if (move.kind === 'move-issue') return issueStoreUI.resumeMove(move.issueIds[0], move.operationId);
+      return resumeProjectStorageMove(move);
+    }
+    async function resumeStorageMove(button) {
+      const move = data.storeRegistry.pendingMigrations.find(
+        ({ operationId }) => operationId === button.dataset.storeResumeMove
+      );
+      if (!move) return;
+      button.disabled = true;
+      showError();
+      try {
+        await continueStorageMove(move);
+        Object.assign(data.storeRegistry, await request('/api/issue-stores'));
+        render();
+      } catch (failure) {
+        showError(failure.message);
       } finally {
         button.disabled = false;
       }
@@ -576,6 +640,8 @@
       ['[data-store-add]', addStore],
       ['[data-profile-add]', addProfile],
       ['[data-store-test], [data-store-test-role]', testStore],
+      ['[data-store-discover]', discoverStorageMoves],
+      ['[data-store-resume-move]', (button) => leave(() => void resumeStorageMove(button))],
       ['[data-store-resume-delete]', (button) => leave(() => void resumeDeletion(button))],
       [
         '[data-settings-admin]',

@@ -243,6 +243,7 @@
               <button class="small-button" type="submit">Save</button>
               <button class="small-button" id="cancel-rename" type="button">Cancel</button>
             </form>
+            <div id="issue-master" class="folder-controls" role="group" aria-label="Master issue" hidden></div>
             <details id="issue-settings" class="issue-settings">
               <summary>Issue settings</summary>
               <form id="issue-settings-form">
@@ -252,11 +253,14 @@
               </form>
               <form id="issue-store-form" class="folder-settings-fields">
                 <label class="field">Issue storage profile<select id="issue-store" required></select></label>
-                <button class="small-button" id="move-issue-store" type="submit">Move issue</button>
+                <p class="detail-copy">
+                  Changes save automatically. This moves the issue and its artifacts while retaining existing history.
+                </p>
                 <p class="detail-copy" id="issue-store-source"></p>
                 <button class="small-button" id="resume-issue-store" type="button" hidden>Resume storage move</button>
                 <p id="issue-store-error" class="inline-error" role="alert" hidden></p>
               </form>
+              <p id="issue-store-progress" class="detail-copy" role="status"></p>
               <form id="issue-ownership-form" hidden>
                 <p id="issue-ownership-description" class="detail-copy"></p>
                 <fieldset id="issue-ownership-controls">

@@ -173,7 +173,7 @@ export class FlowGrouping {
   }
 
   action(input, reasoning = []) {
-    if (input.action === 'folder-detach') return this.detach(input);
+    if (input.action === 'folder-detach') return input.masterId ? this.removeMaster(input) : this.detach(input);
     if (input.action === 'folder-group-create') return this.create(input);
     requireThat(input.action === 'folder-group-preview', 'Choose a grouping action.');
     return this.preview(input, reasoning);
@@ -237,13 +237,23 @@ export class FlowGrouping {
     );
   }
 
+  async removeMaster({ issueId, subIssueId, revision, masterId, masterRevision }) {
+    requireThat(
+      issueId === subIssueId && this.masterId(issueId) === masterId,
+      'The master changed. Review this issue again.'
+    );
+    requireThat(
+      revision === this.flows.read(this.flows.selected(issueId)).revision,
+      'The issue changed. Review it again.'
+    );
+    await this.detach({ issueId: masterId, subIssueId, revision: masterRevision });
+    return this.flows.view(issueId);
+  }
+
   async detach({ issueId, subIssueId, revision }) {
     const master = this.flows.selected(issueId);
     const flow = this.flows.read(master);
-    requireThat(
-      !master.closed && !issueHasActiveWork(this.service, issueId) && !this.flows.overnight?.owns(issueId),
-      'Wait for the master to be idle before detaching a sub-issue.'
-    );
+    requireThat(this.canDetach(master), 'Wait for the master to be idle before detaching a sub-issue.');
     requireThat(revision === flow.revision, 'The master changed. Review its sub-issues again.');
     const target = groupChildren(master).find(({ id }) => id === subIssueId);
     requireThat(target, 'Choose an attached sub-issue.');
@@ -255,6 +265,20 @@ export class FlowGrouping {
     return this.flows.view(issueId);
   }
 
+  canDetach(issue) {
+    return !issue.closed && !issueHasActiveWork(this.service, issue.id) && !this.flows.overnight?.owns(issue.id);
+  }
+
+  masterView(issue, masterId) {
+    const master = this.flows.issues(masterId)[0];
+    if (!master) return { id: masterId, title: masterId, canDetach: false };
+    return {
+      ...issueLink(master),
+      revision: this.flows.read(master).revision,
+      canDetach: !issue.closed && this.canDetach(master),
+    };
+  }
+
   view(issue, flow, issues) {
     const { closure } = issue;
     const masterId = closure?.fixed_by ?? this.masterId(issue.id, issues);
@@ -264,10 +288,9 @@ export class FlowGrouping {
     const children = groupChildren(issue);
     if (!masterId && !formerMasters.length && !children.length && !issue.issue_group) return undefined;
     const proofRows = groupProofRows(flow, undefined, {}, this.service.root);
-    const canDetach =
-      !issue.closed && !issueHasActiveWork(this.service, issue.id) && !this.flows.overnight?.owns(issue.id);
+    const canDetach = this.canDetach(issue);
     return {
-      ...(masterId && { master: issueLink(this.flows.issues(masterId)[0] ?? { id: masterId, title: masterId }) }),
+      ...(masterId && { master: this.masterView(issue, masterId) }),
       formerMasters: formerMasters.map(issueLink),
       reasoning: issue.issue_group?.reasoning ?? [],
       children: children.map((child) => {

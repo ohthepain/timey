@@ -6,6 +6,9 @@ import { JSDOM } from 'jsdom';
 import { gitFixture } from './git-fixture.mjs';
 import { readStoreConfig, writeStoreConfig } from './factory-ui/stores/config.mjs';
 import { issueStoresView, handleStoreAction } from './factory-ui/stores/routes.mjs';
+import { openArtifactStore } from './factory-ui/stores/artifacts.mjs';
+import { openIssueStore, openRecordStore } from './factory-ui/stores/providers.mjs';
+import { createProjectStores } from './factory-ui/stores/project-stores.mjs';
 
 function configured(t) {
   const f = gitFixture(t, 'profiles-ui-');
@@ -176,6 +179,7 @@ test('project settings adds and saves a named profile without changing saved pro
     window.eval(readFileSync(new URL('./factory-ui/' + file, import.meta.url), 'utf8'));
   let registry = { ...f.config, stores: f.config.stores.map((store) => ({ ...store, references: [] })) };
   const posts = [];
+  const discoveryRequests = [];
   const request = async (path, options) => {
     if (options) {
       const input = JSON.parse(options.body);
@@ -183,7 +187,10 @@ test('project settings adds and saves a named profile without changing saved pro
       registry = { ...input.config, revision: 'updated' };
       return registry;
     }
-    if (path === '/api/issue-stores') return registry;
+    if (path.startsWith('/api/issue-stores')) {
+      if (path.includes('discoverMigrations=true')) discoveryRequests.push(path);
+      return { ...registry, pendingMigrations: [] };
+    }
     return {
       storage: {
         configuration: {},
@@ -214,6 +221,13 @@ test('project settings adds and saves a named profile without changing saved pro
   added.querySelector('[name$=":label"]').value = 'Evidence on other files';
   added.querySelector('[name$=":issueStore"]').value = 'files';
   added.querySelector('[name$=":artifactStore"]').value = 'other-files';
+  assert.equal(discoveryRequests.length, 0);
+  document.querySelector('[data-store-discover]').click();
+  await settle(
+    () => document.querySelector('[data-store-discovery-status]').textContent === 'No unfinished storage moves found.'
+  );
+  assert.equal(discoveryRequests.length, 1);
+  assert.equal(added.querySelector('[name$=":label"]').value, 'Evidence on other files');
   document
     .querySelector('[data-store-settings]')
     .dispatchEvent(new window.Event('submit', { bubbles: true, cancelable: true }));
@@ -343,4 +357,142 @@ test('saving project profiles invalidates the selected issue storage choices bef
   );
   settings.changed();
   assert.deepEqual(reloads, [{ force: true, cachedIssue: null }]);
+});
+
+test('storage move preview reads current catalog reports without loading retained histories', async (t) => {
+  const f = configured(t);
+  const options = { root: f.root, projectId: 'storage-preview' };
+  const artifacts = await openArtifactStore({ id: 'files', kind: 'files' }, options);
+  const records = await openRecordStore({ id: 'coordination', kind: 'files' }, { ...options, artifacts });
+  const issues = await openIssueStore({ id: 'files', kind: 'files' }, { ...options, artifacts });
+  t.after(() => {
+    records.close();
+    issues.close();
+  });
+  const previous = await issues.commit({
+    issueId: 'child',
+    operationId: 'old-child',
+    expectedRevision: null,
+    report: 'Previous report.\n'.repeat(2000),
+    location: 'open',
+  });
+  await issues.commit({
+    issueId: 'child',
+    operationId: 'current-child',
+    expectedRevision: previous.revision,
+    report: '---\ntitle: Child\n---\n',
+    location: 'open',
+  });
+  await issues.commit({
+    issueId: 'master',
+    operationId: 'current-master',
+    expectedRevision: null,
+    report: '---\ntitle: Master\nissue_group:\n  children:\n    - id: child\n---\n',
+    location: 'open',
+  });
+  const catalogs = ['master', 'child'].map((id, index) => ({
+    key: 'catalog/' + id,
+    value: { id, storeId: 'files', artifactStoreId: 'files', state: 'active', number: index + 1 },
+  }));
+  await records.commit({
+    operationId: 'catalogs',
+    expected: catalogs.map(({ key }) => ({ key, revision: null })),
+    writes: catalogs,
+  });
+  await records.commit({
+    operationId: 'unrelated-history',
+    expected: [{ key: 'operations/unrelated', revision: null }],
+    writes: [
+      { key: 'operations/unrelated', value: { kind: 'save-flow', status: 'confirmed', history: 'old'.repeat(10000) } },
+    ],
+  });
+  artifacts.get = async () => {
+    throw Error('Historical report artifacts are unavailable.');
+  };
+  const projectStores = createProjectStores({ ...options, records, issueStores: { files: issues }, artifacts });
+  const view = await issueStoresView(
+    { root: f.root, projectStores },
+    {
+      issueId: 'child',
+      migrationStorageProfile: 'other',
+    }
+  );
+  assert.deepEqual(view.moveGroup.issueIds, ['master', 'child']);
+  assert.deepEqual(view.targetStorage, { storeId: 'files', artifactStoreId: 'other-files' });
+});
+
+test('explicit storage recovery discovers a pending receipt created before the issue was sealed', async (t) => {
+  const f = configured(t);
+  const catalog = { id: 'one', storeId: 'files', artifactStoreId: 'files', state: 'active' };
+  const pending = {
+    id: 'pre-seal-move',
+    kind: 'move-issue',
+    status: 'pending',
+    input: { ids: ['one'], storeId: 'files', artifactStoreId: 'other-files' },
+  };
+  const projectStores = {
+    records: {
+      get: async (key) => (key === 'catalog/one' ? { value: catalog } : null),
+      list: async (prefix) => (prefix === 'operations/' ? [{ value: pending }] : []),
+    },
+  };
+  const view = await issueStoresView(
+    { root: f.root, projectStores },
+    {
+      issueId: 'one',
+      migrationStorageProfile: 'other',
+      discoverMigrations: true,
+    }
+  );
+  assert.equal(view.pendingMigrations[0].operationId, 'pre-seal-move');
+  assert.equal(view.moveGroup.resuming, true);
+  assert.deepEqual(view.moveGroup.issueIds, ['one']);
+});
+
+test('bounded storage preview resumes a retained pre-seal move without listing unrelated operations', async (t) => {
+  const f = configured(t);
+  const pending = {
+    id: 'retained',
+    kind: 'move-issue',
+    status: 'pending',
+    input: { ids: ['one', 'two'], storeId: 'files', artifactStoreId: 'other-files' },
+  };
+  const records = {
+    get: async (key) => {
+      if (key === 'catalog/one') return { value: { id: 'one', storeId: 'files', artifactStoreId: 'files' } };
+      if (key === 'operations/retained') return { value: pending };
+      return null;
+    },
+    list: async () => assert.fail('Normal previews must not scan operation history.'),
+  };
+  const projectStores = { records, listIssues: async () => [] };
+  const view = await issueStoresView(
+    { root: f.root, projectStores },
+    { issueId: 'one', migrationStorageProfile: 'other', operationId: 'retained' }
+  );
+  assert.deepEqual(view.moveGroup.issueIds, ['one', 'two']);
+  assert.equal(view.moveGroup.resuming, true);
+  const unrelated = await issueStoresView(
+    { root: f.root, projectStores },
+    { issueId: 'one', migrationStorageProfile: 'default', operationId: 'retained' }
+  );
+  assert.deepEqual(unrelated.pendingMigrations, []);
+});
+
+test('preview reads reuse the browser retained identity without creating a new migration', async (t) => {
+  const { window } = browser(t);
+  const requests = [];
+  const targetStorage = { storeId: 'issues', artifactStoreId: 'second-artifacts' };
+  const key = 'factory-storage-migration:' + JSON.stringify(['fixture', 'issue', 'one', 'issues', 'second-artifacts']);
+  window.localStorage.setItem(key, 'retained-operation');
+  const ui = window.createIssueStoreUI({
+    request: async (url) => {
+      requests.push(url);
+      return response({ targetStorage });
+    },
+  });
+  await ui.read({ issueId: 'one', migrationStorageProfile: 'second' });
+  assert.equal(new URL(requests[1], 'http://localhost').searchParams.get('operationId'), 'retained-operation');
+  assert.equal(window.localStorage.length, 1);
+  assert.equal(window.localStorage.getItem(key), 'retained-operation');
 });

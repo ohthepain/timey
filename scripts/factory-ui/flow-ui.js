@@ -43,6 +43,7 @@
     captureId: null,
     toastTimer: null,
     storeSelection: null,
+    storageMove: null,
   };
   const issueStoreUI = window.createIssueStoreUI({ request: json, post, changed: () => load(true) });
   const issueOwnershipUI = window.createIssueOwnershipUI({ request: json, post, changed: () => load(true) });
@@ -317,7 +318,7 @@
       });
     document
       .querySelectorAll(
-        '#issue-flow-picker, #issue-settings-form, #issue-store-form, #rename-issue-form, #issue-grouping, [data-skill-picker]'
+        '#issue-flow-picker, #issue-settings-form, #issue-store-form, #rename-issue-form, #issue-master, #issue-grouping, [data-skill-picker]'
       )
       .forEach((element) => {
         element.inert = true;
@@ -558,6 +559,7 @@
     $('rename-issue-form').inert = frozenIssue;
     $('rename-issue').disabled = busy || frozenIssue;
     $('issue-grouping').inert = busy;
+    $('issue-master').inert = busy;
     const attached = Boolean(state.view?.grouping?.master);
     const frozen = Boolean(state.view?.issue?.readOnly);
     document
@@ -617,7 +619,7 @@
     $('worktree-menu').disabled = busy || state.view?.environment?.worktreeExists !== true;
     $('merge-state-menu').disabled = busy || frozen || Boolean(state.view?.flow?.blocks.some(isRunning));
     updateIssueDecisionControls(busy);
-    $('issue-store-form').inert = busy;
+    $('issue-store-form').inert = busy || Boolean(state.storageMove);
     applyStoreAvailability();
   }
 
@@ -1202,13 +1204,17 @@
     const panel = $('issue-grouping');
     const grouping = state.view?.grouping;
     const { master, children, reasoning, formerMasters } = grouping || {};
-    panel.hidden = !master && !children?.length && !formerMasters?.length;
+    const masterRow = $('issue-master');
+    masterRow.hidden = !master;
+    updateFolderMarkup(
+      masterRow,
+      master
+        ? `<span>Master issue: ${issueLink(master)}</span><button class="small-button" type="button" id="remove-issue-master"${master.canDetach ? '' : ' disabled'}>Remove</button>`
+        : ''
+    );
+    panel.hidden = !children?.length && !formerMasters?.length;
     const groupReasons = new Map(reasoning?.map(({ id, reason }) => [id, reason]));
     const html = [];
-    if (master) {
-      const label = state.view.issue.status === 'closed' ? 'Fixed by' : 'Work belongs to';
-      html.push(`<p>${label} ${issueLink(master)}</p>`);
-    }
     for (const formerMaster of formerMasters || [])
       html.push(`<p>Earlier work and evidence in ${issueLink(formerMaster)}</p>`);
     if (children?.length) {
@@ -2684,7 +2690,7 @@
       );
       $('resume-issue-store').hidden = !pendingMove;
       $('resume-issue-store').dataset.operation = pendingMove?.operationId || '';
-      $('move-issue-store').disabled = true;
+      if (state.storageMove !== id) $('issue-store-progress').textContent = '';
     } catch (error) {
       state.storeSelection = null;
       $('issue-store-error').textContent = error.message;
@@ -2693,8 +2699,10 @@
   }
 
   async function moveIssueStore(storeId) {
-    const options = await issueStoreUI.read({ issueId: state.issueId, migrationStorageProfile: storeId });
-    const issueIds = options.moveGroup?.issueIds || [state.issueId];
+    const issueId = state.issueId;
+    const options = await issueStoreUI.read({ issueId, migrationStorageProfile: storeId });
+    if (issueId !== state.issueId) return false;
+    const issueIds = options.moveGroup?.issueIds || [issueId];
     const subject =
       issueIds.length > 1
         ? options.moveGroup?.masterId
@@ -2705,14 +2713,17 @@
     const target = options.targetStorage;
     if (!target) throw Error('Choose a valid Issue storage profile.');
     if (
+      issueIds.length > 1 &&
       !confirm(
         `Move ${subject}? Issue records: ${storeName(target.storeId)}. Artifacts: ${storeName(target.artifactStoreId)}. Existing history and references are retained.`
       )
     )
       return false;
-    await issueStoreUI.move(state.issueId, storeId, { issueIds, expectedStorage: target });
-    await refreshIssueStore(true);
-    toast('Issue storage profile move confirmed.');
+    await issueStoreUI.move(issueId, storeId, { issueIds, expectedStorage: target });
+    if (issueId === state.issueId) {
+      await refreshIssueStore(true);
+      toast('Issue storage profile saved.');
+    }
     return true;
   }
 
@@ -3287,6 +3298,17 @@
     const button = event.target.closest('[data-folder-command]');
     if (button && !button.disabled && folderCommands[button.dataset.folderCommand])
       void folderCommands[button.dataset.folderCommand]();
+  });
+
+  $('issue-master').addEventListener('click', (event) => {
+    if (followFolderLink(event)) return;
+    if (!event.target.closest('#remove-issue-master') || !state.view?.grouping?.master?.canDetach) return;
+    const master = state.view.grouping.master;
+    void action('folder-detach', {
+      subIssueId: state.issueId,
+      masterId: master.id,
+      masterRevision: master.revision,
+    });
   });
 
   $('issue-grouping').addEventListener('click', (event) => {
@@ -3881,22 +3903,27 @@
       $('issue-store-form').inert = false;
     }
   });
-  $('issue-store').addEventListener('change', () => {
-    $('move-issue-store').disabled =
-      !$('issue-store').value || $('issue-store').value === $('issue-store').dataset.saved;
-  });
-  $('issue-store-form').addEventListener('submit', async (event) => {
-    event.preventDefault();
-    if (state.pending || !$('issue-store').value) return;
+  $('issue-store-form').addEventListener('submit', (event) => event.preventDefault());
+  $('issue-store').addEventListener('change', async () => {
+    const select = $('issue-store');
+    if (state.pending || state.storageMove || !select.value || select.value === select.dataset.saved) return;
+    const issueId = state.issueId;
+    state.storageMove = issueId;
     $('issue-store-error').hidden = true;
+    $('issue-store-progress').textContent = 'Moving issue storage…';
     try {
       $('issue-store-form').inert = true;
-      await moveIssueStore($('issue-store').value);
+      if (!(await moveIssueStore(select.value)) && issueId === state.issueId) select.value = select.dataset.saved;
     } catch (error) {
-      $('issue-store-error').textContent = error.message;
-      $('issue-store-error').hidden = false;
+      if (issueId === state.issueId) {
+        select.value = select.dataset.saved;
+        $('issue-store-error').textContent = error.message;
+        $('issue-store-error').hidden = false;
+      }
     } finally {
-      $('issue-store-form').inert = false;
+      state.storageMove = null;
+      $('issue-store-form').inert = state.pending;
+      if (issueId === state.issueId) $('issue-store-progress').textContent = '';
     }
   });
 

@@ -46,6 +46,9 @@ Detach any issue whose request remains unmet. The user's acceptance of the maste
 moves the remaining sub-issues to the existing Closed state. **Fixed by** is the
 closure reason, and each closed sub-issue links to the master.
 
+When viewing a sub-issue, a row above **Issue settings** links to its master and
+provides **Remove** to detach it. The row is hidden for issues without a master;
+removal is unavailable while the master is active or either issue is closed.
 You can detach an individual sub-issue while the master is idle, including after
 a partial fix. If the master closes for a reason other than Fixed, release all
 attached sub-issues for independent work. Keep their reports open and link to any

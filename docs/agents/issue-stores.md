@@ -115,16 +115,25 @@ and recovery of older pending operations retain their existing ownership protoco
 
 ## Move existing issues
 
-1. Open an idle issue's **Issue settings**, choose its **Issue storage profile**,
-   and click **Move issue**. The destination-branch dialog and bulk editor also
-   show the profile choice. Move a master and all attached sub-issues together.
-2. Confirm the move. Factory copies and verifies issue records and owned artifacts
+1. Open an idle issue's **Issue settings** and choose its **Issue storage profile**.
+   Selecting a different profile starts the checked move automatically. Progress
+   and errors appear beside the selector. The destination-branch dialog and bulk
+   editor also show the profile choice. Move a master and all attached sub-issues together.
+2. Confirm when the move includes a master and its attached sub-issues.
+   Factory copies and verifies issue records and owned artifacts
    before switching both saved destinations. IDs, display numbers, and original
    report bytes remain stable. A failed copy preserves the source destinations.
    A merged issue stays read-only throughout storage migration.
-3. If confirmation fails or the connection is lost, keep the draft and retry the
-   same operation. The move retains its operation identity; it does not report
-   success until authoritative readback confirms the destination.
+3. If the move fails or the connection is lost, the selector returns to the
+   last saved profile and shows the error. Select the intended profile again to
+   retry the same operation. The move retains its operation identity; it does
+   not report success until authoritative readback confirms the destination.
+
+Normal profile changes check the issue's saved migration references and this
+browser's retained retry identity. To discover older unfinished moves from another
+runner that stopped before sealing an issue, open **Factory settings → Issue
+Storage** and choose **Find unfinished storage moves**. This explicit recovery
+search reads historical operations and can take longer than a profile change.
 
 A master and all attached sub-issues must use the same Issue and Artifact stores.
 Grouping compares actual destinations, so profiles with different names can still

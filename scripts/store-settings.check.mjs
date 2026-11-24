@@ -428,12 +428,8 @@ test('a child store move explicitly includes its authoritative master and all at
           return prefix === 'catalog/' ? reports.map(({ id }) => ({ value: { id, storeId: 'files' } })) : [];
         },
       },
-      issueStore() {
-        return {
-          async list() {
-            return reports;
-          },
-        };
+      async listIssues() {
+        return reports;
       },
       async moveIssue(input) {
         moved = input;

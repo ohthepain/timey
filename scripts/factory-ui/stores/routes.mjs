@@ -25,19 +25,35 @@ function resumableIssueMove(operation, input) {
   );
 }
 
+function requestedIssueOperation(operation, input) {
+  return (
+    operation.kind === 'move-issue' &&
+    operation.input.ids.includes(input.issueId) &&
+    requestedStorageMatches(operation.input, input)
+  );
+}
+
+async function linkedStoreOperations(records, input, saved) {
+  const gate = await records.get('project/migration');
+  const linked = [gate?.value.operationId, saved?.catalog?.migrationId].filter(Boolean);
+  const ids = [...new Set([...linked, input.operationId].filter(Boolean))];
+  const operations = (await Promise.all(ids.map((id) => records.get('operations/' + encodeURIComponent(id))))).filter(
+    Boolean
+  );
+  return operations.filter(
+    ({ value }) => value.id !== input.operationId || linked.includes(value.id) || requestedIssueOperation(value, input)
+  );
+}
+
+function readStoreOperations(records, input, saved) {
+  if (input.discoverMigrations === true || input.discoverMigrations === 'true') return records.list('operations/');
+  return linkedStoreOperations(records, input, saved);
+}
+
 async function pendingStoreOperations(service, input, saved) {
   if (service.storeStatus?.unavailable) return pendingViews.get(service) || [];
   if (!service.projectStores?.records?.list) return [];
-  const records = service.projectStores.records;
-  let operations;
-  if (migrationRequested(input)) operations = await records.list('operations/');
-  else {
-    const gate = await records.get('project/migration');
-    const ids = [...new Set([gate?.value.operationId, saved?.catalog?.migrationId].filter(Boolean))];
-    operations = (await Promise.all(ids.map((id) => records.get('operations/' + encodeURIComponent(id))))).filter(
-      Boolean
-    );
-  }
+  const operations = await readStoreOperations(service.projectStores.records, input, saved);
   const pending = operations
     .filter(
       ({ value }) =>
@@ -74,25 +90,13 @@ async function savedIssueHome(service, issueId) {
   return { catalog: catalog.value };
 }
 
-async function groupReports(service) {
-  const project = service.projectStores;
-  const catalog = await project.records.list('catalog/');
-  const homes = new Map(catalog.map(({ value }) => [value.id, value.storeId]));
-  const reports = await Promise.all(
-    [...new Set(homes.values())].map(async (id) =>
-      (await project.issueStore(id).list()).filter((issue) => homes.get(issue.id) === id)
-    )
-  );
-  return reports.flat();
-}
-
 async function moveGroup(service, input, pending) {
   if (!input.issueId) return undefined;
   const resumed = pending.find((operation) => resumableIssueMove(operation, input));
   if (resumed) return { issueIds: resumed.issueIds, resuming: true };
   const reports =
     migrationRequested(input) && !service.storeStatus?.unavailable && service.projectStores
-      ? await groupReports(service)
+      ? await service.projectStores.listIssues()
       : readSnapshot(service.root)?.issues || [];
   for (const issue of reports) {
     const metadata = parse(String(issue.report).match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/)?.[1] || '');
@@ -144,13 +148,13 @@ function unavailableStatus(service) {
 export async function issueStoresView(service, input = {}) {
   const view = safeStoreView(service.root);
   const saved = await savedIssueHome(service, input.issueId);
-  const pending = await pendingStoreOperations(service, input, saved);
+  const targetStorage = requestedTarget(service.root, input.migrationStorageProfile);
+  const pending = await pendingStoreOperations(service, { ...input, targetStorage }, saved);
   const migrations = pending.filter(({ kind }) => kind !== 'delete-issue');
   const savedStorage = catalogStorage(saved);
   const selection = savedStorage
     ? savedProfileSelection(view, savedStorage)
     : inheritedProfileSelection(service.root, input.folder);
-  const targetStorage = requestedTarget(service.root, input.migrationStorageProfile);
   return {
     ...view,
     ...selection,

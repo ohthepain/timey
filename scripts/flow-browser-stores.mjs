@@ -285,8 +285,7 @@ async function moveFromIssueSettings(page, storeId) {
     element.open = true;
   });
   await page.locator('#issue-store').selectOption(storeId);
-  page.once('dialog', (dialog) => dialog.accept());
-  await page.locator('#move-issue-store').click();
+  assert.equal(await page.locator('#move-issue-store').count(), 0);
 }
 
 export async function issueStoresBrowserChecks({ page, project, service, poll, screenshot }) {
@@ -367,7 +366,10 @@ export async function issueStoresBrowserChecks({ page, project, service, poll, s
     const input = route.request().postDataJSON();
     if (input.action !== 'move-issue' || input.issueId !== issue.id) return route.continue();
     moveIds.push(input.operationId);
-    if (moveIds.length === 1) return route.fulfill({ json: { status: 'pending' } });
+    if (moveIds.length === 1) {
+      assert.equal(await page.locator('#issue-store-progress').textContent(), 'Moving issue storage…');
+      return route.fulfill({ json: { status: 'pending' } });
+    }
     return route.continue();
   };
   await page.route('**/api/issue-store-action', migrationRoute);
@@ -376,6 +378,7 @@ export async function issueStoresBrowserChecks({ page, project, service, poll, s
     .locator('#issue-store-error')
     .getByText('Storage move is pending reconciliation. Refresh its status before continuing.', { exact: true })
     .waitFor();
+  assert.equal(await page.locator('#issue-store').inputValue(), storeId, 'A failed move restores the saved selection.');
   await page.reload();
   await expectIssueHome(page, poll, storeId, 'Reload did not retain the original Issue home before retry.');
   await moveFromIssueSettings(page, 'files');
@@ -389,6 +392,8 @@ export async function issueStoresBrowserChecks({ page, project, service, poll, s
   assert.equal(moveIds[0], moveIds[1], 'Reloading a pending move must retain its operation identity.');
   assert.equal(git(project, 'rev-parse', 'HEAD'), sourceHead);
   assert.deepEqual(readFileSync(join(project, 'source.txt')), sourceBytes);
+  await page.reload();
+  await expectIssueHome(page, poll, 'files', 'Automatic storage selection did not persist across reload.');
   await screenshot('issue-store-checked-move');
   await checkSharedMigrationResume({ page, service, issue, storeId, poll, api });
   await checkBulkStoreMove({ page, service, issue, folder, api });

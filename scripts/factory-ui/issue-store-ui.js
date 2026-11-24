@@ -55,10 +55,24 @@
     function finishMigration(data, input) {
       storage.removeItem(migrationKey(data, input));
     }
-    async function read(input = {}) {
+    function storageURL(input) {
       const query = new URLSearchParams();
       for (const [key, value] of Object.entries(input)) if (value) query.set(key, value);
-      return request('/api/issue-stores' + (query.size ? '?' + query : ''));
+      return '/api/issue-stores' + (query.size ? '?' + query : '');
+    }
+    function migrationPreview(input) {
+      return input.issueId && input.migrationStorageProfile && !input.operationId;
+    }
+    function retainedOperation(data, input) {
+      if (!migrationPreview(input)) return null;
+      if (!data.targetStorage) return null;
+      return storage.getItem(migrationKey(data, { issueId: input.issueId, ...data.targetStorage }));
+    }
+    async function read(input = {}) {
+      const data = await request(storageURL(input));
+      const operationId = retainedOperation(data, input);
+      if (!operationId) return data;
+      return request(storageURL({ ...input, operationId }));
     }
     function requireAvailable(data) {
       if (data.unavailable) throw Error(data.warning || 'Shared storage is unavailable. Cached data is read-only.');
@@ -155,7 +169,7 @@
       );
     }
     async function resumeMove(issueId, operationId) {
-      const options = await read({ issueId });
+      const options = await read({ issueId, operationId });
       requireAvailable(options);
       const pending = retainedMove(options, issueId, operationId);
       if (!pending?.artifactStoreId) throw Error('Refresh the issue to find its retained storage move.');

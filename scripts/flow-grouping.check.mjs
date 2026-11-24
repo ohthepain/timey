@@ -101,12 +101,28 @@ test('The master protects its original issues across a server restart and releas
     assert.throws(() => requireIndependentIssue(root, id), /sub-issue/);
   }
 
-  await flows.action({
+  const childView = await flows.view(issueIds[0]);
+  await assert.rejects(
+    flows.action({
+      action: 'folder-detach',
+      issueId: issueIds[0],
+      subIssueId: issueIds[0],
+      masterId: result.issue.id,
+      masterRevision: result.flow.revision - 1,
+      revision: childView.flow.revision,
+    }),
+    /master changed/
+  );
+  const detached = await flows.action({
     action: 'folder-detach',
-    issueId: result.issue.id,
+    issueId: issueIds[0],
     subIssueId: issueIds[0],
-    revision: result.flow.revision,
+    revision: childView.flow.revision,
+    masterId: childView.grouping.master.id,
+    masterRevision: childView.grouping.master.revision,
   });
+  assert.equal(detached.issue.id, issueIds[0]);
+  assert.equal(detached.grouping.master, undefined);
   assert.doesNotThrow(() => requireIndependentIssue(root, issueIds[0]));
   assert.equal((await flows.view(issueIds[0])).grouping.formerMasters[0].id, result.issue.id);
   assert.deepEqual(flows.selected(issueIds[0]).human_checks, [check]);
