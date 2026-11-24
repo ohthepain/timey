@@ -102,6 +102,7 @@
       const result = await request('/api/investigation-reports');
       if (current !== generation) return;
       root.innerHTML = template('report-library-template', {
+        controls: result.reports.length ? '' : 'hidden',
         items:
           result.reports
             .map((report) =>
@@ -268,7 +269,43 @@
       await chat.setVisible(true);
       chat.setDraft(draft);
     }
+    const reportCheckboxes = () => [...root.querySelectorAll('[data-report-select]')];
+    function syncReportSelection() {
+      const all = root.querySelector('[data-report-select-all]');
+      const rows = reportCheckboxes();
+      const checked = rows.filter((row) => row.checked).length;
+      all.checked = checked === rows.length && checked > 0;
+      all.indeterminate = checked > 0 && !all.checked;
+      root.querySelector('[data-report-delete]').disabled = checked === 0;
+    }
+    root.addEventListener('change', ({ target }) => {
+      if (target.hasAttribute('data-report-select-all')) {
+        for (const row of reportCheckboxes()) row.checked = target.checked;
+      } else if (!target.hasAttribute('data-report-select')) return;
+      syncReportSelection();
+    });
+    function reportsToDelete() {
+      return selected
+        ? [selected.id]
+        : [...root.querySelectorAll('[data-report-select]:checked')].map((row) => row.dataset.reportSelect);
+    }
+    function confirmDelete(count) {
+      return confirm(count === 1 ? 'Permanently delete this report?' : `Permanently delete these ${count} reports?`);
+    }
+    async function deleteReports(button) {
+      const ids = reportsToDelete();
+      if (!ids.length || !confirmDelete(ids.length)) return;
+      const current = generation;
+      button.disabled = true;
+      try {
+        await post('investigation-report-delete', { ids });
+        if (current === generation) await list();
+      } finally {
+        button.disabled = false;
+      }
+    }
     const clickActions = [
+      ['data-report-delete', deleteReports],
       ['data-report-open', (button) => open(button.dataset.reportOpen)],
       ['data-report-all', () => list()],
       ['data-report-discuss', () => showDiscussion(!state(selected.id).discuss)],

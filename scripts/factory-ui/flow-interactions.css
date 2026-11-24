@@ -1,0 +1,42 @@
+.local-notes {
+  padding-inline: 0;
+}
+.local-notes-body {
+  padding-inline: 14px;
+}
+.closed-issue-indicator {
+  width: auto;
+  height: auto;
+  padding: 7px;
+  border: 0;
+  background: transparent;
+  font-size: 18px;
+}
+.project-home[data-project-tab='discuss'] {
+  flex: 1;
+  align-content: stretch;
+}
+.report-selection,
+.report-library-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.report-library-item {
+  flex: 1;
+}
+[data-block-grip] {
+  position: absolute;
+  inset: 5px 5px auto auto;
+  padding: 3px 6px;
+  color: var(--muted);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+[data-reorder-source] {
+  outline: 2px solid var(--blue, #92b8ff);
+}
+[data-reorder-preview] {
+  cursor: grabbing;
+}

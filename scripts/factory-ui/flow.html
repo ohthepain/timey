@@ -20,6 +20,7 @@
     <link rel="stylesheet" href="/project-discuss.css" />
     <link rel="stylesheet" href="/project-reports.css" />
     <link rel="stylesheet" href="/local-notes.css" />
+    <link rel="stylesheet" href="/flow-interactions.css" />
     <script src="/view-state.js" defer></script>
     <script src="/activity-indicator-ui.js" defer></script>
     <script src="/issue-chat-ui.js" defer></script>
@@ -40,7 +41,7 @@
     <script src="/branch-repair-ui.js" defer></script>
     <script src="/issue-store-ui.js" defer></script>
     <script src="/issue-ownership-ui.js" defer></script>
-    <script src="/flow-ui.js" defer></script>
+    <script src="/flow-ui.js" type="module"></script>
     <script src="/local-notes-ui.js" defer></script>
     <script src="/sidebar-files-ui.js" defer></script>
     <script src="/view-inspection.js" defer></script>
@@ -158,7 +159,7 @@
                 ＋ Note
               </button>
             </header>
-            <div id="local-notes-body">
+            <div id="local-notes-body" class="local-notes-body">
               <form id="local-note-form">
                 <textarea
                   id="local-note-text"
@@ -829,7 +830,7 @@
         </div>
         <footer class="flow-footer">
           <span><span class="footer-dot"></span> <span id="flow-footer-label">Changes are saved locally</span></span
-          ><span class="direction-hint">Flow runs from top to bottom ↓</span>
+          ><span id="issue-timestamps" hidden></span>
         </footer>
       </main>
       <aside class="inspector" aria-label="Block inspector">
@@ -1429,6 +1430,7 @@
             {{runs}}
           </select></label
         ><button type="button" class="small-button" data-report-discuss>{{discussLabel}}</button>
+        <button type="button" class="small-button" data-report-delete>Delete report</button>
       </header>
       <p data-report-error role="alert"></p>
       <div class="report-workspace">
@@ -1476,12 +1478,19 @@
         <p>Retained findings and recommendations from your investigations.</p>
       </header>
       <p data-report-error role="alert"></p>
+      <div class="report-selection" {{controls}}>
+        <label><input type="checkbox" data-report-select-all /> Select all</label>
+        <button class="small-button" type="button" data-report-delete disabled>Delete selected</button>
+      </div>
       <div class="report-library">{{items}}</div></template
     >
     <template id="report-library-item-template"
-      ><button type="button" class="report-library-item" data-report-open="{{id}}">
-        <strong>{{title}}</strong><time>{{publishedAt}}</time>
-      </button></template
+      ><div class="report-library-row">
+        <input type="checkbox" data-report-select="{{id}}" aria-label="Select {{title}}" />
+        <button type="button" class="report-library-item" data-report-open="{{id}}">
+          <strong>{{title}}</strong><time>{{publishedAt}}</time>
+        </button>
+      </div></template
     >
   </body>
 </html>

@@ -1,6 +1,7 @@
 import { blockModelsBrowserChecks } from './flow-browser-block-models.mjs';
 import { providerSettingsBrowserChecks } from './flow-browser-provider-settings.mjs';
 import { activityBrowserChecks } from './flow-browser-activity.mjs';
+import { inboxDiscussBrowserChecks, inboxFlowBrowserChecks } from './flow-browser-inbox.mjs';
 import { investigationReportsBrowserChecks } from './flow-browser-investigation-reports.mjs';
 import { issueStatusFoldersBrowserChecks } from './flow-browser-issue-status-folders.mjs';
 import { projectIssuesBrowserChecks } from './flow-browser-project-issues.mjs';
@@ -104,6 +105,8 @@ const assets = [
   'flow.html',
   'flow.css',
   'flow-ui.js',
+  'flow-order.mjs',
+  'flow-interactions.css',
   'issue-store-ui.js',
   'issue-ownership-ui.js',
   'issue-folder-drag-ui.js',
@@ -148,6 +151,8 @@ const fingerprint = () =>
   );
 const candidate = { revision: git(root, 'rev-parse', 'HEAD'), assets: fingerprint() };
 const results = [];
+const inboxDiscussCheck = 'Project chat stays at the bottom and accepts prompts while work is paused';
+const inboxFlowCheck = 'Issue flow dates, statuses, folder ordering and block drag';
 const folderSettingsCheck = 'Folder settings inherit, repair, search and act on selected open or closed issues';
 const blockDeletionCheck = 'Click-selected blocks support safe, confirmed Delete and Backspace removal';
 const followupsCheck = 'Completed investigations create reviewed follow-ups without another Retro';
@@ -374,6 +379,8 @@ function checkExcluded(name) {
     ['--block-models', 'Block models preserve history and surface persistent blockers'],
     ['--block-skills', 'Block skill choices preserve defaults and offer missing-skill setup'],
     ['--block-deletion', blockDeletionCheck],
+    ['--inbox-flow', inboxFlowCheck],
+    ['--inbox-discuss', inboxDiscussCheck],
     ['--folder-settings', folderSettingsCheck],
     ['--issue-results', issueResultsCheck],
     ['--human-input', humanInputCheck],
@@ -673,6 +680,7 @@ try {
   await check(navigationCheck, () =>
     withQueueConfiguration({ page, project, root }, () => projectNavigationBrowserChecks({ page, screenshot }))
   );
+  await check(inboxFlowCheck, () => inboxFlowBrowserChecks({ page, service, project, poll, screenshot, output }));
   await check(reportsCheck, () =>
     investigationReportsBrowserChecks({ page, project, service, poll, screenshot, output })
   );
@@ -685,6 +693,7 @@ try {
     )
   );
   await check(discussCheck, () => projectDiscussBrowserChecks({ page, project, service, poll, screenshot }));
+  await check(inboxDiscussCheck, () => inboxDiscussBrowserChecks({ page, service, screenshot, output }));
   await check('Factory provider settings save enablement and quota warnings', () =>
     providerSettingsBrowserChecks({ page, project, screenshot })
   );
