@@ -205,7 +205,9 @@ export class ProjectDiscuss {
     return session;
   }
   view(id, ownership) {
-    const sessions = this.records().filter((session) => discussionOwnerMatches(session, ownership));
+    const sessions = this.records().filter(
+      (session) => discussionOwnerMatches(session, ownership) && !session.noteContext
+    );
     const requested = id ? this.readOwned(id, ownership) : null;
     const selected = requested && !requested.closedAt ? requested : sessions[0];
     return {

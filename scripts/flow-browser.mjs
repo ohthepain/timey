@@ -1214,7 +1214,7 @@ try {
     assert.equal(requestData(data.flow).fields, null);
     assert.equal(logs.execution.length, 0);
   });
-  await check('Issue folders retain every issue and accept drags between folders', async () => {
+  async function ensureBrowserFolderIssue() {
     if (!issueId) {
       await service.flows.action({ action: 'create-folder', name: 'Browser folder' });
       const captured = await service.flows.action({
@@ -1228,12 +1228,16 @@ try {
       await page.goto('/?issue=' + issueId);
       await page.locator('#request-form').waitFor();
     }
+  }
+  await check('Issue folders retain every issue and accept drags between folders', async () => {
+    await ensureBrowserFolderIssue();
     await flowIssueFoldersBrowserChecks(page, issueId, 'Browser folder');
     await screenshot('issue-folder-drag');
     await page.goto('/?issue=' + issueId);
     await page.locator('#request-form').waitFor();
   });
   await check('The folder workspace reviews moves and creates a master without starting work', async () => {
+    await ensureBrowserFolderIssue();
     const openFolder = async () => {
       await page.locator('#issue-list button[data-folder="Browser folder"]').click();
       await page.getByRole('heading', { name: 'Browser folder', exact: true }).waitFor();
@@ -1281,14 +1285,31 @@ try {
       .getByText('Verified, merge-ready pull requests')
       .waitFor();
     await page.locator('[data-folder-command="cancel-night"]').click();
-    await clickAction(page.getByRole('button', { name: 'Propose master issue', exact: true }));
+    const groupButton = page.locator('[data-folder-command="group"]');
+    assert.equal(await groupButton.innerText(), 'Create master issue');
+    assert.equal(await page.locator('[data-folder-command="bulk"] + [data-folder-command="group"]').count(), 1);
+    await clickAction(groupButton);
     const combined = page.getByLabel('Review and edit the master issue request');
     const wording = await combined.inputValue();
     assert.match(wording, /Keep the save button visible/);
     const edited = wording.replace(/^[^\n]*/, 'Keep both save behaviors after reload');
     await combined.fill(edited);
-    const master = await clickAction(page.getByRole('button', { name: 'Create master issue', exact: true }));
+    const master = await clickAction(page.locator('#folder-group-form button[type="submit"]'));
     assert.equal(requestData(master.flow).wording, edited);
+    await openFolder();
+    const nested = members.getByRole('list', { name: 'Sub-issues', exact: true });
+    assert.equal(await nested.getByRole('checkbox').count(), 2);
+    const masterLink = members.locator(':scope > li > div > a').filter({ hasText: 'Keep both save behaviors' });
+    const childLink = nested.getByRole('link').first();
+    assert.ok((await childLink.boundingBox()).x > (await masterLink.boundingBox()).x);
+    await page.locator('#folder-search-query').fill('Keep the save button visible');
+    await page.locator('#folder-search-form button[type="submit"]').click();
+    assert.equal(await members.getByRole('checkbox').count(), 1);
+    assert.equal(await members.getByRole('list').count(), 0);
+    await page.locator('#folder-search-query').fill('');
+    await page.locator('#folder-search-form button[type="submit"]').click();
+    await screenshot('folder-master-hierarchy');
+    await masterLink.click();
     const grouping = page.getByRole('region', { name: 'Grouped issues' });
     await grouping.getByRole('heading', { name: 'Sub-issues' }).waitFor();
     assert.equal(await grouping.getByText('The fixture requests share save behavior.').count(), 2);

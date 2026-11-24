@@ -6,6 +6,12 @@ import { test } from 'node:test';
 import { captureFixture, proposal } from './factory-capture-fixture.mjs';
 import { createCaptures } from './factory-ui/issue-capture.mjs';
 import { createIssueFlows } from './factory-ui/flow-service.mjs';
+import {
+  createIssueFolderSettings,
+  readFolderSettings,
+  updateFolderSettings,
+} from './factory-ui/issue-folder-settings.mjs';
+import { createProjectDiscussTools } from './factory-ui/project-discuss-tools.mjs';
 import { readStoreConfig, writeStoreConfig } from './factory-ui/stores/config.mjs';
 import { ensureProjectStores } from './factory-ui/stores/runtime.mjs';
 
@@ -92,6 +98,45 @@ test('Flow creation requires a visible profile choice before creating an issue',
     (await f.stores.listIssues()).map(({ id }) => id),
     before
   );
+});
+
+void test('Discuss creates, moves and groups idle issues using the appropriate storage destinations', async (t) => {
+  const f = await fixture(t);
+  const { directory } = createIssueFolderSettings(f.root, 'Priority');
+  const { revision } = readFolderSettings(f.root, directory);
+  updateFolderSettings(f.root, {
+    directory,
+    revision,
+    changes: { storage_profile: 'private' },
+    makeDefault: true,
+  });
+  const tools = createProjectDiscussTools(f.service);
+  const create = (description, settings) => tools.invoke('issue_create', { description, ...settings });
+  const inherited = await create('Preserve retained proof.', {});
+  assert.equal((await f.stores.readIssue(inherited.issueId)).artifactStoreId, 'private-evidence');
+  const explicit = await create('Keep each repair attempt’s proof.', { folder: 'Priority', storageProfile: 'files' });
+  const inbox = await create('Keep temporary files out of proof.', { folder: 'Inbox' });
+  const selected = await tools.invoke('issues_list', { issueId: inbox.issueId });
+  assert.equal(selected.issues[0].folder, 'Inbox');
+  assert.ok(selected.folders.some(({ name }) => name === 'Priority'));
+  await tools.invoke('issue_move_folder', {
+    issueId: inbox.issueId,
+    revision: selected.issues[0].revision,
+    folder: 'Priority',
+  });
+  const issueIds = [explicit.issueId, inbox.issueId];
+  const preview = await tools.invoke('issue_group_preview', { folder: 'Priority', issueIds });
+  const master = await tools.invoke('issue_group_create', {
+    previewId: preview.id,
+    wording: preview.wording,
+    requestId: randomUUID(),
+  });
+  assert.equal(f.flows.read(f.flows.selected(master.issueId)).folder, 'Priority');
+  assert.deepEqual(
+    f.flows.selected(master.issueId).issue_group.children.map(({ id }) => id),
+    issueIds
+  );
+  for (const id of [...issueIds, master.issueId]) assert.equal((await f.stores.readIssue(id)).artifactStoreId, 'files');
 });
 
 test('Classic capture saves its resolved pair and refuses changed-profile replay', async (t) => {

@@ -528,6 +528,12 @@ async function conversationTabOverflowChecks({ page, service, project, screensho
       const container = document.querySelector('#project-home').getBoundingClientRect();
       const strip = document.querySelector('#discuss-conversation-tabs');
       strip.scrollLeft = 0;
+      const create = document.querySelector('#discuss-new');
+      const active = strip.querySelector('[aria-selected="true"]');
+      const chat = document.querySelector('#project-discuss .discuss-chat');
+      const connected =
+        active.getBoundingClientRect().bottom === chat.getBoundingClientRect().top &&
+        getComputedStyle(active).backgroundColor === getComputedStyle(chat).backgroundColor;
       const tabs = [...strip.querySelectorAll('.discuss-conversation-tab')].map((tab) => {
         tab.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'instant' });
         const bounds = tab.getBoundingClientRect();
@@ -539,6 +545,8 @@ async function conversationTabOverflowChecks({ page, service, project, screensho
         };
       });
       return {
+        connected,
+        createOnLeft: create.getBoundingClientRect().right <= strip.getBoundingClientRect().left,
         viewportWidth: window.innerWidth,
         documentWidth: document.documentElement.scrollWidth,
         containerLeft: container.left,
@@ -555,6 +563,8 @@ async function conversationTabOverflowChecks({ page, service, project, screensho
     tabEvidence.observations.push(observation);
     writeFileSync(join(dirname(project), 'project-discuss-tabs.json'), JSON.stringify(tabEvidence, null, 2) + '\n');
     assert.ok(observation.documentWidth <= width, 'Many conversation tabs overflow the page.');
+    assert.ok(observation.createOnLeft, 'New chat stays to the left of the conversation tabs.');
+    assert.ok(observation.connected, 'The selected tab touches and matches the chat panel.');
     assert.ok(
       observation.discussLeft >= observation.containerLeft && observation.discussRight <= observation.containerRight,
       'Many conversation tabs widen Discuss beyond its container.'

@@ -26,9 +26,16 @@ authorizes this documentation update; it does not authorize implementation.
   criteria. Instructions to create only and leave the issue idle apply to the
   creation operation and stay in the conversation and receipt. Saved descriptions
   retain product constraints, prerequisites and required human approvals.
-- Support multiple saved project conversations with New chat and a conversation
-  selector. Retain each conversation's history, drafts, model, effort, and selected
-  skills.
+- Discuss uses the destination folder’s inherited Issue storage profile for new
+  issues unless the person specifies a profile. It can move idle issues to an
+  existing folder and create an idle master issue from a grouping preview. Moving
+  folders preserves saved storage. A master uses the sub-issues’ shared Issue
+  and Artifact stores.
+- Show saved project chats as tabs connected to the active chat panel. The **+**
+  at the left opens a new project chat. Note and issue discussions stay out of
+  the tab strip and retain their own entry points. Retain each chat's history,
+  drafts, model, effort, and selected skills. A new chat receives the running
+  server’s current tool definitions on its first message.
 - Model, effort, and skill changes apply to subsequent messages. Running and
   already-queued messages retain the settings submitted with them.
 - Voice input is dictation into editable composer text. A final spoken word "go"

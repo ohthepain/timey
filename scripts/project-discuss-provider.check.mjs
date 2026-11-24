@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { CodexConnection } from './factory-ui/codex.mjs';
 import { createProjectDiscussProvider } from './factory-ui/project-discuss-provider.mjs';
 
-function fixture(t, hook = async () => {}) {
+function fixture(t, hook = async () => {}, { useProjectTools = false } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'timey-discuss-provider-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const skill = (name, restricted = false) => {
@@ -65,7 +65,7 @@ function fixture(t, hook = async () => {}) {
       return { input };
     },
   };
-  const provider = createProjectDiscussProvider({ root }, { connection, tools });
+  const provider = createProjectDiscussProvider({ root }, { connection, ...(useProjectTools ? {} : { tools }) });
   const context = {
     signal: controller.signal,
     event: (event) => events.push(event),
@@ -76,6 +76,18 @@ function fixture(t, hook = async () => {}) {
   };
   return { root, provider, connection, session, message, context, events, calls, sent, retained, tools };
 }
+
+void test('a new Discuss chat registers the server’s current issue tools on its first message', async (t) => {
+  const f = fixture(t, undefined, { useProjectTools: true });
+  await f.provider.turn(f.session, f.message, f.context);
+  const { dynamicTools } = f.calls.find(({ method }) => method === 'thread/start').params;
+  for (const name of ['issue_move_folder', 'issue_group_preview', 'issue_group_create'])
+    assert.ok(
+      dynamicTools.some((tool) => tool.name === name),
+      name
+    );
+  assert.ok(dynamicTools.find(({ name }) => name === 'issue_create').inputSchema.properties.storageProfile);
+});
 
 test('project provider uses current folder, writable permission guards, conditional skills and same-turn suggestion', async (t) => {
   const f = fixture(t);

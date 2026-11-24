@@ -20,6 +20,11 @@ behavior, dependencies, and likely integration conflicts.
 ## Create a master issue
 
 Select open issues that have no active run and have not started implementation.
+The **Create master issue** button sits immediately to the right of **Start all**
+(or **Start selected**) and becomes available for an eligible selection of at least
+two issues. It opens the combined request for review before creation.
+The folder list nests attached sub-issues beneath their master. When filtering
+hides a master, its matching sub-issues remain visible as individual results.
 Each selected issue's resolved PR target must match its folder's resolved default
 target. An explicit issue override equal to that target remains eligible. A
 different target remains visible and can run independently.

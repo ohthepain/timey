@@ -2510,3 +2510,10 @@ kbd {
 .graph-scroll[data-scrolling] {
   scrollbar-color: var(--muted) transparent;
 }
+.folder-issues div {
+  flex: 1;
+  min-width: 0;
+}
+.folder-issues ul {
+  padding-left: 16px;
+}

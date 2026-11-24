@@ -890,9 +890,32 @@
     if (field?.id) $(field.id)?.focus({ preventScroll: true });
   }
 
-  function folderIssueRow(issue, reason, field) {
+  function folderIssueRow(issue, reason, field, children = '') {
     const check = `<input type="checkbox" name="${field}" value="${escape(issue.id)}" id="${field}-${escape(issue.id)}"${field === 'member' ? (folderSelection.issueIds.has(issue.id) ? ' checked' : '') : ' checked'} aria-label="Select ${escape(issueLabel(issue))}" />`;
-    return `<li>${check}<div>${issueLink(issue)}${reason ? `<p>${escape(reason)}</p>` : ''}</div></li>`;
+    return `<li>${check}<div>${issueLink(issue)}${reason ? `<p>${escape(reason)}</p>` : ''}${children}</div></li>`;
+  }
+
+  function folderMemberRows(members, reasons) {
+    const visibleIds = new Set(members.map(({ id }) => id));
+    const children = new Map();
+    for (const issue of members) {
+      if (!issue.masterId || !visibleIds.has(issue.masterId)) continue;
+      if (!children.has(issue.masterId)) children.set(issue.masterId, []);
+      children.get(issue.masterId).push(issue);
+    }
+    const row = (issue) => {
+      const subIssues = children.get(issue.id);
+      return folderIssueRow(
+        issue,
+        folderIssueStatus(issue, reasons.get(issue.id)),
+        'member',
+        subIssues ? `<ul class="folder-issues" aria-label="Sub-issues">${subIssues.map(row).join('')}</ul>` : ''
+      );
+    };
+    return members
+      .filter((issue) => !visibleIds.has(issue.masterId))
+      .map(row)
+      .join('');
   }
 
   function folderIssueStatus(issue, reason) {
@@ -1148,9 +1171,7 @@
     );
     updateFolderMarkup(
       $('folder-member-list'),
-      members
-        .map((issue) => folderIssueRow(issue, folderIssueStatus(issue, reasons.get(issue.id)), 'member'))
-        .join('') || '<li class="muted">No issues in this folder.</li>'
+      folderMemberRows(members, reasons) || '<li class="muted">No issues in this folder.</li>'
     );
     const source = $('folder-scan-source');
     const lastSource = source.value;

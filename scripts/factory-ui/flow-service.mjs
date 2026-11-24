@@ -2921,13 +2921,17 @@ class IssueFlows {
     return this.view();
   }
   async capture(input, grouping = null, storage = null) {
+    const folder = requireIssueFolder(
+      this.service.root,
+      input.folder || defaultIssueFolder(this.service.root).name
+    ).name;
     if (this.service.projectStores) {
       if (!grouping || !storage) {
         requireThat(
           typeof input.storageProfile === 'string' && input.storageProfile.length > 0,
           'Choose an Issue storage profile for this issue.'
         );
-        storage = resolveIssueStorage(this.service.root, { profileId: input.storageProfile, folder: input.folder });
+        storage = resolveIssueStorage(this.service.root, { profileId: input.storageProfile, folder });
       }
       await this.requireCaptureGroupStorage(storage, grouping);
     }
@@ -2942,10 +2946,6 @@ class IssueFlows {
       await this.service.projectStores.refresh({ issueIds: [this.selected(input.sourceIssue).id] });
     validateCaptureSource(input, this);
     if (input.startingRef !== undefined) branchStartingPoint(await this.codeBranches(), input.startingRef);
-    const folder = requireIssueFolder(
-      this.service.root,
-      input.folder || defaultIssueFolder(this.service.root).name
-    ).name;
     requireThat(
       [input.needsApproval, input.runRetro].every((value) => value === undefined || typeof value === 'boolean'),
       'Choose valid issue settings.'

@@ -62,6 +62,13 @@ test('project conversations are idle on read, create is idempotent, and historie
   await f.discuss.action({ action: 'draft', conversationId: first.id, draft: { text: 'Preserved draft' } });
   assert.equal(f.discuss.view(first.id).selected.draft.text, 'Preserved draft');
   assert.equal(f.discuss.view(second.id).selected.draft.text, '');
+  const note = (await f.discuss.prepareNote({ id: 'keep', text: 'Keep this thought', issueId: 'linked-issue' }))
+    .selected;
+  const ownership = { kind: 'investigation', issueId: 'linked-issue' };
+  const report = (await f.discuss.action({ action: 'create' }, { ownership })).selected;
+  assert.deepEqual(new Set(f.discuss.view().conversations.map(({ id }) => id)), new Set([first.id, second.id]));
+  assert.equal(f.discuss.view(note.id).selected.noteContext.id, 'keep');
+  assert.equal(f.discuss.view(report.id, ownership).selected.id, report.id);
   assert.equal(f.calls.length, 0);
   await assert.rejects(
     () => f.discuss.action({ action: 'settings', conversationId: '../escape', settings: {} }),

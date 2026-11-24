@@ -5,6 +5,7 @@ import { readQueue } from './data.mjs';
 import { listIssueStorage, moveIssueStorage } from './issue-storage-actions.mjs';
 import { issueTypes } from './flow-definitions.mjs';
 import { LocalNotes, localNoteActionSchema } from './local-notes.mjs';
+import { inheritedIssueCaptureProfile } from './stores/settings.mjs';
 
 const text = z.string().max(16000);
 const id = z
@@ -116,19 +117,22 @@ export function createProjectDiscussTools(service, options = {}) {
           const result = listIssueStorage(service, location);
           return issueId ? { issues: result.issues.filter((issue) => issue.id === issueId) } : result;
         }
-        const issues = readQueue(service.root, issueId ? { issueId } : {}).issues;
+        const { issues, issueFolders } = readQueue(service.root, issueId ? { issueId } : {});
         return {
+          folders: issueFolders.map(({ id, name }) => ({ id, name })),
           issues: issues.map((issue) => {
             const record = {
               id: issue.id,
               title: issue.title,
               issueNumber: issue.issueNumber,
               state: issue.state,
+              folderId: issue.folderId,
               url: '/?issue=' + encodeURIComponent(issue.id),
             };
             if (issueId) {
               const flow = flows().read(issue);
               record.revision = flow.revision;
+              record.folder = flow.folder;
               const request = flow.blocks.find((block) => block.kind === 'request');
               record.originalPrompt = request?.data.wording || '';
               record.issueType = request?.data.fields?.type || flow.routeType;
@@ -146,18 +150,45 @@ export function createProjectDiscussTools(service, options = {}) {
     },
     issue_create: {
       description:
-        'Create an idle issue from a user-requested description. Creation does not start work. Use a stable requestId when retrying this same creation.',
+        'Create an idle issue from a user-requested description. Use the named folder when specified. Storage defaults to the destination folder’s inherited profile. Pass a profile ID only for a requested override. Creation does not start work. Reuse the same UUID requestId when retrying.',
       schema: z
         .object({
           description: text.min(1),
           requestId: id.optional(),
           folder: text.optional(),
+          storageProfile: z.string().min(1).max(100).optional(),
           type: text.optional(),
           needsApproval: z.boolean().optional(),
         })
         .strict(),
       path: '/api/flow-action',
-      run: async (input) => receipt(await flows().capture(capturedIssue(input, options)), 'created'),
+      run: async (input) => {
+        const storageProfile = input.storageProfile ?? inheritedIssueCaptureProfile(service);
+        const capture = capturedIssue(input, options);
+        if (storageProfile !== undefined) capture.storageProfile = storageProfile;
+        return receipt(await flows().capture(capture), 'created');
+      },
+    },
+    issue_move_folder: {
+      description:
+        'Move an open, idle issue to a named issue folder when requested. Read issues_list for the current folders and query the issue for its revision. Moving folders keeps the issue’s saved storage destinations and starts no work.',
+      schema: z.object({ issueId: id, revision: z.number().int().nonnegative(), folder: text.min(1) }).strict(),
+      path: '/api/flow-action',
+      run: async (input) => receipt(await flows().action({ ...input, action: 'folder' }), 'folder'),
+    },
+    issue_group_preview: {
+      description:
+        'Prepare the combined request for a master issue from exact issue IDs in one named folder. Use issues_list to check the selected issues and their types first. If the user also asked to move them, confirm those moves succeeded before preparing the group. Returns the preview ID and wording. Starts no work.',
+      schema: z.object({ folder: text.min(1), issueIds: z.array(id).min(2).max(50) }).strict(),
+      path: '/api/flow-action',
+      run: (input) => flows().action({ ...input, action: 'folder-group-preview' }),
+    },
+    issue_group_create: {
+      description:
+        'Create an idle master issue and attach the sub-issues from a current issue_group_preview when the user requested creation. Use the preview wording, preserving each issue’s scope and requested proof. Use a UUID requestId and reuse it for a retry. The master uses the sub-issues’ shared storage destinations.',
+      schema: z.object({ previewId: id, wording: z.string().min(1).max(24000), requestId: id }).strict(),
+      path: '/api/flow-action',
+      run: async (input) => receipt(await flows().action({ ...input, action: 'folder-group-create' }), 'created'),
     },
     issue_edit: {
       description:
