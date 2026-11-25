@@ -2058,6 +2058,15 @@ try {
       (value) => Math.abs(value.scrollTop - value.expectedCenter) < 2,
       'The running block was not centered within its content bounds on reload.'
     );
+    const header = page.locator('.factory-header');
+    const { viewportHeight } = await selectedGeometry();
+    await header.evaluate((element) => (element.style.paddingBottom = '20px'));
+    await poll(
+      selectedGeometry,
+      (value) => value.viewportHeight < viewportHeight && Math.abs(value.scrollTop - value.expectedCenter) < 2,
+      'The running block lost its centering when the header changed height.'
+    );
+    await header.evaluate((element) => element.style.removeProperty('padding-bottom'));
     assert.equal(await page.locator('#target-update-menu').isDisabled(), true);
     assert.equal(await page.locator('#worktree-menu option[value="update"]').isDisabled(), true);
     await screenshot('work-running-desktop');

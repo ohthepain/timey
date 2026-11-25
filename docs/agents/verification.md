@@ -332,6 +332,8 @@ Run `--ci-part=1 --project-navigation --sidebar-labels` together to check sideba
 label styling and verify that visiting Discuss leaves no browser console errors.
 `--ci-part=2 --capture-folder-issue --closed-destination` checks that closed
 flows open and refresh with Destination aligned to the bottom at both tested heights.
+`--ci-part=2 --capture-folder-issue --save-request-route --stop-work` checks that
+the running block stays centered when the workspace header changes height after reload.
 
 `node scripts/factory-project-account-browser.mjs` starts a disposable Timey
 instance and Factory server. It opens every project tab at 390px while Login is

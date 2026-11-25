@@ -1,10 +1,21 @@
 {
   "version": 1,
-  "sourceRun": "https://github.com/ohthepain/timey/actions/runs/45661818000/job/139379109580",
+  "sourceRun": "https://github.com/ohthepain/timey/actions/runs/45665598819/job/139391277360",
   "tests": [
     {
       "name": "typecheck (tsc --noEmit)",
       "command": ["pnpm", "run", "typecheck"]
+    },
+    {
+      "name": "Inspector Run guards drafts and switches to Stop during a run",
+      "command": [
+        "node",
+        "scripts/flow-browser.mjs",
+        "--ci-part=2",
+        "--capture-folder-issue",
+        "--save-request-route",
+        "--stop-work"
+      ]
     },
     {
       "name": "Inspect and edit a tab source without starting work or losing an issue draft",
