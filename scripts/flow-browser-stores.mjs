@@ -35,13 +35,27 @@ async function checkProjectStoreSettings(page, poll) {
     .waitFor();
   await settings.locator('[name="role:coordination"]').selectOption(storeId);
   await settings.locator('[name="role:artifacts"]').selectOption(storeId);
-  await settings.getByRole('button', { name: 'Save', exact: true }).click();
-  await poll(
-    async () => {
-      const response = await page.request.get('/api/issue-stores');
-      return response.json();
-    },
-    (value) => value.coordination === storeId && value.artifacts === storeId,
+  const confirmations = ['coordination', 'artifacts'].map(async (role) => {
+    const response = await page.waitForResponse(
+      (candidate) => {
+        const request = candidate.request();
+        if (!candidate.url().endsWith('/api/issue-store-action') || request.method() !== 'POST') return false;
+        const input = request.postDataJSON();
+        return input.action === 'move-role' && input.role === role && input.storeId === storeId;
+      },
+      { timeout: 60_000 }
+    );
+    const result = await response.json();
+    assert.equal(response.status(), 200, JSON.stringify(result));
+    assert.equal(result.status, 'confirmed', `The ${role} store move was not confirmed.`);
+  });
+  await Promise.all([...confirmations, settings.getByRole('button', { name: 'Save', exact: true }).click()]);
+  const response = await page.request.get('/api/issue-stores');
+  assert.equal(response.status(), 200, await response.text());
+  const { coordination, artifacts } = await response.json();
+  assert.deepEqual(
+    { coordination, artifacts },
+    { coordination: storeId, artifacts: storeId },
     'Project roles were not moved to their selected store.'
   );
 }
