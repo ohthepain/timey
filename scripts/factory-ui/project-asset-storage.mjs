@@ -74,14 +74,23 @@ function collectReferences(assets, projectId, snapshots) {
   }
 }
 
+async function scanReferences(store) {
+  let incomplete = false;
+  const snapshot = await store.retainedPayloads({
+    excludeArtifactInventory: true,
+    onUnreadable: () => {
+      incomplete = true;
+    },
+  });
+  return { snapshot, incomplete };
+}
+
 async function readReferenceSources(project) {
   const stores = new Set([project.records, ...project.recordStores.values(), ...project.issueStores.values()]);
-  const results = await Promise.allSettled(
-    [...stores].map((store) => store.retainedPayloads({ excludeArtifactInventory: true }))
-  );
+  const results = await Promise.allSettled([...stores].map(scanReferences));
   return {
-    snapshots: results.flatMap((result) => (result.status === 'fulfilled' ? [result.value] : [])),
-    unavailable: results.filter((result) => result.status === 'rejected').length,
+    snapshots: results.flatMap((result) => (result.status === 'fulfilled' ? [result.value.snapshot] : [])),
+    unavailable: results.filter((result) => result.status === 'rejected' || result.value.incomplete).length,
   };
 }
 

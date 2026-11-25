@@ -6,6 +6,7 @@ import { execFileSync } from 'node:child_process';
 import { randomUUID, createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
+import pg from 'pg';
 import {
   DynamoDBClient,
   CreateTableCommand,
@@ -14,6 +15,7 @@ import {
   waitUntilTableNotExists,
 } from '@aws-sdk/client-dynamodb';
 import { openRecordStore, openIssueStore } from './factory-ui/stores/providers.mjs';
+import { openArtifactStore } from './factory-ui/stores/artifacts.mjs';
 import { createFactoryPool, ensureFactoryDatabase } from './factory-ui/stores/postgres-connection.mjs';
 import { cleanEnvironment } from './factory-ui/common.mjs';
 
@@ -560,6 +562,33 @@ for (const kind of providers)
     await assert.rejects(issues.commit(issueRequest), fails('STORE_DELETED'));
     await f.checkSource();
   });
+
+test('read-only Postgres providers query existing storage without initializing tables', async (t) => {
+  const statements = [];
+  const query = async (statement) => {
+    statements.push(statement);
+    return { rows: [] };
+  };
+  t.mock.method(pg.Pool.prototype, 'query', query);
+  t.mock.method(pg.Pool.prototype, 'connect', async () => ({ query, release() {} }));
+  const config = {
+    kind: 'postgres',
+    id: 'readonly',
+    connectionString: 'postgresql://fixture@localhost/factory_readonly_fixture',
+  };
+  const options = { root: process.cwd(), projectId: 'readonly-fixture', readOnly: true };
+  const records = await openRecordStore(config, options);
+  const artifacts = await openArtifactStore(config, options);
+  t.after(() => Promise.all([records.close(), artifacts.close()]));
+
+  assert.deepEqual(await records.retainedPayloads(), { records: [], receipts: [] });
+  assert.deepEqual(await artifacts.list(), []);
+  assert.equal(statements.length, 5);
+  assert.deepEqual(
+    statements.map((statement) => statement.trim().split(/\s+/)[0]),
+    ['BEGIN', 'SELECT', 'SELECT', 'COMMIT', 'SELECT']
+  );
+});
 
 test('Postgres rejects the installed application database without a connection or exposed credentials', async () => {
   const previous = process.env.DATABASE_URL;

@@ -41,7 +41,12 @@ function lazyProvider(runtime, kind, config) {
   let pending;
   const open = () => {
     pending ||= (async () => {
-      const options = { root: runtime.service.root, projectId: runtime.config.projectId, artifacts: runtime.artifacts };
+      const options = {
+        root: runtime.service.root,
+        projectId: runtime.config.projectId,
+        artifacts: runtime.artifacts,
+        readOnly: runtime.readOnly,
+      };
       const create = { issue: openIssueStore, records: openRecordStore, artifact: openArtifactStore }[kind];
       const provider = await create(config, options);
       runtime.opened.add(provider);
@@ -114,7 +119,7 @@ function buildProject(runtime, config, runnerId) {
 
 export async function inspectProjectStores(root, config, inspect) {
   const service = { root };
-  const runtime = { service, providers: new Map(), opened: new Set() };
+  const runtime = { service, providers: new Map(), opened: new Set(), readOnly: true };
   buildProject(runtime, config, randomUUID());
   try {
     return await inspect(runtime.project);

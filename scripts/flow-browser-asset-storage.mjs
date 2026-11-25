@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { rmSync, writeFileSync } from 'node:fs';
+import { existsSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { S3Client } from '@aws-sdk/client-s3';
 import { git } from './factory-ui/common.mjs';
 import { projectAssetStorage } from './factory-ui/project-asset-storage.mjs';
+import { openFilesRecords } from './factory-ui/stores/providers/files.mjs';
 import { ensureProjectStores } from './factory-ui/stores/runtime.mjs';
 
 const projectId = 'asset-storage-fixture';
@@ -57,6 +58,7 @@ function mockS3({ objects, copy }) {
       return listObjects(contents, Prefix, ContinuationToken);
     },
     GetObjectCommand(contents, { Key }) {
+      if (!contents.has(Key)) throw Object.assign(Error('Missing fixture object'), { name: 'NoSuchKey' });
       return { Body: { transformToByteArray: async () => contents.get(Key).body } };
     },
     PutObjectCommand(contents, { Key, Body, ContentType }) {
@@ -80,12 +82,40 @@ function mockS3({ objects, copy }) {
   };
 }
 
+async function seedPartialRecordSource(project, config, ref) {
+  const raw = await openFilesRecords(config, { root: project, projectId });
+  const missingHash = '0'.repeat(64);
+  const missing = { ...ref, sha256: missingHash, key: projectId + '/sha256/' + missingHash };
+  const entries = [
+    [
+      'private-chat/restricted-id',
+      { encoding: 'json', value: { title: 'Confidential chat title', author: 'Confidential author', ref } },
+    ],
+    ['private-chat/missing-payload', { encoding: 'artifact', ref: missing }],
+  ];
+  const records = entries.map(([key, value]) => ({ key, revision: key, value }));
+  await raw.commit({
+    operationId: 'partial-reference-source',
+    expected: entries.map(([key]) => ({ key, revision: null })),
+    writes: [{ key: records[1].key, record: records[1] }],
+    receipt: { result: { encoding: 'json', value: { records } } },
+  });
+}
+
 async function setup({ project, service, output }, key) {
   const remote = join(output, 'asset-storage.git');
   git(project, 'init', '--bare', remote);
   git(project, 'remote', 'add', 'asset-storage', remote);
+  const partial = {
+    id: 'partial',
+    label: 'Partial source',
+    kind: 'files',
+    roles: ['coordination'],
+    directory: '.issues/asset-reference-fixture',
+  };
   const stores = [
     { id: 'metadata', label: 'Metadata', kind: 'git', remote: 'asset-storage', branch: 'records' },
+    partial,
     ...[
       ['primary', 'Primary S3'],
       ['secondary', 'Secondary S3'],
@@ -108,6 +138,11 @@ async function setup({ project, service, output }, key) {
   );
   const coldInventory = await projectAssetStorage({ root: project });
   assert.equal(coldInventory.assets.length, 26);
+  assert.equal(
+    existsSync(join(project, partial.directory)),
+    false,
+    'Browsing must leave unused local stores uninitialized'
+  );
   assert.equal(git(project, 'ls-remote', '--heads', 'asset-storage'), '', 'Browsing must leave metadata untouched');
   const storesRuntime = await ensureProjectStores(service, { fresh: true });
   await storesRuntime.importIssue({
@@ -122,13 +157,8 @@ async function setup({ project, service, output }, key) {
   const { records } = storesRuntime;
   const sha256 = key.slice(prefix.length);
   const ref = { storeId: 'primary', key: projectId + '/sha256/' + sha256, sha256, bytes: 10, mediaType: 'image/png' };
-  const writes = [
-    { key: 'evidence/' + archived, value: { files: [{ ref }, { ref }] } },
-    {
-      key: 'private-chat/restricted-id',
-      value: { title: 'Confidential chat title', author: 'Confidential author', ref },
-    },
-  ];
+  const writes = [{ key: 'evidence/' + archived, value: { files: [{ ref }, { ref }] } }];
+  await seedPartialRecordSource(project, partial, ref);
   const saved = await records.commit({
     operationId: 'inventory-fixture',
     expected: writes.map(({ key }) => ({ key, revision: null })),
@@ -146,6 +176,7 @@ async function setup({ project, service, output }, key) {
 async function checkControls(dialog, hash) {
   await dialog.getByText('26 assets · 585 bytes | 0 selected · 0 bytes').waitFor();
   await dialog.getByText('Stores unavailable: Unavailable S3.').waitFor();
+  await dialog.getByText('Some retained records could not be read. Counts may be incomplete.').waitFor();
   await dialog.getByRole('checkbox', { name: 'Select all' }).check();
   await dialog.getByRole('button', { name: 'Next' }).click();
   await dialog.getByRole('checkbox', { name: 'Select all' }).check();
@@ -185,11 +216,12 @@ export async function assetStorageBrowserChecks(context) {
       assert.equal(response.status(), 200, await response.text());
       const result = await response.json();
       assert.equal(JSON.stringify(result).includes('Confidential'), false);
+      assert.equal(result.unavailableReferenceSources > 0, true);
       return result.assets.find(({ name }) => name === seeded.sha256);
     };
     const before = await read();
     assert.equal(
-      mock.calls.every((name) => /^(ListObjectsV2|HeadObject)Command$/.test(name)),
+      mock.calls.every((name) => /^(ListObjectsV2|HeadObject|GetObject)Command$/.test(name)),
       true
     );
     const move = await context.service.projectStores.moveIssue({
@@ -215,6 +247,8 @@ export async function assetStorageBrowserChecks(context) {
             before,
             after,
             coldLoadMetadataWrites: 0,
+            coldLoadCreatedLocalStore: false,
+            readableReferencesRetainedWithMissingPayload: true,
             listedAssets: 26,
             filteredBytes: 585,
             selectedBytes: 585,

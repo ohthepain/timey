@@ -1,10 +1,11 @@
 import { createFactoryPool } from '../postgres-connection.mjs';
 import { checkExpected, verifyReceipt, retireReceipt } from './records.mjs';
 
-export async function openPostgresRecords(config, { root, projectId }) {
+export async function openPostgresRecords(config, { root, projectId, readOnly }) {
   const pool = createFactoryPool(config, { root });
   try {
-    await pool.query(`CREATE SCHEMA IF NOT EXISTS factory;
+    if (!readOnly)
+      await pool.query(`CREATE SCHEMA IF NOT EXISTS factory;
       CREATE TABLE IF NOT EXISTS factory.store_records (
         project_id text NOT NULL, store_id text NOT NULL, key text NOT NULL,
         revision text NOT NULL, value jsonb NOT NULL, PRIMARY KEY(project_id, store_id, key));

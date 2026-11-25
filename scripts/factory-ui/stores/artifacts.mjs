@@ -370,15 +370,22 @@ class GitArtifacts extends ArtifactStore {
   }
 }
 
+async function openPostgresArtifacts(config, options) {
+  const { createFactoryPool } = await import('./postgres-connection.mjs');
+  const store = new PostgresArtifacts(config, options, createFactoryPool(config, options));
+  try {
+    if (!options.readOnly) await store.initialize();
+    return store;
+  } catch (error) {
+    await store.close();
+    throw error;
+  }
+}
+
 export async function openArtifactStore(config, options) {
   if (config.kind === 'files') return new FileArtifacts(config, options);
   if (config.kind === 's3') return new S3Artifacts(config, options);
-  if (config.kind === 'postgres') {
-    const { createFactoryPool } = await import('./postgres-connection.mjs');
-    const store = new PostgresArtifacts(config, options, await createFactoryPool(config, options));
-    await store.initialize();
-    return store;
-  }
+  if (config.kind === 'postgres') return openPostgresArtifacts(config, options);
   if (config.kind === 'git') {
     const { openRecordStore } = await import('./providers.mjs');
     return new GitArtifacts(config, options, await openRecordStore(config, { ...options, inlinePayloads: true }));

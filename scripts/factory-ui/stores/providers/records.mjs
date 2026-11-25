@@ -179,11 +179,14 @@ async function decodedWithRefs(record, decode) {
   return { ...decoded, refs: references([record.value, decoded.value]) };
 }
 
-async function retainedReceipt(entry, decode, unpackPayload) {
+async function retainedReceipt(entry, decode, unpackPayload, onUnreadable) {
   const { receipt } = entry;
   const result = receipt.deleted ? { records: [] } : await unpackPayload(receipt.result);
   assertStore(Array.isArray(result.records), 'The retained operation result is invalid.');
-  const records = await Promise.all(result.records.map((record) => decodedWithRefs(record, decode)));
+  const decoded = await Promise.all(
+    result.records.map((record) => retainedEntry(() => decodedWithRefs(record, decode), onUnreadable))
+  );
+  const records = decoded.filter(Boolean);
   return {
     id: entry.id,
     inputDigest: receipt.inputDigest,
@@ -194,16 +197,30 @@ async function retainedReceipt(entry, decode, unpackPayload) {
   };
 }
 
-async function retainedPayloads(backend, decode, unpackPayload, { excludeArtifactInventory, storeId }) {
+async function retainedEntry(read, onUnreadable) {
+  try {
+    return await read();
+  } catch (error) {
+    if (!onUnreadable) throw error;
+    onUnreadable();
+    return null;
+  }
+}
+
+async function retainedPayloads(backend, decode, unpackPayload, { excludeArtifactInventory, storeId, onUnreadable }) {
   const raw = await backend.retainedPayloads();
   const records = [];
   const receipts = [];
   for (const record of raw.records) {
-    const decoded = await decodedWithRefs(record, decode);
-    if (!excludeArtifactInventory || !inventoryRecord(decoded, storeId)) records.push(decoded);
+    const decoded = await retainedEntry(() => decodedWithRefs(record, decode), onUnreadable);
+    if (decoded && (!excludeArtifactInventory || !inventoryRecord(decoded, storeId))) records.push(decoded);
   }
   for (const entry of raw.receipts) {
-    const receipt = await retainedReceipt(entry, decode, unpackPayload);
+    const receipt = await retainedEntry(
+      () => retainedReceipt(entry, decode, unpackPayload, onUnreadable),
+      onUnreadable
+    );
+    if (!receipt) continue;
     if (
       excludeArtifactInventory &&
       receipt.records.length &&
@@ -320,10 +337,11 @@ export function recordStore(backend, artifacts, { allowInlineLarge = false, stor
         writes: expected.map(({ key }) => ({ key, value: null })),
       });
     },
-    async retainedPayloads({ excludeArtifactInventory = false } = {}) {
+    async retainedPayloads({ excludeArtifactInventory = false, onUnreadable } = {}) {
       return retainedPayloads(backend, decode, unpackPayload, {
         excludeArtifactInventory,
         storeId,
+        onUnreadable,
       });
     },
     async artifactReceipts(ref) {
