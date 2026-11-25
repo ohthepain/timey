@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { assertStoreState, inputDigest, sealCoordination, storeFailure } from './coordination.mjs';
 import { planRetirement, redactDeletedMove } from './deletion-retention.mjs';
 import { planDeletedFiles, removeDeletedFiles } from './deletion-files.mjs';
+import { retainedContentReferences } from '../project-asset-retained-content.mjs';
 
 const chunks = (values) =>
   Array.from({ length: Math.ceil(values.length / 90) }, (_, i) => values.slice(i * 90, i * 90 + 90));
@@ -48,6 +49,13 @@ async function inventories(stores) {
       snapshot: await store.retainedPayloads({ excludeArtifactInventory: true }),
     }))
   );
+}
+
+function cleanupReferences(scopes, projectId) {
+  const surviving = new Set(scopes.flatMap((scope) => scope.survivingRefs.map((ref) => ref.sha256)));
+  return scopes
+    .flatMap((scope) => scope.refs)
+    .filter((ref) => ref.key === projectId + '/sha256/' + ref.sha256 && !surviving.has(ref.sha256));
 }
 
 function candidates(refs) {
@@ -114,7 +122,7 @@ async function prepare(project, operation, seal) {
       receipts,
       replacements: replacements.map(({ key, revision }) => ({ key, revision })),
     })),
-    candidates: candidates(scopes.flatMap((scope) => scope.refs)),
+    candidates: candidates(cleanupReferences(scopes, project.projectId)),
     localFiles: planDeletedFiles(project.root, ownedValues, retainedValues, { issueId }),
     removed: 0,
     retained: 0,
@@ -178,34 +186,76 @@ async function eraseRecords(project, operation, stores) {
   }
 }
 
-async function eraseArtifacts(project, operation, stores, seal) {
-  const snapshots = await inventories(stores);
-  const retained = new Set(
-    snapshots
-      .flatMap(({ snapshot }) =>
-        [
-          ...snapshot.records.filter((record) => !record.key.startsWith('artifact-locations/')),
-          ...snapshot.receipts.filter(
-            (receipt) =>
-              !receipt.records.length ||
-              !receipt.records.every((record) => record.key.startsWith('artifact-locations/'))
-          ),
-        ].flatMap((record) => record.refs)
-      )
-      .map(identity)
-  );
+function retainedArtifactRefs({ snapshot }) {
+  return [
+    ...snapshot.records.filter((record) => !record.key.startsWith('artifact-locations/')),
+    ...snapshot.receipts.filter(
+      (receipt) =>
+        !receipt.records.length || !receipt.records.every((record) => record.key.startsWith('artifact-locations/'))
+    ),
+  ].flatMap((record) => record.refs);
+}
+
+async function retainedArtifacts(project, stores) {
+  const supplemental = new Map([...project.issueStores, ...project.recordStores]);
+  for (const id of stores.keys()) supplemental.delete(id);
+  const [authoritative, additional, content] = await Promise.all([
+    inventories(stores),
+    inventories(supplemental).catch(() => null),
+    retainedContentReferences(project.root),
+  ]);
+  return {
+    hashes: new Set(
+      [
+        ...authoritative.flatMap(retainedArtifactRefs),
+        ...(additional ?? []).flatMap(retainedArtifactRefs),
+        ...content.refs,
+      ].map((ref) => ref.sha256)
+    ),
+    incomplete: !additional || content.unavailable,
+  };
+}
+
+function artifactHomes(project) {
   const physical = new Map(project.artifactStores);
   for (const [id, store] of project.artifacts.stores || []) physical.set(id, store);
   const active = project.artifacts.physical || project.artifacts;
   physical.set(active.id, active);
+  return physical;
+}
+
+async function beginArtifactCleanup(project, operation, retained, seal) {
+  const { cleanup } = operation.value;
+  if (cleanup.phase === 'pending') {
+    assertStoreState(
+      !retained.incomplete,
+      'STORE_RETENTION_UNKNOWN',
+      'Restore access to the retained reference sources before resuming artifact cleanup.'
+    );
+    return;
+  }
+  if (!retained.incomplete && cleanup.candidates.some(([sha256]) => !retained.hashes.has(sha256)))
+    await project.coordination.updateOperation(
+      operation,
+      { cleanup: { ...cleanup, phase: 'pending' } },
+      'artifact-cleanup-started',
+      seal.token
+    );
+}
+
+async function eraseArtifacts(project, operation, stores, seal) {
+  const { candidates } = operation.value.cleanup;
+  const retained = await retainedArtifacts(project, stores);
+  await beginArtifactCleanup(project, operation, retained, seal);
+  const physical = artifactHomes(project);
   const migratedHomes = (await project.coordination.list('operations/'))
     .filter((entry) => entry.value.kind === 'move-project-store' && entry.value.input.role === 'artifacts')
     .flatMap((entry) => [entry.value.sourceStoreId, entry.value.input.storeId])
     .filter(Boolean);
   let removed = 0;
   let kept = 0;
-  for (const [sha256, bytes, mediaType, locations] of operation.value.cleanup.candidates) {
-    if (retained.has(sha256 + ':' + bytes)) {
+  for (const [sha256, bytes, mediaType, locations] of candidates) {
+    if (retained.incomplete || retained.hashes.has(sha256)) {
       kept++;
       continue;
     }

@@ -6,6 +6,7 @@ import { execFileSync } from 'node:child_process';
 import { randomUUID, createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
+import pg from 'pg';
 import {
   DynamoDBClient,
   CreateTableCommand,
@@ -14,6 +15,7 @@ import {
   waitUntilTableNotExists,
 } from '@aws-sdk/client-dynamodb';
 import { openRecordStore, openIssueStore } from './factory-ui/stores/providers.mjs';
+import { openArtifactStore } from './factory-ui/stores/artifacts.mjs';
 import { createFactoryPool, ensureFactoryDatabase } from './factory-ui/stores/postgres-connection.mjs';
 import { cleanEnvironment } from './factory-ui/common.mjs';
 
@@ -561,6 +563,73 @@ for (const kind of providers)
     await f.checkSource();
   });
 
+test('read-only Postgres providers query existing storage without initializing tables', async (t) => {
+  const statements = [];
+  const query = async (statement) => {
+    statements.push(statement);
+    return { rows: [] };
+  };
+  t.mock.method(pg.Pool.prototype, 'query', query);
+  t.mock.method(pg.Pool.prototype, 'connect', async () => ({ query, release() {} }));
+  const config = {
+    kind: 'postgres',
+    id: 'readonly',
+    connectionString: 'postgresql://fixture@localhost/factory_readonly_fixture',
+  };
+  const options = { root: process.cwd(), projectId: 'readonly-fixture', readOnly: true };
+  const records = await openRecordStore(config, options);
+  const artifacts = await openArtifactStore(config, options);
+  t.after(() => Promise.all([records.close(), artifacts.close()]));
+
+  assert.deepEqual(await records.retainedPayloads(), { records: [], receipts: [] });
+  assert.deepEqual(await artifacts.list(), []);
+  assert.equal(statements.length, 5);
+  assert.deepEqual(
+    statements.map((statement) => statement.trim().split(/\s+/)[0]),
+    ['BEGIN', 'SELECT', 'SELECT', 'COMMIT', 'SELECT']
+  );
+});
+
+test('read-only Postgres reference scans visit all pages within one snapshot', async (t) => {
+  const ref = { storeId: 's3', key: 'test/sha256/' + 'a'.repeat(64), sha256: 'a'.repeat(64), bytes: 42 };
+  const record = (key) => ({ id: key, key, revision: 'v1', value: { encoding: 'json', value: { ref } } });
+  const pages = new Map([
+    ['store_records:', [record('evidence/first')]],
+    ['store_records:evidence/first', [record('evidence/second')]],
+    ['store_records:evidence/second', []],
+    [
+      'store_operations:',
+      [{ id: 'one', receipt: { result: { encoding: 'json', value: { records: [record('evidence/old')] } } } }],
+    ],
+    ['store_operations:one', []],
+  ]);
+  const transactions = [];
+  const query = async (statement, args) => {
+    const table = /FROM factory\.(store_records|store_operations)/.exec(statement)?.[1];
+    if (!table) {
+      transactions.push(statement);
+      return { rows: [] };
+    }
+    return { rows: pages.get(table + ':' + args[2]) };
+  };
+  t.mock.method(pg.Pool.prototype, 'connect', async () => ({ query, release() {} }));
+  const store = await openRecordStore(
+    { kind: 'postgres', id: 'readonly', connectionString: 'postgresql://fixture@localhost/factory_readonly_fixture' },
+    { root: process.cwd(), projectId: 'readonly-fixture', readOnly: true }
+  );
+  t.after(() => store.close());
+  const { records, receipts } = await store.retainedPayloads({ referencesOnly: true });
+  assert.deepEqual(
+    records.map(({ key, refs }) => [key, refs]),
+    [
+      ['evidence/first', [ref]],
+      ['evidence/second', [ref]],
+    ]
+  );
+  assert.deepEqual(receipts[0].records[0].refs, [ref]);
+  assert.deepEqual(transactions, ['BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY', 'COMMIT']);
+});
+
 test('Postgres rejects the installed application database without a connection or exposed credentials', async () => {
   const previous = process.env.DATABASE_URL;
   process.env.DATABASE_URL = 'postgresql://app:secret@localhost/timey_app?options=-csearch_path%3Dapp';
@@ -706,6 +775,11 @@ for (const kind of providers) {
     assert.equal(roots.receipts.length, 1);
     assert.equal(roots.receipts[0].records[0].key, unrelated);
     assert.ok(roots.receipts[0].refs.some((item) => item.sha256 === ref.sha256));
+    const inventory = await store.retainedPayloads({ excludeArtifactInventory: true, referencesOnly: true });
+    const reference = { key: unrelated, revision: roots.records[0].revision, value: { kind: undefined }, refs: [ref] };
+    assert.deepEqual(inventory.records, [reference]);
+    assert.deepEqual(inventory.receipts[0].records, [reference]);
+    assert.equal(inventory.receipts.length, 1);
     await f.checkSource();
   });
 }

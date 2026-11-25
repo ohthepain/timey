@@ -2,8 +2,43 @@
 
 Timey issue #217 tracks this work. The user confirmed the initial design on
 2026-11-24 and approved the remaining design decisions on 2026-11-25.
-Starting Work authorizes implementation within this design. Review the
-read-only inventory before enabling deletion for existing project data.
+Paul approved implementation of issue #217. Starting Work authorizes
+implementation within this design.
+
+## Read-only release
+
+Open **Settings > Asset Storage** to review assets in configured S3 Artifact
+stores. The inventory reads objects under the project's exact content-addressed
+namespace and groups identical content across configured stores under one ID.
+Opening the inventory reads configured stores without initializing storage,
+starting legacy import, or publishing storage metadata.
+The displayed object date is S3's last-modified date for the oldest listed
+copy. The inventory identifies legacy objects by digest because their object
+keys do not record a display name.
+
+Reference counts cover structured artifact references in shared records and
+retained record revisions, including archived issue evidence. The inventory also
+counts matching local copies retained by published investigation reports and
+Discuss, including older messages and closed conversations. It matches the
+retained bytes to listed S3 assets by digest and size. References from
+unclassified source records are shown as **Restricted reference**. Counts
+remain unverified while coverage of legacy links, external publication,
+dependent files, and personal saves is incomplete. Matching bytes can
+identify a retained local copy, but provide no shared reference record across
+runners. The inventory reads only the local publications and conversations
+available to the current runner. If a retained record or
+receipt cannot be read, Settings reports incomplete counts. It still counts
+structured references in the readable records and the known payload references
+of unreadable records and receipts. Keep every existing asset
+during the review, including assets with a zero recorded count.
+The inventory scans Git and Postgres metadata in batches and retains only the
+information needed to count and describe references.
+Each scan reads the recorded artifact locations once when the coordination
+store is available.
+
+The inventory supports filtering, sorting, page selection, and filtered and
+selected byte totals. A provider failure is visible alongside results from
+available stores.
 
 ## Confirmed behavior
 
@@ -18,22 +53,25 @@ references that make up its reference count.
 Each asset has a permanent identity independent of its location and public URL.
 Existing references continue to identify the same asset after a move.
 
-## First release and deletion approval
-
-Issue #217 covers the full Asset Storage feature, including personal saves and
-both kinds of deletion. Acceptance testing must let the user observe real
-stored assets being deleted in a regular project with configured S3 storage.
-Use newly uploaded disposable assets for the test. Remove the last verified
-reference to one asset to exercise automatic deletion. In Settings, force-delete
-another asset that a report still references. Verify removal from S3 in both
-cases and confirm that the report remains readable and displays **Asset deleted**.
+## Read-only inventory and checked issue deletion
 
 Release the Settings inventory and reference counts as a read-only first
-release for existing project data. Before enabling automatic or forced deletion
-for that data, review the inventory and reference counts. Include archived
-issues, older chat messages, published links, and moved assets in that review.
-Enabling deletion for existing project data requires explicit approval after
-the review.
+release for existing project data. Before enabling general asset deletion
+for that data, review the inventory and reference counts in the real project.
+Include archived issues, older chat messages, published links, and moved assets
+in that review.
+Enabling general asset deletion for existing project data requires explicit
+approval after the review. Standalone force deletion and its permission
+design are deferred to separate work.
+
+The existing permanent issue-delete control authorizes cleanup when the issue
+deletion removes an asset's last verified reference. Cleanup runs under the
+existing project seal and retries through the recorded deletion operation.
+It preserves assets referenced in surviving shared records, retained
+publications, and Discuss attachments visible to the deleting runner. If
+reference evidence cannot be read, keep the assets for review. Assets with no
+recorded reference to the deleted issue do not enter cleanup. Use only
+disposable fixture assets to verify this behavior.
 
 ## Existing assets and retained history
 
@@ -53,8 +91,10 @@ revision or chat message counts until that record is permanently removed.
 ## Published links and dependent files
 
 Publishing through Timey adds a reference that lasts until unpublishing.
-Copying a URL leaves the reference count unchanged. A copied URL works only
-while another reference keeps the asset alive.
+In a published investigation report, **Copy link** copies the URL for a
+verified retained evidence file. Copying a URL leaves the reference count
+unchanged. A copied URL works only while another reference keeps the asset
+alive.
 
 In the first release, register each dependent file against the content that
 uses it. Treat a bundle that must move and delete together as one asset. Defer
