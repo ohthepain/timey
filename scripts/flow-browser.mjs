@@ -199,6 +199,11 @@ const {
   '--save-request-route': saveRequestRouteCheck,
   '--add-parallel-block': addParallelBlockCheck,
   '--reorder-saved-blocks': reorderSavedBlocksCheck,
+  '--assign-folder': assignFolderCheck,
+  '--save-block-comment': saveBlockCommentCheck,
+  '--stop-work': stopWorkCheck,
+  '--retry-work': retryWorkCheck,
+  '--reload-flow-history': reloadFlowHistoryCheck,
   '--timers': timersCheck,
   '--proposals': proposalsCheck,
 } = flowBrowserScenarioNames;
@@ -398,20 +403,24 @@ async function poll(read, predicate, message) {
   }
   assert.fail(message + '\n' + JSON.stringify(value));
 }
-async function clickAction(locator) {
-  const responsePromise = page.waitForResponse(
-    (response) =>
-      response.url().endsWith('/api/flow-action') &&
-      response.request().method() === 'POST' &&
-      response.request().postDataJSON().action !== 'open-block',
-    { timeout: 60000 }
-  );
-  await locator.click();
-  const response = await responsePromise;
+async function observeAction(interact) {
+  const [response] = await Promise.all([
+    page.waitForResponse(
+      (response) =>
+        response.url().endsWith('/api/flow-action') &&
+        response.request().method() === 'POST' &&
+        response.request().postDataJSON().action !== 'open-block',
+      { timeout: 60000 }
+    ),
+    interact(),
+  ]);
   const value = await response.json();
   assert.equal(response.status(), 200, JSON.stringify(value));
   assert.ok(!value.error, JSON.stringify(value));
   return value;
+}
+function clickAction(locator) {
+  return observeAction(() => locator.click());
 }
 async function selectBlock(id) {
   const locator = page.locator('.block-card[data-block="' + id + '"]');
@@ -1728,7 +1737,7 @@ try {
       await removeBrowserIssue(project, id);
     }
   });
-  await check('Folders can be created and assigned without running work', async () => {
+  await check(assignFolderCheck, async () => {
     await page.locator('#new-folder').click();
     await page.locator('#folder-name').fill('Next release');
     await clickAction(page.locator('#folder-form button[type="submit"]'));
@@ -1765,17 +1774,28 @@ try {
     assert.equal(logs.modelCalls.length, 0);
   });
   await check(reorderSavedBlocksCheck, async () => {
-    const before = (await view()).flow.blocks.map((item) => item.id);
-    const requestBlock = (await view()).flow.blocks.find((item) => item.kind === 'request');
+    const { blocks } = (await view()).flow;
+    const before = blocks.map((item) => item.id);
+    const originalIndex = before.indexOf(addedId);
+    const requestBlock = blocks.find((item) => item.kind === 'request');
     assert.equal(await page.locator(`[data-node="${requestBlock.id}"] .block-icon`).textContent(), '💬');
-    await page.locator(`#graph [data-block="${addedId}"]`).press('Alt+ArrowDown');
-    const after = await poll(
-      async () => (await view()).flow.blocks.map((item) => item.id),
-      (order) => order.indexOf(addedId) !== before.indexOf(addedId),
-      'Keyboard reorder did not save.'
-    );
-    assert.equal(after.indexOf(addedId), before.indexOf(addedId) + 1);
+    const card = page.locator(`#graph [data-block="${addedId}"]`);
+    const moved = await observeAction(() => card.press('Alt+ArrowDown'));
+    const after = moved.flow.blocks.map((item) => item.id);
+    assert.equal(after.indexOf(addedId), originalIndex + 1);
     assert.deepEqual(new Set(after), new Set(before));
+    assert.equal(moved.flow.blocks[originalIndex + 1].lane, blocks[originalIndex + 1].lane);
+
+    // Restore the lane fixture for the shared reload check.
+    await service.flows.action({
+      action: 'update',
+      issueId,
+      blockId: addedId,
+      revision: moved.flow.revision,
+      changes: { lane: blocks[originalIndex].lane },
+    });
+    await page.reload();
+    await card.waitFor();
     await screenshot('flow-desktop');
   });
   await check('The graph and every dependency run from top to bottom', async () => {
@@ -1842,7 +1862,7 @@ try {
     assert.ok(clipped.scrollTop - after.scrollTop <= 55, 'The card moved further than necessary.');
     await page.setViewportSize({ width: 1440, height: 960 });
   });
-  await check('Block comments remain attached after reload', async () => {
+  await check(saveBlockCommentCheck, async () => {
     await page.reload();
     await block(addedId);
     const comment = page.locator('#comment-form [name="comment"]');
@@ -1915,7 +1935,7 @@ try {
     await prose.getByRole('heading', { name: 'Work block' }).waitFor();
     await draft.fill(original);
   });
-  await check('Inspector Run guards drafts and switches to Stop during a run', async () => {
+  await check(stopWorkCheck, async () => {
     await block(workId);
     await page.locator('#block-form [name="label"]').fill('Work with saved settings');
     await page.locator('#run-block').click();
@@ -1988,7 +2008,7 @@ try {
     assert.match(attempt.output, /explicit attempt 1/);
     assert.ok(stopped.flow.blocks.filter((item) => item.suggested).every((item) => item.attempts.length === 0));
   });
-  await check('Retry retains both attempts and does not start the next block', async () => {
+  await check(retryWorkCheck, async () => {
     await page.reload();
     await page.locator('#run-block').filter({ hasText: 'Retry' }).waitFor();
     await clickAction(page.locator('#run-block'));
@@ -2031,7 +2051,7 @@ try {
     await screenshot('artifact-desktop');
     await page.locator('[aria-label="Close artifact"]').click();
   });
-  await check('Reload retains flow settings, comments, folder and attempt history', async () => {
+  await check(reloadFlowHistoryCheck, async () => {
     await page.reload();
     await page.locator('[data-block="' + workId + '"][aria-pressed="true"]').waitFor();
     const data = await view();

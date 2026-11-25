@@ -1,16 +1,25 @@
 {
   "version": 1,
-  "sourceRun": "https://github.com/ohthepain/timey/actions/runs/45558489759",
+  "sourceRun": "https://github.com/ohthepain/timey/actions/runs/45559967222",
   "tests": [
     {
-      "name": "Keyboard controls reorder saved blocks",
+      "name": "Storage profiles preserve explicit destinations and perform checked moves without workspace updates",
+      "command": ["node", "scripts/flow-browser.mjs", "--investigation-reports", "--investigation-flows", "--stores"]
+    },
+    {
+      "name": "Reload retains flow settings, comments, folder and attempt history",
       "command": [
         "node",
         "scripts/flow-browser.mjs",
         "--capture-folder-issue",
         "--save-request-route",
+        "--assign-folder",
         "--add-parallel-block",
-        "--reorder-saved-blocks"
+        "--reorder-saved-blocks",
+        "--save-block-comment",
+        "--stop-work",
+        "--retry-work",
+        "--reload-flow-history"
       ]
     }
   ]
