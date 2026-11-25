@@ -113,9 +113,20 @@ async function runRecordedRepair(service, ctx, workspace, error, { before, tree,
   const outcome = { status: 'failed' };
   try {
     await attemptRepair(error, async () => {
-      const failure = retainMergeRepairEvidence(service.root, workspace.checkout, ctx.attempt.id, error, state.repairs);
-      outcome.failureEvidence = failure.evidence;
-      const repair = await options.repair(error, state.repairs, { ...failure, ...record });
+      const failure = retainMergeRepairEvidence(
+        service.root,
+        workspace.checkout,
+        ctx.attempt.id,
+        error,
+        state.repairs,
+        record.folder
+      );
+      outcome.failureEvidence = failure.copies;
+      const repair = await options.repair(error, state.repairs, {
+        evidence: failure.evidence,
+        failedChecks: failure.failedChecks,
+        ...record,
+      });
       outcome.evidence = repair.evidence;
       state.evidence.push(...(repair.evidence ?? []));
       requireThat(repair.status !== 'blocked', repair.summary);

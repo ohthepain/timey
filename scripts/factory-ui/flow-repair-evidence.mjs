@@ -49,11 +49,12 @@ function retainRepairFile(folder, name, bytes) {
   return { path, sha256: digest(bytes) };
 }
 
-export function retainMergeRepairEvidence(root, checkout, attemptId, error, round) {
+export function retainMergeRepairEvidence(root, checkout, attemptId, error, round, directory) {
   const folder = join(checkout, '.issues/evidence', `merge-repair-${attemptId}-${round}`);
   mkdirSync(folder, { recursive: true });
   const roots = [root, checkout].map((path) => realpathSync(join(path, '.issues')) + sep);
   const retained = new Map();
+  const copies = [];
   function retain(file) {
     if (retained.has(file.path)) return retained.get(file.path);
     const original = realpathSync(file.path);
@@ -62,16 +63,19 @@ export function retainMergeRepairEvidence(root, checkout, attemptId, error, roun
       'Merge repair evidence is outside retained issue records.'
     );
     const text = redactValue(readFileSync(original, 'utf8'));
-    const path = join(folder, `evidence-${retained.size}.txt`);
+    const name = `evidence-${retained.size}.txt`;
+    const path = join(folder, name);
     writeFileSync(path, text, { mode: 0o600 });
-    const result = { ...file, path, originalPath: file.path, sha256: digest(text) };
+    const copy = retainRepairFile(directory, name, text);
+    copies.push({ ...file, ...copy, originalPath: file.path });
+    const result = { ...file, path, originalPath: file.path, sha256: copy.sha256 };
     retained.set(file.path, result);
     return result;
   }
   const { reports, evidence } = verificationRecords(error);
   for (const file of evidence) retain(file);
   const failedChecks = failedCheckRecords(reports, retain);
-  return { evidence: [...retained.values()], failedChecks };
+  return { evidence: [...retained.values()], failedChecks, copies };
 }
 
 function verificationRecords(error) {

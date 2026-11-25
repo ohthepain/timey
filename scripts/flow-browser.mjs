@@ -1416,6 +1416,7 @@ try {
   });
   await check(startingPointCheck, async () => {
     const selector = page.locator('#starting-branch');
+    await selector.waitFor();
     const data = await view();
     const options = await selector
       .locator('option')
@@ -1672,7 +1673,7 @@ try {
   const { wording: original, ...clarified } = edited;
   const savedWording =
     original +
-    '\n' +
+    '\n\n### User details\n\nKeep this exact text.\n' +
     Object.entries({ ...clarified, type: 'bug' })
       .map(([key, value]) => key + ': ' + value)
       .join('\n');
@@ -2311,14 +2312,6 @@ try {
     const flow = service.flows.read(issue);
     git(project, 'remote', 'set-url', '--push', 'origin', 'git@github.com:test/fixture.git');
     const publish = flow.blocks.find((block) => block.kind === 'publish');
-    const request = flow.blocks.find((block) => block.kind === 'request');
-    request.data.wording = 'Original wording with a heading\n\n### User details\n\nKeep this exact text.';
-    request.data.fields = {
-      type: 'feature',
-      goal: 'Preview exactly',
-      requestedProof: 'Browser output',
-    };
-    await service.flows.store.save(flow, flow.revision);
     await page.reload();
     await selectBlock(publish.id);
     assert.equal(await page.locator('#issue-pr-menu').isVisible(), false);
@@ -2328,8 +2321,7 @@ try {
     await description.waitFor();
     assert.equal(
       await description.textContent(),
-      '## Goal\n\nPreview exactly\n\n## Requested proof\n\nBrowser output\n\n## Original wording\n\n' +
-        request.data.wording
+      `## Goal\n\n${clarified.goal}\n\n## Requested proof\n\n${clarified.requestedProof}\n\n## Original wording\n\n${savedWording}`
     );
     await screenshot('publish-preview');
     let saved = service.flows.read(issue);

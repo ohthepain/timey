@@ -6,6 +6,8 @@ import { join, resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { createFlowExecutor } from './factory-ui/flow-executor.mjs';
 import { digest } from './factory-ui/common.mjs';
+import { runRetro } from './factory-ui/flow-retro.mjs';
+import { collectEvidence, hydrateEvidence, registerEvidenceResolver } from './factory-ui/stores/evidence.mjs';
 import { BlockCatalog } from './factory-ui/block-catalog.mjs';
 import { blockDetails, definitionMap } from './factory-ui/flow-block-data.mjs';
 import {
@@ -328,7 +330,7 @@ test('Work retains passing Flow scenarios and Node test name filters', async (t)
 
 test('Work accepts a focused Flow scenario registered in the candidate checkout', async (t) => {
   const f = fixture(t);
-  const focusedTests = [['node', 'scripts/flow-browser.mjs', '--candidate-browser-check']];
+  const focusedTests = [['node', 'scripts/flow-browser.mjs', '--candidate-browser-check', '--issue-annotations']];
   f.connection.turn = async (_threadId, checkout) => {
     const scripts = join(checkout, 'scripts');
     mkdirSync(scripts);
@@ -337,15 +339,23 @@ test('Work accepts a focused Flow scenario registered in the candidate checkout'
       `throw Error('The server must read the candidate registry without running it.');
 export const flowBrowserScenarioNames = {
   '--candidate-browser-check': 'Candidate browser check',
+  '--issue-annotations': 'Issue annotations',
 };
 `
     );
     execFileSync('git', ['add', 'scripts'], { cwd: checkout });
     execFileSync('git', ['commit', '-qm', 'Register candidate browser check'], { cwd: checkout });
-    return '```flow-result\n' + JSON.stringify({ focusedTests }) + '\n```';
+    writeFileSync(join(checkout, '.issues/browser-proof.txt'), 'Candidate-selected annotation scenario passed.\n');
+    return (
+      '```flow-result\n' + JSON.stringify({ focusedTests, files: { proof: '.issues/browser-proof.txt' } }) + '\n```'
+    );
   };
   const result = await f.run('work');
   assert.deepEqual(result.result.focusedTests, focusedTests);
+  const proof = result.artifacts.files.proof;
+  const bytes = readFileSync(proof.path);
+  assert.equal(bytes.toString(), 'Candidate-selected annotation scenario passed.\n');
+  assert.equal(proof.sha256, digest(bytes));
   f.connection.turn = async () =>
     '```flow-result\n' +
     JSON.stringify({ focusedTests: [['node', 'scripts/flow-browser.mjs', '--project-discuss']] }) +
@@ -1315,7 +1325,9 @@ test('Merge preserves each GitHub browser failure and pushes all three repair ca
     const files = { result: '.issues/result.json', log: '.issues/merge.log' };
     for (const [key, file] of Object.entries(files))
       writeFileSync(join(checkout, file), JSON.stringify({ key, round: repairs }) + '\n');
-    return 'Repair ' + repairs + '\n```flow-result\n' + JSON.stringify({ files }) + '\n```';
+    const logs = ['.issues/ci-repair.log'];
+    writeFileSync(join(checkout, logs[0]), 'CI repair command ' + repairs + '\n');
+    return 'Repair ' + repairs + '\n```flow-result\n' + JSON.stringify({ files, repair: { logs } }) + '\n```';
   };
   const result = await f.run('merge', {
     definition: {
@@ -1354,7 +1366,13 @@ test('Merge preserves each GitHub browser failure and pushes all three repair ca
     const { evidence } = JSON.parse(retrieve(record.result));
     const requestId = 'flow-request-' + attemptId + '-repair-' + round;
     const responseId = 'flow-result-' + attemptId + '-repair-' + round;
+    const turnRecord = evidence.find(({ repairTurn }) => repairTurn);
+    assert.deepEqual(JSON.parse(retrieve(turnRecord)).logs.map(retrieve), [
+      JSON.stringify({ key: 'log', round }) + '\n',
+      'CI repair command ' + round + '\n',
+    ]);
     assert.deepEqual(conversation, {
+      turnId: turnRecord.repairTurn.turnId,
       threadId: 'the-one-issue-chat',
       requestId,
       responseId,
@@ -1367,7 +1385,10 @@ test('Merge preserves each GitHub browser failure and pushes all three repair ca
     assert.equal(candidate, attempts[i + 1]?.failedHead ?? result.result.head);
     assert.ok(f.observations.some(({ operation, head }) => operation === 'push' && head === candidate));
     assert.match(retrieve(record.log), /\$ git fetch /);
-    for (const file of record.failure.evidence) retrieve(file);
+    for (const file of record.failure.evidence) {
+      assert.ok(file.path.includes('/repair-' + round + '/'));
+      retrieve(file);
+    }
     for (const key of ['result', 'log']) {
       const file = evidence.find(({ path }) =>
         path.endsWith('artifact-' + key + '-' + (key === 'log' ? 'merge.log' : 'result.json'))
@@ -1385,7 +1406,113 @@ test('Merge preserves each GitHub browser failure and pushes all three repair ca
       })
     );
   }
+  await verifyRepairRetrospective(t, f, { id: attemptId, ...result }, turn);
 });
+
+async function verifyRepairRetrospective(t, f, merge, turn) {
+  const checkout = f.flow.workspace.checkout;
+  const newPath = join(f.root, 'source.txt');
+  writeFileSync(newPath, 'Target source change.\n');
+  f.git('commit', '-am', 'Introduce a conflict on the target');
+  let retries = 0;
+  f.connection.turn = async (...args) => {
+    await turn(...args);
+    retries++;
+    if (retries === 2) {
+      writeFileSync(join(checkout, 'source.txt'), 'Browser repair 3\nTarget source change.\n');
+      f.git('-C', checkout, 'add', 'source.txt');
+    }
+    const logs = ['.issues/conflict-command.log'];
+    writeFileSync(join(checkout, logs[0]), 'Conflict command ' + retries + '\n');
+    return 'Conflict work\n```flow-result\n' + JSON.stringify({ repair: { logs } }) + '\n```';
+  };
+  const branch = await f.run('update-branch');
+  assert.equal(retries, 2);
+  assert.equal(f.git('-C', checkout, 'rev-parse', 'HEAD^2'), f.git('rev-parse', 'dev'));
+
+  const conflict = { id: 'attempt-3', ...branch };
+  const attempts = [merge, conflict];
+  const turnFiles = attempts.flatMap(({ evidence }) => evidence.filter(({ repairTurn }) => repairTurn));
+  assert.equal(turnFiles.length, 5);
+  const bytes = new Map();
+  const artifacts = {
+    async put({ body }) {
+      const hash = digest(body);
+      bytes.set(hash, body);
+      return hash;
+    },
+    async get(hash) {
+      return bytes.get(hash);
+    },
+  };
+  const manifest = await collectEvidence({ root: f.root, flow: attempts, artifacts });
+  assert.deepEqual(manifest.gaps, []);
+  for (const file of turnFiles) {
+    for (const log of JSON.parse(readFileSync(file.path)).logs) rmSync(log.path);
+    rmSync(file.path);
+  }
+  rmSync(join(checkout, '.issues'), { recursive: true });
+
+  const resolver = await hydrateEvidence({ manifest, artifacts, directory: join(f.root, '.issues/hydrated') });
+  t.after(registerEvidenceResolver(f.root, resolver));
+  f.service.store.directory = join(f.root, '.issues');
+  f.service.codex = {
+    async ready() {},
+    async call() {
+      return { thread: { turns: turnFiles.map(({ repairTurn }) => ({ id: repairTurn.turnId, items: [] })) } };
+    },
+  };
+  const outcome = await runRetro(
+    f.service,
+    {
+      issue: f.issue,
+      flow: {
+        ...f.flow,
+        blocks: [
+          { label: 'Merge', attempts: [merge] },
+          { label: 'Update Branch', attempts: [conflict] },
+        ],
+      },
+      signal: new AbortController().signal,
+      definition: { prompt: 'Review the fixture.' },
+    },
+    () => ({
+      async begin() {},
+      async ask() {
+        return JSON.stringify({ summary: 'Reviewed fixture evidence.', recommendations: [] });
+      },
+      close() {},
+    })
+  );
+  const index = JSON.parse(readFileSync(outcome.evidence[0].path));
+  const repairs = JSON.parse(readFileSync(index.sections.repairs.path));
+  const threads = JSON.parse(readFileSync(index.sections.threads.path));
+  assert.deepEqual(
+    repairs.map(({ logs }) =>
+      logs.map(({ path, sha256 }) => {
+        const content = readFileSync(path);
+        assert.equal(digest(content), sha256);
+        return content.toString().trim();
+      })
+    ),
+    [
+      ['{"key":"log","round":1}', 'CI repair command 1'],
+      ['{"key":"log","round":2}', 'CI repair command 2'],
+      ['{"key":"log","round":3}', 'CI repair command 3'],
+      ['Conflict command 1'],
+      ['Conflict command 2'],
+    ]
+  );
+  for (const repair of repairs) {
+    const thread = threads.find(({ id }) => id === repair.threadId);
+    const turn = thread.turns.find(({ id }) => id === repair.turnId);
+    assert.deepEqual(turn.attemptIds, [repair.attemptId]);
+    assert.deepEqual(turn.repairAttemptIds, [repair.id]);
+  }
+  t.diagnostic(
+    JSON.stringify(repairs.map(({ id, turnId, logs }) => ({ id, turnId, hashes: logs.map(({ sha256 }) => sha256) })))
+  );
+}
 
 for (const thrown of [false, true])
   test(`Merge names the failed test when its repair ${thrown ? 'throws' : 'returns blocked'}`, async (t) => {

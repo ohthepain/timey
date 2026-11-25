@@ -182,6 +182,7 @@ export function browserFixture(root) {
             JSON.stringify({
               issueId: issue.id,
               state: issue.state,
+              basis: 'fixture-closure-basis',
               closureReasons: data.closureReasons,
               sharedQueue: false,
             })
