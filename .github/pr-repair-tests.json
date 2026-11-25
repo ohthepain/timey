@@ -1,10 +1,18 @@
 {
   "version": 1,
-  "sourceRun": "https://github.com/ohthepain/timey/actions/runs/45658430012/job/139362076972",
+  "sourceRun": "https://github.com/ohthepain/timey/actions/runs/45659297241/job/139368746760",
   "tests": [
     {
       "name": "typecheck (tsc --noEmit)",
       "command": ["pnpm", "run", "typecheck"]
+    },
+    {
+      "name": "Issues and Local notes use matching text styles",
+      "command": ["node", "scripts/flow-browser.mjs", "--ci-part=1", "--project-navigation", "--sidebar-labels"]
+    },
+    {
+      "name": "Closed issues open with Destination flush with the bottom, including short flows",
+      "command": ["node", "scripts/flow-browser.mjs", "--ci-part=2", "--capture-folder-issue", "--closed-destination"]
     }
   ]
 }

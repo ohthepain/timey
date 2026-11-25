@@ -4435,7 +4435,17 @@ import { reorderedBlocks } from './flow-order.mjs';
     },
     { passive: true }
   );
-  new ResizeObserver(drawConnections).observe($('graph-scroll'));
+  const graphViewport = $('graph-scroll');
+  let graphViewportHeight = graphViewport.clientHeight;
+  new ResizeObserver(() => {
+    const previousHeight = graphViewportHeight;
+    graphViewportHeight = graphViewport.clientHeight;
+    drawConnections();
+    if (previousHeight === graphViewportHeight || !graph.classList.contains('closed')) return;
+    const destination = graph.querySelector('[data-node="__destination"]');
+    const bottom = destination.getBoundingClientRect().bottom - graphViewport.getBoundingClientRect().top;
+    if (Math.abs(bottom - previousHeight) < 2) scrollToBlock({ nodeId: '__destination', mode: 'end' });
+  }).observe(graphViewport);
   let changes;
   let changeSelection;
   let updateTimer;

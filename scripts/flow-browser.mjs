@@ -202,6 +202,7 @@ const {
   '--polling': pollingCheck,
   '--capture-folder-issue': captureFolderIssueCheck,
   '--starting-point': startingPointCheck,
+  '--closed-destination': closedDestinationCheck,
   '--folder-workspace-grouping': folderWorkspaceGroupingCheck,
   '--sidebar-issue-names': sidebarIssueNamesCheck,
   '--save-request-route': saveRequestRouteCheck,
@@ -238,6 +239,7 @@ const playbackWork = Promise.withResolvers();
 const holdFirstWork = (number, block) => number === 1 && block.kind !== 'cleanup';
 let firstWorkProgress;
 const service = new FactoryUI(project);
+service.projectDiscussOptions = { skills: async () => [] };
 const deliveryConfig = { provider: 'github', repository: 'test/fixture', remote: 'origin', target: 'dev' };
 writeFileSync(join(project, '.issues/issue-delivery-config.json'), JSON.stringify(deliveryConfig));
 service.codex.ready = async () => {
@@ -1520,7 +1522,7 @@ try {
     await page.setViewportSize({ width: 1440, height: 960 });
   });
   let closedId;
-  await check('Closed issues open with Destination flush with the bottom, including short flows', async () => {
+  await check(closedDestinationCheck, async () => {
     const closed = await service.flows.capture({
       folder: 'Inbox',
       requestId: randomUUID(),

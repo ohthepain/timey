@@ -328,6 +328,10 @@ Admin tabs, and the relocated Factory controls. It saves desktop and narrow
 screenshots alongside the measured layout and navigation in `project-header-proof.json`.
 The navigation fixture temporarily initializes queue configuration, waits for a
 successful Issues queue response, and unloads the page before restoring configuration.
+Run `--ci-part=1 --project-navigation --sidebar-labels` together to check sidebar
+label styling and verify that visiting Discuss leaves no browser console errors.
+`--ci-part=2 --capture-folder-issue --closed-destination` checks that closed
+flows open and refresh with Destination aligned to the bottom at both tested heights.
 
 `node scripts/factory-project-account-browser.mjs` starts a disposable Timey
 instance and Factory server. It opens every project tab at 390px while Login is

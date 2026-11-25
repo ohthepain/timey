@@ -61,6 +61,7 @@ export const flowBrowserScenarioNames = {
   '--polling': 'Polling preserves expanded text and the Closed issues list',
   '--capture-folder-issue': 'Folder plus creates an issue directly in that folder and retains typed wording',
   '--starting-point': 'Starting point lists every branch in date order, saves selection and survives polling',
+  '--closed-destination': 'Closed issues open with Destination flush with the bottom, including short flows',
   '--folder-workspace-grouping': 'The folder workspace reviews moves and creates a master without starting work',
   '--sidebar-issue-names': 'Numbered full issue names wrap and sidebar resizing survives reload',
   '--save-request-route': 'Saving Your words retains derived fields and applies the new type default',
