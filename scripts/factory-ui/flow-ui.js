@@ -318,7 +318,7 @@
       });
     document
       .querySelectorAll(
-        '#issue-flow-picker, #issue-settings-form, #issue-store-form, #rename-issue-form, #issue-master, #issue-grouping, [data-skill-picker]'
+        '#issue-flow-picker, #issue-settings-form, #issue-store-form, #rename-issue-form, #issue-master, #issue-sub-issues, #issue-grouping, [data-skill-picker]'
       )
       .forEach((element) => {
         element.inert = true;
@@ -560,6 +560,7 @@
     $('rename-issue').disabled = busy || frozenIssue;
     $('issue-grouping').inert = busy;
     $('issue-master').inert = busy;
+    $('issue-sub-issues').inert = busy;
     const attached = Boolean(state.view?.grouping?.master);
     const frozen = Boolean(state.view?.issue?.readOnly);
     document
@@ -1201,6 +1202,17 @@
         ? `<span>Master issue: ${issueLink(master)}</span><button class="small-button" type="button" id="remove-issue-master"${master.canDetach ? '' : ' disabled'}>Remove</button>`
         : ''
     );
+    const subIssues = $('issue-sub-issues');
+    subIssues.hidden = !children?.length;
+    updateFolderMarkup(
+      subIssues,
+      (children || [])
+        .map(
+          (child) =>
+            `<li>${issueLink(child)}<button class="small-button" type="button" data-detach-sub-issue="${escape(child.id)}" aria-label="Remove ${escape(issueLabel(child))}"${child.canDetach ? '' : ' disabled'}>Remove</button></li>`
+        )
+        .join('')
+    );
     panel.hidden = !children?.length && !formerMasters?.length;
     const groupReasons = new Map(reasoning?.map(({ id, reason }) => [id, reason]));
     const html = [];
@@ -1208,7 +1220,7 @@
       html.push(`<p>Earlier work and evidence in ${issueLink(formerMaster)}</p>`);
     if (children?.length) {
       html.push(
-        `<h2>Sub-issues</h2><ul class="folder-run-results">${children
+        `<h2>Sub-issue proof</h2><ul class="folder-run-results">${children
           .map((child) => renderSubIssue(child, groupReasons.get(child.id)))
           .join('')}</ul>`
       );
@@ -1218,7 +1230,7 @@
 
   function renderSubIssue(child, reason) {
     const { requestedProof, proof, nextAction, canDetach } = child;
-    return `<li>${issueLink(child)}${reason ? `<p>${escape(reason)}</p>` : ''}${requestedProof ? `<p>Requested proof: ${escape(requestedProof)}</p>` : ''}${proof ? `<p>${proof.status === 'passed' ? 'Passed' : 'Unmet'}: ${escape(proof.observation)}</p>` : ''}${nextAction ? `<p>${escape(nextAction)}</p>` : ''}<div class="folder-controls">${proof?.status === 'failed' ? '<button class="small-button" type="button" data-group-play>Continue on the master</button>' : ''}${canDetach ? `<button class="small-button" type="button" data-detach-sub-issue="${escape(child.id)}">${proof?.status === 'failed' ? 'Detach and fix separately' : 'Detach'}</button>` : ''}</div></li>`;
+    return `<li>${issueLink(child)}${reason ? `<p>${escape(reason)}</p>` : ''}${requestedProof ? `<p>Requested proof: ${escape(requestedProof)}</p>` : ''}${proof ? `<p>${proof.status === 'passed' ? 'Passed' : 'Unmet'}: ${escape(proof.observation)}</p>` : ''}${nextAction ? `<p>${escape(nextAction)}</p>` : ''}${proof?.status === 'failed' ? `<div class="folder-controls"><button class="small-button" type="button" data-group-play>Continue on the master</button>${canDetach ? `<button class="small-button" type="button" data-detach-sub-issue="${escape(child.id)}">Detach and fix separately</button>` : ''}</div>` : ''}</li>`;
   }
 
   async function folderAction(name, fields = {}) {
@@ -3302,14 +3314,17 @@
     });
   });
 
-  $('issue-grouping').addEventListener('click', (event) => {
+  function handleIssueGroupingClick(event) {
     if (followFolderLink(event)) return;
     const button = event.target.closest('button');
     if (!button || button.disabled) return;
     if (button.dataset.detachSubIssue)
       return void action('folder-detach', { subIssueId: button.dataset.detachSubIssue });
     if (button.hasAttribute('data-group-play') && state.view?.autoplay?.mode === 'paused') $('issue-playback').click();
-  });
+  }
+
+  $('issue-sub-issues').addEventListener('click', handleIssueGroupingClick);
+  $('issue-grouping').addEventListener('click', handleIssueGroupingClick);
 
   document.addEventListener(
     'click',

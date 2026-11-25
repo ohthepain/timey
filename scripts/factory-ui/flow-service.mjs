@@ -125,7 +125,7 @@ import {
   requestBlock,
   requestData,
 } from './flow-block-data.mjs';
-import { clarifyRequest } from './flow-request.mjs';
+import { clarifyRequest, requestGroupDetails } from './flow-request.mjs';
 import {
   exportFlowDefinition,
   issueTypes,
@@ -2317,7 +2317,7 @@ class IssueFlows {
               .join('\n\n'),
           }
         : {}),
-      details,
+      details: [...details, ...requestGroupDetails(issue, block)],
     };
   }
   startingPointEditable(issue, flow, observedPR) {

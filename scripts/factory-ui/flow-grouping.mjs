@@ -3,14 +3,13 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, rmdirSync, rmSync, st
 import { join } from 'node:path';
 import { digest, requireThat, writeJson } from './common.mjs';
 import { closedIssueState } from './data.mjs';
-import { requestData } from './flow-block-data.mjs';
+import { deliveryTarget, invalidateBlocks, requestBlock, requestData } from './flow-block-data.mjs';
 import { groupProofRows } from './flow-group-proof.mjs';
 import { issueHasActiveWork } from './issue-cleanup.mjs';
 import { groupChildren, groupMaster, storedGroups } from './issue-group.mjs';
 import { issueStorageDirectory, moveStoredIssue, updateStoredIssueMetadata } from './issue-report-storage.mjs';
 import { afterReportWrite, registeredProjectStores } from './stores/report-access.mjs';
 import { resolveFolderSettings } from './issue-folder-settings.mjs';
-import { deliveryTarget } from './flow-block-data.mjs';
 
 const previewLifetime = 10 * 60 * 1000;
 const subIssueClosure = 'Sub-issue fixed by master issue';
@@ -276,6 +275,7 @@ export class FlowGrouping {
     requireThat(target, 'Choose an attached sub-issue.');
     await this.flows.pause(issueId, 'A sub-issue was detached.');
     const shared = this.service.sharedIssues?.acquire(master, true);
+    invalidateBlocks(flow, new Set([requestBlock(flow).id]));
     await this.flows.store.save(flow, revision);
     await updateStoredIssueMetadata(this.service.root, master, detachedGroupMetadata(master, target));
     if (shared) this.service.sharedIssues.checkpoint(issueId, 'Sub-issue detached', shared);
