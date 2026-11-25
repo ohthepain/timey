@@ -45,6 +45,23 @@ process.exitCode=1;
   assert.equal(readFileSync(requests, 'utf8'), 'request\n');
 });
 
+test('GitHub App classifies a reportable GraphQL query failure without an HTTP status as transient', () => {
+  const commandError = Object.assign(Error('gh exited with code 1'), {
+    code: 1,
+    stderr:
+      'gh: Something went wrong while executing your query on 2026-11-25T12:36:23Z. ' +
+      'Please include `B42A:2C22E1:A54B47:100A40B:6B06D646` when reporting this issue.',
+  });
+  const session = { token: 'ghs_fixture' };
+  const failure = safeGitHubFailure(commandError, undefined, session);
+  assert.equal(failure.githubStatus, null);
+  assert.match(failure.message, /B42A:2C22E1:A54B47:100A40B:6B06D646/);
+  assert.equal(infrastructureFailure(failure), true);
+  for (const status of ['401', '403', '422']) {
+    assert.equal(infrastructureFailure(safeGitHubFailure(commandError, status, session)), false);
+  }
+});
+
 for (const failure of [
   {
     stderr: 'Post "https://api.github.com/graphql": read tcp: connection reset by peer ghs_secret',

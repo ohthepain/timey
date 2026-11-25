@@ -1,0 +1,12 @@
+{
+  "version": 2,
+  "skills": {
+    "poteto-mode": {
+      "source": "cursor/plugins",
+      "commit": "41e400932eca14f289e7db717a70455256b6d388",
+      "sourceType": "github",
+      "skillPath": "harness/pstack/claude-code/skills/poteto-mode/SKILL.md",
+      "computedHash": "242e3e3fb18685b92be57cd105828c146006d1e56d4585b9d39c2eccfd7a3c84"
+    }
+  }
+}

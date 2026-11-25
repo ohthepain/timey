@@ -56,6 +56,15 @@ function issueHome(home = {}, issueNumber) {
     artifactStoreId: home.artifactStoreId,
   };
 }
+export function issueDecisionSettings(root) {
+  const projected = clarificationLifecycle(root, lifecycle(root));
+  return {
+    lifecycle: projected.stages,
+    lifecycleAliases: projected.aliases,
+    closureReasons: closureReasons(readFileSync(join(root, '.issues/triage-labels.md'), 'utf8')),
+  };
+}
+
 export function readQueue(project, { location = 'open', issueId } = {}) {
   const root = realpathSync(project);
   const inspection = factory(root).inspect({ location, issueId });
@@ -63,9 +72,9 @@ export function readQueue(project, { location = 'open', issueId } = {}) {
   const homes = new Map((snapshot?.issues || []).map((issue) => [issue.id, issue]));
   if (snapshot) inspection.reports = inspection.reports.filter((report) => homes.has(report.metadata.id));
   const priorities = readPriorities(readFileSync(join(root, '.issues/triage-labels.md'), 'utf8'));
-  const projected = clarificationLifecycle(root, lifecycle(root));
-  const stages = projected.stages,
-    ids = inspection.reports.map((r) => r.metadata.id);
+  const settings = issueDecisionSettings(root);
+  const { lifecycle: stages, lifecycleAliases } = settings;
+  const ids = inspection.reports.map((r) => r.metadata.id);
   const issueNumbers = queueIssueNumbers(root, ids);
   const linkIds = [
     ...new Set([
@@ -79,14 +88,14 @@ export function readQueue(project, { location = 'open', issueId } = {}) {
     ...report.metadata,
     reportLocation: location === 'open' ? undefined : location,
     ...issueHome(homes.get(report.metadata.id), issueNumbers[report.metadata.id]),
-    ...(projected.aliases[report.metadata.state]
-      ? { state: projected.aliases[report.metadata.state], saved_state: report.metadata.state }
+    ...(lifecycleAliases[report.metadata.state]
+      ? { state: lifecycleAliases[report.metadata.state], saved_state: report.metadata.state }
       : {}),
     priorityInfo: priorityView(report.metadata, priorities),
     content: report.content,
     links: relationships(report, linkIds),
     stage:
-      stages.find((s) => s.state === (projected.aliases[report.metadata.state] || report.metadata.state))?.name ||
+      stages.find((s) => s.state === (lifecycleAliases[report.metadata.state] || report.metadata.state))?.name ||
       report.metadata.state,
   }));
   const issueFolders = readIssueFolders(root, issues);
@@ -98,10 +107,8 @@ export function readQueue(project, { location = 'open', issueId } = {}) {
     root,
     head: inspection.snapshot.head,
     snapshot: inspection.snapshot,
-    lifecycle: stages,
-    lifecycleAliases: projected.aliases,
+    ...settings,
     priorities,
-    closureReasons: closureReasons(readFileSync(join(root, '.issues/triage-labels.md'), 'utf8')),
     implementationOrder: order,
     implementationOrderBasis: orderBasis,
     issueFolders: issueFolders.folders,

@@ -359,11 +359,12 @@ import { reorderedBlocks } from './flow-order.mjs';
     return result;
   }
 
-  function post(path, value) {
+  function post(path, value, signal) {
     return json('/api/' + path, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-factory-action': 'manual' },
       body: JSON.stringify(value),
+      signal,
     });
   }
 
@@ -3913,6 +3914,7 @@ import { reorderedBlocks } from './flow-order.mjs';
   const closureButton = $('confirm-issue-closure');
   const closureCancel = $('cancel-issue-closure');
   const closureError = $('issue-closure-error');
+  const closureStatus = $('issue-closure-status');
   const closureDialog = window.createIssueClosureDialog({
     dialog: closureModal,
     panel: closureFields,
@@ -3921,7 +3923,7 @@ import { reorderedBlocks } from './flow-order.mjs';
     request: (name, data) => post(name, { ...data, flow: true }),
   });
   closureModal.addEventListener('cancel', (event) => {
-    if (closureFields.inert) event.preventDefault();
+    if (closureCancel.disabled) event.preventDefault();
   });
   async function archiveIssue(issueId) {
     if (!confirm('Archive this closed issue?')) return;
@@ -3995,9 +3997,17 @@ import { reorderedBlocks } from './flow-order.mjs';
   });
 
   function openClosure(suggestedResolution, flowRevision = state.view.flow.revision) {
-    const { issue, flow } = state.view;
-    void closureDialog.open(async () => ({
-      ...(await json('/api/issue-closure?issue=' + encodeURIComponent(issue.id))),
+    if (closureFields.inert) {
+      toast('Factory is still waiting for the earlier Close request.');
+      return;
+    }
+    const { closurePreview, flow } = state.view;
+    if (!closurePreview) {
+      showError('Refresh the issue to load its Close options, then try again.');
+      return;
+    }
+    void closureDialog.open(() => ({
+      ...closurePreview,
       kind: 'close',
       flowRevision,
       fixedRetroDefault: flow.blocks.find((block) => block.kind === 'request')?.data.runRetro === true,
@@ -4041,17 +4051,20 @@ import { reorderedBlocks } from './flow-order.mjs';
     if (closureButton.disabled) return;
     const decision = closureDialog.decision();
     closureButton.disabled = true;
-    closureCancel.disabled = true;
+    closureCancel.disabled = Boolean(decision.cleanupOnly);
+    closureCancel.textContent = decision.cleanupOnly ? 'Cancel' : 'Dismiss';
     closureFields.inert = true;
     closureButton.textContent = 'Closing…';
     closureError.textContent = '';
+    closureStatus.textContent = decision.cleanupOnly ? '' : 'Waiting for Factory to confirm the closure.';
+    let needsRefresh = false;
     try {
       if (decision.cleanupOnly) {
         if (await action('cleanup-again', { revision: decision.flowRevision, cleanup: decision.cleanup }))
           closureModal.close();
         return;
       }
-      const result = await post('issue-decision', decision);
+      const result = await post('issue-decision', decision, AbortSignal.timeout(30000));
       if (state.view?.issue.id === decision.issueId) {
         const issue = state.view.issue;
         issue.status = 'closed';
@@ -4069,14 +4082,25 @@ import { reorderedBlocks } from './flow-order.mjs';
       );
       void load(true);
     } catch (error) {
-      closureError.textContent = error.message;
+      needsRefresh = error.name === 'TimeoutError';
+      showCloseFailure(error, needsRefresh);
     } finally {
       closureButton.textContent = 'Close issue';
-      closureButton.disabled = false;
+      closureButton.disabled = needsRefresh;
       closureCancel.disabled = false;
+      closureCancel.textContent = 'Cancel';
       closureFields.inert = false;
+      closureStatus.textContent = '';
     }
   });
+  function showCloseFailure(error, needsRefresh) {
+    const message = needsRefresh
+      ? 'Factory did not confirm the close. Refresh the issue to check its saved status before retrying.'
+      : error.message;
+    if (closureModal.open) closureError.textContent = message;
+    else showError(message);
+    if (needsRefresh) void load(true);
+  }
   $('issue-playback').addEventListener('click', () => {
     const mode = playbackAction(state.view?.flow?.blocks || []);
     if (mode === 'pause') return void action('pause');

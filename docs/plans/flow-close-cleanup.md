@@ -6,9 +6,15 @@ Agreed design for the Factory issue flow.
 
 - Close and Cleanup run as a separate sequence in the same issue flow.
 - Confirming Close in the UI starts the sequence with the selected reason.
-  The dialog is ready without discovering cleanup resources. Cleanup attempts
-  to remove the eligible worktree for every closure reason. Manual Close waits
-  for active work to finish or be stopped explicitly.
+  Flow opens the dialog with the reasons and issue details from the loaded
+  issue view. Confirmation rechecks current issue state before recording the
+  decision. The dialog is ready without discovering cleanup resources. Cleanup
+  attempts to remove the eligible worktree for every closure reason. Manual
+  Close waits for active work to finish or be stopped explicitly.
+- You can dismiss the dialog while Factory waits for the confirmation response.
+  Dismissing leaves the submitted request in progress. If Flow receives no
+  response within 30 seconds, it reloads the issue so you can check its saved
+  status before retrying.
 - To delete a branch with unmerged work, select that branch explicitly after
   reviewing what work its deletion would discard. The separate Cleanup dialog
   identifies each affected branch and the unmerged work at risk. Cleanup rechecks resource

@@ -139,13 +139,41 @@ async function checkManualClose({ page, flows, id, close, screenshot }) {
   assert.match(beforeClose.text, /Closing is manual/);
   await close.scrollIntoViewIfNeeded();
   await screenshot('manual-close-after-merge');
-  await close.click();
   const dialog = page.getByRole('dialog', { name: 'Close this issue' });
-  await dialog.waitFor();
+  const contextRoute = '**/api/issue-closure?**';
+  const unavailable = (route) => route.abort();
+  await page.route(contextRoute, unavailable);
+  try {
+    await close.click();
+    await dialog.getByRole('combobox', { name: 'Reason' }).waitFor({ timeout: 5000 });
+    assert.equal(await dialog.getByRole('button', { name: 'Close issue', exact: true }).isEnabled(), true);
+  } finally {
+    await page.unroute(contextRoute, unavailable);
+  }
   assert.equal(flows.selected(id).closed, false);
   await screenshot('manual-close-confirmation');
   await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
   assert.equal(flows.selected(id).closed, false);
+  const confirmation = '**/api/issue-decision';
+  const submitted = Promise.withResolvers();
+  const holdConfirmation = async (route) => {
+    submitted.resolve(route);
+  };
+  await page.route(confirmation, holdConfirmation);
+  await close.click();
+  await dialog.getByRole('button', { name: 'Close issue', exact: true }).click();
+  const request = await submitted.promise;
+  try {
+    await page.getByRole('button', { name: 'Dismiss', exact: true }).click({ timeout: 5000 });
+    await dialog.waitFor({ state: 'hidden' });
+    await close.click();
+    assert.equal(await dialog.isVisible(), false, 'A pending Close cannot be submitted twice from this page.');
+    await request.fulfill({ status: 400, json: { error: 'The test rejected the pending close.' } });
+    await page.getByText('The test rejected the pending close.').waitFor();
+    assert.equal(flows.selected(id).closed, false);
+  } finally {
+    await page.unroute(confirmation, holdConfirmation);
+  }
   return {
     automatic: false,
     closed: false,

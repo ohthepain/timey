@@ -58,6 +58,7 @@ import { redactValue } from './activity.mjs';
 import { digest, git, requireThat, writeJson } from './common.mjs';
 import { closedIssueState, readQueue } from './data.mjs';
 import { decisionBasis } from './recorded-result.mjs';
+import { issueClosurePreview } from './issue-decision.mjs';
 import { flowOwnsIssue } from './flow-ownership.mjs';
 import { SidebarFiles } from './sidebar-files.mjs';
 import { trashDirectory, whileTrashingDirectory } from './folder-trash.mjs';
@@ -826,6 +827,7 @@ class IssueFlows {
       grouping: this.groupingView(issue, flow, issues, index, badgeIndex),
       annotations: annotations.filter(({ issueId }) => issueId === id),
       sharedQueue: this.service.sharedIssues?.view(id),
+      closurePreview: this.closurePreview(issue, requestOnly),
       closureBusy: this.closureBusy(id),
       autoplay: this.autoplay.get(id) ?? { mode: 'paused' },
       destination: {
@@ -1085,6 +1087,10 @@ class IssueFlows {
   }
   closureBusy(id) {
     return this.active.has(id) || this.closureTasks.has(id);
+  }
+  closurePreview(issue, requestOnly) {
+    if (requestOnly || issue.closed || !existsSync(join(this.service.root, '.issues/triage-labels.md'))) return;
+    return issueClosurePreview(this.service, issue);
   }
   closurePending(id) {
     const path = this.store.path(id);

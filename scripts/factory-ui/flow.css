@@ -2063,7 +2063,8 @@ kbd {
   color: #f3a5a5;
   margin: 12px 0 0;
 }
-.closure-error:empty {
+.closure-error:empty,
+#issue-closure-status:empty {
   display: none;
 }
 

@@ -3,7 +3,9 @@ import { DeliveryStore } from '../issue-delivery-store.mjs';
 import { decisionBasis, retainAcceptedResult } from './recorded-result.mjs';
 import { existsSync } from 'node:fs';
 import { moveStoredIssue, storedIssuePath } from './issue-report-storage.mjs';
-import { readQueue } from './data.mjs';
+import { issueDecisionSettings, readQueue } from './data.mjs';
+import { clarificationState } from './clarify-policy.mjs';
+import { savedIssueNumbers } from './issue-numbers.mjs';
 import { progressBasis, progressIssue } from './next-action.mjs';
 import { appendReview } from './review-result.mjs';
 import { digest, requireThat } from './common.mjs';
@@ -20,6 +22,30 @@ import {
 import { cancelIssueActionsOnClose } from './issue-action-cancellation.mjs';
 import { groupChildren, requireIndependentIssue } from './issue-group.mjs';
 import { afterReportWrite, registeredProjectStores } from './stores/report-access.mjs';
+
+export function issueClosurePreview(service, issue, settings = issueDecisionSettings(service.root)) {
+  return {
+    issueId: issue.id,
+    state: clarificationState(settings, issue.state),
+    basis: decisionBasis(settings, issue),
+    closureReasons: settings.closureReasons,
+    sharedQueue: Boolean(service.sharedIssues),
+    subIssues: closureSubIssues(service.root, issue.issue_group?.children ?? []),
+  };
+}
+
+function closureSubIssues(root, children) {
+  if (!children.length) return undefined;
+  const numbers = savedIssueNumbers(
+    root,
+    children.map(({ id }) => id)
+  );
+  return children.map(({ id, title, detachedAt }) => ({
+    title,
+    number: numbers[id],
+    removed: Boolean(detachedAt),
+  }));
+}
 
 export function decideIssue(
   service,

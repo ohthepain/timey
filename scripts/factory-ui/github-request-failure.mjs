@@ -40,7 +40,12 @@ function transportReason(error, token) {
 
 function transientFailure(error, status) {
   if (['401', '403', '422'].includes(status)) return false;
-  return infrastructureFailure(error) || error.killed === true;
+  const reportableQueryFailure =
+    !status &&
+    /^gh: Something went wrong while executing your query on [\dTZ:-]+\. Please include .+ when reporting this issue\./m.test(
+      error.stderr || ''
+    );
+  return infrastructureFailure(error) || error.killed === true || reportableQueryFailure;
 }
 
 export function safeGitHubFailure(error, status, session) {
