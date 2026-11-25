@@ -278,6 +278,34 @@ export async function investigationReportsBrowserChecks({ page, service, project
   assert.equal(service.flows.selected(source.issueId).location, 'archive', 'Discussion leaves the source archived.');
   await screenshot('investigation-reports');
   await checkEditorialReport({ page, editorial, poll, screenshot });
+  await deleteFixtureReport(page);
+  await page.locator(`[data-report-open="${editorial.id}"]`).waitFor({ state: 'detached' });
+  assert.throws(() => reports.read(editorial.id), /unavailable/);
+  const firstCheckbox = page.locator(`[data-report-select="${first.id}"]`);
+  await firstCheckbox.check();
+  const selectAll = page.locator('[data-report-select-all]');
+  assert.equal(await selectAll.evaluate((input) => input.indeterminate), true);
+  await selectAll.check();
+  const bulkIds = await page
+    .locator('[data-report-select]:checked')
+    .evaluateAll((nodes) => nodes.map((node) => node.dataset.reportSelect));
+  assert.ok(bulkIds.includes(first.id) && bulkIds.includes(second.id));
+  await screenshot('investigation-report-selection');
+  await deleteFixtureReport(page);
+  await page.getByText('No reports have been published yet.').waitFor();
+  assert.deepEqual(reports.list(), []);
+  writeFileSync(
+    join(output, 'investigation-report-deletion.json'),
+    JSON.stringify(
+      {
+        viewerDeleted: editorial.id,
+        bulkDeleted: bulkIds,
+        reportsRemaining: reports.list().length,
+      },
+      null,
+      2
+    )
+  );
   return {
     reportIds: [first.id, second.id],
     sentMessages: calls.map(({ text, reportContext }) => ({ text, reportId: reportContext.reportId })),
@@ -285,6 +313,14 @@ export async function investigationReportsBrowserChecks({ page, service, project
     minimumSplit,
     dividerColors: { restingColor, highlightedColor },
   };
+}
+
+async function deleteFixtureReport(page) {
+  page.once('dialog', (dialog) => dialog.accept());
+  const response = page.waitForResponse((response) => response.url().endsWith('/api/investigation-report-delete'));
+  await page.locator('[data-report-delete]').click();
+  const result = await response;
+  assert.equal(result.status(), 200, await result.text());
 }
 
 function editorialReportFixture(evidence) {

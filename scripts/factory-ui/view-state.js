@@ -429,7 +429,7 @@
   document.addEventListener(
     'pointerdown',
     (event) => {
-      pointer = event.target;
+      pointer = event.target.closest('[data-block-grip]') ? null : event.target;
     },
     true
   );

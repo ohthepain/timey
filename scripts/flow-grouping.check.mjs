@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { gitFixture } from './git-fixture.mjs';
 import { digest, git as checkoutGit } from './factory-ui/common.mjs';
+import { latestCurrentAttempt, requestBlock } from './factory-ui/flow-block-data.mjs';
 import { recheckedGroupProof, requireGroupProof } from './factory-ui/flow-group-proof.mjs';
 import { sourceObservation } from './factory-ui/flow-group-scope.mjs';
 import { issueAnnotations } from './factory-ui/issue-annotations.mjs';
@@ -30,6 +31,7 @@ function fixture(t) {
   };
   const newFlows = (options = {}) => {
     const flows = createIssueFlows(service, {
+      ...options,
       observer: {
         async observe() {
           return {};
@@ -244,6 +246,64 @@ test('The master protects its original issues across a server restart and releas
     assert.equal(released.grouping.formerMasters[0].id, master.id);
     assert.notEqual(released.issue.status, 'closed');
   }
+});
+
+test('Detaching a sub-issue invalidates the master Request and dependent Work', async (t) => {
+  const { newFlows } = fixture(t);
+  let clarification;
+  const flows = newFlows({
+    async clarify(_root, _definition, attempt) {
+      clarification = Object.fromEntries(attempt.details.map(({ key, value }) => [key, value]));
+      return { artifacts: { values: { type: 'bug', goal: 'Show the save failure message.' } } };
+    },
+  });
+  const { create, issueIds } = await group(flows);
+  const { issue: master } = await flows.action(create);
+  const flow = flows.read(flows.selected(master.id));
+  const request = requestBlock(flow);
+  const work = flow.blocks.find(({ kind }) => kind === 'work');
+  request.data.fields = { type: 'bug', goal: 'Fix both save problems.' };
+  for (const block of [request, work]) {
+    block.attempts.push({ id: randomUUID(), status: 'completed', startedAt: '2026-11-20T10:00:00Z' });
+  }
+  const saved = await flows.store.save(flow, flow.revision);
+
+  const detached = await flows.action({
+    action: 'folder-detach',
+    issueId: master.id,
+    subIssueId: issueIds[0],
+    revision: saved.revision,
+  });
+  assert.deepEqual(
+    detached.grouping.children.map(({ id }) => id),
+    [issueIds[1]]
+  );
+  const updated = flows.read(flows.selected(master.id));
+  assert.equal(requestBlock(updated).data.fields, null);
+  assert.equal(requestBlock(updated).data.wording, request.data.wording);
+  for (const prior of [request, work]) {
+    const block = updated.blocks.find(({ id }) => id === prior.id);
+    assert.equal(latestCurrentAttempt(block), undefined);
+    const [{ invalidatedAt, ...attempt }] = block.attempts;
+    assert.ok(invalidatedAt);
+    assert.deepEqual(attempt, prior.attempts[0]);
+  }
+  await flows.action({
+    action: 'request',
+    issueId: master.id,
+    revision: updated.revision,
+    wording: request.data.wording,
+  });
+  assert.ok(clarification.wording.includes(`Issue ID: ${issueIds[1]}`));
+  assert.ok(!clarification.wording.includes(`Issue ID: ${issueIds[0]}`));
+  assert.deepEqual(
+    clarification.subIssueScope.attached.map(({ id }) => id),
+    [issueIds[1]]
+  );
+  assert.deepEqual(
+    clarification.subIssueScope.detached.map(({ id }) => id),
+    [issueIds[0]]
+  );
 });
 
 test('Fixed closure can reconcile after a restart and preserves linked child reports', async (t) => {

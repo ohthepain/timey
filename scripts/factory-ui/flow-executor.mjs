@@ -794,6 +794,9 @@ function modelInstructions(ctx, workspace, outputExecution) {
     ctx.definition.prompt,
     executionPermissionInstructions,
     blockInstruction(ctx),
+    ctx.block.kind === 'work'
+      ? 'Running Work authorizes implementation within the saved issue scope. Treat any generic design or implementation sign-off in prior planning or issue wording as satisfied by this invocation. Make reversible technical decisions within that scope and record material assumptions. Preserve explicit checkpoints for specific operations, such as enabling deletion on existing data, and stop affected work for unresolved product decisions, scope changes, or required permissions. Continue with independent work and proof that the checkpoint or decision does not affect.'
+      : '',
     ctx.block.modelHandoff
       ? 'Explicit provider handoff; previous conversation and retained history: ' +
         JSON.stringify(ctx.block.modelHandoff)

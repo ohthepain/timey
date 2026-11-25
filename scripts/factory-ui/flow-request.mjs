@@ -3,8 +3,27 @@ import { dirname, join } from 'node:path';
 import { createTextDiscussionRuntime } from './discussion-codex.mjs';
 import { digest, requireThat } from './common.mjs';
 import { redactValue } from './activity.mjs';
+import { groupChildren } from './issue-group.mjs';
 
 import { issueTypes } from './flow-definitions.mjs';
+
+export function requestGroupDetails(issue, block) {
+  if (block.kind !== 'request') return [];
+  const detached = issue.issue_group?.children?.filter(({ detachedAt }) => detachedAt);
+  if (!detached?.length) return [];
+  const issueRef = ({ id, title }) => ({ id, title });
+  return [
+    {
+      key: 'subIssueScope',
+      label: 'Sub-issue scope',
+      value: {
+        instructions: 'Exclude detached sub-issues from the clarified request, even if they appear in Your words.',
+        attached: groupChildren(issue).map(issueRef),
+        detached: detached.map(issueRef),
+      },
+    },
+  ];
+}
 
 function isClarificationTransport(method, params) {
   return (

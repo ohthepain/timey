@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { userInfo } from 'node:os';
 import { digest, requireThat, writeJson } from './common.mjs';
 import { closedIssueState } from './data.mjs';
-import { requestData } from './flow-block-data.mjs';
+import { deliveryTarget, invalidateBlocks, requestBlock, requestData } from './flow-block-data.mjs';
 import { mergedDelivery } from './merged-issue.mjs';
 import { activeGroupRequest, requireDetachableSource } from './flow-group-scope.mjs';
 import { flowWorkspace } from './flow-observer.mjs';
@@ -17,7 +17,6 @@ import { groupChildren, groupMaster, storedGroups } from './issue-group.mjs';
 import { issueStorageDirectory, moveStoredIssue, updateStoredIssueMetadata } from './issue-report-storage.mjs';
 import { afterReportWrite, registeredProjectStores } from './stores/report-access.mjs';
 import { resolveFolderSettings } from './issue-folder-settings.mjs';
-import { deliveryTarget } from './flow-block-data.mjs';
 
 const previewLifetime = 10 * 60 * 1000;
 const subIssueClosure = 'Sub-issue fixed by master issue';
@@ -303,6 +302,8 @@ export class FlowGrouping {
     requireThat(revision === flow.revision, 'The master changed. Review its sub-issues again.');
     const target = groupChildren(master).find(({ id }) => id === subIssueId);
     requireThat(target, 'Choose an attached sub-issue.');
+    const changes = detachedGroupMetadata(this.withSavedScope(master, flow), target);
+    activeGroupRequest({ ...master, ...changes }, flow);
     this.flows.pause(
       issueId,
       groupChildren(master).length === 1
@@ -310,9 +311,8 @@ export class FlowGrouping {
         : 'A sub-issue was detached.'
     );
     const shared = this.service.sharedIssues?.acquire(master, true);
+    invalidateBlocks(flow, new Set([requestBlock(flow).id]));
     await this.flows.store.save(flow, revision);
-    const changes = detachedGroupMetadata(this.withSavedScope(master, flow), target);
-    activeGroupRequest({ ...master, ...changes }, flow);
     await updateStoredIssueMetadata(this.service.root, master, changes);
     if (shared) this.service.sharedIssues.checkpoint(issueId, 'Sub-issue detached', shared);
     return this.flows.view(issueId);

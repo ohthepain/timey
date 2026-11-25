@@ -2195,6 +2195,13 @@ kbd {
   align-items: start;
   gap: 10px;
 }
+.issue-sub-issues {
+  max-height: min(24vh, 260px);
+  overflow: auto;
+}
+.issue-sub-issues > li {
+  justify-content: space-between;
+}
 .folder-issues p,
 .folder-run-results p {
   margin-top: 4px;

@@ -1,3 +1,5 @@
+import { reorderedBlocks } from './flow-order.mjs';
+
 (() => {
   'use strict';
 
@@ -233,6 +235,7 @@
       uncertain: '?',
       'ready-to-merge': '⑂',
       closed: '●',
+      archived: '▣',
       waiting: '◇',
       'needs-input': '◇',
       'need-input': '◇',
@@ -322,7 +325,7 @@
       });
     document
       .querySelectorAll(
-        '#issue-flow-picker, #issue-settings-form, #issue-store-form, #rename-issue-form, #issue-master, #issue-grouping, [data-skill-picker]'
+        '#issue-flow-picker, #issue-settings-form, #issue-store-form, #rename-issue-form, #issue-master, #issue-sub-issues, #issue-grouping, [data-skill-picker]'
       )
       .forEach((element) => {
         element.inert = true;
@@ -564,6 +567,7 @@
     $('rename-issue').disabled = busy || frozenIssue;
     $('issue-grouping').inert = busy;
     $('issue-master').inert = busy;
+    $('issue-sub-issues').inert = busy;
     const attached = Boolean(state.view?.grouping?.master);
     const frozen = Boolean(state.view?.issue?.readOnly);
     document
@@ -668,7 +672,13 @@
     const showArchive = mode === 'archive';
     const pending = state.view?.issue?.state === 'needs-approval';
     button.hidden = mode === 'hidden';
-    $('closed-issue-indicator').hidden = !closed || showArchive;
+    const issueState = playbackIssueState();
+    const indicator = $('closed-issue-indicator');
+    const indicatorLabel = issueState ? 'Issue ' + issueState : '';
+    indicator.hidden = !issueState || showArchive || (issueState === 'blocked' && mode !== 'hidden');
+    indicator.innerHTML = issueState ? statusIcon(issueState) : '';
+    indicator.setAttribute('aria-label', indicatorLabel);
+    indicator.title = indicatorLabel;
     button.disabled =
       busy ||
       !playback ||
@@ -757,7 +767,9 @@
         .join('');
     const groups = folders
       .map((folder) => {
-        const children = issues.filter((issue) => issue.folder === folder && issue.status !== 'closed');
+        const children = issues
+          .filter((issue) => issue.folder === folder && issue.status !== 'closed')
+          .sort((a, b) => (Date.parse(b.created) || 0) - (Date.parse(a.created) || 0) || b.id.localeCompare(a.id));
         if (filtering && children.length === 0) return '';
         const collapsed = sidebarCollapsedFolders().has(folder);
         const active = children.find((issue) => issue.activeBlock);
@@ -1205,6 +1217,17 @@
         ? `<span>Master issue: ${issueLink(master)}</span><button class="small-button" type="button" id="remove-issue-master"${master.canDetach ? '' : ' disabled'}>Remove</button>`
         : ''
     );
+    const subIssues = $('issue-sub-issues');
+    subIssues.hidden = !children?.length;
+    updateFolderMarkup(
+      subIssues,
+      (children || [])
+        .map(
+          (child) =>
+            `<li>${issueLink(child)}<button class="small-button" type="button" data-detach-action="folder-detach" data-detach-sub-issue="${escape(child.id)}" aria-label="Remove ${escape(issueLabel(child))}"${child.canDetach ? '' : ' disabled'}>Remove</button></li>`
+        )
+        .join('')
+    );
     panel.hidden = !children?.length && !formerMasters?.length && !detachedChildren?.length;
     const groupReasons = new Map(reasoning?.map(({ id, reason }) => [id, reason]));
     const html = [];
@@ -1212,7 +1235,7 @@
       html.push(`<p>Earlier work and evidence in ${issueLink(formerMaster)}</p>`);
     if (children?.length) {
       html.push(
-        `<h2>Sub-issues</h2><ul class="folder-run-results">${children
+        `<h2>Sub-issue proof</h2><ul class="folder-run-results">${children
           .map((child) => renderSubIssue(child, groupReasons.get(child.id)))
           .join('')}</ul>`
       );
@@ -1797,11 +1820,32 @@
     }
   }
 
+  function canReorder(block) {
+    const { issue, flow, grouping } = state.view;
+    return (
+      block.kind !== 'request' &&
+      !block.readOnly &&
+      !block.suggested &&
+      !state.pending &&
+      !state.newActionsPaused &&
+      !storeUnavailable() &&
+      !issue.readOnly &&
+      issue.state !== 'needs-approval' &&
+      !['archive', 'closed'].includes(issue.location) &&
+      !grouping?.master &&
+      (!flow.closing || flow.closing.complete) &&
+      !flow.blocks.some(isRunning)
+    );
+  }
+
   function blockCard(block) {
     const style = blockStyle(block.definition ?? block.kind);
     const entry = blockContent(block);
     const source = entry ? ` data-ui-source="${escape(entry.id)}"` : '';
-    return `<button class="block-card${state.blockId === block.id ? ' selected' : ''}${block.suggested ? ' suggested' : ''}" style="--block-color:${style.color}" data-block="${escape(block.id)}"${source} data-node="${escape(block.id)}" aria-pressed="${state.blockId === block.id}">${cardContents(block, style)}</button>`;
+    const grip = canReorder(block)
+      ? '<span data-block-grip title="Drag to reorder or press Alt+Up or Alt+Down" aria-hidden="true">⠿</span>'
+      : '';
+    return `<button class="block-card${state.blockId === block.id ? ' selected' : ''}${block.suggested ? ' suggested' : ''}" style="--block-color:${style.color}" data-block="${escape(block.id)}"${source} data-node="${escape(block.id)}" aria-pressed="${state.blockId === block.id}">${grip}${cardContents(block, style)}</button>`;
   }
 
   function manualClosePrompt() {
@@ -1825,13 +1869,46 @@
     return `${prompt}<div class="graph-row">${row.map(blockCard).join('')}</div>`;
   }
 
+  let blockDrag;
+  function projection() {
+    const flow = state.view?.flow;
+    return blockDrag?.issueId === state.issueId && blockDrag?.revision === flow?.revision ? blockDrag : null;
+  }
+
   function renderGraph() {
     const flow = state.view?.flow;
     $('graph').hidden = !flow;
     $('workspace-empty').hidden = !!flow;
     if (!flow) return;
     if (document.activeElement === $('starting-branch') && $('graph').dataset.issue === state.issueId) return;
-    const blocks = flow.blocks || [];
+    const preview = projection();
+    const blocks = preview?.blocks || flow.blocks;
+    const layers = graphLayers(blocks);
+    const destination = destinationNode();
+    const baseNode = startingPointNode(flow);
+    $('graph').classList.toggle(
+      'closed',
+      state.view.issue.location === 'closed' || state.view.issue.state === 'closed'
+    );
+    view.render(
+      $('graph'),
+      `<svg class="graph-lines" aria-hidden="true"></svg>${baseNode}${layers.map(graphRow).join('')}<button class="graph-add" data-open-palette aria-label="Add a step" title="Add a step">＋</button>${destination}`,
+      'flow-graph:' + state.issueId
+    );
+    $('graph').dataset.issue = state.issueId;
+    $('graph').toggleAttribute('data-reorder-preview', Boolean(preview?.blocks));
+    $('graph')
+      .querySelector(`[data-block="${CSS.escape(preview?.blockId || '')}"]`)
+      ?.toggleAttribute('data-reorder-source', Boolean(preview?.blocks));
+    requestAnimationFrame(() => {
+      drawConnections();
+      const intent = state.graphScrollIntent;
+      state.graphScrollIntent = null;
+      if (intent) scrollToBlock(intent);
+    });
+  }
+
+  function startingPointNode(flow) {
     const target = flow.target || {};
     const branch = target.branch || 'Target branch';
     const branches = state.view.branches || [];
@@ -1855,25 +1932,7 @@
         `<option value="${escape(selectedRef)}" selected>${escape(pinnedCommit ? `${selectedLabel} · ${pinnedCommit.slice(0, 8)}` : 'Choose a branch')}${point && !selectedBranch ? ' (unavailable)' : ''}</option>`
       );
     const startingNote = startingBranchNote(state.view, branches);
-    const layers = graphLayers(blocks);
-    const destination = destinationNode();
-    const baseNode = `<div class="graph-terminal base" data-node="__base"><span class="terminal-label">Starting point</span><label class="starting-branch-label" for="starting-branch">Starting branch</label><select id="starting-branch" aria-describedby="starting-branch-note" title="Change the starting branch for this issue">${options.join('')}</select>${pinnedCommit ? `<span class="terminal-note starting-commit" title="${escape(pinnedCommit)}">Base ${escape(pinnedCommit.slice(0, 12))}</span>` : ''}${flow.workspace?.branch ? `<span class="terminal-note">${escape(flow.workspace.branch)}</span>` : ''}<span class="terminal-note" id="starting-branch-note">${escape(startingNote)}</span></div>`;
-    $('graph').classList.toggle(
-      'closed',
-      state.view.issue.location === 'closed' || state.view.issue.state === 'closed'
-    );
-    view.render(
-      $('graph'),
-      `<svg class="graph-lines" aria-hidden="true"></svg>${baseNode}${layers.map(graphRow).join('')}<button class="graph-add" data-open-palette aria-label="Add a step" title="Add a step">＋</button>${destination}`,
-      'flow-graph:' + state.issueId
-    );
-    $('graph').dataset.issue = state.issueId;
-    requestAnimationFrame(() => {
-      drawConnections();
-      const intent = state.graphScrollIntent;
-      state.graphScrollIntent = null;
-      if (intent) scrollToBlock(intent);
-    });
+    return `<div class="graph-terminal base" data-node="__base"><span class="terminal-label">Starting point</span><label class="starting-branch-label" for="starting-branch">Starting branch</label><select id="starting-branch" aria-describedby="starting-branch-note" title="Change the starting branch for this issue">${options.join('')}</select>${pinnedCommit ? `<span class="terminal-note starting-commit" title="${escape(pinnedCommit)}">Base ${escape(pinnedCommit.slice(0, 12))}</span>` : ''}${flow.workspace?.branch ? `<span class="terminal-note">${escape(flow.workspace.branch)}</span>` : ''}<span class="terminal-note" id="starting-branch-note">${escape(startingNote)}</span></div>`;
   }
 
   function startingBranchNote(view, branches) {
@@ -1893,7 +1952,7 @@
     svg.removeAttribute('style');
     const bounds = graph.getBoundingClientRect();
     const nodes = new Map([...graph.querySelectorAll('[data-node]')].map((node) => [node.dataset.node, node]));
-    const blocks = state.view.flow.blocks;
+    const blocks = projection()?.blocks || state.view.flow.blocks;
     const edges = [];
     const parents = new Set();
     for (const block of blocks) {
@@ -1921,6 +1980,8 @@
       const middle = (y1 + y2) / 2;
       const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
       path.setAttribute('d', `M ${x1} ${y1} C ${x1} ${middle}, ${x2} ${middle}, ${x2} ${y2}`);
+      path.dataset.from = from;
+      path.dataset.to = to;
       path.setAttribute('fill', 'none');
       path.setAttribute('stroke', suggested ? '#484848' : '#575757');
       path.setAttribute('stroke-width', '1');
@@ -2336,7 +2397,6 @@
     const sections = {
       settings: `<form id="block-form">${window.factoryBlockModel(state.view.blockModels?.[block.id], values.model || '')}${investigationSourcePicker(block)}${declaredDetails(block, true)}${outputsSection(block)}${systemPromptEditor(block, values, locked)}${editChecklist(block, changes)}<section class="detail-section"><div class="section-label">Block settings</div><label class="field">Name<input name="label" data-field="label" value="${escape(values.label || '')}" /></label><div class="field-row"><label class="field">Parallel lane<select name="lane" data-field="lane">${[0, 1, 2, 3].map((lane) => `<option value="${lane}"${Number(values.lane || 0) === lane ? ' selected' : ''}>${lane === 0 ? 'Main lane' : `Parallel lane ${lane + 1}`}</option>`).join('')}</select></label>${block.kind === 'sol' ? `<label class="field">Iterations<input type="number" name="iterations" data-field="iterations" min="1" max="20" value="${escape(values.iterations || 1)}" /></label>` : ''}</div></section>${saveRow()}</form>`,
       progress: `<section class="detail-section"><div class="section-label">${running ? 'Current progress' : 'Progress'}<span data-ui-value="Status comes from the saved block.">${escape(statusText(status(block), last))}</span></div>${progress}${previousAttempts.length ? `<details class="attempt-history" data-preserve="attempt-history"><summary>${previousAttempts.length} earlier ${previousAttempts.length === 1 ? 'attempt' : 'attempts'}</summary>${previousAttempts.map(attemptCard).join('')}</details>` : ''}</section>`,
-      sequence: `<section class="detail-section"><div class="section-label">Sequence</div><p class="detail-copy">Move this step toward the destination or toward the starting point.</p><div class="block-actions"><button class="small-button" data-action="move" data-direction="down"${locked}>↑ Earlier</button><button class="small-button" data-action="move" data-direction="up"${locked}>↓ Later</button></div></section>`,
       notes: comments(block),
     };
     return (
@@ -2516,14 +2576,30 @@
     inspectorRender = { scope, html };
   }
 
+  function playbackIssueState() {
+    const issue = state.view?.issue;
+    if (issue?.location === 'archive') return 'archived';
+    if (issue?.location === 'closed' || issue?.status === 'closed') return 'closed';
+    if (['blocked', 'need-input'].includes(issue?.status) || state.view?.humanInput) return 'blocked';
+    return '';
+  }
+
+  function renderPlaybackButton(mode) {
+    const labels = { start: 'Start', resume: 'Resume', pause: 'Pause', close: 'Close', archive: 'Archive' };
+    const issueState = playbackIssueState();
+    $('issue-playback').innerHTML =
+      (mode === 'archive' || issueState === 'blocked'
+        ? statusIcon(mode === 'archive' ? 'closed' : issueState) + ' '
+        : '') + (labels[mode] || 'Start');
+    $('issue-playback').setAttribute('aria-label', (labels[mode] || 'Start') + ' issue');
+  }
+
   function renderPlayback(blocks) {
     const playback = state.view?.autoplay;
     const playing = playback?.mode === 'playing' || playback?.mode === 'waiting';
     const mode = playbackAction(blocks);
     const waiting = blocks.find((block) => playback?.mode === 'waiting' && playback.blockId === block.id);
-    const labels = { start: 'Start', resume: 'Resume', pause: 'Pause', close: 'Close', archive: 'Archive' };
-    $('issue-playback').textContent = labels[mode] || 'Start';
-    $('issue-playback').setAttribute('aria-label', labels[mode] ? labels[mode] + ' issue' : 'Start issue');
+    renderPlaybackButton(mode);
     const waitingButton = $('waiting-block');
     waitingButton.hidden = !waiting;
     waitingButton.textContent = waiting ? waiting.label + ' needs confirmation' : '';
@@ -2570,6 +2646,30 @@
       .querySelector('[data-block-model-error], [name="model"], .block-progress')
       ?.scrollIntoView({ block: 'center' });
   });
+  function renderIssueTimestamps(issue) {
+    const timestamps = $('issue-timestamps');
+    timestamps.hidden = !issue;
+    timestamps.innerHTML = [
+      ['Created', issue?.created],
+      ['Updated', issue?.updated],
+    ]
+      .map(([label, at]) =>
+        at
+          ? `${label} <time datetime="${escape(at)}">${escape(new Date(at).toLocaleString())}</time>`
+          : `${label} unavailable`
+      )
+      .join(' · ');
+  }
+
+  function renderFooterVisibility(showHome) {
+    document
+      .querySelector('.flow-footer')
+      .classList.toggle(
+        'discuss-hidden',
+        showHome && ['discuss', 'reports'].includes($('project-home').dataset.projectTab)
+      );
+  }
+
   function render() {
     renderSidebar();
     renderFolderWorkspace();
@@ -2613,8 +2713,10 @@
     renderEnvironment();
     renderIssueGrouping();
     renderGraph();
+    renderIssueTimestamps(issue);
     const showHome = !state.issueId && !state.folder && !state.fileFolder;
     projectHome.setVisible(showHome);
+    renderFooterVisibility(showHome);
     $('app').dataset.homeView = showHome ? 'open' : 'closed';
     if (showHome) {
       $('graph-scroll').hidden = true;
@@ -3176,11 +3278,8 @@
       !confirm(`Remove the "${block.label}" block from this flow? Its completed work may still exist in the checkout.`)
     )
       return;
-    if (!['move', 'remove', 'stop'].includes(name)) return;
-    const result = await action(name, {
-      blockId: block.id,
-      ...(name === 'move' ? { direction: button.dataset.direction } : {}),
-    });
+    if (!['remove', 'stop'].includes(name)) return;
+    const result = await action(name, { blockId: block.id });
     if (result && name === 'remove') state.deleteBlockId = null;
     if (result) await load(true);
   }
@@ -3430,7 +3529,7 @@
     });
   });
 
-  $('issue-grouping').addEventListener('click', (event) => {
+  function handleIssueGroupingClick(event) {
     if (followFolderLink(event)) return;
     const button = event.target.closest('button');
     if (!button || button.disabled) return;
@@ -3439,7 +3538,10 @@
     if (button.dataset.reattachSubIssue)
       return void action('folder-reattach', { subIssueId: button.dataset.reattachSubIssue });
     if (button.hasAttribute('data-group-play') && state.view?.autoplay?.mode === 'paused') $('issue-playback').click();
-  });
+  }
+
+  $('issue-sub-issues').addEventListener('click', handleIssueGroupingClick);
+  $('issue-grouping').addEventListener('click', handleIssueGroupingClick);
 
   $('issue-annotations').addEventListener('click', (event) => {
     if (followFolderLink(event)) return;
@@ -4190,6 +4292,83 @@
     openCapture();
   });
   window.addEventListener('resize', resizeColumns);
+  const graph = $('graph');
+  graph.addEventListener('pointerdown', (event) => {
+    const grip = event.target.closest('[data-block-grip]');
+    if (!grip || event.button !== 0 || blockDrag) return;
+    const { flow } = state.view;
+    const blockId = grip.closest('[data-block]').dataset.block;
+    if (!canReorder(flow.blocks.find((block) => block.id === blockId))) return;
+    const bounds = graph.getBoundingClientRect();
+    const targets = [...graph.querySelectorAll('[data-block]')].map((node) => {
+      const box = node.getBoundingClientRect();
+      return { id: node.dataset.block, x: box.x + box.width / 2 - bounds.x, y: box.y + box.height / 2 - bounds.y };
+    });
+    blockDrag = {
+      pointerId: event.pointerId,
+      x: event.clientX,
+      y: event.clientY,
+      issueId: state.issueId,
+      revision: flow.revision,
+      blockId,
+      targets,
+    };
+    graph.setPointerCapture(event.pointerId);
+  });
+
+  graph.addEventListener('pointermove', (event) => {
+    const drag = projection();
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    if (!drag.targetId && Math.hypot(event.clientX - drag.x, event.clientY - drag.y) < 6) return;
+    const bounds = graph.getBoundingClientRect();
+    const target = drag.targets.reduce(
+      (nearest, item) => {
+        const distance = Math.hypot(event.clientX - bounds.x - item.x, event.clientY - bounds.y - item.y);
+        return distance < nearest.distance ? { id: item.id, distance } : nearest;
+      },
+      { distance: Infinity }
+    );
+    if (drag.targetId === target.id) return;
+    drag.targetId = target.id;
+    const { flow } = state.view;
+    const from = flow.blocks.findIndex((block) => block.id === drag.blockId);
+    const to = flow.blocks.findIndex((block) => block.id === target.id);
+    drag.blocks = to > 0 && from !== to ? reorderedBlocks(flow, from, to, { insert: true }) : null;
+    renderGraph();
+  });
+
+  function finishBlockDrag(event) {
+    if (blockDrag?.pointerId !== event.pointerId) return;
+    const drag = projection();
+    blockDrag = null;
+    renderGraph();
+    if (!drag?.blocks) return;
+    if (event.type !== 'pointerup') return;
+    const viewport = $('graph-scroll').getBoundingClientRect();
+    if (
+      event.clientX < viewport.left ||
+      event.clientX > viewport.right ||
+      event.clientY < viewport.top ||
+      event.clientY > viewport.bottom
+    )
+      return;
+    void action('move', { blockId: drag.blockId, targetId: drag.targetId });
+  }
+
+  graph.addEventListener('pointerup', finishBlockDrag);
+  graph.addEventListener('lostpointercapture', finishBlockDrag);
+  graph.addEventListener('keydown', async (event) => {
+    const card = event.target.closest('[data-block]');
+    if (!card || !event.altKey || !['ArrowUp', 'ArrowDown'].includes(event.key)) return;
+    const blocks = state.view.flow.blocks;
+    const at = blocks.findIndex((block) => block.id === card.dataset.block);
+    const target = blocks[at + (event.key === 'ArrowUp' ? -1 : 1)];
+    if (!canReorder(blocks[at]) || !target || target.kind === 'request') return;
+    event.preventDefault();
+    await action('move', { blockId: card.dataset.block, targetId: target.id });
+    graph.querySelector(`[data-block="${CSS.escape(card.dataset.block)}"]`)?.focus();
+  });
+
   let graphScrollIdleTimer;
   $('graph-scroll').addEventListener(
     'scroll',

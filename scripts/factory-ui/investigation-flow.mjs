@@ -1,8 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { digest, requireThat } from './common.mjs';
 
-export const inquiryKinds = new Set(['understand', 'investigate']);
-export const investigationOutputKinds = new Set(['generate-report', 'create-issues']);
+import { inquiryKinds } from './flow-order.mjs';
+export { inquiryKinds, investigationOutputKinds } from './flow-order.mjs';
 
 function legacyGeneratedPrompt(block) {
   const { systemPrompt = '' } = block.attempts.at(-1) ?? {};

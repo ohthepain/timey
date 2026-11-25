@@ -3,6 +3,7 @@ import { issueAnnotationBrowserChecks } from './flow-browser-issue-annotations.m
 import { blockModelsBrowserChecks } from './flow-browser-block-models.mjs';
 import { providerSettingsBrowserChecks } from './flow-browser-provider-settings.mjs';
 import { activityBrowserChecks } from './flow-browser-activity.mjs';
+import { inboxDiscussBrowserChecks, inboxFlowBrowserChecks } from './flow-browser-inbox.mjs';
 import { investigationReportsBrowserChecks } from './flow-browser-investigation-reports.mjs';
 import { issueStatusFoldersBrowserChecks } from './flow-browser-issue-status-folders.mjs';
 import { projectIssuesBrowserChecks } from './flow-browser-project-issues.mjs';
@@ -122,6 +123,8 @@ const assets = [
   'issue-group-ui.js',
   'flow.css',
   'flow-ui.js',
+  'flow-order.mjs',
+  'flow-interactions.css',
   'issue-store-ui.js',
   'issue-ownership-ui.js',
   'issue-folder-drag-ui.js',
@@ -166,6 +169,12 @@ const fingerprint = () =>
   );
 const candidate = { revision: git(root, 'rev-parse', 'HEAD'), assets: fingerprint() };
 const results = [];
+const inboxDiscussCheck = 'Project chat stays at the bottom and accepts prompts while work is paused';
+const inboxFlowCheck = 'Issue flow dates, statuses, folder ordering and block drag';
+Object.assign(flowBrowserScenarioNames, {
+  '--inbox-flow': inboxFlowCheck,
+  '--inbox-discuss': inboxDiscussCheck,
+});
 const {
   '--master-issues': masterIssuesCheck,
   '--issue-annotations': issueAnnotationsCheck,
@@ -188,6 +197,15 @@ const {
   '--block-inspection': blockInspectionCheck,
   '--storage-status': storageStatusCheck,
   '--polling': pollingCheck,
+  '--capture-folder-issue': captureFolderIssueCheck,
+  '--save-request-route': saveRequestRouteCheck,
+  '--add-parallel-block': addParallelBlockCheck,
+  '--reorder-saved-blocks': reorderSavedBlocksCheck,
+  '--assign-folder': assignFolderCheck,
+  '--save-block-comment': saveBlockCommentCheck,
+  '--stop-work': stopWorkCheck,
+  '--retry-work': retryWorkCheck,
+  '--reload-flow-history': reloadFlowHistoryCheck,
   '--timers': timersCheck,
   '--proposals': proposalsCheck,
 } = flowBrowserScenarioNames;
@@ -387,20 +405,24 @@ async function poll(read, predicate, message) {
   }
   assert.fail(message + '\n' + JSON.stringify(value));
 }
-async function clickAction(locator) {
-  const responsePromise = page.waitForResponse(
-    (response) =>
-      response.url().endsWith('/api/flow-action') &&
-      response.request().method() === 'POST' &&
-      response.request().postDataJSON().action !== 'open-block',
-    { timeout: 60000 }
-  );
-  await locator.click();
-  const response = await responsePromise;
+async function observeAction(interact) {
+  const [response] = await Promise.all([
+    page.waitForResponse(
+      (response) =>
+        response.url().endsWith('/api/flow-action') &&
+        response.request().method() === 'POST' &&
+        response.request().postDataJSON().action !== 'open-block',
+      { timeout: 60000 }
+    ),
+    interact(),
+  ]);
   const value = await response.json();
   assert.equal(response.status(), 200, JSON.stringify(value));
   assert.ok(!value.error, JSON.stringify(value));
   return value;
+}
+function clickAction(locator) {
+  return observeAction(() => locator.click());
 }
 async function selectBlock(id) {
   const locator = page.locator('.block-card[data-block="' + id + '"]');
@@ -644,6 +666,7 @@ try {
   await check(navigationCheck, () =>
     withQueueConfiguration({ page, project, root }, () => projectNavigationBrowserChecks({ page, screenshot }))
   );
+  await check(inboxFlowCheck, () => inboxFlowBrowserChecks({ page, service, project, poll, screenshot, output }));
   await check(reportsCheck, () =>
     investigationReportsBrowserChecks({ page, project, service, poll, screenshot, output })
   );
@@ -656,6 +679,7 @@ try {
     )
   );
   await check(discussCheck, () => projectDiscussBrowserChecks({ page, project, service, poll, screenshot }));
+  await check(inboxDiscussCheck, () => inboxDiscussBrowserChecks({ page, service, screenshot, output }));
   await check('Factory provider settings save enablement and quota warnings', () =>
     providerSettingsBrowserChecks({ page, project, screenshot })
   );
@@ -1148,7 +1172,7 @@ try {
   part = '--ci-part=2';
   const description =
     'Understand why the save button loses text\nDone: The text survives a reload.\nProof: Retained saved text.\nKnown facts: The problem occurs after refresh.\nConstraints: Reproduce before changing code.';
-  await check('Folder plus creates an issue directly in that folder and retains typed wording', async () => {
+  await check(captureFolderIssueCheck, async () => {
     await page.goto('/');
     await page.locator('#new-folder').click();
     await page.locator('#folder-name').fill('Browser folder');
@@ -1276,17 +1300,23 @@ try {
     await page.locator('#folder-search-form button[type="submit"]').click();
     await screenshot('folder-master-hierarchy');
     await masterLink.click();
+    const subIssues = page.locator('#issue-heading').getByRole('list', { name: 'Sub-issues', exact: true });
+    await subIssues.waitFor();
+    assert.equal(await subIssues.getByRole('link').count(), 2);
+    assert.equal(await subIssues.getByRole('button', { name: /^Remove / }).count(), 2);
+    assert.ok((await subIssues.boundingBox()).y > (await page.locator('#issue-title').boundingBox()).y);
+    assert.ok((await subIssues.boundingBox()).y < (await page.locator('#issue-settings').boundingBox()).y);
     const grouping = page.getByRole('region', { name: 'Grouped issues' });
-    await grouping.getByRole('heading', { name: 'Sub-issues' }).waitFor();
+    await grouping.getByRole('heading', { name: 'Sub-issue proof' }).waitFor();
     assert.equal(await grouping.getByText('The fixture requests share save behavior.').count(), 2);
-    await grouping.getByRole('link', { name: /Understand why/ }).click();
+    await subIssues.getByRole('link', { name: /Understand why/ }).click();
     const masterRow = page.getByRole('group', { name: 'Master issue', exact: true });
     await masterRow.getByRole('link', { name: /Keep both save behaviors/ }).waitFor();
     assert.ok((await masterRow.boundingBox()).y < (await page.locator('#issue-settings').boundingBox()).y);
     assert.equal(await page.locator('#issue-playback').isVisible(), false);
     await masterRow.getByRole('link', { name: /Keep both save behaviors/ }).click();
     assert.equal(await masterRow.isVisible(), false);
-    await grouping.getByRole('link', { name: /Keep the save button visible/ }).click();
+    await subIssues.getByRole('link', { name: /Keep the save button visible/ }).click();
     await masterRow.waitFor({ state: 'visible' });
     await screenshot('issue-master-row');
     await clickAction(masterRow.getByRole('button', { name: 'Remove', exact: true }));
@@ -1296,8 +1326,14 @@ try {
     await page.locator('#issue-settings').waitFor();
     assert.equal(await masterRow.isVisible(), false);
     await page.goto('/?issue=' + master.issue.id);
-    await clickAction(page.locator(`[data-detach-sub-issue="${issueId}"]`));
+    await subIssues.waitFor();
+    assert.equal(await subIssues.getByRole('link').count(), 1);
+    await clickAction(subIssues.getByRole('button', { name: /Remove.*Understand why/ }));
+    assert.equal(new URL(page.url()).searchParams.get('issue'), master.issue.id);
+    await subIssues.waitFor({ state: 'hidden' });
     await page.goto('/?issue=' + issueId);
+    await page.locator('#issue-settings').waitFor();
+    assert.equal(await masterRow.isVisible(), false);
 
     await openFolder();
     await members.getByRole('checkbox', { name: /Select.*Keep the save button visible/ }).check();
@@ -1620,7 +1656,7 @@ try {
     Object.entries({ ...clarified, type: 'bug' })
       .map(([key, value]) => key + ': ' + value)
       .join('\n');
-  await check('Saving Your words retains derived fields and applies the new type default', async () => {
+  await check(saveRequestRouteCheck, async () => {
     await page.locator('#request-form [name="wording"]').fill(savedWording);
     await clickAction(page.locator('#request-form button[type="submit"]'));
     await poll(
@@ -1716,7 +1752,7 @@ try {
       await removeBrowserIssue(project, id);
     }
   });
-  await check('Folders can be created and assigned without running work', async () => {
+  await check(assignFolderCheck, async () => {
     await page.locator('#new-folder').click();
     await page.locator('#folder-name').fill('Next release');
     await clickAction(page.locator('#folder-form button[type="submit"]'));
@@ -1728,7 +1764,7 @@ try {
     await page.locator('.issue-folder .issue-row').filter({ hasText: 'Understand why' }).waitFor();
     assert.equal(logs.execution.length, 0);
   });
-  await check('Adding and saving a block retains the selected prompt mode and parallel lane', async () => {
+  await check(addParallelBlockCheck, async () => {
     await page.getByRole('button', { name: 'Add a step', exact: true }).click();
     const data = await clickAction(page.locator('[data-add-kind="understand"]'));
     addedId = data.flow.blocks.find((item) => item.kind === 'understand' && item.id !== workId).id;
@@ -1752,14 +1788,29 @@ try {
     assert.equal(saved.attempts.length, 0);
     assert.equal(logs.modelCalls.length, 0);
   });
-  await check('Sequence controls reorder saved blocks', async () => {
-    const before = (await view()).flow.blocks.map((item) => item.id);
-    const requestBlock = (await view()).flow.blocks.find((item) => item.kind === 'request');
+  await check(reorderSavedBlocksCheck, async () => {
+    const { blocks } = (await view()).flow;
+    const before = blocks.map((item) => item.id);
+    const originalIndex = before.indexOf(addedId);
+    const requestBlock = blocks.find((item) => item.kind === 'request');
     assert.equal(await page.locator(`[data-node="${requestBlock.id}"] .block-icon`).textContent(), '💬');
-    await clickAction(page.locator('[data-action="move"][data-direction="up"]'));
-    const after = (await view()).flow.blocks.map((item) => item.id);
-    assert.equal(after.indexOf(addedId), before.indexOf(addedId) + 1);
+    const card = page.locator(`#graph [data-block="${addedId}"]`);
+    const moved = await observeAction(() => card.press('Alt+ArrowDown'));
+    const after = moved.flow.blocks.map((item) => item.id);
+    assert.equal(after.indexOf(addedId), originalIndex + 1);
     assert.deepEqual(new Set(after), new Set(before));
+    assert.equal(moved.flow.blocks[originalIndex + 1].lane, blocks[originalIndex + 1].lane);
+
+    // Restore the lane fixture for the shared reload check.
+    await service.flows.action({
+      action: 'update',
+      issueId,
+      blockId: addedId,
+      revision: moved.flow.revision,
+      changes: { lane: blocks[originalIndex].lane },
+    });
+    await page.reload();
+    await card.waitFor();
     await screenshot('flow-desktop');
   });
   await check('The graph and every dependency run from top to bottom', async () => {
@@ -1826,7 +1877,7 @@ try {
     assert.ok(clipped.scrollTop - after.scrollTop <= 55, 'The card moved further than necessary.');
     await page.setViewportSize({ width: 1440, height: 960 });
   });
-  await check('Block comments remain attached after reload', async () => {
+  await check(saveBlockCommentCheck, async () => {
     await page.reload();
     await block(addedId);
     const comment = page.locator('#comment-form [name="comment"]');
@@ -1899,7 +1950,7 @@ try {
     await prose.getByRole('heading', { name: 'Work block' }).waitFor();
     await draft.fill(original);
   });
-  await check('Inspector Run guards drafts and switches to Stop during a run', async () => {
+  await check(stopWorkCheck, async () => {
     await block(workId);
     await page.locator('#block-form [name="label"]').fill('Work with saved settings');
     await page.locator('#run-block').click();
@@ -1972,7 +2023,7 @@ try {
     assert.match(attempt.output, /explicit attempt 1/);
     assert.ok(stopped.flow.blocks.filter((item) => item.suggested).every((item) => item.attempts.length === 0));
   });
-  await check('Retry retains both attempts and does not start the next block', async () => {
+  await check(retryWorkCheck, async () => {
     await page.reload();
     await page.locator('#run-block').filter({ hasText: 'Retry' }).waitFor();
     await clickAction(page.locator('#run-block'));
@@ -2015,7 +2066,7 @@ try {
     await screenshot('artifact-desktop');
     await page.locator('[aria-label="Close artifact"]').click();
   });
-  await check('Reload retains flow settings, comments, folder and attempt history', async () => {
+  await check(reloadFlowHistoryCheck, async () => {
     await page.reload();
     await page.locator('[data-block="' + workId + '"][aria-pressed="true"]').waitFor();
     const data = await view();

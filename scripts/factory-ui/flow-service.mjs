@@ -129,7 +129,7 @@ import {
   requestBlock,
   requestData,
 } from './flow-block-data.mjs';
-import { clarifyRequest } from './flow-request.mjs';
+import { clarifyRequest, requestGroupDetails } from './flow-request.mjs';
 import {
   exportFlowDefinition,
   issueTypes,
@@ -593,6 +593,8 @@ class IssueFlows {
       id: issue.id,
       title: issue.title,
       issueNumber: issue.issueNumber,
+      created: issue.created,
+      updated: issue.updated,
       state: issue.state,
       type: requestData(flow).fields?.type ?? flow.routeType,
       badges: issueBadges(issue, badgeIndex, { masterId, approvals, flow }),
@@ -761,6 +763,8 @@ class IssueFlows {
         id: issue.id,
         title: issue.title,
         issueNumber: issue.issueNumber,
+        created: issue.created,
+        updated: issue.updated,
         state: issue.state,
         reusable: issue.reusable === true,
         location: issue.location,
@@ -2390,7 +2394,7 @@ class IssueFlows {
               .join('\n\n'),
           }
         : {}),
-      details,
+      details: [...details, ...requestGroupDetails(issue, block)],
     };
   }
   startingPointEditable(issue, flow, observedPR) {

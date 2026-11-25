@@ -336,9 +336,17 @@ and other views are unchanged.
 The issue sidebar also groups reports into user-named folders. Folder assignments
 are stored in the ignored `.issues/issue-folders.json` file, separate from report
 content and lifecycle state. Drag a sidebar issue handle onto a folder to move it;
-drop it on another folder to change the assignment. Select a folder to reorder its issues
+drop it on another folder to change the assignment. Issues in sidebar folders appear newest first. Select a folder to reorder its issues
 with Implementation order. The ordering is shared with the queue's implementation
 order, and hidden issues keep their positions during a folder-scoped reorder.
+
+Drag a block by its handle to reorder the issue flow. The graph shows the
+proposed position and connections before drop. With a block focused, use
+Alt+Up or Alt+Down to move it.
+
+In Reports, open a report to delete it or select rows in the library and choose
+Delete selected. Select all selects the reports in the library. Deleting a
+report removes its retained copy and evidence from the report library.
 
 The sort selector also offers implementation order, latest progress first, lifecycle
 progress, creation time, completion time and required human input. Direction is a

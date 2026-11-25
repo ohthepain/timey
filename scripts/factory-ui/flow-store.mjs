@@ -3,7 +3,13 @@ import { registeredProjectStores } from './stores/report-access.mjs';
 import { sameOwner } from './stores/coordination.mjs';
 import { blockDefinitionId, missingMergePR, requestBlock, withoutTarget } from './flow-block-data.mjs';
 import { BlockCatalog } from './block-catalog.mjs';
-import { inquiryKinds, investigationOutputKinds } from './investigation-flow.mjs';
+import {
+  blockDependencies,
+  independentOutput,
+  inquiryKinds,
+  joinPendingLanes,
+  reorderedBlocks,
+} from './flow-order.mjs';
 import { bundledFlow } from './flow-definitions.mjs';
 import { existsSync, mkdirSync, readFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
@@ -472,17 +478,15 @@ export function editFlow(flow, input, catalog) {
     move() {
       requireEditable(block);
       requireThat(block.kind !== 'request', 'Request stays at the beginning.');
-      const at = next.blocks.indexOf(block),
-        to = at + (input.direction === 'up' ? 1 : -1);
+      const at = next.blocks.indexOf(block);
+      const to = input.targetId
+        ? next.blocks.findIndex((item) => item.id === input.targetId)
+        : at + (input.direction === 'up' ? 1 : -1);
       requireThat(
-        ['up', 'down'].includes(input.direction) && to > 0 && to < next.blocks.length,
-        'This block cannot move further.'
+        (input.targetId || ['up', 'down'].includes(input.direction)) && to > 0 && to < next.blocks.length && to !== at,
+        'Choose a different block after Request.'
       );
-      requireEditable(next.blocks[to]);
-      [next.blocks[at], next.blocks[to]] = [next.blocks[to], next.blocks[at]];
-      next.blocks.forEach((item, index) => {
-        item.after = blockDependencies(next, item, index);
-      });
+      next.blocks = reorderedBlocks(next, at, to, { insert: Boolean(input.targetId) });
     },
     remove() {
       requireEditable(block);
@@ -544,27 +548,4 @@ function defaultInsertionIndex(blocks, kind) {
 
 function requireEditable(block) {
   requireThat(block, 'Choose a saved block.');
-}
-
-function independentOutput(flow, block) {
-  return flow.routeType === 'investigation' && investigationOutputKinds.has(block.kind);
-}
-function blockDependencies(flow, block, index) {
-  if (independentOutput(flow, block)) {
-    const inquiry = flow.blocks.slice(0, index).findLast(({ kind }) => inquiryKinds.has(kind)) ?? flow.blocks[0];
-    return [inquiry.id];
-  }
-  return laneDependencies(flow.blocks, index, block.lane);
-}
-function laneDependencies(blocks, index, lane) {
-  const previous = blocks.slice(0, index).findLast((item) => item.lane === lane && !item.suggested) || blocks[0];
-  return previous && index > 0 ? [previous.id] : [];
-}
-function joinPendingLanes(blocks) {
-  blocks.forEach((block, index) => {
-    if ((!block.suggested && block.kind !== 'publish') || block.attempts.length) return;
-    const prefix = blocks.slice(0, index);
-    const parents = new Set(prefix.flatMap((item) => item.after));
-    block.after = prefix.filter((item) => !parents.has(item.id)).map((item) => item.id);
-  });
 }
