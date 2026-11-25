@@ -2304,6 +2304,106 @@ test('editing Your words invalidates every following block even when clarificati
   }
 });
 
+test('a revised request keeps the open PR and requires fresh Work and Verify for manual delivery', async (t) => {
+  const { root, git, id, service } = fixture(t);
+  const config = { provider: 'github', repository: 'test/fixture', remote: 'origin', target: 'dev' };
+  const checkout = join(root, '.issues', 'checkout');
+  const branch = 'codex/revised-request';
+  const base = git('rev-parse', 'HEAD');
+  git('remote', 'add', 'origin', 'https://github.com/test/fixture');
+  git('worktree', 'add', '-qb', branch, checkout, base);
+  const workGit = (...args) => git('-C', checkout, ...args);
+  workGit('commit', '--allow-empty', '-qm', 'Previous work');
+  const head = workGit('rev-parse', 'HEAD');
+  const draft = join(checkout, 'draft.txt');
+  writeFileSync(draft, 'Keep this local edit through Request save.');
+  writeFileSync(join(root, '.issues', 'issue-delivery-config.json'), JSON.stringify(config));
+  const repo = { full_name: config.repository };
+  const pr = {
+    number: 9,
+    title: 'Preserve request wording',
+    html_url: 'https://example.invalid/pr/9',
+    state: 'open',
+    user: { login: 'factory[bot]' },
+    head: { ref: branch, sha: head, repo },
+    base: { ref: 'dev', repo },
+  };
+  const ran = [];
+  const flows = createIssueFlows(service, {
+    clarify: async () => ({
+      artifacts: { values: { type: 'bug', goal: 'Repair Save', requestedProof: 'Reload Save' } },
+    }),
+    observer: {
+      async observe() {
+        return {};
+      },
+    },
+    deliveryOptions: {
+      provider: {
+        config,
+        credentials: {
+          async session() {
+            return { slug: 'factory' };
+          },
+        },
+        async inspect() {
+          return pr;
+        },
+        async gh() {
+          return `dev\t${base}`;
+        },
+      },
+    },
+    executor: executor(async ({ block }) => {
+      ran.push(block.kind);
+      if (block.kind === 'work') rmSync(draft);
+      return { summary: 'Completed ' + block.label };
+    }),
+  });
+  t.after(() => flows.close());
+  const read = () => flows.read(flows.selected(id));
+  const act = (action, input = {}) => flows.action({ action, issueId: id, revision: read().revision, ...input });
+  const block = (kind) => read().blocks.find((entry) => entry.kind === kind);
+  const start = (kind) => act('start', { blockId: block(kind).id, confirmed: true });
+  const preview = () => act('preview-publish', { blockId: block('publish').id });
+  await act('request', { wording: requestData(read()).wording });
+  await act('add', { kind: 'verify', afterId: block('work').id });
+  const saved = read();
+  saved.workspace = { checkout, branch, base, pr: pr.number };
+  saved.destination = { branch: 'dev', pr: pr.number, url: pr.html_url };
+  for (const entry of saved.blocks.filter(({ kind }) => ['work', 'verify'].includes(kind)))
+    entry.attempts.push({ id: 'previous-' + entry.id, status: 'completed', startedAt: new Date().toISOString() });
+  flows.store.save(saved, saved.revision);
+
+  await act('request', { wording: 'Fix Save for the revised requirements' });
+  assert.equal(workGit('rev-parse', 'HEAD'), head);
+  assert.equal(readFileSync(draft, 'utf8'), 'Keep this local edit through Request save.');
+  assert.equal(read().destination.pr, pr.number);
+  await assert.rejects(preview, /Complete Work for the revised request/);
+  const legacy = read();
+  delete requestData(legacy).wordingChanged;
+  flows.store.save(legacy, legacy.revision);
+  await assert.rejects(() => start('merge'), /Complete Work for the revised request/);
+  assert.deepEqual(ran, []);
+
+  await start('verify');
+  await flows.active.get(id)?.task;
+  await start('work');
+  await flows.active.get(id)?.task;
+  await assert.rejects(preview, /Complete Verify after Work for the revised request/);
+  await assert.rejects(() => start('merge'), /Complete Verify after Work for the revised request/);
+  await start('verify');
+  await flows.active.get(id)?.task;
+  const result = await preview();
+  assert.equal(result.publication.status, 'current');
+  assert.equal(result.publication.pr.number, pr.number);
+  await act('confirm-publish', { blockId: block('publish').id, previewToken: result.publication.token });
+  await flows.active.get(id)?.task;
+  await start('merge');
+  await flows.active.get(id)?.task;
+  assert.deepEqual(ran, ['verify', 'work', 'verify', 'publish', 'merge']);
+});
+
 test('issue merge status exposes conflicts and Abort merge rejects stale or busy requests', async (t) => {
   const { root, git, id, service } = fixture(t);
   service.guard = () => {};

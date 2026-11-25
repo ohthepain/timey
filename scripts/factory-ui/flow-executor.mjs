@@ -46,6 +46,7 @@ import { readQueue } from './data.mjs';
 import { git, cleanEnvironment, requireThat, writeJson, digest } from './common.mjs';
 import { redactValue } from './activity.mjs';
 import { normalizeFocusedTests } from '../verify-merge-checks.mjs';
+import { candidateBrowserScenarioSelector } from './candidate-browser-scenarios.mjs';
 import { flowClosureArtifact, publishFlowPR } from './flow-delivery.mjs';
 import { mergeFlowPR } from './flow-merge.mjs';
 import {
@@ -480,10 +481,11 @@ export function modelManifest(output) {
   return manifest ? JSON.parse(manifest) : {};
 }
 
-function workFocusedResult(kind, output) {
+function workFocusedResult(kind, output, checkout, head) {
   if (kind !== 'work') return {};
   const { focusedTests } = modelManifest(output) ?? {};
-  return focusedTests === undefined ? {} : { focusedTests: normalizeFocusedTests(focusedTests) };
+  if (focusedTests === undefined) return {};
+  return { focusedTests: normalizeFocusedTests(focusedTests, candidateBrowserScenarioSelector(checkout, head)) };
 }
 
 function modelArtifacts(definition, output, workspace, response) {
@@ -644,6 +646,8 @@ function modelPrompt(ctx, options) {
     return blockInput(ctx, {
       workExecution: {
         issueId: ctx.issue.id,
+        existingChanges:
+          'Review the existing issue changes against the current request. Remove changes that only served an earlier version of the request and preserve unrelated edits.',
         task: 'Implement the saved issue in this checkout. This Work invocation starts implementation of an already-created issue. Capture-only instructions to create an idle issue belong to its earlier creation and are satisfied; use the underlying requested change and its implementation acceptance criteria as the goal and proof. Preserve all product constraints, required human decisions, permission boundaries and later block guards. Issue creation controls and live idle-status checks are not prerequisites for this implementation. If the saved request contains only capture instructions and no underlying change, report the missing scope as human input.',
       },
       workComparisonBase: options.workBase,
@@ -1093,7 +1097,7 @@ async function runModel(service, ctx, owned, options) {
         workspaceBase: workspace.base,
         commit: head,
         uncommitted: candidate.uncommitted,
-        ...workFocusedResult(ctx.block.kind, outputs.at(-1)),
+        ...workFocusedResult(ctx.block.kind, outputs.at(-1), workspace.checkout, head),
       },
       ...(workspace.temporary ? {} : { workspace }),
     };

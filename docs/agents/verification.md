@@ -66,6 +66,9 @@ usable while clarification runs, and the wording survives completion and reload.
 A rejected save retains the editable draft. The focused `flow.check.mjs` tests
 check acknowledgement after admission, synchronous input validation, retained
 background failure, and the existing awaited Request result.
+The focused shared-store check in `project-stores-flow.check.mjs` verifies that
+the same save persists the wording and admits clarification when the Request
+definition has changed.
 
 `node --test --test-name-pattern='confirmed coordination writes' scripts/project-stores.check.mjs`
 uses the real record provider and makes subsequent reads of each written operation
@@ -552,8 +555,11 @@ suites such as `pnpm run test:factory` to GitHub CI. Add a focused test when nee
 Fallow after Work's response.
 
 A standalone focused browser check can be recorded as `node scripts/<name>-browser.mjs`
-without extra arguments. A focused Flow browser command requires a recognized
-scenario flag. You can add `--reverse-fixture-scenarios` to change fixture order.
+without extra arguments. A focused Flow browser command requires a scenario
+flag registered in the candidate commit's `scripts/browser-scenario-policy.mjs`.
+Register flags as quoted keys in the `flowBrowserScenarioNames` object. Factory
+reads that declaration during Work result validation. You can add
+`--reverse-fixture-scenarios` to change fixture order.
 The aggregate Factory browser runner belongs to full verification.
 Work accepts the Node `--test-name-pattern` value as a separate argument or
 joined with `=`. It stores both forms as the same command.

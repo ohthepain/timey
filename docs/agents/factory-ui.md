@@ -2025,3 +2025,7 @@ all lanes, before clarification runs. This includes Work and any retained
 verification, publication or merge results, even if clarification derives the
 same goal and proof criteria. Attempts and evidence stay in history. Rerunning
 unchanged wording keeps the existing criteria-based invalidation behavior.
+
+After clarification, resume the route to run Work in the existing checkout.
+Publish PR and Merge wait for current Work and any upstream Verify block.
+Run Verify after Work. An open PR stays linked to the issue.

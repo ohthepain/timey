@@ -10,6 +10,7 @@ import { createProjectStores } from './factory-ui/stores/project-stores.mjs';
 import { registerProjectStores } from './factory-ui/stores/report-access.mjs';
 import { FlowStore, newFlow, makeBlock } from './factory-ui/flow-store.mjs';
 import { createIssueFlows } from './factory-ui/flow-service.mjs';
+import { requestBlock } from './factory-ui/flow-block-data.mjs';
 
 async function fixture(t, run = async () => ({ summary: 'Completed' }), recordKind = 'files') {
   const { root, git } = gitFixture(t, 'project-stores-flow-');
@@ -54,6 +55,29 @@ async function fixture(t, run = async () => ({ summary: 'Completed' }), recordKi
   t.after(registerProjectStores(root, project, { ownerForIssue: (issueId) => flows.active.get(issueId)?.storeOwner }));
   return { root, git, records, issues, project, flows, service, id, blockId: block.id };
 }
+
+test('saving Your words after a Request definition refresh admits clarification on shared storage', async (t) => {
+  const f = await fixture(t);
+  const flow = f.flows.read(f.flows.selected(f.id));
+  requestBlock(flow).definitionChecksum = 'earlier-definition';
+  const saved = await f.flows.store.save(flow, flow.revision);
+  const wording = 'Use the revised wording after refreshing the Request definition.';
+  f.flows.clarify = async () => ({ artifacts: { values: { type: 'feature', goal: 'Revised goal' } } });
+  const accepted = await f.flows.action({
+    action: 'request',
+    issueId: f.id,
+    revision: saved.revision,
+    wording,
+    background: true,
+  });
+  assert.equal(accepted.accepted, true);
+  assert.equal(requestBlock((await f.flows.view(f.id)).flow).data.wording, wording);
+  await f.flows.active.get(f.id)?.task;
+  const request = requestBlock((await f.flows.view(f.id)).flow);
+  assert.equal(request.data.wording, wording);
+  assert.notEqual(request.definitionChecksum, 'earlier-definition');
+  assert.equal(request.attempts.at(-1)?.status, 'completed');
+});
 
 for (const status of ['completed', 'uncertain'])
   void test(`a ${status} publication conflict stays recoverable without rejecting the background task`, async (t) => {
