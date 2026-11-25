@@ -76,10 +76,10 @@ location. Retire the old copy through cleanup that can be retried.
 
 ## Forced deletion
 
-Users with permission to manage project storage can force-delete referenced
-assets. The confirmation shows the selected asset count, total size, and which
-issue, report, or chat references will show **Asset deleted**. Include personal
-saves in the impact count.
+Force delete requires existing Timey admin privileges. The Factory server
+checks those privileges before accepting the operation. The confirmation shows
+the selected asset count, total size, and which issue, report, or chat references
+will show **Asset deleted**. Include personal saves in the impact count.
 
 Block forced deletion while an asset is required to resume or recover work or
 to complete verification. Explain which operation depends on it and what must
@@ -108,6 +108,10 @@ Offer **Save** for every asset the user can access, in its viewer and in its
 Asset Storage row. **Save** creates one personal reference shown as
 **Saved by you**. Repeating **Save** leaves the count unchanged. **Unsave**
 removes that person's reference.
+
+Factory reuses Timey's existing login component. **Save** and **Unsave** use the
+signed-in Timey account ID, so the same personal reference is available across
+runners.
 
 ## Relationship to existing decisions
 
