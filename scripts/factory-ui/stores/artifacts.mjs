@@ -238,22 +238,23 @@ class S3Artifacts extends ArtifactStore {
       throw storageFailure(error, 'connection test');
     }
   }
-  async list() {
+  async listedReference(object, hash, withDetails) {
+    const head = await this.client.send(new HeadObjectCommand({ Bucket: this.bucket, Key: object.Key }));
+    const ref = reference(this, hash, Number(head.ContentLength), head.ContentType || 'application/octet-stream');
+    return withDetails ? { ...ref, modifiedAt: object.LastModified?.toISOString() ?? null } : ref;
+  }
+  async list({ withDetails = false } = {}) {
     const refs = [];
+    const keyPrefix = `${this.prefix}/${this.projectId}/sha256/`;
     let token;
     do {
       const page = await this.client.send(
-        new ListObjectsV2Command({
-          Bucket: this.bucket,
-          Prefix: `${this.prefix}/${this.projectId}/sha256/`,
-          ContinuationToken: token,
-        })
+        new ListObjectsV2Command({ Bucket: this.bucket, Prefix: keyPrefix, ContinuationToken: token })
       );
       for (const object of page.Contents || []) {
-        const hash = object.Key.split('/').at(-1);
-        if (!validDigest(hash)) continue;
-        const head = await this.client.send(new HeadObjectCommand({ Bucket: this.bucket, Key: object.Key }));
-        refs.push(reference(this, hash, Number(head.ContentLength), head.ContentType || 'application/octet-stream'));
+        const hash = object.Key.replace(keyPrefix, '');
+        if (validDigest(hash) && object.Key === keyPrefix + hash)
+          refs.push(await this.listedReference(object, hash, withDetails));
       }
       token = page.NextContinuationToken;
     } while (token);

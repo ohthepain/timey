@@ -2,7 +2,28 @@
 
 Timey issue #217 tracks this work. The user confirmed the initial design on
 2026-11-24 and approved the remaining design decisions on 2026-11-25.
-Implementation requires separate approval.
+Paul approved implementation of issue #217. Enabling deletion for existing
+project data requires explicit approval after reviewing real project data.
+
+## Read-only release
+
+Open **Settings > Asset Storage** to review assets in configured S3 Artifact
+stores. The inventory reads objects under the project's exact content-addressed
+namespace and groups identical content across configured stores under one ID.
+The displayed object date is S3's last-modified date for the oldest listed
+copy. The inventory identifies legacy objects by digest because their object
+keys do not record a display name.
+
+Reference counts cover structured artifact references in shared records and
+retained record revisions, including archived issue evidence. References from
+unclassified source records are shown as **Restricted reference**. Counts
+remain unverified while coverage of legacy links, external publication,
+dependent files, and personal saves is incomplete. Keep every existing asset
+during the review, including assets with a zero recorded count.
+
+The inventory supports filtering, sorting, page selection, and filtered and
+selected byte totals. A provider failure is visible alongside results from
+available stores.
 
 ## Confirmed behavior
 

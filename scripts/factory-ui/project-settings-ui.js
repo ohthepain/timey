@@ -5,6 +5,7 @@
     ['lifecycle', 'Issue Lifecycle'],
     ['git', 'Git'],
     ['storage', 'Issue Storage'],
+    ['asset-storage', 'Asset Storage'],
     ['providers', 'AI providers', 'AI'],
     ['skills', 'Skills'],
     ['prompts', 'Prompts'],
@@ -484,6 +485,7 @@
       lifecycle: renderLifecycle,
       git: renderGit,
       storage: renderStorage,
+      'asset-storage': () => '',
       skills: renderSkills,
       prompts: renderPrompts,
       hotkeys: renderHotkeys,
@@ -492,6 +494,7 @@
       navigation();
       document.getElementById('settings-page-title').textContent = pages.find(([id]) => id === page)[1];
       content.innerHTML = renderers[page]();
+      if (page === 'asset-storage') window.renderProjectAssetStorage(content, data, esc);
       window.factoryAgentOptions(content);
       baseline = snapshot();
     }
@@ -508,6 +511,7 @@
       navigation();
       const endpoints = {
         providers: '/api/ai-providers',
+        'asset-storage': '/api/project-asset-storage',
         issues: '/api/folder-settings?project=true',
         prompts: '/api/project-preferences',
         hotkeys: '/api/project-preferences',

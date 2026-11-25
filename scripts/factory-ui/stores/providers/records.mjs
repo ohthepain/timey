@@ -174,29 +174,43 @@ function artifactReceipt(entry, ref, storeId) {
   });
 }
 
+async function decodedWithRefs(record, decode) {
+  const decoded = await decode(record);
+  return { ...decoded, refs: references([record.value, decoded.value]) };
+}
+
+async function retainedReceipt(entry, decode, unpackPayload) {
+  const { receipt } = entry;
+  const result = receipt.deleted ? { records: [] } : await unpackPayload(receipt.result);
+  assertStore(Array.isArray(result.records), 'The retained operation result is invalid.');
+  const records = await Promise.all(result.records.map((record) => decodedWithRefs(record, decode)));
+  return {
+    id: entry.id,
+    inputDigest: receipt.inputDigest,
+    identity: receiptIdentity(receipt),
+    records,
+    payloadRef: receipt.result?.ref,
+    refs: references([receipt.result || {}, result, records]),
+  };
+}
+
 async function retainedPayloads(backend, decode, unpackPayload, { excludeArtifactInventory, storeId }) {
   const raw = await backend.retainedPayloads();
   const records = [];
   const receipts = [];
   for (const record of raw.records) {
-    const decoded = await decode(record);
-    if (!excludeArtifactInventory || !inventoryRecord(decoded, storeId))
-      records.push({ ...decoded, refs: references([record.value, decoded.value]) });
+    const decoded = await decodedWithRefs(record, decode);
+    if (!excludeArtifactInventory || !inventoryRecord(decoded, storeId)) records.push(decoded);
   }
   for (const entry of raw.receipts) {
-    const receipt = entry.receipt;
-    const result = receipt.deleted ? { records: [] } : await unpackPayload(receipt.result);
-    assertStore(Array.isArray(result.records), 'The retained operation result is invalid.');
-    const decoded = await Promise.all(result.records.map(decode));
-    if (excludeArtifactInventory && decoded.length && decoded.every((record) => inventoryRecord(record, storeId)))
+    const receipt = await retainedReceipt(entry, decode, unpackPayload);
+    if (
+      excludeArtifactInventory &&
+      receipt.records.length &&
+      receipt.records.every((record) => inventoryRecord(record, storeId))
+    )
       continue;
-    receipts.push({
-      id: entry.id,
-      inputDigest: receipt.inputDigest,
-      identity: receiptIdentity(receipt),
-      records: decoded,
-      refs: references([receipt.result || {}, result, decoded]),
-    });
+    receipts.push(receipt);
   }
   return { records, receipts };
 }
