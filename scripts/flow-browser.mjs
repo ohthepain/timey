@@ -1,4 +1,5 @@
 import { masterIssueBrowserChecks } from './flow-browser-master-issues.mjs';
+import { investigativeGroupingBrowserChecks } from './flow-browser-investigative-grouping.mjs';
 import { issueAnnotationBrowserChecks } from './flow-browser-issue-annotations.mjs';
 import { blockModelsBrowserChecks } from './flow-browser-block-models.mjs';
 import { providerSettingsBrowserChecks } from './flow-browser-provider-settings.mjs';
@@ -177,6 +178,7 @@ Object.assign(flowBrowserScenarioNames, {
 });
 const {
   '--master-issues': masterIssuesCheck,
+  '--investigative-grouping': investigativeGroupingCheck,
   '--issue-annotations': issueAnnotationsCheck,
   '--folder-settings': folderSettingsCheck,
   '--block-deletion': blockDeletionCheck,
@@ -664,6 +666,9 @@ try {
     projectIssuesBrowserChecks({ page, project, root, output })
   );
   await check(masterIssuesCheck, () => masterIssueBrowserChecks({ page, project, root, output }));
+  await check(investigativeGroupingCheck, () =>
+    investigativeGroupingBrowserChecks({ page, project, output, candidate, clickAction, poll })
+  );
   await check(issueAnnotationsCheck, () => issueAnnotationBrowserChecks({ page, project, root, output, poll }));
   await check(navigationCheck, () =>
     withQueueConfiguration({ page, project, root }, () => projectNavigationBrowserChecks({ page, screenshot }))

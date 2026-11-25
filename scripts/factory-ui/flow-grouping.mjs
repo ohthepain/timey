@@ -6,7 +6,7 @@ import { digest, requireThat, writeJson } from './common.mjs';
 import { closedIssueState } from './data.mjs';
 import { deliveryTarget, invalidateBlocks, requestBlock, requestData } from './flow-block-data.mjs';
 import { mergedDelivery } from './merged-issue.mjs';
-import { activeGroupRequest, requireDetachableSource } from './flow-group-scope.mjs';
+import { activeGroupRequest, childRequestSection, requireDetachableSource } from './flow-group-scope.mjs';
 import { flowWorkspace } from './flow-observer.mjs';
 import { runOwnedOperation } from './stores/owned-operation.mjs';
 import { sameOwner } from './stores/coordination.mjs';
@@ -17,9 +17,15 @@ import { groupChildren, groupMaster, storedGroups } from './issue-group.mjs';
 import { issueStorageDirectory, moveStoredIssue, updateStoredIssueMetadata } from './issue-report-storage.mjs';
 import { afterReportWrite, registeredProjectStores } from './stores/report-access.mjs';
 import { resolveFolderSettings } from './issue-folder-settings.mjs';
+import { isInvestigation } from './investigation-records.mjs';
 
 const previewLifetime = 10 * 60 * 1000;
 const subIssueClosure = 'Sub-issue fixed by master issue';
+const scopeOperations = {
+  'folder-attach': { label: 'Sub-issue attached', operation: 'attach-child' },
+  'folder-reattach': { label: 'Sub-issue reattached', operation: 'reattach-child' },
+  'folder-detach-blocked': { label: 'Blocked sub-issue detached', operation: 'detach-blocked-child' },
+};
 
 function issueLink({ id, title, issueNumber }) {
   return { id, title, issueNumber };
@@ -68,16 +74,6 @@ function acceptedChildChecks(master, child, issue) {
   });
 }
 
-function combinedWording(folder, children) {
-  return [
-    `# Group: ${folder}`,
-    ...children.map(
-      ({ id, issueNumber, title, wording, requestedProof }) =>
-        `## ${issueNumber ? `#${issueNumber} ` : ''}${title}\n\nIssue ID: ${id}\n\n${wording}\n\nRequested proof:\n${requestedProof}`
-    ),
-  ].join('\n\n');
-}
-
 function isActiveBlocker({ type, label, cleared }) {
   return type === 'label' && label === 'blocked' && !cleared;
 }
@@ -119,7 +115,15 @@ export class FlowGrouping {
       Array.isArray(ids) && ids.length >= 2 && ids.length <= 50 && new Set(ids).size === ids.length,
       'Choose between two and fifty different issues to group.'
     );
-    const issues = this.flows.issues();
+    const candidates = this.currentCandidates(folder, ids);
+    requireThat(
+      candidates.every(({ type }) => (type === 'investigation') === (candidates[0].type === 'investigation')),
+      'A master cannot mix investigative and non-investigative sub-issues.'
+    );
+    return candidates;
+  }
+
+  currentCandidates(folder, ids, issues = this.flows.issues()) {
     const registryPath = join(this.service.root, '.issues/factory.json');
     const scheduled = existsSync(registryPath)
       ? JSON.parse(readFileSync(registryPath, 'utf8')).actions.filter((action) =>
@@ -144,7 +148,7 @@ export class FlowGrouping {
         fields: { ...request.fields },
         requestedProof: request.fields?.requestedProof || 'Demonstrate the behavior requested in the original issue.',
         humanChecks: groupedHumanChecks(issue),
-        type: request.fields?.type ?? flow.routeType,
+        type: request.fields?.type || flow.routeType,
         reportHash: digest(issue.content),
         flowRevision: flow.revision,
         targetBranch: deliveryTarget(flow).branch,
@@ -182,7 +186,8 @@ export class FlowGrouping {
   }
 
   action(input, reasoning = []) {
-    if (['folder-detach-blocked', 'folder-reattach'].includes(input.action)) return this.changeScopeAction(input);
+    if (['folder-detach-blocked', 'folder-reattach', 'folder-attach'].includes(input.action))
+      return this.changeScopeAction(input);
     if (input.action === 'folder-detach') return this.manualDetach(input);
     if (input.action === 'folder-group-create') return this.create(input);
     requireThat(input.action === 'folder-group-preview', 'Choose a grouping action.');
@@ -194,9 +199,7 @@ export class FlowGrouping {
   }
 
   changeScopeAction(input) {
-    return this.changeBlockedScope(input, { reattach: input.action === 'folder-reattach' }).then(() =>
-      this.flows.view(input.issueId)
-    );
+    return this.changeBlockedScope(input, { operation: input.action }).then(() => this.flows.view(input.issueId));
   }
 
   preview({ folder, issueIds }, reasoning) {
@@ -209,13 +212,14 @@ export class FlowGrouping {
   previewCurrent(folder, issueIds, reasoning) {
     requireThat(typeof folder === 'string' && folder.trim(), 'Choose an issue folder.');
     const candidates = this.snapshot(folder, issueIds);
-    const wording = combinedWording(folder, candidates);
+    const wording = [`# Group: ${folder}`, ...candidates.map(childRequestSection)].join('\n\n');
     requireThat(wording.length <= 24000, 'The combined request is too long. Select fewer issues.');
     const [first] = candidates;
     const type = candidates.every((item) => item.type === first.type) ? first.type : 'feature';
     const id = randomUUID();
     const grouping = {
       folder,
+      investigative: type === 'investigation',
       children: candidates.map(childRecord),
       humanChecks: candidates.flatMap((candidate) => candidate.humanChecks.map(({ check }) => check)),
       reasoning,
@@ -242,7 +246,7 @@ export class FlowGrouping {
     requireThat(preview && preview.expires > Date.now(), 'Review a current combined request first.');
     const stores = registeredProjectStores(this.service.root);
     const ids = preview.grouping.children.map((child) => child.id);
-    await stores?.refresh({ issueIds: ids });
+    await stores?.refresh();
     return afterReportWrite(stores?.assertSameStorage(ids), async (storage) => {
       const result = await this.flows.capture(
         {
@@ -411,10 +415,15 @@ export class FlowGrouping {
   }
 
   changeBlockedScope(input, options = {}) {
-    this.requireScopeStable(input.issueId);
+    const ids = ['folder-attach', 'folder-reattach'].includes(options.operation)
+      ? new Set([input.issueId, input.subIssueId])
+      : new Set([input.issueId]);
+    for (const id of ids) this.requireScopeStable(id);
     const task = Promise.resolve().then(() => this.applyScopeChange(input, options));
-    this.scopeChanges.set(input.issueId, task);
-    return task.finally(() => this.scopeChanges.delete(input.issueId));
+    for (const id of ids) this.scopeChanges.set(id, task);
+    return task.finally(() => {
+      for (const id of ids) this.scopeChanges.delete(id);
+    });
   }
 
   async applyScopeChange(input, options) {
@@ -424,20 +433,33 @@ export class FlowGrouping {
     return this.changeLocalScope(context);
   }
 
-  async prepareScopeChange({ issueId, subIssueId, revision }, options = {}) {
+  async prepareScopeChange({ issueId, subIssueId, revision }, { operation = 'folder-detach-blocked', ...options }) {
     this.allowScopeChange(issueId);
+    if (operation === 'folder-attach') await this.service.projectStores?.assertSameStorage([issueId, subIssueId]);
     const master = this.flows.selected(issueId);
     const flow = this.flows.read(master);
-    const target = master.issue_group?.children.find(({ id }) => id === subIssueId);
-    requireThat(target, 'Choose a sub-issue of this master.');
-    if (Boolean(options.reattach) !== Boolean(target.detachedAt)) return;
+    const target = this.scopeTarget(master, subIssueId, operation);
+    if (!target) return;
     requireThat(revision === flow.revision, 'The master changed. Review its sub-issues again.');
-    const blocker = options.reattach ? null : await this.childBlocker(subIssueId);
+    const blocker = operation === 'folder-detach-blocked' ? await this.childBlocker(subIssueId) : null;
     const active = this.flows.active.get(issueId);
     this.requireRunOwner(options.attemptId, active);
-    const context = { master, flow, target, active, blocker, ...options };
+    const context = { master, flow, target, active, blocker, operation, ...options };
     this.checkScopeChange(context);
     return context;
+  }
+
+  scopeTarget(master, subIssueId, operation) {
+    requireThat(master.issue_group, 'Choose a master issue.');
+    const target = master.issue_group.children.find(({ id }) => id === subIssueId);
+    if (operation === 'folder-attach') return this.newScopeTarget(target, subIssueId);
+    requireThat(target, 'Choose a sub-issue of this master.');
+    return (operation === 'folder-reattach') === Boolean(target.detachedAt) ? target : null;
+  }
+
+  newScopeTarget(target, subIssueId) {
+    requireThat(!target?.detachedAt, 'Use Attach again for a detached sub-issue.');
+    return target ? null : { id: subIssueId };
   }
 
   allowScopeChange(issueId) {
@@ -455,16 +477,16 @@ export class FlowGrouping {
   }
 
   changeIdleSharedScope(context) {
-    const { master, flow, reattach } = context;
+    const { master, flow, operation } = context;
     return runOwnedOperation(this.flows, {
       issue: master,
       flow,
-      label: this.scopeLabel(reattach),
-      operation: reattach ? 'reattach-child' : 'detach-blocked-child',
-      run: ({ flow: admitted }) => {
+      ...scopeOperations[operation],
+      run: async ({ flow: admitted }) => {
         this.requireCurrentMaster(master);
-        this.checkScopeChange(context, true);
-        return this.saveScopeChange({ ...context, flow: admitted });
+        this.checkScopeChange({ ...context, flow: admitted }, true);
+        const saved = operation === 'folder-attach' ? await this.advanceScopeRevision(admitted, true) : admitted;
+        return this.saveScopeChange({ ...context, flow: saved }, true);
       },
     });
   }
@@ -490,11 +512,10 @@ export class FlowGrouping {
     requireThat(saved.revision === flow.revision, 'The master changed. Review its sub-issues again.');
     this.requireCurrentAttempt(context);
     this.checkScopeChange({ ...context, flow: saved });
-    await this.advanceScopeRevision(saved);
+    await this.advanceScopeRevision(saved, context.operation === 'folder-attach');
     this.requireCurrentAttempt(context);
     const current = this.requireCurrentMaster(master);
     const latest = this.flows.read(current);
-    this.checkScopeChange({ ...context, flow: latest });
     await this.saveScopeChange({ ...context, master: current, flow: latest });
   }
 
@@ -505,16 +526,20 @@ export class FlowGrouping {
     requireThat(sameOwner(claim?.value, active?.storeOwner), 'The master Work claim changed.');
   }
 
-  advanceScopeRevision(flow) {
+  advanceScopeRevision(flow, attaching) {
     const { issueId, revision } = flow;
+    if (attaching) invalidateBlocks(flow, new Set([requestBlock(flow).id]));
     if (!this.service.projectStores) return this.flows.store.save(flow, revision);
     this.flows.store.stage(flow, revision);
     return this.flows.store.flush(issueId, { drain: false });
   }
 
-  checkScopeChange({ master, flow, target, active, reattach }, owned = false) {
+  checkScopeChange({ master, flow, target, active, operation }, owned = false) {
     requireThat(this.openScope(master, flow), 'Choose an open master before changing its scope.');
-    if (reattach) return this.requireReattachable(master, target, owned);
+    if (operation !== 'folder-detach-blocked') {
+      requireThat(owned || this.canDetach(master), 'Wait for the master to be idle before attaching a sub-issue.');
+      return this.requireCompatibleChild(master, flow, target.id, operation);
+    }
     requireThat(
       owned || this.canDetachBlocked(master, flow, target.id),
       'The master must be in Request, idle, or running Work scoped to the remaining children.'
@@ -522,32 +547,50 @@ export class FlowGrouping {
     requireDetachableSource(flow, flowWorkspace(this.service, flow), target.id, active);
   }
 
-  requireReattachable(master, target, owned) {
-    const child = this.flows.selected(target.id);
-    const idle = owned || this.canDetach(master);
+  investigative(master, flow) {
+    return master.issue_group?.investigative ?? isInvestigation(master, flow);
+  }
+
+  requireCompatibleChild(master, flow, subIssueId, operation) {
+    const issues = this.flows.issues();
+    const child = this.flows.selected(subIssueId);
+    const childFlow = this.flows.read(child);
+    const investigative = this.investigative(master, flow);
+    const matches = (issue, issueFlow) => isInvestigation(issue, issueFlow) === investigative;
     requireThat(
-      idle && this.candidate(child, this.flows.read(child), this.flows.issues()),
-      'The master and sub-issue must be idle and the sub-issue must be open and independent.'
+      matches(child, childFlow),
+      investigative
+        ? 'Investigation masters accept only investigative sub-issues.'
+        : 'Non-investigation masters accept only non-investigative sub-issues.'
     );
+    for (const { id } of groupChildren(master)) {
+      const current = this.flows.selected(id);
+      requireThat(matches(current, this.flows.read(current)), 'The master already contains incompatible sub-issues.');
+    }
+    if (operation === 'folder-attach') return this.currentCandidates(flow.folder, [child.id], issues)[0];
+    requireThat(this.candidate(child, childFlow, issues), 'The sub-issue must be open, idle, and independent.');
   }
 
-  scopeLabel(reattach) {
-    return reattach ? 'Sub-issue reattached' : 'Blocked sub-issue detached';
-  }
-
-  async saveScopeChange({ master, flow, target, blocker, actor, reattach }) {
-    const scoped = this.withSavedScope(master, flow);
-    const changes = reattach
-      ? this.reattachedMetadata(scoped, target)
-      : this.blockedMetadata(scoped, flow, target, blocker, actor);
+  async saveScopeChange(context, owned = false) {
+    const { master, flow, operation } = context;
+    const candidate = this.checkScopeChange(context, owned);
+    const changes = this.scopeMetadata(context, candidate);
     activeGroupRequest({ ...master, ...changes }, flow);
     const shared = this.service.sharedIssues?.acquire(master, true);
     await updateStoredIssueMetadata(this.service.root, master, changes);
     this.pauseEmpty(master.id, changes.issue_group);
-    const summary = this.scopeLabel(reattach);
+    if (operation === 'folder-attach') this.flows.pause(master.id, 'A sub-issue was attached.');
+    const summary = scopeOperations[operation].label;
     if (shared) this.service.sharedIssues.checkpoint(master.id, summary, shared);
     this.service.flowChanges?.notify('flow', master.id);
     return { summary };
+  }
+
+  scopeMetadata({ master, flow, target, blocker, actor, operation }, candidate) {
+    const scoped = this.withSavedScope(master, flow);
+    if (operation === 'folder-detach-blocked') return this.blockedMetadata(scoped, flow, target, blocker, actor);
+    if (operation === 'folder-attach') return this.attachedMetadata(scoped, candidate);
+    return this.reattachedMetadata(scoped, target);
   }
 
   blockedMetadata(master, flow, target, blocker, actor) {
@@ -567,7 +610,10 @@ export class FlowGrouping {
   reattachedMetadata(master, target) {
     const child = this.flows.selected(target.id);
     const checks = groupedHumanChecks(child);
-    const restored = childRecord({ ...target, previousState: child.state, humanChecks: checks });
+    const restored = {
+      ...childRecord({ ...target, previousState: child.state, humanChecks: checks }),
+      ...(target.appended && { appended: true }),
+    };
     return {
       updated: new Date().toISOString(),
       issue_group: {
@@ -582,6 +628,17 @@ export class FlowGrouping {
         ),
       },
       human_checks: [...(master.human_checks ?? []), ...checks.map(({ check }) => check)],
+    };
+  }
+
+  attachedMetadata(master, candidate) {
+    return {
+      updated: new Date().toISOString(),
+      issue_group: {
+        ...master.issue_group,
+        children: [...master.issue_group.children, { ...childRecord(candidate), appended: true }],
+      },
+      human_checks: [...(master.human_checks ?? []), ...candidate.humanChecks.map(({ check }) => check)],
     };
   }
 
@@ -612,19 +669,22 @@ export class FlowGrouping {
     return {
       ...(masterId && { master: this.masterView(issue, masterId) }),
       formerMasters: formerMasters.map(issueLink),
-      ...this.groupSettings(issue, canDetach),
+      ...this.groupSettings(issue, flow, canDetach),
       children: children.map((child) =>
         this.childView(child, issues, proofRows.get(child.id), canDetach, this.canDetachBlocked(issue, flow, child.id))
       ),
     };
   }
 
-  groupSettings(issue, canDetach) {
+  groupSettings(issue, flow, canDetach) {
     const { reasoning = [], children = [] } = issue.issue_group ?? {};
+    const canEdit = canDetach && Boolean(issue.issue_group);
     return {
       reasoning,
       detachedChildren: children.filter(({ detachedAt }) => detachedAt).map(issueLink),
-      canReattach: canDetach && Boolean(issue.issue_group),
+      canReattach: canEdit,
+      canAttach: canEdit && this.openScope(issue, flow),
+      investigative: this.investigative(issue, flow),
     };
   }
 

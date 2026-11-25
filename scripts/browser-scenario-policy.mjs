@@ -19,6 +19,7 @@ export const flowBrowserScenarioNames = {
   '--issue-scrollbar': 'Issue flow scrollbar appears only while scrolling',
   '--issue-status-folders': 'Status pseudo-folders track project issues without moving them',
   '--master-issues': 'Master issue hierarchy and badges across the workspace',
+  '--investigative-grouping': 'Master grouping keeps investigative and non-investigative issues separate',
   '--issue-annotations': 'Issue annotations retain history and drive badge filters and attention order',
   '--project-issues': 'Closed issue selections archive together and issue links open the normal view',
   '--actions-menu': 'Actions menu lists two running Flow blocks',

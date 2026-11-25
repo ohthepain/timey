@@ -7,7 +7,7 @@ import { gitFixture } from './git-fixture.mjs';
 import { digest, git as checkoutGit } from './factory-ui/common.mjs';
 import { latestCurrentAttempt, requestBlock } from './factory-ui/flow-block-data.mjs';
 import { recheckedGroupProof, requireGroupProof } from './factory-ui/flow-group-proof.mjs';
-import { sourceObservation } from './factory-ui/flow-group-scope.mjs';
+import { activeGroupRequest, sourceObservation } from './factory-ui/flow-group-scope.mjs';
 import { issueAnnotations } from './factory-ui/issue-annotations.mjs';
 import { closeProjectStores, ensureProjectStores } from './factory-ui/stores/runtime.mjs';
 import { createIssueFlows } from './factory-ui/flow-service.mjs';
@@ -78,6 +78,103 @@ async function group(flows, configure = () => {}) {
   };
   return { create, issueIds };
 }
+
+test('Investigative grouping enforces current types and preserves memberships on rejection', async (t) => {
+  for (const shared of [false, true]) {
+    await t.test(shared ? 'shared files store' : 'local reports', async (t) => {
+      const { newFlows, service } = fixture(t);
+      if (shared) {
+        await ensureProjectStores(service, { fresh: true });
+        t.after(() => closeProjectStores(service));
+      }
+      const flows = newFlows();
+      const folder = 'Grouping by work type';
+      await flows.action({ action: 'create-folder', name: folder });
+      const capture = async (type, description) =>
+        (
+          await flows.action({
+            action: 'capture',
+            requestId: randomUUID(),
+            description,
+            type,
+            folder,
+            storageProfile: 'files',
+          })
+        ).issue.id;
+      const preview = (issueIds) => flows.action({ action: 'folder-group-preview', folder, issueIds });
+      const create = ({ id, wording }) =>
+        flows.action({ action: 'folder-group-create', previewId: id, wording, requestId: randomUUID() });
+      const attach = (master, subIssueId, action = 'folder-attach') =>
+        flows.action({ action, subIssueId, issueId: master.issue.id, revision: master.flow.revision });
+      const members = (master) => master.grouping.children.map(({ id }) => id);
+      const changeType = async (issueId, type) => {
+        const { flow } = await flows.view(issueId);
+        await flows.action({ action: 'edit-request', issueId, type, revision: flow.revision });
+      };
+
+      const openStudy = await capture('investigation', 'Read the save logic.');
+      const studySecond = await capture('investigation', 'Trace the save paths.');
+      const studyThird = await capture('investigation', 'Compare the save outcomes.');
+      const bug = await capture('bug', 'Fix the save action.');
+      const feature = await capture('feature', 'Add a save notification.');
+      const anotherBug = await capture('bug', 'Fix the save shortcut.');
+      const mixed = /cannot mix investigative and non-investigative/;
+      const initialIssues = flows.issues().map(({ id, content }) => [id, content]);
+      await assert.rejects(preview([openStudy, bug]), mixed);
+      await assert.rejects(preview([bug, openStudy]), mixed);
+      assert.deepEqual(
+        flows.issues().map(({ id, content }) => [id, content]),
+        initialIssues
+      );
+
+      const stale = await preview([bug, feature]);
+      await changeType(feature, 'investigation');
+      await assert.rejects(create(stale), mixed);
+      assert.ok(flows.issues().every((issue) => !issue.issue_group));
+      await changeType(feature, 'feature');
+
+      let study = await create(await preview([openStudy, studySecond]));
+      assert.equal(study.flow.routeType, 'investigation');
+      study = await attach(study, studyThird);
+      assert.deepEqual(members(study), [openStudy, studySecond, studyThird]);
+      assert.match(activeGroupRequest(flows.selected(study.issue.id), study.flow).wording, /Compare the save outcomes/);
+      await assert.rejects(attach(study, bug), /Investigation masters accept only investigative/);
+      assert.deepEqual(members(await flows.view(study.issue.id)), members(study));
+
+      let implementation = await create(await preview([bug, feature]));
+      assert.equal(implementation.flow.routeType, 'feature');
+      implementation = await attach(implementation, anotherBug);
+      assert.deepEqual(members(implementation), [bug, feature, anotherBug]);
+      const newStudy = await capture('investigation', 'Assess the save latency.');
+      await assert.rejects(attach(implementation, newStudy), /Non-investigation masters accept only non-investigative/);
+      assert.deepEqual(members(await flows.view(implementation.issue.id)), members(implementation));
+      assert.equal((await flows.view(newStudy)).grouping, undefined);
+
+      study = await attach(study, studyThird, 'folder-detach');
+      assert.deepEqual(members(study), [openStudy, studySecond]);
+      await changeType(studyThird, 'bug');
+      await assert.rejects(
+        attach(study, studyThird, 'folder-reattach'),
+        /Investigation masters accept only investigative/
+      );
+      assert.deepEqual(members(await flows.view(study.issue.id)), members(study));
+      await changeType(studyThird, 'investigation');
+      study = await attach(study, studyThird, 'folder-reattach');
+      assert.deepEqual(members(study), [openStudy, studySecond, studyThird]);
+      assert.match(activeGroupRequest(flows.selected(study.issue.id), study.flow).wording, /Compare the save outcomes/);
+
+      const otherStudy = await create(await preview([newStudy, await capture('investigation', 'Read timing logs.')]));
+      const sharedCandidate = await capture('investigation', 'Check the save result log.');
+      const concurrent = await Promise.allSettled([
+        attach(study, sharedCandidate),
+        attach(otherStudy, sharedCandidate),
+      ]);
+      assert.equal(concurrent.filter(({ status }) => status === 'fulfilled').length, 1);
+      const groups = await Promise.all([flows.view(study.issue.id), flows.view(otherStudy.issue.id)]);
+      assert.equal(groups.filter((master) => members(master).includes(sharedCandidate)).length, 1);
+    });
+  }
+});
 
 test('Grouping resets approval and stopped issues while retaining their previous work across replay', async (t) => {
   const { root, newFlows, service } = fixture(t);

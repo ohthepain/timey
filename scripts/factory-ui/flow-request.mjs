@@ -49,13 +49,29 @@ function recordClarificationDiagnostic(diagnostic, startedAt) {
   };
 }
 
+function requestSchema(values, investigative) {
+  const allowedTypes =
+    investigative === undefined
+      ? issueTypes
+      : issueTypes.filter((type) => (type === 'investigation') === investigative);
+  return {
+    type: 'object',
+    properties: Object.fromEntries(
+      values.map(({ key }) => [key, key === 'type' ? { type: 'string', enum: allowedTypes } : { type: 'string' }])
+    ),
+    required: values.map(({ key }) => key),
+    additionalProperties: false,
+  };
+}
+
 export async function clarifyRequest(
   root,
   definition,
   attempt,
   signal,
   discussion = createTextDiscussionRuntime,
-  tools
+  tools,
+  investigative
 ) {
   signal.throwIfAborted();
   requireThat(definition?.usable && definition.prompt, 'Request is missing its Markdown system prompt.');
@@ -64,6 +80,7 @@ export async function clarifyRequest(
     values.some(({ key }) => key === 'type'),
     'Request Markdown is missing the type artifact.'
   );
+  const schema = requestSchema(values, investigative);
   const startedAt = Date.now();
   const diagnostic = { version: 1, stage: 'starting-provider', transport: [], items: {} };
   const session = discussion(undefined, {
@@ -96,14 +113,7 @@ export async function clarifyRequest(
             )
           ),
           [],
-          {
-            type: 'object',
-            properties: Object.fromEntries(
-              values.map(({ key }) => [key, key === 'type' ? { type: 'string', enum: issueTypes } : { type: 'string' }])
-            ),
-            required: values.map(({ key }) => key),
-            additionalProperties: false,
-          }
+          schema
         );
       })(),
     ]);
@@ -111,6 +121,10 @@ export async function clarifyRequest(
     diagnostic.stage = 'parsing-response';
     const fields = redactValue(JSON.parse(output));
     requireThat(issueTypes.includes(fields.type), 'Request clarification is missing a valid issue type.');
+    requireThat(
+      schema.properties.type.enum.includes(fields.type),
+      'Request clarification must preserve the master’s work type.'
+    );
     const published = Object.fromEntries(
       values.flatMap(({ key }) => (typeof fields[key] === 'string' ? [[key, fields[key]]] : []))
     );
