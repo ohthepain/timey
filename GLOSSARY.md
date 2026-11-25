@@ -234,9 +234,10 @@ An original issue whose work belongs to a master issue. It keeps its own identit
 and report and cannot start work independently while attached.
 
 **Issue annotation**:
-A shared label or comment on an issue. The author and creation time stay in
-history with the first clearance, when present. Active blocked and not-ready
-labels drive the corresponding issue badges.
+A label or comment on an issue. Saved annotations retain the author, creation
+time, and first clearance in shared history. Active blocked and not-ready
+labels drive the corresponding issue badges. Flow derives the Investigate
+annotation from the issue's current Investigation type.
 
 **Work scope**:
 The attached sub-issues whose requirements and proof obligations a Work attempt

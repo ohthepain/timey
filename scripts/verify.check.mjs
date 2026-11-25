@@ -73,6 +73,14 @@ test('focused test validation preserves the recorded Node pattern and standalone
   assert.deepEqual(normalizeFocusedTests(commands), commands);
 });
 
+test('repair-first accepts a Flow CI part with a scenario and rejects a whole part', () => {
+  const command = ['node', 'scripts/flow-browser.mjs', '--ci-part=2'];
+  const focused = [...command, '--publish-preview'];
+  assert.deepEqual(normalizeFocusedTests([focused]), [focused]);
+  assert.throws(() => normalizeFocusedTests([command]), /Provide at least one Flow browser scenario flag/);
+  assert.throws(() => normalizeFocusedTests([[...focused, '--ci-part=1']]), /Select at most one Flow browser CI part/);
+});
+
 test('focused test validation identifies the exact rejected argument and rule', () => {
   const valid = ['node', '--test', 'scripts/one.check.mjs'];
   const rejected = [
@@ -87,11 +95,11 @@ test('focused test validation identifies the exact rejected argument and rule', 
     ],
     [
       ['node', 'scripts/flow-browser.mjs', '--project-discuss', '--import=other.mjs'],
-      'argument 4 "--import=other.mjs". Use a recognized Flow browser scenario flag or --reverse-fixture-scenarios with a scenario.',
+      'argument 4 "--import=other.mjs". Use a recognized Flow browser scenario flag, --ci-part=1, --ci-part=2, or --reverse-fixture-scenarios.',
     ],
     [
       ['node', 'scripts/flow-browser.mjs', '--bogus'],
-      'argument 3 "--bogus". Use a recognized Flow browser scenario flag or --reverse-fixture-scenarios with a scenario.',
+      'argument 3 "--bogus". Use a recognized Flow browser scenario flag, --ci-part=1, --ci-part=2, or --reverse-fixture-scenarios.',
     ],
     [
       ['node', 'scripts/flow-browser.mjs', '--reverse-fixture-scenarios'],

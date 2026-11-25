@@ -1,6 +1,7 @@
 import { groupChildren } from './issue-group.mjs';
 import { flowHumanInput } from './flow-human-input.mjs';
 import { latestCurrentAttempt } from './flow-block-data.mjs';
+import { isInvestigation } from './investigation-records.mjs';
 
 function completedDetaches({ id, issue_group: group }) {
   return (group?.children ?? [])
@@ -52,7 +53,7 @@ function groupingBadges(issue, masterId, formerMasters) {
 export function issueBadges(issue, index, { masterId, approvals = [], flow } = {}) {
   const labels = (index.activeLabels.get(issue.id) ?? []).map(({ label }) => label);
   return [
-    ...new Set(labels),
+    ...new Set([...labels, ...(isInvestigation(issue, flow) ? ['investigate'] : [])]),
     ...approvalBadges(issue, approvals, flow),
     ...groupingBadges(issue, masterId, index.formerMasters.get(issue.id) ?? []),
   ];

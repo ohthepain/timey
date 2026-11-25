@@ -104,6 +104,7 @@ async function checkListControls(page, output, poll) {
   assert.equal(await heading.locator(badge('empty')).count(), 1);
   await page.goto('/?projectTab=issues');
   const frame = page.frameLocator('#project-issues iframe');
+  await frame.getByRole('button', { name: 'Open', exact: true }).waitFor();
   const rows = frame.locator('[data-issue-row]');
   const ids = async () =>
     (await rows.evaluateAll((elements) => elements.map((row) => row.dataset.issueRow))).filter((id) =>

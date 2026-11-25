@@ -175,14 +175,9 @@ export function browserFixture(root) {
           JSON.stringify({ ...data, issueScoped: true, issues: issues.filter((issue) => issue.id === issueId) })
         );
       }
-      if (url.pathname === '/api/runtime')
-        return response.end(
-          JSON.stringify({ mode: 'preview', project: data.root, checkout: root, revision: data.head })
-        );
-      if (url.pathname === '/api/issue-chat') return response.end('{"messages":[],"totalMessages":0}');
       if (url.pathname === '/api/issue-closure') {
         const issue = issues.find(({ id }) => id === url.searchParams.get('issue'));
-        if (issue && issue.state !== 'closed')
+        if (issue)
           return response.end(
             JSON.stringify({
               issueId: issue.id,
@@ -193,6 +188,11 @@ export function browserFixture(root) {
             })
           );
       }
+      if (url.pathname === '/api/runtime')
+        return response.end(
+          JSON.stringify({ mode: 'preview', project: data.root, checkout: root, revision: data.head })
+        );
+      if (url.pathname === '/api/issue-chat') return response.end('{"messages":[],"totalMessages":0}');
       if (url.pathname === '/api/fixture-update') {
         issues[1].updated = '2026-04-01';
         return response.end('{}');

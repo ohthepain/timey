@@ -103,22 +103,39 @@
       ]
     },
     {
-      "name": "Classic Factory opens closure details and retries the failed decision",
+      "name": "Classic Factory closure can be confirmed and retried (factory-browser-close.mjs)",
       "command": ["node", "scripts/factory-browser.mjs", "--scenario=factory-browser-close.mjs"]
     },
     {
-      "name": "Publish previews the exact description and refreshes it before any remote write",
+      "name": "Issue annotations retain history and drive badge filters and attention order",
       "command": [
         "node",
         "scripts/flow-browser.mjs",
+        "--ci-part=1",
+        "--project-issues",
+        "--master-issues",
+        "--investigative-grouping",
+        "--issue-annotations"
+      ]
+    },
+    {
+      "name": "Run beside the Work name starts exactly one block, then Publish previews the exact description",
+      "command": [
+        "node",
+        "scripts/flow-browser.mjs",
+        "--ci-part=2",
         "--capture-folder-issue",
-        "--folder-workspace-grouping",
-        "--starting-branch",
-        "--sidebar-issue-names",
+        "--starting-point",
         "--save-request-route",
+        "--flow-menu",
+        "--add-parallel-block",
+        "--reorder-saved-blocks",
+        "--save-block-comment",
+        "--work-markdown",
         "--stop-work",
         "--retry-work",
-        "--worktree-update",
+        "--run-extra-work",
+        "--update-worktree",
         "--publish-preview"
       ]
     }
