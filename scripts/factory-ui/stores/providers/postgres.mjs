@@ -63,6 +63,40 @@ export async function openPostgresRecords(config, { root, projectId, readOnly })
       client.release();
     }
   }
+  async function visitPages(client, statement, visit) {
+    let after = '';
+    for (;;) {
+      const { rows } = await client.query(statement, [...scope, after]);
+      if (!rows.length) return;
+      for (const row of rows) await visit(row);
+      after = rows.at(-1).id;
+    }
+  }
+  async function scanRetained(client, { visitRecord, visitReceipt }) {
+    await visitPages(
+      client,
+      `SELECT key AS id,key,revision,value FROM factory.store_records
+       WHERE project_id=$1 AND store_id=$2 AND key>$3 ORDER BY key LIMIT 16`,
+      (row) => visitRecord(record(row))
+    );
+    await visitPages(
+      client,
+      `SELECT operation_id AS id,receipt FROM factory.store_operations
+       WHERE project_id=$1 AND store_id=$2 AND operation_id>$3 ORDER BY operation_id LIMIT 16`,
+      visitReceipt
+    );
+    return { records: [], receipts: [] };
+  }
+  async function readRetained(client) {
+    const records = await list(client, '');
+    const receipts = (
+      await client.query(
+        'SELECT operation_id AS id,receipt FROM factory.store_operations WHERE project_id=$1 AND store_id=$2 ORDER BY operation_id',
+        scope
+      )
+    ).rows;
+    return { records, receipts };
+  }
   function writeOperation(request, change) {
     return transaction('BEGIN', async (client) => {
       await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1, 0))', [JSON.stringify(scope)]);
@@ -79,17 +113,10 @@ export async function openPostgresRecords(config, { root, projectId, readOnly })
   return {
     inlineLimit: 1_048_576,
     receipt: (id) => operation(pool, id),
-    retainedPayloads() {
-      return transaction('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY', async (client) => {
-        const records = await list(client, '');
-        const receipts = (
-          await client.query(
-            'SELECT operation_id AS id,receipt FROM factory.store_operations WHERE project_id=$1 AND store_id=$2 ORDER BY operation_id',
-            scope
-          )
-        ).rows;
-        return { records, receipts };
-      });
+    retainedPayloads(visitors) {
+      return transaction('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY', (client) =>
+        visitors ? scanRetained(client, visitors) : readRetained(client)
+      );
     },
     retireReceipts(request) {
       return writeOperation(request, async (client) => {

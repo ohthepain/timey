@@ -590,6 +590,46 @@ test('read-only Postgres providers query existing storage without initializing t
   );
 });
 
+test('read-only Postgres reference scans visit all pages within one snapshot', async (t) => {
+  const ref = { storeId: 's3', key: 'test/sha256/' + 'a'.repeat(64), sha256: 'a'.repeat(64), bytes: 42 };
+  const record = (key) => ({ id: key, key, revision: 'v1', value: { encoding: 'json', value: { ref } } });
+  const pages = new Map([
+    ['store_records:', [record('evidence/first')]],
+    ['store_records:evidence/first', [record('evidence/second')]],
+    ['store_records:evidence/second', []],
+    [
+      'store_operations:',
+      [{ id: 'one', receipt: { result: { encoding: 'json', value: { records: [record('evidence/old')] } } } }],
+    ],
+    ['store_operations:one', []],
+  ]);
+  const transactions = [];
+  const query = async (statement, args) => {
+    const table = /FROM factory\.(store_records|store_operations)/.exec(statement)?.[1];
+    if (!table) {
+      transactions.push(statement);
+      return { rows: [] };
+    }
+    return { rows: pages.get(table + ':' + args[2]) };
+  };
+  t.mock.method(pg.Pool.prototype, 'connect', async () => ({ query, release() {} }));
+  const store = await openRecordStore(
+    { kind: 'postgres', id: 'readonly', connectionString: 'postgresql://fixture@localhost/factory_readonly_fixture' },
+    { root: process.cwd(), projectId: 'readonly-fixture', readOnly: true }
+  );
+  t.after(() => store.close());
+  const { records, receipts } = await store.retainedPayloads({ referencesOnly: true });
+  assert.deepEqual(
+    records.map(({ key, refs }) => [key, refs]),
+    [
+      ['evidence/first', [ref]],
+      ['evidence/second', [ref]],
+    ]
+  );
+  assert.deepEqual(receipts[0].records[0].refs, [ref]);
+  assert.deepEqual(transactions, ['BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY', 'COMMIT']);
+});
+
 test('Postgres rejects the installed application database without a connection or exposed credentials', async () => {
   const previous = process.env.DATABASE_URL;
   process.env.DATABASE_URL = 'postgresql://app:secret@localhost/timey_app?options=-csearch_path%3Dapp';
