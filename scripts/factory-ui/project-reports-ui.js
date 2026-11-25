@@ -175,11 +175,21 @@
       }
     }
     function evidenceMarkup(item, index, id) {
+      const path = '/api/report-evidence?report=' + encodeURIComponent(id) + '&item=' + index;
       const link =
         item.status === 'verified'
-          ? `<a target="_blank" rel="noopener" href="/api/report-evidence?report=${encodeURIComponent(id)}&item=${index}">Open retained copy</a>`
+          ? `<a target="_blank" rel="noopener" href="${path}">Open retained copy</a>
+             <button type="button" class="small-button" data-report-copy-evidence>Copy link</button>
+             <span role="status" data-report-copy-status></span>`
           : escape(item.reason || '');
       return `<p><strong>${escape(item.name)}</strong> <span data-evidence-status="${escape(item.status)}">${escape(item.status)}</span> ${link}</p>`;
+    }
+    async function copyEvidenceLink(button) {
+      const row = button.parentElement;
+      const status = row.querySelector('[data-report-copy-status]');
+      status.textContent = '';
+      await navigator.clipboard.writeText(row.querySelector('a').href);
+      status.textContent = 'Link copied.';
     }
     function reportRuns(reports, id) {
       const runs = new Map();
@@ -310,6 +320,7 @@
       ['data-report-all', () => list()],
       ['data-report-discuss', () => showDiscussion(!state(selected.id).discuss)],
       ['data-report-prompt', (button) => chat.setDraft(button.dataset.reportPrompt)],
+      ['data-report-copy-evidence', copyEvidenceLink],
     ];
     root.addEventListener('click', (event) => {
       const button = event.target.closest('button');

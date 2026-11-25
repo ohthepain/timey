@@ -174,30 +174,86 @@ function artifactReceipt(entry, ref, storeId) {
   });
 }
 
-async function retainedPayloads(backend, decode, unpackPayload, { excludeArtifactInventory, storeId }) {
-  const raw = await backend.retainedPayloads();
+async function decodedWithRefs(record, decode, onUnreadable) {
+  const decoded = await retainedEntry(() => decode(record), onUnreadable);
+  return {
+    ...record,
+    value: decoded?.value,
+    refs: references([record.value, decoded?.value]),
+  };
+}
+
+async function retainedReceipt(entry, decode, unpackPayload, onUnreadable) {
+  const { receipt } = entry;
+  const result = receipt.deleted ? { records: [] } : await unpackPayload(receipt.result);
+  assertStore(Array.isArray(result.records), 'The retained operation result is invalid.');
+  const records = await Promise.all(result.records.map((record) => decodedWithRefs(record, decode, onUnreadable)));
+  return {
+    id: entry.id,
+    inputDigest: receipt.inputDigest,
+    identity: receiptIdentity(receipt),
+    records,
+    payloadRef: receipt.result?.ref,
+    refs: references([receipt.result || {}, result, records]),
+  };
+}
+
+async function retainedEntry(read, onUnreadable) {
+  try {
+    return await read();
+  } catch (error) {
+    if (!onUnreadable) throw error;
+    onUnreadable();
+    return null;
+  }
+}
+
+function unreadableReceipt({ id, receipt }) {
+  const ref = receipt.result?.ref;
+  return artifactReference(ref) ? { id, identity: receiptIdentity(receipt), records: [], payloadRef: ref } : null;
+}
+
+function isInventoryReceipt(receipt, storeId) {
+  return receipt.records.length > 0 && receipt.records.every((record) => inventoryRecord(record, storeId));
+}
+
+function referenceDetails({ key, revision, value, refs }) {
+  return { key, revision, value: { kind: value?.kind }, refs };
+}
+
+function referenceReceiptDetails({ id, identity, payloadRef, records }) {
+  return { id, identity, payloadRef, records: records.map(referenceDetails) };
+}
+
+const unchanged = (entry) => entry;
+
+async function readRetainedReceipt(entry, decode, unpackPayload, onUnreadable) {
+  const receipt = await retainedEntry(() => retainedReceipt(entry, decode, unpackPayload, onUnreadable), onUnreadable);
+  return receipt ?? unreadableReceipt(entry);
+}
+
+async function visitRetained(backend, referencesOnly, visitRecord, visitReceipt) {
+  const raw = await backend.retainedPayloads(referencesOnly ? { visitRecord, visitReceipt } : undefined);
+  for (const record of raw.records) await visitRecord(record);
+  for (const entry of raw.receipts) await visitReceipt(entry);
+}
+
+async function collectRetained(backend, decode, unpackPayload, settings) {
+  const { excludeArtifactInventory, storeId, onUnreadable, referencesOnly } = settings;
   const records = [];
   const receipts = [];
-  for (const record of raw.records) {
-    const decoded = await decode(record);
-    if (!excludeArtifactInventory || !inventoryRecord(decoded, storeId))
-      records.push({ ...decoded, refs: references([record.value, decoded.value]) });
-  }
-  for (const entry of raw.receipts) {
-    const receipt = entry.receipt;
-    const result = receipt.deleted ? { records: [] } : await unpackPayload(receipt.result);
-    assertStore(Array.isArray(result.records), 'The retained operation result is invalid.');
-    const decoded = await Promise.all(result.records.map(decode));
-    if (excludeArtifactInventory && decoded.length && decoded.every((record) => inventoryRecord(record, storeId)))
-      continue;
-    receipts.push({
-      id: entry.id,
-      inputDigest: receipt.inputDigest,
-      identity: receiptIdentity(receipt),
-      records: decoded,
-      refs: references([receipt.result || {}, result, decoded]),
-    });
-  }
+  const projectRecord = referencesOnly ? referenceDetails : unchanged;
+  const projectReceipt = referencesOnly ? referenceReceiptDetails : unchanged;
+  const visitRecord = async (record) => {
+    const decoded = await decodedWithRefs(record, decode, onUnreadable);
+    if (!excludeArtifactInventory || !inventoryRecord(decoded, storeId)) records.push(projectRecord(decoded));
+  };
+  const visitReceipt = async (entry) => {
+    const receipt = await readRetainedReceipt(entry, decode, unpackPayload, onUnreadable);
+    if (receipt && (!excludeArtifactInventory || !isInventoryReceipt(receipt, storeId)))
+      receipts.push(projectReceipt(receipt));
+  };
+  await visitRetained(backend, referencesOnly, visitRecord, visitReceipt);
   return { records, receipts };
 }
 
@@ -306,10 +362,12 @@ export function recordStore(backend, artifacts, { allowInlineLarge = false, stor
         writes: expected.map(({ key }) => ({ key, value: null })),
       });
     },
-    async retainedPayloads({ excludeArtifactInventory = false } = {}) {
-      return retainedPayloads(backend, decode, unpackPayload, {
+    async retainedPayloads({ excludeArtifactInventory = false, onUnreadable, referencesOnly = false } = {}) {
+      return collectRetained(backend, decode, unpackPayload, {
         excludeArtifactInventory,
         storeId,
+        onUnreadable,
+        referencesOnly,
       });
     },
     async artifactReceipts(ref) {

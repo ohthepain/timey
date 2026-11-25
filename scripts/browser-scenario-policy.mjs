@@ -37,6 +37,7 @@ export const flowBrowserScenarioNames = {
   '--project-home': 'Project home investigates selected branches and reviews Automate me skills',
   '--project-navigation': 'Project navigation exposes Home Issues Investigate and an Automate me tab',
   '--project-discuss': 'Project Discuss retains independent conversations, settings and explicit controls',
+  '--asset-storage': 'Asset Storage lists project S3 artifacts and retained references in Settings',
   '--project-settings': 'Project Settings addressable pages preserve drafts, sources and explicit saves',
   '--ai-providers': 'Factory provider settings save enablement and quota warnings',
   '--native-agents': 'Native Flow approvals and questions retain their exact attempt',

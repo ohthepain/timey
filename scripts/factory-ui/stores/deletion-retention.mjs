@@ -77,11 +77,15 @@ export function planRetirement(snapshot, issueId, { operationKey } = {}) {
     ),
     ...receipts.flatMap((receipt) => receipt.records.filter(owned).map((record) => record.value)),
   ];
+  const survivingRefs = receipts.flatMap((receipt) =>
+    receipt.records.filter((record) => !owned(record)).flatMap((record) => record.refs)
+  );
   return {
     records: records.map(({ key, revision }) => ({ key, revision })),
     replacements: replaced.map(({ record, value }) => ({ key: record.key, revision: record.revision, value })),
     receipts: receipts.map(({ id, inputDigest, identity }) => ({ id, inputDigest, identity })),
     values,
+    survivingRefs,
     refs: uniqueReferences(
       [...records, ...receipts, ...replaced.map(({ record }) => record)].flatMap((record) => record.refs || [])
     ),

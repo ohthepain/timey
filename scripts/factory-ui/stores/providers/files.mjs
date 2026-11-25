@@ -61,13 +61,17 @@ async function lock(path) {
   throw storeError('STORE_LOCKED', 'The local store is busy. Reconcile a stopped writer before removing its lock.');
 }
 
-export async function openFilesRecords(config, { root, projectId }) {
+async function prepareDirectory(directory, readOnly) {
+  if (!readOnly) await mkdir(directory, { recursive: true, mode: 0o700 });
+  const entry = await lstat(directory).catch((error) => {
+    if (error.code !== 'ENOENT') throw error;
+  });
+  assertStore(entry?.isDirectory() || (readOnly && !entry), 'The record store must be a real directory.');
+}
+
+export async function openFilesRecords(config, { root, projectId, readOnly }) {
   const directory = resolve(root, config.directory || '.issues/stores', hash(JSON.stringify([projectId, config.id])));
-  await mkdir(directory, { recursive: true, mode: 0o700 });
-  assertStore(
-    (await lstat(directory)).isDirectory() && !(await lstat(directory)).isSymbolicLink(),
-    'The record store must be a real directory.'
-  );
+  await prepareDirectory(directory, readOnly);
   const path = join(directory, 'state.json');
   async function mutate(request, change) {
     const lockPath = join(directory, 'write.lock');

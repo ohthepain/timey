@@ -63,6 +63,7 @@ import {
   automateActivityBrowserChecks,
 } from './flow-browser-project-home.mjs';
 import { projectDiscussBrowserChecks } from './flow-browser-project-discuss.mjs';
+import { assetStorageBrowserChecks } from './flow-browser-asset-storage.mjs';
 import { projectSettingsBrowserChecks } from './flow-browser-project-settings.mjs';
 import { aiTextBrowserChecks } from './flow-browser-ai-text.mjs';
 import { interfaceStateBrowserChecks } from './flow-browser-interface-state.mjs';
@@ -135,7 +136,9 @@ const assets = [
   'folder-settings-ui.js',
   'provider-settings-ui.js',
   'project-settings-ui.js',
+  'project-asset-storage-ui.js',
   'project-settings.css',
+  'project-asset-storage.css',
   'github-calls-ui.js',
   'github-calls.css',
   'diagnostics-ui.js',
@@ -190,6 +193,7 @@ const {
   '--investigation-flows': investigationFlowsCheck,
   '--project-discuss': discussCheck,
   '--project-settings': settingsCheck,
+  '--asset-storage': assetStorageCheck,
   '--stores': storesCheck,
   '--ai-text': aiTextCheck,
   '--interface-state': interfaceStateCheck,
@@ -702,6 +706,7 @@ try {
       projectSettingsBrowserChecks({ page, project, service, logs, poll, screenshot, output, candidate })
     )
   );
+  await check(assetStorageCheck, () => assetStorageBrowserChecks({ page, output, screenshot }));
   await check(storesCheck, () => issueStoresBrowserChecks({ page, project, service, logs, poll, screenshot }));
   await check(aiTextCheck, () => aiTextBrowserChecks({ page, project, service, poll, screenshot }));
   await check(interfaceStateCheck, () => interfaceStateBrowserChecks({ page, project, service, poll, screenshot }));

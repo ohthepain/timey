@@ -177,6 +177,11 @@ function missingS3(error) {
   return error.$metadata?.httpStatusCode === 404 || ['NoSuchKey', 'NotFound'].includes(error.name);
 }
 
+function skipMissingS3(error) {
+  if (missingS3(error)) return null;
+  throw error;
+}
+
 class S3Artifacts extends ArtifactStore {
   constructor(config, options) {
     super(config, options);
@@ -238,23 +243,36 @@ class S3Artifacts extends ArtifactStore {
       throw storageFailure(error, 'connection test');
     }
   }
-  async list() {
+  async listedReference(object, hash, withDetails) {
+    const head = await this.client.send(new HeadObjectCommand({ Bucket: this.bucket, Key: object.Key }));
+    const ref = reference(this, hash, Number(head.ContentLength), head.ContentType || 'application/octet-stream');
+    return withDetails ? { ...ref, modifiedAt: object.LastModified?.toISOString() ?? null } : ref;
+  }
+  async listPage(page, keyPrefix, withDetails) {
+    const objects = (page.Contents || []).filter(
+      ({ Key }) => Key.startsWith(keyPrefix) && validDigest(Key.slice(keyPrefix.length))
+    );
     const refs = [];
+    for (let offset = 0; offset < objects.length; offset += 16) {
+      const batch = objects.slice(offset, offset + 16);
+      const entries = await Promise.all(
+        batch.map((object) =>
+          this.listedReference(object, object.Key.slice(keyPrefix.length), withDetails).catch(skipMissingS3)
+        )
+      );
+      refs.push(...entries.filter(Boolean));
+    }
+    return refs;
+  }
+  async list({ withDetails = false } = {}) {
+    const refs = [];
+    const keyPrefix = `${this.prefix}/${this.projectId}/sha256/`;
     let token;
     do {
       const page = await this.client.send(
-        new ListObjectsV2Command({
-          Bucket: this.bucket,
-          Prefix: `${this.prefix}/${this.projectId}/sha256/`,
-          ContinuationToken: token,
-        })
+        new ListObjectsV2Command({ Bucket: this.bucket, Prefix: keyPrefix, ContinuationToken: token })
       );
-      for (const object of page.Contents || []) {
-        const hash = object.Key.split('/').at(-1);
-        if (!validDigest(hash)) continue;
-        const head = await this.client.send(new HeadObjectCommand({ Bucket: this.bucket, Key: object.Key }));
-        refs.push(reference(this, hash, Number(head.ContentLength), head.ContentType || 'application/octet-stream'));
-      }
+      refs.push(...(await this.listPage(page, keyPrefix, withDetails)));
       token = page.NextContinuationToken;
     } while (token);
     return refs;
@@ -369,15 +387,22 @@ class GitArtifacts extends ArtifactStore {
   }
 }
 
+async function openPostgresArtifacts(config, options) {
+  const { createFactoryPool } = await import('./postgres-connection.mjs');
+  const store = new PostgresArtifacts(config, options, createFactoryPool(config, options));
+  try {
+    if (!options.readOnly) await store.initialize();
+    return store;
+  } catch (error) {
+    await store.close();
+    throw error;
+  }
+}
+
 export async function openArtifactStore(config, options) {
   if (config.kind === 'files') return new FileArtifacts(config, options);
   if (config.kind === 's3') return new S3Artifacts(config, options);
-  if (config.kind === 'postgres') {
-    const { createFactoryPool } = await import('./postgres-connection.mjs');
-    const store = new PostgresArtifacts(config, options, await createFactoryPool(config, options));
-    await store.initialize();
-    return store;
-  }
+  if (config.kind === 'postgres') return openPostgresArtifacts(config, options);
   if (config.kind === 'git') {
     const { openRecordStore } = await import('./providers.mjs');
     return new GitArtifacts(config, options, await openRecordStore(config, { ...options, inlinePayloads: true }));
