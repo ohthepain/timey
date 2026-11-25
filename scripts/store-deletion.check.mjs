@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process';
-import { writeFileSync, readFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -10,8 +10,9 @@ import { createProjectStores } from './factory-ui/stores/project-stores.mjs';
 import { deleteArchivedIssueReport } from './factory-ui/issue-report-storage.mjs';
 import { registerProjectStores } from './factory-ui/stores/report-access.mjs';
 import { createArtifactRouter } from './factory-ui/stores/coordination.mjs';
+import { InvestigationReports } from './factory-ui/investigation-reports.mjs';
 
-async function fixture(t, kind = 'files') {
+async function fixture(t, kind = 'files', s3Client) {
   const f = gitFixture(t, 'store-delete-');
   if (kind === 'git') {
     const remote = join(f.root, 'remote.git');
@@ -22,7 +23,12 @@ async function fixture(t, kind = 'files') {
     f.git('remote', 'add', 'origin', remote);
   }
   const options = { root: f.root, projectId: 'delete-test' };
-  const physical = await openArtifactStore({ id: 'artifacts', kind: 'files' }, options);
+  const physical = await openArtifactStore(
+    s3Client
+      ? { id: 'artifacts', kind: 's3', bucket: 'disposable-fixture', region: 'us-east-1' }
+      : { id: 'artifacts', kind: 'files' },
+    { ...options, s3Client }
+  );
   const config = { id: 'files', kind, ...(kind === 'git' && { branch: 'issue-queue', remote: 'origin' }) };
   let records;
   const artifacts = createArtifactRouter({ active: physical, stores: new Map(), records: () => records });
@@ -103,6 +109,17 @@ test('Delete resumes the same durable cleanup after partial physical deletion an
   assert.equal((await f.records.get('catalog/a')).value.state, 'deleted');
   assert.equal((await f.records.get('project/migration')).value.operationId, 'delete-a');
   f.physical.remove = remove;
+  const unavailable = join(f.root, '.issues/factory-ui/project-discuss/unreadable');
+  mkdirSync(unavailable, { recursive: true });
+  const conversation = join(unavailable, 'conversation.json');
+  writeFileSync(conversation, '{');
+  await assert.rejects(f.create().resumeDelete({ operationId: 'delete-a' }), {
+    code: 'STORE_RETENTION_UNKNOWN',
+    pending: true,
+  });
+  assert.ok(await f.physical.inspect(refs[1]));
+  assert.equal((await f.records.get('project/migration')).value.operationId, 'delete-a');
+  writeFileSync(conversation, '{"messages":[]}');
   const result = await f.create().resumeDelete({ operationId: 'delete-a' });
   assert.equal(result.deleted, true);
   for (const ref of refs) assert.equal(await f.physical.inspect(ref), null);
@@ -118,7 +135,7 @@ void test('Delete identifies the pending update that blocks cleanup', async (t) 
   assert.equal((await f.project.readIssue('a')).location, 'archive');
 });
 
-test('a live private record payload protects identical public evidence and unused stores are not opened', async (t) => {
+test('a live private record payload protects identical public evidence', async (t) => {
   const f = await fixture(t);
   await f.add('a');
   await f.add('b');
@@ -130,11 +147,6 @@ test('a live private record payload protects identical public evidence and unuse
     expected: [{ key: 'private/b', revision: null }],
     writes: [{ key: 'private/b', value: JSON.parse(body) }],
   });
-  f.project.recordStores.set('unused', {
-    retainedPayloads() {
-      throw Error('unused store opened');
-    },
-  });
   const get = f.physical.get.bind(f.physical);
   let retainedReads = 0;
   f.physical.get = (requested) => {
@@ -145,6 +157,112 @@ test('a live private record payload protects identical public evidence and unuse
   assert.equal(retainedReads, 1, 'Deletion reuses the immutable payload across both inventories and receipts');
   assert.equal((await f.records.get('private/b')).value.text.length, 20000);
   assert.equal((await f.physical.get(ref)).toString(), body);
+});
+
+test('checked archive deletion removes only the exclusive disposable S3 object', async (t) => {
+  const objects = new Map();
+  const f = await fixture(t, 'files', {
+    async send(command) {
+      const { Key, Body } = command.input;
+      assert.equal(command.input.Bucket, 'disposable-fixture');
+      switch (command.constructor.name) {
+        case 'PutObjectCommand':
+          objects.set(Key, Buffer.from(Body));
+          return {};
+        case 'DeleteObjectCommand':
+          objects.delete(Key);
+          return {};
+        case 'GetObjectCommand':
+          if (!objects.has(Key)) throw Object.assign(Error('Missing test object'), { name: 'NoSuchKey' });
+          return { Body: { transformToByteArray: async () => objects.get(Key) } };
+        default:
+          assert.fail('Unexpected S3 command ' + command.constructor.name);
+      }
+    },
+  });
+  await f.add('a');
+  const exclusive = await f.physical.put({ body: 'exclusive disposable evidence' });
+  const published = await f.physical.put({ body: 'published disposable evidence' });
+  const chat = await f.physical.put({ body: 'older disposable chat attachment' });
+  const unreferenced = await f.physical.put({ body: 'unverified object for review' });
+  await f.evidence('a', [exclusive, published, chat]);
+  const directory = join(f.root, '.issues/factory-ui/project-discuss/closed');
+  mkdirSync(join(directory, 'attachments'), { recursive: true });
+  writeFileSync(join(directory, 'attachments/older.bin'), await f.physical.get(chat));
+  writeFileSync(
+    join(directory, 'conversation.json'),
+    JSON.stringify({ closedAt: '2026-11-25', messages: [{ attachments: [{ id: 'older', size: chat.bytes }] }, {}] })
+  );
+  const reports = new InvestigationReports(f.root);
+  const report = join(f.root, 'report.md');
+  const evidence = join(f.root, 'published.bin');
+  writeFileSync(report, '# Retained report\n');
+  writeFileSync(evidence, await f.physical.get(published));
+  const publication = reports.publish({
+    source: { issueId: 'a', blockId: 'findings', attemptId: 'source', revision: 'a'.repeat(40) },
+    attemptId: 'publication',
+    publicationId: 'fixture',
+    title: 'Retained report',
+    report,
+    evidence: [evidence],
+  });
+  await f.project.refresh();
+  t.after(registerProjectStores(f.root, f.project));
+  const issue = await f.project.readIssue('a');
+  const result = await deleteArchivedIssueReport(f.root, 'a', issue.report);
+  assert.equal(result.deleted, true);
+  assert.equal(await f.physical.inspect(exclusive), null);
+  for (const ref of [published, chat, unreferenced]) assert.ok(await f.physical.inspect(ref));
+  assert.equal(reports.read(publication.id).content, '# Retained report\n');
+  assert.equal(reports.read(publication.id).evidence[0].status, 'verified');
+});
+
+for (const source of ['local content', 'configured store'])
+  test('checked deletion keeps evidence when reference verification cannot read ' + source, async (t) => {
+    const f = await fixture(t);
+    await f.add('a');
+    const ref = await f.physical.put({ body: 'possibly retained' });
+    await f.evidence('a', [ref]);
+    if (source === 'local content') {
+      const directory = join(f.root, '.issues/factory-ui/project-discuss/unreadable');
+      mkdirSync(directory, { recursive: true });
+      writeFileSync(join(directory, 'conversation.json'), '{');
+    } else {
+      f.project.recordStores.set('unreadable', {
+        retainedPayloads() {
+          throw Error('Reference source unavailable');
+        },
+      });
+    }
+    const result = await f.del('a');
+    assert.equal(result.deleted, true);
+    assert.equal(result.retained, 1);
+    assert.ok(await f.physical.inspect(ref));
+  });
+
+test('a configured store protects a retained revision when an issue is deleted', async (t) => {
+  const f = await fixture(t);
+  await f.add('a');
+  const ref = await f.physical.put({ body: 'retained elsewhere' });
+  await f.evidence('a', [{ ...ref, bytes: ref.bytes + 1 }]);
+  const retained = await openRecordStore(
+    { id: 'retained', kind: 'files' },
+    { root: f.root, projectId: 'delete-test', artifacts: f.project.artifacts }
+  );
+  f.project.recordStores.set('retained', retained);
+  const key = 'private/history';
+  const saved = await retained.commit({
+    operationId: 'retain-revision',
+    expected: [{ key, revision: null }],
+    writes: [{ key, value: { ref } }],
+  });
+  await retained.commit({
+    operationId: 'replace-revision',
+    expected: [{ key, revision: saved.records[0].revision }],
+    writes: [{ key, value: { ref: null } }],
+  });
+  assert.equal((await f.del('a')).retained, 1);
+  assert.ok(await f.physical.inspect(ref));
 });
 
 test('completed delete plans do not retain reuploaded identical evidence', async (t) => {

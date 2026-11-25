@@ -53,23 +53,25 @@ references that make up its reference count.
 Each asset has a permanent identity independent of its location and public URL.
 Existing references continue to identify the same asset after a move.
 
-## First release and deletion approval
-
-Issue #217 covers the full Asset Storage feature, including personal saves and
-both kinds of deletion. Acceptance testing must let the user observe real
-stored assets being deleted in a regular project with configured S3 storage.
-Use newly uploaded disposable assets for the test. Remove the last verified
-reference to one asset to exercise automatic deletion. In Settings, force-delete
-another asset that a report still references. Verify removal from S3 in both
-cases and confirm that the report remains readable and displays **Asset deleted**.
+## Read-only inventory and checked issue deletion
 
 Release the Settings inventory and reference counts as a read-only first
-release for existing project data. Before enabling automatic or forced deletion
+release for existing project data. Before enabling general asset deletion
 for that data, review the inventory and reference counts in the real project.
 Include archived issues, older chat messages, published links, and moved assets
 in that review.
-Enabling deletion for existing project data requires explicit approval after
-the review.
+Enabling general asset deletion for existing project data requires explicit
+approval after the review. Standalone force deletion and its permission
+design are deferred to separate work.
+
+The existing permanent issue-delete control authorizes cleanup when the issue
+deletion removes an asset's last verified reference. Cleanup runs under the
+existing project seal and retries through the recorded deletion operation.
+It preserves assets referenced in surviving shared records, retained
+publications, and Discuss attachments visible to the deleting runner. If
+reference evidence cannot be read, keep the assets for review. Assets with no
+recorded reference to the deleted issue do not enter cleanup. Use only
+disposable fixture assets to verify this behavior.
 
 ## Existing assets and retained history
 

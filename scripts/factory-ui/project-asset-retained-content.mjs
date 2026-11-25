@@ -60,7 +60,9 @@ async function discussion(session, directory) {
 
 async function readRetainedDirectory(path) {
   try {
-    return await readdir(path, { withFileTypes: true });
+    const entries = await readdir(path, { withFileTypes: true });
+    if ((await realpath(path)) !== path) throw Error('Retained content must be inside the project.');
+    return entries;
   } catch (error) {
     if (error.code === 'ENOENT') return [];
     throw error;
@@ -70,9 +72,10 @@ async function readRetainedDirectory(path) {
 async function collectRetained(directory, filename, collect) {
   const entries = await readRetainedDirectory(directory);
   const matches = [];
-  for (const entry of entries.filter((entry) => entry.isDirectory() && recordId.test(entry.name))) {
+  for (const entry of entries.filter((entry) => recordId.test(entry.name))) {
     const folder = join(directory, entry.name);
     try {
+      if (!entry.isDirectory()) throw Error('A retained content record must be a project directory.');
       const record = JSON.parse(await retainedBytes(join(folder, filename)));
       matches.push(...(await collect(record, folder)));
     } catch (reason) {
