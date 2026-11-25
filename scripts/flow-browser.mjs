@@ -11,6 +11,7 @@ import { projectIssuesBrowserChecks } from './flow-browser-project-issues.mjs';
 import { errorRecoveryBrowserChecks } from './flow-browser-error-recovery.mjs';
 import { mergeStateBrowserChecks } from './flow-browser-merge-state.mjs';
 import {
+  flowBrowserCiParts,
   flowBrowserOrderModifier,
   flowBrowserScenarioNames,
   flowBrowserScenarioSelected,
@@ -75,7 +76,7 @@ import { issueStoresBrowserChecks } from './flow-browser-stores.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const ciPart = process.argv.find((argument) => argument.startsWith('--ci-part='));
-assert.ok(!ciPart || ['--ci-part=1', '--ci-part=2'].includes(ciPart), 'Choose Flow browser CI part 1 or 2.');
+assert.ok(!ciPart || flowBrowserCiParts.has(ciPart), 'Choose Flow browser CI part 1 or 2.');
 let part = '--ci-part=1';
 const outputPath = resolve(
   process.env.TIMEY_FLOW_BROWSER_OUTPUT ||
@@ -200,6 +201,7 @@ const {
   '--storage-status': storageStatusCheck,
   '--polling': pollingCheck,
   '--capture-folder-issue': captureFolderIssueCheck,
+  '--starting-point': startingPointCheck,
   '--folder-workspace-grouping': folderWorkspaceGroupingCheck,
   '--sidebar-issue-names': sidebarIssueNamesCheck,
   '--save-request-route': saveRequestRouteCheck,
@@ -210,6 +212,9 @@ const {
   '--stop-work': stopWorkCheck,
   '--retry-work': retryWorkCheck,
   '--reload-flow-history': reloadFlowHistoryCheck,
+  '--run-extra-work': runExtraWorkCheck,
+  '--update-worktree': updateWorktreeCheck,
+  '--publish-preview': publishPreviewCheck,
   '--timers': timersCheck,
   '--proposals': proposalsCheck,
 } = flowBrowserScenarioNames;
@@ -1407,7 +1412,7 @@ try {
     assert.equal(await page.locator('.graph-note').count(), 0);
     assert.equal(logs.execution.length, 0);
   });
-  await check('Starting point lists every branch in date order, saves selection and survives polling', async () => {
+  await check(startingPointCheck, async () => {
     const selector = page.locator('#starting-branch');
     const data = await view();
     const options = await selector
@@ -1905,10 +1910,15 @@ try {
     assert.equal(logs.execution.length, 0);
   });
   const workOverride = join(project, 'user/flow/overrides/blocks/work.md');
-  await check('Work Markdown reloads headings and lists without changing layout, drafts or actions', async () => {
+  async function addExtraWork() {
     await page.getByRole('button', { name: 'Add a step', exact: true }).click();
     const data = await clickAction(page.locator('[data-add-kind="work"]'));
-    const id = data.flow.blocks.find((item) => item.kind === 'work' && item.id !== workId).id;
+    return data.flow.blocks.find((item) => item.kind === 'work' && item.id !== workId).id;
+  }
+  let extraWorkId;
+  await check('Work Markdown reloads headings and lists without changing layout, drafts or actions', async () => {
+    const id = await addExtraWork();
+    extraWorkId = id;
     await block(id);
     const prose = page.locator('.block-content');
     await prose.getByRole('heading', { name: 'Work block' }).waitFor();
@@ -2180,21 +2190,24 @@ try {
     assert.equal(logs.execution.length, 2);
     assert.equal(logs.modelCalls.length, 0);
   });
-  await check('Run beside the Work name starts exactly one block', async () => {
-    const open = (await view()).flow.blocks.find((item) => item.kind === 'work');
-    await block(open.id);
+  await check(runExtraWorkCheck, async () => {
+    if (!extraWorkId) {
+      await block(workId);
+      extraWorkId = await addExtraWork();
+    }
+    await block(extraWorkId);
     await clickAction(page.locator('#run-block'));
     await poll(
       view,
       (data) =>
-        data.flow.blocks.find((item) => item.id === open.id).attempts.at(-1)?.status === 'completed' &&
+        data.flow.blocks.find((item) => item.id === extraWorkId).attempts.at(-1)?.status === 'completed' &&
         !service.flows.active.has(issueId),
       'The Markdown Work block did not finish.'
     );
     assert.equal(logs.execution.length, 3);
-    assert.equal(logs.execution.at(-1).blockId, open.id);
+    assert.equal(logs.execution.at(-1).blockId, extraWorkId);
   });
-  await check('Worktree menu opens the saved checkout and updates it from the remote target', async () => {
+  await check(updateWorktreeCheck, async () => {
     await page.goto('/flow?issue=' + issueId);
     await page.locator('[data-node="__base"]').waitFor();
     const menu = page
@@ -2286,7 +2299,7 @@ try {
     assert.equal(git(checkout, 'show', 'HEAD:branch-draft.txt'), 'Preserve this local change.');
     assert.equal(git(project, 'rev-parse', 'HEAD'), base);
   });
-  await check('Publish previews the exact description and refreshes it before any remote write', async () => {
+  await check(publishPreviewCheck, async () => {
     const issue = service.flows.selected(issueId);
     const flow = service.flows.read(issue);
     git(project, 'remote', 'set-url', '--push', 'origin', 'git@github.com:test/fixture.git');
@@ -2303,7 +2316,7 @@ try {
     await selectBlock(publish.id);
     assert.equal(await page.locator('#issue-pr-menu').isVisible(), false);
     await page.getByRole('button', { name: 'Open Request' }).waitFor();
-    await page.locator('#run-block').click();
+    await clickAction(page.locator('#run-block'));
     const description = page.locator('#publish-description');
     await description.waitFor();
     assert.equal(

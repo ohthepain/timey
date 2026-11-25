@@ -1,55 +1,25 @@
 {
   "version": 1,
-  "sourceRun": "https://github.com/ohthepain/timey/actions/runs/45582351964",
+  "sourceRun": "https://github.com/ohthepain/timey/actions/runs/45612548820",
   "tests": [
     {
-      "name": "Flow can approve a Retro item as soon as its proposal PR lands",
-      "command": [
-        "node",
-        "--test",
-        "--test-name-pattern=^Flow can approve a Retro item as soon as its proposal PR lands$",
-        "scripts/shared-issue-queue.check.mjs"
-      ]
+      "name": "Classic Factory closure can be confirmed and retried (factory-browser-close.mjs)",
+      "command": ["node", "scripts/factory-browser.mjs", "--scenario=factory-browser-close.mjs"]
     },
     {
-      "name": "moving an unpublished proposal retains its failed publication and retries the new folder",
-      "command": [
-        "node",
-        "--test",
-        "--test-name-pattern=^moving an unpublished proposal retains its failed publication and retries the new folder$",
-        "scripts/shared-issue-queue.check.mjs"
-      ]
-    },
-    {
-      "name": "two Flow clones share the separate branch without advancing code",
-      "command": [
-        "node",
-        "--test",
-        "--test-name-pattern=^two Flow clones share the separate branch without advancing code$",
-        "scripts/shared-issue-queue.check.mjs"
-      ]
-    },
-    {
-      "name": "Update Branch block publication failure leaves no local execution or shared claim",
-      "command": [
-        "node",
-        "--test",
-        "--test-name-pattern=^Update Branch block publication failure leaves no local execution or shared claim$",
-        "scripts/project-stores-flow.check.mjs"
-      ]
-    },
-    {
-      "name": "Issue annotations retain history and drive badge filters and attention order",
-      "command": ["node", "scripts/flow-browser.mjs", "--master-issues", "--issue-annotations"]
-    },
-    {
-      "name": "Numbered full issue names wrap and sidebar resizing survives reload",
+      "name": "Publish previews the exact description and refreshes it before any remote write",
       "command": [
         "node",
         "scripts/flow-browser.mjs",
+        "--ci-part=2",
         "--capture-folder-issue",
-        "--folder-workspace-grouping",
-        "--sidebar-issue-names"
+        "--starting-point",
+        "--save-request-route",
+        "--stop-work",
+        "--retry-work",
+        "--run-extra-work",
+        "--update-worktree",
+        "--publish-preview"
       ]
     }
   ]
