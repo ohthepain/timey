@@ -1,5 +1,14 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, statSync, writeFileSync } from 'node:fs';
-import { isAbsolute, join, relative, resolve, sep } from 'node:path';
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { z } from 'zod';
 import { digest, requireThat, writeJson } from './common.mjs';
 
@@ -147,6 +156,16 @@ export class InvestigationReports {
       contentVerified: digest(saved.content) === saved.contentSha256,
       evidence: saved.evidence.map(evidenceState),
     };
+  }
+  deleteReports(ids) {
+    requireThat(Array.isArray(ids) && ids.length > 0, 'Select reports to delete.');
+    const paths = [...new Set(ids)].map((id) => {
+      const file = this.file(id);
+      this.read(id);
+      return dirname(file);
+    });
+    for (const path of paths) rmSync(path, { recursive: true });
+    return { deleted: paths.length };
   }
   publish(input) {
     const source = checkedInvestigationSource(input.source);

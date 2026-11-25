@@ -90,3 +90,10 @@ deleting its referring content.
 [ADR 0023](../adr/0023-select-issue-and-artifact-storage-per-issue.md)
 requires checked storage moves. Permanent asset identity must remain valid
 across those moves.
+
+## Earlier proposal
+
+The interview draft proposed keeping the inventory read-only during reference
+verification, rejecting dependency cycles, limiting forced deletion to project
+administrators, selecting all filtered results at once, and offering Save only
+for supported asset types. The approved decisions above supersede the draft.
