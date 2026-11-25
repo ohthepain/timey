@@ -25,6 +25,7 @@ function fixtures() {
   image.body = Buffer.alloc(image.Size);
   for (const key of [prefix + 'unrelated/' + first.slice(prefix.length), 'outside-project/' + first])
     objects.set(key, image);
+  objects.set(prefix + '0'.repeat(64), { Size: 9, disappearsAfterListing: true });
   return { objects, first, image, copy: new Map() };
 }
 
@@ -51,7 +52,8 @@ function mockS3({ objects, copy }) {
   ]);
   const handlers = {
     HeadObjectCommand(contents, { Key }) {
-      const { Size, ContentType } = contents.get(Key);
+      const { Size, ContentType, disappearsAfterListing } = contents.get(Key);
+      if (disappearsAfterListing) throw Object.assign(Error('Object removed during listing'), { name: 'NotFound' });
       return { ContentLength: Size, ContentType };
     },
     ListObjectsV2Command(contents, { Prefix, ContinuationToken }) {
@@ -251,6 +253,7 @@ export async function assetStorageBrowserChecks(context) {
             coldLoadCreatedLocalStore: false,
             readableReferencesRetainedWithMissingPayload: true,
             unreadablePayloadReferenceCountedOnce: true,
+            retainedInventoryWhenAnObjectDisappeared: true,
             listedAssets: 26,
             filteredBytes: 585,
             selectedBytes: 585,

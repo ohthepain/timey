@@ -177,6 +177,11 @@ function missingS3(error) {
   return error.$metadata?.httpStatusCode === 404 || ['NoSuchKey', 'NotFound'].includes(error.name);
 }
 
+function skipMissingS3(error) {
+  if (missingS3(error)) return null;
+  throw error;
+}
+
 class S3Artifacts extends ArtifactStore {
   constructor(config, options) {
     super(config, options);
@@ -243,6 +248,22 @@ class S3Artifacts extends ArtifactStore {
     const ref = reference(this, hash, Number(head.ContentLength), head.ContentType || 'application/octet-stream');
     return withDetails ? { ...ref, modifiedAt: object.LastModified?.toISOString() ?? null } : ref;
   }
+  async listPage(page, keyPrefix, withDetails) {
+    const objects = (page.Contents || []).filter(
+      ({ Key }) => Key.startsWith(keyPrefix) && validDigest(Key.slice(keyPrefix.length))
+    );
+    const refs = [];
+    for (let offset = 0; offset < objects.length; offset += 16) {
+      const batch = objects.slice(offset, offset + 16);
+      const entries = await Promise.all(
+        batch.map((object) =>
+          this.listedReference(object, object.Key.slice(keyPrefix.length), withDetails).catch(skipMissingS3)
+        )
+      );
+      refs.push(...entries.filter(Boolean));
+    }
+    return refs;
+  }
   async list({ withDetails = false } = {}) {
     const refs = [];
     const keyPrefix = `${this.prefix}/${this.projectId}/sha256/`;
@@ -251,11 +272,7 @@ class S3Artifacts extends ArtifactStore {
       const page = await this.client.send(
         new ListObjectsV2Command({ Bucket: this.bucket, Prefix: keyPrefix, ContinuationToken: token })
       );
-      for (const object of page.Contents || []) {
-        const hash = object.Key.replace(keyPrefix, '');
-        if (validDigest(hash) && object.Key === keyPrefix + hash)
-          refs.push(await this.listedReference(object, hash, withDetails));
-      }
+      refs.push(...(await this.listPage(page, keyPrefix, withDetails)));
       token = page.NextContinuationToken;
     } while (token);
     return refs;
