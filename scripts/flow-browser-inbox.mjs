@@ -132,6 +132,9 @@ export async function inboxDiscussBrowserChecks({ page, service, screenshot, out
   service.projectDiscuss?.close();
   service.projectDiscuss = null;
   const calls = [];
+  const prompt = 'Can you accept this prompt?';
+  const reply = 'Prompt accepted while work was paused.';
+  const history = Array.from({ length: 60 }, (_, index) => `Conversation detail ${index + 1}.`).join('\n\n');
   service.projectDiscussOptions = {
     modelSettings: () => ({
       defaults: { model: 'fixture', effort: 'high' },
@@ -142,7 +145,7 @@ export async function inboxDiscussBrowserChecks({ page, service, screenshot, out
     createProvider: () => ({
       async turn(_session, { text }) {
         calls.push(text);
-        return { text: 'Prompt accepted while work was paused.' };
+        return { text: `${reply}\n\n${history}` };
       },
       close() {},
     }),
@@ -161,35 +164,52 @@ export async function inboxDiscussBrowserChecks({ page, service, screenshot, out
       );
   const emptyGap = await composerGap();
   assert.ok(emptyGap >= 0 && emptyGap <= 60, `Empty composer is ${emptyGap}px from the bottom.`);
-  service.store.connected.add('inbox-running-work');
+  const run = service.store.add({ id: 'inbox-running-work' }, 'issue-work');
+  service.store.update(run, { status: 'running' });
   try {
     await page.locator('[data-server-toggle]').check();
-    await draft.fill('Can you accept this prompt?');
+    await draft.fill(prompt);
     await page.locator('#discuss-send').click();
-    await page.locator('#discuss-messages').getByText('Prompt accepted while work was paused.').waitFor();
-    assert.deepEqual(calls, ['Can you accept this prompt?']);
+    const messages = page.locator('#discuss-messages');
+    await messages.getByText(prompt, { exact: true }).waitFor();
+    await messages.getByText(reply, { exact: true }).waitFor();
+    assert.deepEqual(calls, [prompt]);
     const { actions, phase } = service.serverControl.status();
     assert.equal(actions, 1);
     assert.equal(phase, 'paused');
     const populatedGap = await composerGap();
     assert.equal(populatedGap, emptyGap);
     await screenshot('project-discuss');
+    const scroll = (edge) =>
+      messages.evaluate((node, edge) => {
+        node.scrollTop = edge === 'top' ? 0 : node.scrollHeight;
+        return node.scrollTop;
+      }, edge);
+    const top = await scroll('top');
+    assert.equal(top, 0);
+    assert.equal(await composerGap(), emptyGap);
+    const bottom = await scroll('bottom');
+    assert.ok(bottom > 0, 'The conversation scrolls.');
+    assert.equal(await composerGap(), emptyGap);
     writeFileSync(
       join(output, 'project-discuss-inbox.json'),
       JSON.stringify(
         {
           runningActions: actions,
           phase,
-          acceptedPrompt: calls[0],
+          acceptedPrompt: prompt,
+          renderedReply: reply,
           emptyGap,
           populatedGap,
+          scrollPositions: { top, bottom },
         },
         null,
         2
       )
     );
   } finally {
-    service.store.connected.delete('inbox-running-work');
+    service.store.update(run, { status: 'completed' });
+    service.store.connected.delete(run.id);
     service.serverControl.cancel();
   }
 }
