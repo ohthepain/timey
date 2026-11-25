@@ -284,7 +284,7 @@ test('an explicit work block makes one model turn and records its managed checko
   assert.ok(f.progress.includes('Observed progress.'));
 });
 
-test('Work retains passing combined Flow browser scenarios as focused Merge checks', async (t) => {
+test('Work retains passing Flow scenarios and Node test name filters', async (t) => {
   const f = fixture(t);
   const focusedTests = [
     [
@@ -295,10 +295,25 @@ test('Work retains passing combined Flow browser scenarios as focused Merge chec
       '--local-notes',
       '--issue-status-folders',
     ],
+    [
+      'node',
+      '--test',
+      '--test-name-pattern',
+      'parallel lanes join before suggested publication',
+      'scripts/flow.check.mjs',
+    ],
   ];
   f.connection.turn = async () => '```flow-result\n' + JSON.stringify({ focusedTests }) + '\n```';
   const result = await f.run('work');
-  assert.deepEqual(result.result.focusedTests, focusedTests);
+  assert.deepEqual(result.result.focusedTests, [
+    focusedTests[0],
+    [
+      'node',
+      '--test',
+      '--test-name-pattern=parallel lanes join before suggested publication',
+      'scripts/flow.check.mjs',
+    ],
+  ]);
 });
 
 test('Work and Retry distinguish implementation from an earlier idle issue capture', async (t) => {
@@ -1077,8 +1092,40 @@ test('Merge pushes each new candidate, then expires approval if the target moves
   assert.equal((await approveMerge(f, second)).result.revision, 'actual-merge');
 });
 
-test('Merge repairs a target conflict in its owning checkout before it pushes', async (t) => {
-  const f = mergeFixture(t);
+test('Merge repairs a target conflict even when GitHub only reports blocked readiness', async (t) => {
+  const { inspectReadiness } = await import('./factory-ui/strategy-readiness.mjs');
+  let observed = false;
+  const f = mergeFixture(t, {
+    async onReady(pr, branch, head, { waitForChecks } = {}) {
+      if (observed) return;
+      observed = true;
+      const live = {
+        headRefOid: head,
+        baseRefName: 'dev',
+        baseRefOid: f.flow.workspace.base,
+        baseRef: { target: { oid: f.git('rev-parse', 'dev') } },
+        mergeable: 'MERGEABLE',
+        mergeStateStatus: 'BLOCKED',
+        reviewDecision: 'APPROVED',
+        commits: {
+          nodes: [
+            {
+              commit: {
+                statusCheckRollup: {
+                  contexts: { nodes: [{ name: 'test', isRequired: true, status: 'COMPLETED', conclusion: 'SUCCESS' }] },
+                },
+              },
+            },
+          ],
+        },
+      };
+      const provider = {
+        config: { repository: 'test/fixture', target: 'dev' },
+        gh: () => JSON.stringify([{ data: { repository: { pullRequest: live } } }]),
+      };
+      await inspectReadiness(provider, pr, branch, head, undefined, waitForChecks);
+    },
+  });
   await f.run('understand');
   const { checkout } = f.flow.workspace;
   const issueGit = (...args) => execFileSync('git', ['-C', checkout, ...args], { encoding: 'utf8' }).trim();

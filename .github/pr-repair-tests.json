@@ -1,7 +1,34 @@
 {
   "version": 1,
-  "sourceRun": "https://github.com/ohthepain/timey/actions/runs/45240464918",
+  "sourceRun": "https://github.com/ohthepain/timey/actions/runs/45492442677",
   "tests": [
+    {
+      "name": "Repair coverage reaches only the early CI audit",
+      "command": [
+        "node",
+        "--test",
+        "--test-name-pattern=^(CI passes repair coverage only to the early audit when coverage exists)$",
+        "scripts/verify.check.mjs"
+      ]
+    },
+    {
+      "name": "Staged audit, symlink formatting, and Factory dispatch with coverage scoped to CI",
+      "command": [
+        "node",
+        "--test",
+        "--test-name-pattern=^(staged audit sees the index even when unstaged changes hide an unused file|formatting handles changed symbolic links while still checking changed target source|aggregate verification dispatches the package factory suite in an isolated export|Merge runs the focused command, common checks, and selected Factory suite|Work formats issue files and checks Fallow without starting a test suite)$",
+        "scripts/verify.check.mjs"
+      ]
+    },
+    {
+      "name": "Fallow gates, pre-commit recovery, and browser error reporting with coverage scoped to CI",
+      "command": [
+        "node",
+        "--test",
+        "--test-name-pattern=^(step and commit audits block only introduced findings in changed files|pre-commit hook blocks introduced dead code when TIMEY_FALLOW_ENFORCE=1|a real zero-exit Fallow warning blocks the step checkpoint|browser interaction failures block aggregate verification while remaining checks still run)$",
+        "scripts/verify.check.mjs"
+      ]
+    },
     {
       "name": "Initial issue loading does not wait for the live update stream",
       "command": [
@@ -17,6 +44,14 @@
       "command": ["node", "--test", "scripts/browser-scenario-policy.check.mjs"]
     },
     {
+      "name": "Master issue hierarchy and badges across the workspace",
+      "command": ["node", "scripts/flow-browser.mjs", "--master-issues"]
+    },
+    {
+      "name": "Pending proposal deletion honors confirmation and handles a delayed request",
+      "command": ["node", "scripts/flow-browser.mjs", "--delayed-delete"]
+    },
+    {
       "name": "Previously failing capture chooses the configured Issue storage profile",
       "command": ["node", "scripts/factory-browser.mjs", "--scenario=factory-browser-capture-start.mjs"]
     },
@@ -29,8 +64,16 @@
       "command": ["node", "scripts/flow-browser.mjs", "--ai-text"]
     },
     {
-      "name": "Closed issues stop asking for Close after manual or automatic delivery",
-      "command": ["node", "scripts/flow-browser.mjs", "--manual-close"]
+      "name": "Manual and automatic closure followed by refresh after a rejected branch update",
+      "command": ["node", "scripts/flow-browser.mjs", "--manual-close", "--error-recovery"]
+    },
+    {
+      "name": "Project Discuss offers setup for a missing clarification skill and removes it after discovery",
+      "command": ["node", "scripts/flow-browser.mjs", "--project-discuss"]
+    },
+    {
+      "name": "Branch repair progress survives reload and requires candidate approval",
+      "command": ["node", "scripts/flow-browser.mjs", "--branch-repair"]
     },
     {
       "name": "Closure matches GitHub delivery to the recorded merged candidate",

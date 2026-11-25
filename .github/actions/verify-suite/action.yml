@@ -54,8 +54,9 @@ runs:
         TIMEY_FALLOW_ENFORCE: '1'
         TIMEY_FALLOW_WARNINGS: error
       run: |
-        if [ "$VERIFY_SUITE" = early ] && [ -d .issues/repair-first-coverage ]; then
-          export FALLOW_COVERAGE="$GITHUB_WORKSPACE/.issues/repair-first-coverage"
+        coverage="$GITHUB_WORKSPACE/.issues/repair-first-coverage"
+        if [ "$VERIFY_SUITE" = early ] && [ -d "$coverage" ]; then
+          export FALLOW_COVERAGE="$coverage"
           export FALLOW_COVERAGE_ROOT="$GITHUB_WORKSPACE"
         fi
         node scripts/verify.mjs --base "$AUDIT_BASE" --ci-suite "$VERIFY_SUITE"

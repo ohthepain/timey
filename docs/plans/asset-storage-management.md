@@ -1,34 +1,83 @@
 # Asset storage management
 
-The design interview is ongoing. The user confirmed the first round on
-2026-11-24. These decisions authorize design documentation. Implementation and
-the remaining product decisions are pending.
+Timey issue #217 tracks this work. The user confirmed the initial design on
+2026-11-24 and approved the remaining design decisions on 2026-11-25.
+Implementation requires separate approval.
 
 ## Confirmed behavior
 
-Asset Storage is accessible through settings. It lists all project-owned
+Asset Storage is accessible through Settings. It lists all project-owned
 artifacts in the project's configured S3 stores, including documents,
 attachments, screenshots, logs, and source checkpoints. Unrelated bucket
 contents are outside its scope.
 
-The panel shows each asset's size and the content or personal saves that refer
-to it. It provides row checkboxes, filters, Select all, and Delete selected.
-Filter details and selection behavior remain open.
+The panel shows each asset's size and the individual content and personal
+references that make up its reference count.
 
 Each asset has a permanent identity independent of its location and public URL.
-Moving an asset updates its location while existing references continue to
-identify the same asset. Individual references explain its reference count.
+Existing references continue to identify the same asset after a move.
+
+## Existing assets and retained history
+
+Inventory existing project-owned assets and verify their references before
+enabling automatic deletion. If a store or source record is unavailable for
+verification, keep the affected assets and show their reference status as
+unverified.
 
 Retained content keeps its references, including archived issues, content in the
-icebox, older chat messages, and retained report revisions. Removing the last
-reference automatically deletes the asset without a warning.
+icebox, older chat messages, and retained report revisions. A link in a retained
+revision or chat message counts until that record is permanently removed.
 
-Save creates one personal reference shown as "Saved by you". Repeated Save
-actions add no references. Unsave removes that person's reference.
+## Published links and dependent files
 
-Asset Storage permits forced deletion of referenced assets. The referring issues,
-reports, and chats remain and show "Asset deleted" in place of the asset.
-Surviving references must not recreate deleted contents.
+Publishing through Timey adds a reference that lasts until unpublishing.
+Copying a URL leaves the reference count unchanged. A copied URL works only
+while another reference keeps the asset alive.
+
+In the first release, register each dependent file against the content that
+uses it. Treat a bundle that must move and delete together as one asset. Defer
+asset-to-asset reference graphs and cycle handling.
+
+## Automatic deletion and storage moves
+
+When the final verified reference is removed, queue deletion automatically
+without a warning. Before committing the deletion, recheck references and any
+active uploads or moves. After committing the deletion, reject new references
+to that asset ID. Retry partial cleanup while keeping the asset inaccessible.
+
+Show **Deletion pending** until cleanup removes managed copies, including S3
+versions and replicas, and invalidates caches Timey controls. Show any provider
+block in Settings.
+
+For a checked move, verify the destination copy before switching the asset's
+location. Retire the old copy through cleanup that can be retried.
+
+## Forced deletion
+
+Users with permission to manage project storage can force-delete referenced
+assets. The confirmation shows the selected asset count, total size, and which
+issue, report, or chat references will show **Asset deleted**. Include personal
+saves in the impact count.
+
+Keep the referring issues, reports, and chats. They show **Asset deleted** in
+place of the asset. Keep a deletion record so retries and surviving references
+cannot recreate the contents.
+
+## Filters, selection, and personal saves
+
+Filter by asset type, store, reference status, and **Saved by you**. Sort by
+name, size, or added date. Show separate size totals for filtered results and
+selected rows.
+
+The panel provides row checkboxes, **Select all**, and **Delete selected**.
+**Select all** selects the current page. Selection persists across pages and
+clears when filters change. Show the total selected count beside
+**Delete selected**.
+
+Offer **Save** for every asset the user can access, in its viewer and in its
+Asset Storage row. **Save** creates one personal reference shown as
+**Saved by you**. Repeating **Save** leaves the count unchanged. **Unsave**
+removes that person's reference.
 
 ## Relationship to existing decisions
 
@@ -42,41 +91,9 @@ deleting its referring content.
 requires checked storage moves. Permanent asset identity must remain valid
 across those moves.
 
-## Remaining decisions
+## Earlier proposal
 
-- How existing assets acquire verified references before automatic deletion starts.
-- How publication and links outside Timey retain assets.
-- Whether dependent assets form a reference graph and how cycles are handled.
-- Whether reference removal is permanent when only retained history contains a link.
-- Deletion timing, concurrent writes, partial failure, and in-progress uploads.
-- S3 versions, replicas, and cached copies after deletion.
-- Forced deletion confirmation and permissions.
-- Panel filters, sorting, size totals, and selection across pages.
-- Whether Save applies to artifacts other than documents and where it appears.
-- How old physical copies are retired after storage moves.
-
-The interview ends after the remaining decisions are settled and the user confirms
-shared understanding. No production behavior has changed.
-
-## Proposal for the next interview round
-
-Keep the initial inventory read-only until reconciliation verifies its references.
-Count retained history and registered publications until their references are
-explicitly removed. Unregistered external links would carry no retention guarantee.
-Reject dependency cycles when creating references.
-
-Coordinate deletion and reference writes by asset ID. Defer deletion during an
-upload or storage move. Verify that the reference count is zero before automatic
-deletion, then record the deletion before removing bytes. Retry physical cleanup
-after partial failures. Retire a move's source copy after verifying the destination.
-Limit forced deletion to project administrators and show the affected references
-before confirmation. The policy for S3 versions, replicas, and caches needs an
-explicit decision.
-
-Offer filters for store, asset type, and reference status. Show filtered and
-selected byte totals. Select all would apply to all filtered results. Offer Save
-on the asset view for supported types. The supported types and default sort need
-an explicit decision.
-
-This proposal awaits the user's decisions, confirmation of shared understanding,
-and explicit implementation approval.
+The interview draft proposed keeping the inventory read-only during reference
+verification, rejecting dependency cycles, limiting forced deletion to project
+administrators, selecting all filtered results at once, and offering Save only
+for supported asset types. The approved decisions above supersede the draft.

@@ -1,10 +1,21 @@
 import { queueSortValues } from './queue-sort.mjs';
 import { issueGit } from './issue-git.mjs';
 import { issueLifecycleView } from './lifecycle-view.mjs';
+import { groupMaster } from './issue-group.mjs';
 import { readinessView } from './readiness.mjs';
+function issueGroupRows(issues, lifecycle = []) {
+  const masters = issues.filter((issue) => issue.issue_group);
+  const closedState = lifecycle.find((stage) => stage.role === 'closed')?.state;
+  return issues.map((issue) => ({
+    ...issue,
+    masterId: groupMaster(masters, issue.id, closedState)?.id,
+    isMaster: Boolean(issue.issue_group),
+  }));
+}
+
 // Polling carries summaries and a bounded tail for the selected issue. Full history is fetched on demand.
 export function queueResponse(snapshot, issueId) {
-  const allIssues = snapshot.issues || [];
+  const allIssues = issueGroupRows(snapshot.issues || [], snapshot.lifecycle);
   issueId = allIssues.find((issue) => issue.id === issueId || String(issue.issueNumber) === issueId)?.id || issueId;
   const issues = issueId ? allIssues.filter((issue) => issue.id === issueId) : allIssues;
   const actions = issueId ? snapshot.actions.filter((action) => action.issues.includes(issueId)) : snapshot.actions;

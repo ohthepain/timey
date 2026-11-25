@@ -21,6 +21,8 @@
     <link rel="stylesheet" href="/project-reports.css" />
     <link rel="stylesheet" href="/local-notes.css" />
     <link rel="stylesheet" href="/flow-interactions.css" />
+    <link rel="stylesheet" href="/issue-group.css" />
+    <script src="/issue-group-ui.js" defer></script>
     <script src="/view-state.js" defer></script>
     <script src="/activity-indicator-ui.js" defer></script>
     <script src="/issue-chat-ui.js" defer></script>
@@ -229,6 +231,7 @@
             <div class="issue-title-row">
               <span class="issue-number" id="issue-number" hidden></span>
               <h1 id="issue-title"></h1>
+              <span class="master-badge" id="issue-master-badge" hidden>Master</span>
               <button
                 class="icon-button"
                 id="rename-issue"
