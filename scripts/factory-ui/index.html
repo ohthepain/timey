@@ -4817,7 +4817,7 @@
         });
         document
           .querySelectorAll(
-            '#app textarea:not([data-temporary] *),#app input:not([data-temporary] *),#app select[data-preserve-draft]'
+            '#app textarea:not([data-temporary] *),#app input:not(#search, [data-temporary] *),#app select[data-preserve-draft]'
           )
           .forEach((field) => {
             if (field.id && !['checkbox', 'radio'].includes(field.type))
@@ -4871,7 +4871,7 @@
         });
         document
           .querySelectorAll(
-            '#app textarea:not([data-temporary] *),#app input:not([data-temporary] *),#app select[data-preserve-draft]'
+            '#app textarea:not([data-temporary] *),#app input:not(#search, [data-temporary] *),#app select[data-preserve-draft]'
           )
           .forEach((field) => {
             const saved = viewMemory.fields.get(location.hash + '|' + (field.dataset.draftKey || field.id));

@@ -198,6 +198,8 @@ const {
   '--storage-status': storageStatusCheck,
   '--polling': pollingCheck,
   '--capture-folder-issue': captureFolderIssueCheck,
+  '--folder-workspace-grouping': folderWorkspaceGroupingCheck,
+  '--sidebar-issue-names': sidebarIssueNamesCheck,
   '--save-request-route': saveRequestRouteCheck,
   '--add-parallel-block': addParallelBlockCheck,
   '--reorder-saved-blocks': reorderSavedBlocksCheck,
@@ -1226,7 +1228,7 @@ try {
     await page.goto('/?issue=' + issueId);
     await page.locator('#request-form').waitFor();
   });
-  await check('The folder workspace reviews moves and creates a master without starting work', async () => {
+  await check(folderWorkspaceGroupingCheck, async () => {
     await ensureBrowserFolderIssue();
     const openFolder = async () => {
       await page.locator('#issue-list button[data-folder="Browser folder"]').click();
@@ -1544,10 +1546,16 @@ try {
     await page.locator('#request-form').waitFor();
     assert.equal(logs.execution.length, 0);
   });
-  await check('Numbered full issue names wrap and sidebar resizing survives reload', async () => {
+  await check(sidebarIssueNamesCheck, async () => {
+    await ensureBrowserFolderIssue();
+    await page.goto('/?issue=' + issueId);
+    await page.locator('#request-form').waitFor();
     const data = await view();
     const name = page.locator('#open-issues [data-issue="' + issueId + '"] .issue-name');
-    assert.equal(await name.textContent(), '#' + data.issue.issueNumber + ' - ' + data.issue.title);
+    assert.equal(
+      await name.locator('.issue-title-text').textContent(),
+      '#' + data.issue.issueNumber + ' - ' + data.issue.title
+    );
     const separator = page.locator('#sidebar-resizer');
     const before = await page.locator('.sidebar').boundingBox();
     const handle = await separator.boundingBox();

@@ -2602,13 +2602,7 @@ class IssueFlows {
     );
     return { accepted: true, issueId: issue.id, blockId: block.id, attemptId: attempt.id };
   }
-  admitAttempt(issue, flow, block, attempt, controller, purpose = 'edit') {
-    return this.attemptMetadata(block, () => this.admitAttemptState(issue, flow, block, attempt, controller, purpose));
-  }
-  attemptMetadata(block, run) {
-    return block.kind === 'update-branch' ? runMetadataOperation(this.service.projectStores, run) : run();
-  }
-  async admitAttemptState(issue, flow, block, attempt, controller, purpose) {
+  async admitAttempt(issue, flow, block, attempt, controller, purpose = 'edit') {
     if (!['detach-blocked-child', 'reattach-child'].includes(block.operation)) {
       this.groups.requireScopeStable(issue.id);
       requireThat(
@@ -2621,15 +2615,17 @@ class IssueFlows {
     this.active.set(issue.id, owned);
     try {
       if (this.service.projectStores) {
-        const admitted = await this.service.projectStores.beginAttempt({
-          issueId: issue.id,
-          blockId: block.id,
-          attempt,
-          flow,
-          expectedRevision: flow.revision,
-          operationId: 'attempt-' + attempt.id,
-          purpose,
-        });
+        const admitted = await this.attemptMetadata(block, () =>
+          this.service.projectStores.beginAttempt({
+            issueId: issue.id,
+            blockId: block.id,
+            attempt,
+            flow,
+            expectedRevision: flow.revision,
+            operationId: 'attempt-' + attempt.id,
+            purpose,
+          })
+        );
         owned.storeOwner = admitted.owner;
         flow = admitted.flow;
         await this.service.projectStores.refresh({ issueIds: [issue.id] });
@@ -2643,6 +2639,9 @@ class IssueFlows {
       this.active.delete(issue.id);
       throw error;
     }
+  }
+  attemptMetadata(block, run) {
+    return block.kind === 'update-branch' ? runMetadataOperation(this.service.projectStores, run) : run();
   }
   changeAttempt(issue, blockId, attemptId, change = () => {}) {
     const flow = this.store.read(issue, flowTarget(this.service.root));

@@ -63,12 +63,18 @@ class IssueAnnotations {
     if (this.service.projectStores) return this.service.projectStores.coordination;
     const config = readStoreConfig(this.service.root);
     const store = requireStore(config, config.coordination, 'coordination');
-    return store.kind === 'files' ? this.localCoordination(store, config.projectId) : this.sharedCoordination();
+    if (store.kind === 'files' || (store.kind === 'git' && this.service.sharedIssues))
+      return this.standaloneCoordination(store, config.projectId);
+    return this.sharedCoordination();
   }
 
-  localCoordination(store, projectId) {
-    this.local ||= openRecordStore(store, { root: this.service.root, projectId }).then(createCoordination);
-    return this.local;
+  standaloneCoordination(store, projectId) {
+    this.standalone ||= openRecordStore(store, {
+      root: this.service.root,
+      projectId,
+      inlinePayloads: true,
+    }).then(createCoordination);
+    return this.standalone;
   }
 
   async sharedCoordination() {
