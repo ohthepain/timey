@@ -25,6 +25,11 @@ issues and issues already attached to a master remain ineligible.
 The **Create master issue** button sits immediately to the right of **Start all**
 (or **Start selected**) and becomes available for an eligible selection of at least
 two issues. It opens the combined request for review before creation.
+Flow displays the **Investigate** annotation on Investigation issues.
+The first selected issue determines whether the master accepts investigative or
+non-investigative sub-issues. Factory creates an Investigation master for
+investigative groups. Bugs and features can share a non-investigative master.
+Flow explains mixed selections and blocks creation.
 The folder list nests attached sub-issues beneath their master. When filtering
 hides a master, its matching sub-issues remain visible as individual results.
 Each selected issue's resolved PR target must match its folder's resolved default
@@ -67,7 +72,11 @@ provides **Remove** to detach it. The row is hidden for issues without a master;
 removal is unavailable while the master is active or either issue is closed.
 When viewing a master, the same position shows its attached sub-issues. Each
 name links to the sub-issue page, and its **Remove** button detaches it while
-the master is idle. Requested proof and review actions appear in the inspector.
+the master is idle. To add an eligible issue from the same folder, select it
+under **Sub-issue to attach** and click **Attach sub-issue**. Flow explains a
+type mismatch before submission. The server checks current types and membership
+before saving an attachment or reattaching a removed sub-issue.
+Requested proof and review actions appear in the inspector.
 You can detach an individual sub-issue while the master is idle, including after
 a partial fix. If the master closes for a reason other than Fixed, release all
 attached sub-issues for independent work. Keep their reports open and link to any

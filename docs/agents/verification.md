@@ -489,6 +489,8 @@ the manifest differs from the PR base; after it merges, unchanged plans are
 skipped. Use `node scripts/flow-browser.mjs --timers` for the isolated attempt
 timer scenario. Repair workers reproduce the named failures, include necessary
 predecessor scenarios, and return after focused proof so GitHub can check the repaired commit.
+A named Flow browser check can include one `--ci-part` flag to use the same
+fixture setup as that GitHub job.
 Include `--stores` when reproducing browser failures after storage activation;
 an isolated legacy-storage run does not establish that the store-backed case
 passed. `--proposals --delayed-delete` holds a proposal Delete request for 16
