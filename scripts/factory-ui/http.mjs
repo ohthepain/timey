@@ -1,4 +1,6 @@
 import { createFlowChanges } from './flow-changes.mjs';
+import { issueAnnotations } from './issue-annotations.mjs';
+import { userInfo } from 'node:os';
 import { readProviderConfig } from './provider-config.mjs';
 import { providerSettings, saveProviderSettings } from './provider-runtime.mjs';
 import { refreshProvider, setupProvider, installProvider } from './provider-setup.mjs';
@@ -787,7 +789,7 @@ async function read(service, request, response, owner) {
       await hydrateProjectEvidence(service, null, { path });
       return service.readShownFile(path);
     },
-    '/api/issue-storage': () => listIssueStorage(service, url.searchParams.get('location')),
+    '/api/issue-storage': () => storageResponse(service, url.searchParams.get('location')),
     '/api/issue-storage-report': () =>
       readIssueStorageReport(service.root, issue(url.searchParams.get('issue')), url.searchParams.get('location')),
     '/api/issue-report': () => service.readSavedReport(issue(url.searchParams.get('issue'))),
@@ -799,7 +801,7 @@ async function read(service, request, response, owner) {
     '/api/queue': () =>
       selectedIssue
         ? issueResponse(service, owner, issue(selectedIssue))
-        : queueResponse(service.snapshot(owner, { includeClosed: url.searchParams.get('includeClosed') === 'true' })),
+        : queueListResponse(service, owner, url.searchParams.get('includeClosed') === 'true'),
     '/api/output-history': () =>
       outputHistory(service.store, url.searchParams.get('id'), url.searchParams.get('before')),
     '/api/run': () => savedRun(service, url.searchParams.get('id')),
@@ -807,6 +809,18 @@ async function read(service, request, response, owner) {
   if (Object.hasOwn(routes, url.pathname)) return response.end(JSON.stringify(await routes[url.pathname]()));
   response.statusCode = 404;
   response.end(JSON.stringify({ error: 'Not found' }));
+}
+
+function storageResponse(service, location) {
+  const result = listIssueStorage(service, location);
+  if (location !== 'archive') return result;
+  const workflow = flows(service);
+  return workflow.badgedList(result, [...workflow.issues(), ...workflow.groups.archivedGroups()]);
+}
+
+function queueListResponse(service, owner, includeClosed) {
+  const result = queueResponse(service.snapshot(owner, { includeClosed }));
+  return includeClosed ? flows(service).badgedList(result) : result;
 }
 
 async function revealIssueReport(service, issueId) {
@@ -1064,17 +1078,27 @@ function deploymentAction(service, path) {
   throw Error('Unknown deployment operation.');
 }
 
+const standaloneMutations = new Map([
+  ['/api/codex-activity-reset', () => resetCodexActivity()],
+  ['/api/github-calls-reset', () => resetGitHubCalls()],
+  [
+    '/api/issue-annotation',
+    async (service, value) => {
+      await ensureProjectStores(service, { display: true });
+      const issueId = resolveIssueNumber(service, value.issueId);
+      return issueAnnotations(service).mutate({ ...value, issueId }, { kind: 'user', id: userInfo().username });
+    },
+  ],
+]);
+
 async function postedAction(service, request, token) {
   if (request.url.startsWith('/api/deployment-')) return deploymentAction(service, request.url);
   requireThat(!service.deploymentDraining, 'The factory UI is restarting. Refresh when it is ready.');
   const value = await body(request);
-  if (request.url === '/api/codex-activity-reset') {
+  const standalone = standaloneMutations.get(request.url);
+  if (standalone) {
     requireLiveMutation(service, request.url);
-    return resetCodexActivity();
-  }
-  if (request.url === '/api/github-calls-reset') {
-    requireLiveMutation(service, request.url);
-    return resetGitHubCalls();
+    return standalone(service, value);
   }
   if (typeof value.issueId === 'string') value.issueId = resolveIssueNumber(service, value.issueId);
   return mutation(service, request.url, value, token);

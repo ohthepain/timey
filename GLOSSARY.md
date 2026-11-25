@@ -233,6 +233,15 @@ fulfill them.
 An original issue whose work belongs to a master issue. It keeps its own identity
 and report and cannot start work independently while attached.
 
+**Issue annotation**:
+A shared label or comment on an issue. The author and creation time stay in
+history with the first clearance, when present. Active blocked and not-ready
+labels drive the corresponding issue badges.
+
+**Work scope**:
+The attached sub-issues whose requirements and proof obligations a Work attempt
+receives. Factory records the scope before authorizing writes.
+
 **Issue claim**:
 Exclusive permission for one factory run to start or continue work on an issue.
 A claim can remain held while its outcome is being published or reconciled.

@@ -27,3 +27,88 @@ button[data-sub-issue] {
 [data-issue-row][data-sub-issue] {
   padding-inline-start: var(--sub-issue-indent);
 }
+
+.issue-badge {
+  display: inline-block;
+  border-radius: 999px;
+  padding: 2px 6px;
+  color: #23384e;
+  background: #dce5ef;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+  vertical-align: middle;
+}
+
+.issue-badge[data-issue-badge='blocked'] {
+  color: #541d17;
+  background: #fac7be;
+}
+
+.issue-badge[data-issue-badge='not-ready'],
+.issue-badge[data-issue-badge='needs-approval'],
+.issue-badge[data-issue-badge='needs-git-approval'] {
+  color: #4a3214;
+  background: #f5dcad;
+}
+
+.issue-badge-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  margin-block: 4px 8px;
+  font-size: 12px;
+}
+
+.issue-badge-controls label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.issue-badge-controls select {
+  font: inherit;
+}
+
+.issue-heading-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.issue-heading-badges:empty {
+  display: none;
+}
+
+.issue-annotations {
+  margin-block: 4px;
+  font-size: 13px;
+}
+
+.issue-annotations[open] {
+  max-width: 430px;
+}
+
+.issue-annotations ul {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0;
+}
+
+.issue-annotations li {
+  padding-block: 6px;
+  overflow-wrap: anywhere;
+}
+
+.issue-annotations p {
+  margin: 3px 0;
+  white-space: pre-wrap;
+}
+
+.issue-annotations fieldset {
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  margin: 8px 0;
+}

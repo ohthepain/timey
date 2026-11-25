@@ -469,7 +469,7 @@ class IssueChats {
       ...newChatModelSettings(this.service.root, issueId),
       threadId,
       experimentalApi: true,
-      mcpTools: () => sharedChatTools(this.service),
+      mcpTools: () => sharedChatTools(this.service, () => ({ kind: 'chat', id: issueId })),
       onEvent: (message) => this.service.store.event(message),
     });
   }

@@ -14,11 +14,13 @@ export function withGroupProof(ctx) {
   return { ...ctx, definition: { ...ctx.definition, artifacts: [...artifacts, proofArtifact] } };
 }
 
-export function groupProofRequest(issue) {
+export function groupProofRequest(issue, ids) {
   if (!issue.issue_group?.children?.length) return null;
   return {
     task: 'Only the currently attached sub-issues are in scope. Check each one against its requested proof. Write a JSON array to the subIssueProof artifact with one entry per checked issue: {"id": "full issue id", "status": "passed" or "failed", "observation": "command or validation performed and its actual outcome", "nextAction": "optional specific action for a failure"}. Report only checks you actually performed. Include relevant supporting output in the normal evidence. If any check fails, also report the issue under the flow-result failure field.',
-    attached: groupChildren(issue).map(({ id, title, requestedProof }) => ({ id, title, requestedProof })),
+    attached: groupChildren(issue)
+      .filter(({ id }) => !ids || ids.includes(id))
+      .map(({ id, title, requestedProof }) => ({ id, title, requestedProof })),
     detached: issue.issue_group.children.filter((child) => child.detachedAt).map(({ id, title }) => ({ id, title })),
   };
 }

@@ -99,15 +99,7 @@ export async function startOwnedOperation(
   Object.assign(block, { label, operation, shareSourceCheckpoint });
   prepared.blocks.push(block);
   const attempt = flows.makeAttempt(prepared, issue, block, catalog);
-  let admitted;
-  try {
-    admitted = await runMetadataOperation(flows.service.projectStores, () =>
-      flows.admitAttempt(issue, prepared, block, attempt, controller)
-    );
-  } catch (error) {
-    flows.active.delete(issue.id);
-    throw error;
-  }
+  const admitted = await flows.admitAttempt(issue, prepared, block, attempt, controller);
   admitted.owned.movingStartingPoint = movingStartingPoint;
   const task = executeOperation(flows, { issue, admitted, block, attempt, controller, run });
   admitted.owned.task = task;

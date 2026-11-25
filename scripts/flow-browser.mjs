@@ -1,4 +1,5 @@
 import { masterIssueBrowserChecks } from './flow-browser-master-issues.mjs';
+import { issueAnnotationBrowserChecks } from './flow-browser-issue-annotations.mjs';
 import { blockModelsBrowserChecks } from './flow-browser-block-models.mjs';
 import { providerSettingsBrowserChecks } from './flow-browser-provider-settings.mjs';
 import { activityBrowserChecks } from './flow-browser-activity.mjs';
@@ -176,6 +177,7 @@ Object.assign(flowBrowserScenarioNames, {
 });
 const {
   '--master-issues': masterIssuesCheck,
+  '--issue-annotations': issueAnnotationsCheck,
   '--folder-settings': folderSettingsCheck,
   '--block-deletion': blockDeletionCheck,
   '--investigation-followups': followupsCheck,
@@ -196,6 +198,8 @@ const {
   '--storage-status': storageStatusCheck,
   '--polling': pollingCheck,
   '--capture-folder-issue': captureFolderIssueCheck,
+  '--folder-workspace-grouping': folderWorkspaceGroupingCheck,
+  '--sidebar-issue-names': sidebarIssueNamesCheck,
   '--save-request-route': saveRequestRouteCheck,
   '--add-parallel-block': addParallelBlockCheck,
   '--reorder-saved-blocks': reorderSavedBlocksCheck,
@@ -660,6 +664,7 @@ try {
     projectIssuesBrowserChecks({ page, project, root, output })
   );
   await check(masterIssuesCheck, () => masterIssueBrowserChecks({ page, project, root, output }));
+  await check(issueAnnotationsCheck, () => issueAnnotationBrowserChecks({ page, project, root, output, poll }));
   await check(navigationCheck, () =>
     withQueueConfiguration({ page, project, root }, () => projectNavigationBrowserChecks({ page, screenshot }))
   );
@@ -1223,7 +1228,7 @@ try {
     await page.goto('/?issue=' + issueId);
     await page.locator('#request-form').waitFor();
   });
-  await check('The folder workspace reviews moves and creates a master without starting work', async () => {
+  await check(folderWorkspaceGroupingCheck, async () => {
     await ensureBrowserFolderIssue();
     const openFolder = async () => {
       await page.locator('#issue-list button[data-folder="Browser folder"]').click();
@@ -1541,10 +1546,16 @@ try {
     await page.locator('#request-form').waitFor();
     assert.equal(logs.execution.length, 0);
   });
-  await check('Numbered full issue names wrap and sidebar resizing survives reload', async () => {
+  await check(sidebarIssueNamesCheck, async () => {
+    await ensureBrowserFolderIssue();
+    await page.goto('/?issue=' + issueId);
+    await page.locator('#request-form').waitFor();
     const data = await view();
     const name = page.locator('#open-issues [data-issue="' + issueId + '"] .issue-name');
-    assert.equal(await name.textContent(), '#' + data.issue.issueNumber + ' - ' + data.issue.title);
+    assert.equal(
+      await name.locator('.issue-title-text').textContent(),
+      '#' + data.issue.issueNumber + ' - ' + data.issue.title
+    );
     const separator = page.locator('#sidebar-resizer');
     const before = await page.locator('.sidebar').boundingBox();
     const handle = await separator.boundingBox();
