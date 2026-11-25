@@ -188,6 +188,83 @@ test('Publish previews and publishes the exact commit without running full Verif
   assert.equal(result.result.verification, undefined);
 });
 
+for (const failure of [null, 'check', 'registry']) {
+  test(
+    failure === 'registry'
+      ? 'Publish blocks when the candidate drops a required Flow browser flag'
+      : `Publish ${failure ? 'blocks on a failing' : 'retains a passing'} affected Flow integration check`,
+    async (t) => {
+      const f = fixture(t);
+      const path = 'scripts/factory-ui/issue-annotations.mjs';
+      mkdirSync(join(f.workspace.checkout, 'scripts/factory-ui'), { recursive: true });
+      writeFileSync(join(f.workspace.checkout, path), 'export const issueAnnotation = 1;\n');
+      const registry = 'scripts/browser-scenario-policy.mjs';
+      const policy = readFileSync(new URL('./browser-scenario-policy.mjs', import.meta.url), 'utf8');
+      writeFileSync(
+        join(f.workspace.checkout, registry),
+        failure === 'registry' ? policy.replace("  '--issue-annotations':", "  '--removed-annotations':") : policy
+      );
+      f.source.git('add', path, registry);
+      f.source.git('commit', '-m', 'Change issue annotations');
+      const head = f.source.git('rev-parse', 'HEAD');
+      f.input.revision = head;
+      const plan = JSON.parse(readFileSync(new URL('../.github/flow-integration-tests.json', import.meta.url))).tests;
+      const { execute } = f.options;
+      const actual = [];
+      let evidence;
+      f.options.execute = async (input) => {
+        if (input.command === 'git') {
+          assert.equal(actual.length, plan.length, 'All six checks ran before a push');
+          assert.equal(JSON.parse(readFileSync(join(f.folder, 'flow-publication-checks.json'))).head, head);
+          return execute(input);
+        }
+        assert.equal(input.cwd, f.workspace.checkout);
+        actual.push(['node', ...input.args]);
+        writeFileSync(input.log, 'Checked ' + actual.length + '\n');
+        if (failure === 'check' && actual.length === 4) throw Error('Failed attempt-publication check');
+      };
+
+      if (failure) {
+        await assert.rejects(f.publish(), (error) => {
+          evidence = error.evidence;
+          assert.match(error.message, failure === 'check' ? /Failed attempt-publication check/ : /--issue-annotations/);
+          return true;
+        });
+        assert.equal(f.calls.includes('push'), false);
+        assert.equal(f.calls.includes('publish'), false);
+      } else {
+        const result = await f.publish();
+        assert.equal(result.result.head, head);
+        assert.ok(f.calls.includes('publish'));
+        evidence = result.evidence;
+      }
+
+      assert.deepEqual(
+        actual,
+        plan.slice(0, failure ? 4 : 6).map(({ command }) => command)
+      );
+      const report = evidence.find(({ label }) => label === 'Focused Flow publication checks');
+      const bytes = readFileSync(report.path);
+      assert.equal(digest(bytes), report.sha256);
+      const retained = JSON.parse(bytes);
+      assert.equal(retained.head, head);
+      assert.deepEqual(
+        retained.results.map(({ status }) => status),
+        [
+          ...Array(failure === 'check' ? 3 : failure === 'registry' ? 4 : 6).fill('passed'),
+          ...(failure ? ['failed'] : []),
+        ]
+      );
+      for (const [index, { log }] of retained.results.entries()) {
+        assert.equal(digest(readFileSync(log.path)), log.sha256);
+        const logText = readFileSync(log.path, 'utf8');
+        if (failure === 'registry' && index === 4) assert.match(logText, /--issue-annotations/);
+        else assert.equal(logText, 'Checked ' + (index + 1) + '\n');
+      }
+    }
+  );
+}
+
 test('Publish ignores failed test evidence and leaves the committed source unchanged', async (t) => {
   const f = fixture(t);
   f.ctx.flow.blocks[0].attempts[0] = {
