@@ -284,6 +284,12 @@ export async function assetStorageBrowserChecks(context) {
       operationId: 'inventory-checked-move-fixture',
     });
     assert.equal(move.status, 'confirmed');
+    const movedIssue = await context.service.projectStores.readIssue(archived);
+    assert.equal(movedIssue.artifactStoreId, 'secondary');
+    const issueArtifacts = await context.service.projectStores.issueArtifacts(archived);
+    const readsBeforeIssueArtifact = mock.reads.length;
+    assert.deepEqual(await issueArtifacts.get(seeded.ref), fixture.image.body);
+    assert.equal(mock.reads[readsBeforeIssueArtifact], 'secondary-fixture');
     const alias = 'artifact-locations/' + seeded.sha256;
     await context.service.projectStores.records.commit({
       operationId: 'inventory-location-fixture',
@@ -321,6 +327,7 @@ export async function assetStorageBrowserChecks(context) {
             readableReferencesRetainedWithMissingPayload: true,
             unreadablePayloadReferenceCountedOnce: true,
             retainedInventoryWhenAnObjectDisappeared: true,
+            movedIssueReadOriginalReferenceFromDestination: true,
             retainedPayloadReadsFollowedRecordedLocation: true,
             listedAssets: 26,
             filteredBytes: 585,

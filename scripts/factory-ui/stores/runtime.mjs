@@ -501,6 +501,33 @@ function snapshotRefreshNeeded(runtime, { fresh, display, allowPending }) {
   return fresh || display || (!allowPending && needsInitialSnapshot(runtime));
 }
 
+function refreshCoversScope(runtime, scope) {
+  const pendingScope = runtime.pendingScope;
+  return runtime.pendingFresh && (!pendingScope || (scope && [...scope].every((id) => pendingScope.has(id))));
+}
+
+async function awaitStoreRefresh(runtime, pending) {
+  const wait = beginActivity('stores', 'Wait for stores', diagnosticContext(runtime.service.root));
+  try {
+    await pending;
+    wait('Completed');
+  } catch (error) {
+    wait('Failed');
+    throw error;
+  }
+}
+
+async function waitForStoreRefresh(runtime, fresh, scope) {
+  let satisfied;
+  do {
+    if (runtime.pending) countStoreRead(runtime.service.root, 'Joined refreshes');
+    const pending = synchronizeOnce(runtime, fresh, scope);
+    satisfied = !fresh || refreshCoversScope(runtime, scope);
+    await awaitStoreRefresh(runtime, pending);
+  } while (!satisfied);
+  return runtime.project;
+}
+
 export async function ensureProjectStores(
   service,
   { fresh = false, allowCached = false, allowPending = false, display = false, issueIds } = {}
@@ -532,22 +559,7 @@ export async function ensureProjectStores(
   fresh = snapshotRefreshNeeded(runtime, { fresh, display, allowPending });
   const scope = issueIds?.length && snapshot?.projectId === config.projectId ? new Set(issueIds) : null;
   try {
-    for (;;) {
-      if (runtime.pending) countStoreRead(service.root, 'Joined refreshes');
-      const pending = synchronizeOnce(runtime, fresh, scope);
-      const wait = beginActivity('stores', 'Wait for stores', diagnosticContext(service.root));
-      const pendingFresh = runtime.pendingFresh;
-      const pendingScope = runtime.pendingScope;
-      await pending.then(
-        () => wait('Completed'),
-        (error) => {
-          wait('Failed');
-          throw error;
-        }
-      );
-      const coversScope = !pendingScope || (scope && [...scope].every((id) => pendingScope.has(id)));
-      if (!fresh || (pendingFresh && coversScope)) return runtime.project;
-    }
+    return await waitForStoreRefresh(runtime, fresh, scope);
   } catch (error) {
     if (allowCached && readSnapshot(service.root)) return runtime.project;
     throw error;
