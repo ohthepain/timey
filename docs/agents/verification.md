@@ -552,6 +552,8 @@ Fallow after Work's response.
 A standalone focused browser check can be recorded as `node scripts/<name>-browser.mjs`
 without extra arguments. The main Flow browser runner still requires a scenario
 flag, and the aggregate Factory browser runner belongs to full verification.
+Work accepts the Node `--test-name-pattern` value as a separate argument or
+joined with `=`. It stores both forms as the same command.
 
 Fallow 3.35.0 can miss CSS consumers in plain JavaScript HTML strings, and its
 source-location attribution can mark unchanged findings as introduced when an

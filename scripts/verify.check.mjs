@@ -26,6 +26,11 @@ import { parse } from 'yaml';
 test('focused test validation accepts supported commands and rejects aggregate or shell syntax', () => {
   const command = ['node', '--test', 'scripts/one.check.mjs'];
   assert.deepEqual(normalizeFocusedTests([command, command]), [command]);
+  const pattern = 'Discuss sends and drains queued prompts over HTTP';
+  const testFile = 'scripts/factory-server-control.check.mjs';
+  const joined = ['node', '--test', '--test-name-pattern=' + pattern, testFile];
+  const separated = ['node', '--test', '--test-name-pattern', pattern, testFile];
+  assert.deepEqual(normalizeFocusedTests([separated, joined]), [joined]);
   const browser = ['node', 'scripts/capture-grilling-browser.mjs'];
   assert.deepEqual(normalizeFocusedTests([browser]), [browser]);
   const scenarios = [
@@ -41,6 +46,8 @@ test('focused test validation accepts supported commands and rejects aggregate o
     ['sh', '-c', 'test'],
     ['pnpm', 'run', 'test:factory'],
     ['node', '--test', 'scripts/a.check.mjs', '--import', 'other.mjs'],
+    ['node', '--test', 'scripts/a.check.mjs', '--test-name-pattern'],
+    ['node', '--test', '--test-name-pattern', 'scripts/a.check.mjs'],
     ['node', 'scripts/other-browser.mjs', '--all'],
     ['node', 'scripts/factory-browser.mjs'],
     ['node', 'scripts/flow-browser.mjs'],

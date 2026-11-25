@@ -21,6 +21,20 @@ function nodeTestArgument(arg) {
   return nodeTestFile(arg) || arg.startsWith('--test-name-pattern=');
 }
 
+function normalizeNodeTestPatterns([command, subcommand, ...args]) {
+  const remaining = args.values();
+  const normalized = [command, subcommand];
+  for (const arg of remaining) {
+    if (arg === '--test-name-pattern') {
+      const { value: pattern } = remaining.next();
+      normalized.push(pattern === undefined ? arg : arg + '=' + pattern);
+    } else {
+      normalized.push(arg);
+    }
+  }
+  return normalized;
+}
+
 function vitestPath(arg) {
   return localPath(arg) && /\.(?:test|spec)\.[cm]?[jt]sx?$/.test(arg);
 }
@@ -49,15 +63,20 @@ export function normalizeFocusedTests(value) {
     throw Error('Record up to 20 focused test commands as argument arrays.');
   const unique = new Map();
   for (const argv of value) {
-    unique.set(JSON.stringify(requireFocusedCommand(argv)), argv);
+    const command = requireFocusedCommand(argv);
+    unique.set(JSON.stringify(command), command);
   }
   return [...unique.values()];
 }
 
 function requireFocusedCommand(argv) {
-  if (!validArgv(argv) || !focusedCommand(argv))
-    throw Error(
-      'Record focused test commands using Node test files, a standalone browser check, a Flow browser scenario, a focused pnpm test script, or Vitest paths.'
-    );
-  return argv;
+  const command = validArgv(argv) && normalizeFocusedCommand(argv);
+  if (command && focusedCommand(command)) return command;
+  throw Error(
+    'Record focused test commands using Node test files, a standalone browser check, a Flow browser scenario, a focused pnpm test script, or Vitest paths.'
+  );
+}
+
+function normalizeFocusedCommand(argv) {
+  return argv[0] === 'node' && argv[1] === '--test' ? normalizeNodeTestPatterns(argv) : argv;
 }
