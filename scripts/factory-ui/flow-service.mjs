@@ -128,6 +128,7 @@ import {
   latestCurrentAttempt,
   requestBlock,
   requestData,
+  upstreamBlocks,
 } from './flow-block-data.mjs';
 import { clarifyRequest, requestGroupDetails } from './flow-request.mjs';
 import {
@@ -250,6 +251,40 @@ const completedBlock = (block, flow) =>
   (flow && historicalInvestigationOutputComplete(block, flow)) ||
   latestCurrentAttempt(block)?.status === 'completed' ||
   (block.kind === 'request' && Boolean(block.data.fields) && !latestCurrentAttempt(block));
+
+function requireRevisedRequestPrerequisites(flow, block) {
+  const delivery = ['publish', 'merge'].includes(block.kind);
+  if (!delivery && !isWorkBlock(block)) return;
+  const request = requestBlock(flow);
+  // Older flows recorded the previous wording only in Request attempt details.
+  const revised =
+    request.data.wordingChanged ||
+    request.attempts.some((attempt) =>
+      attempt.details?.some(
+        ({ key, value }) => key === 'wording' && typeof value === 'string' && value !== request.data.wording
+      )
+    );
+  if (!revised) return;
+  requireThat(
+    request.data.fields && completedBlock(request),
+    'Request clarification did not finish. Retry Request before continuing.'
+  );
+  if (!delivery) return;
+  const upstream = upstreamBlocks(block, flow.blocks);
+  const work = upstream.filter(isWorkBlock).map(latestCurrentAttempt);
+  requireThat(work.length, `Connect a Work block before ${block.label} for the revised request.`);
+  requireThat(
+    work.every((attempt) => attempt?.status === 'completed'),
+    'Complete Work for the revised request before delivery.'
+  );
+  for (const verify of upstream.filter(({ kind }) => kind === 'verify')) {
+    const attempt = latestCurrentAttempt(verify);
+    requireThat(
+      attempt?.status === 'completed' && work.every(({ endedAt }) => attempt.startedAt >= endedAt),
+      'Complete Verify after Work for the revised request before delivery.'
+    );
+  }
+}
 
 function capturedFolderMetadata(root, folder) {
   return { folder_id: requireIssueFolder(root, folder).id };
@@ -2174,11 +2209,13 @@ class IssueFlows {
     );
   }
   async prepareRequest(issue, flow, wording, catalog, { keepPlaying = false, background = false } = {}) {
+    const previousRequest = requestBlock(flow);
+    const priorFields = previousRequest.data.fields;
+    const wordingChanged = previousRequest.data.wording !== wording;
+    await this.checkDefinition(issue, flow, previousRequest.id, catalog);
     const block = requestBlock(flow);
-    const priorFields = block.data.fields;
-    const wordingChanged = block.data.wording !== wording;
-    await this.checkDefinition(issue, flow, block.id, catalog);
     block.data.wording = wording;
+    if (wordingChanged) block.data.wordingChanged = true;
     const revision = (block.data.editId = randomUUID());
     const previous = this.active.get(issue.id);
     const affected = wordingChanged ? flow.blocks.map((item) => item.id) : [block.id];
@@ -2300,6 +2337,7 @@ class IssueFlows {
     await this.checkDefinition(issue, flow, input.blockId, catalog);
     const block = flow.blocks.find((item) => item.id === input.blockId);
     requireThat(block?.kind === 'publish', 'Choose a saved Publish block.');
+    requireRevisedRequestPrerequisites(flow, block);
     const workspace = flowWorkspace(this.service, flow);
     requireThat(
       workspace?.checkout && existsSync(workspace.checkout),
@@ -2524,6 +2562,7 @@ class IssueFlows {
     );
     const block = flow.blocks.find((item) => item.id === input.blockId);
     requireThat(block, 'Choose a saved block.');
+    requireRevisedRequestPrerequisites(flow, block);
     if (input.action === 'continue') {
       const binding = conversationState(this.service.root, issue.id).flowBlocks?.[block.id];
       if (binding?.threadId) recoverAgentSession(this.service.root, binding.threadId, input.confirmedAgentRecovery);

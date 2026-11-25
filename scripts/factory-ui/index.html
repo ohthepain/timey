@@ -4078,10 +4078,9 @@
           basis: issue.decisionBasis || data.reviewBasis,
         };
         if (kind === 'close')
-          return closureDialog.open(() => ({
+          return closureDialog.open(async () => ({
             ...selection,
-            closureReasons: data.closureReasons,
-            sharedQueue: issue.sharedQueue,
+            ...(await request('issue-closure?issue=' + encodeURIComponent(issue.id))),
           }));
         $('selection').innerHTML =
           '<h2>Reopen this issue?</h2><p>This returns the issue to investigation. The existing result, checks and commits are kept. No worker starts automatically.</p><label>What still needs work? (optional)<textarea id="reopen-reason" maxlength="4000"></textarea></label>';

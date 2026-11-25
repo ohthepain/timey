@@ -303,7 +303,17 @@ test('Work retains passing Flow scenarios and Node test name filters', async (t)
       'scripts/flow.check.mjs',
     ],
   ];
-  f.connection.turn = async () => '```flow-result\n' + JSON.stringify({ focusedTests }) + '\n```';
+  f.connection.turn = async (_threadId, checkout) => {
+    const scripts = join(checkout, 'scripts');
+    mkdirSync(scripts);
+    writeFileSync(
+      join(scripts, 'browser-scenario-policy.mjs'),
+      readFileSync(new URL('./browser-scenario-policy.mjs', import.meta.url), 'utf8')
+    );
+    execFileSync('git', ['add', 'scripts'], { cwd: checkout });
+    execFileSync('git', ['commit', '-qm', 'Add Flow scenarios'], { cwd: checkout });
+    return '```flow-result\n' + JSON.stringify({ focusedTests }) + '\n```';
+  };
   const result = await f.run('work');
   assert.deepEqual(result.result.focusedTests, [
     focusedTests[0],
@@ -314,6 +324,33 @@ test('Work retains passing Flow scenarios and Node test name filters', async (t)
       'scripts/flow.check.mjs',
     ],
   ]);
+});
+
+test('Work accepts a focused Flow scenario registered in the candidate checkout', async (t) => {
+  const f = fixture(t);
+  const focusedTests = [['node', 'scripts/flow-browser.mjs', '--candidate-browser-check']];
+  f.connection.turn = async (_threadId, checkout) => {
+    const scripts = join(checkout, 'scripts');
+    mkdirSync(scripts);
+    writeFileSync(
+      join(scripts, 'browser-scenario-policy.mjs'),
+      `throw Error('The server must read the candidate registry without running it.');
+export const flowBrowserScenarioNames = {
+  '--candidate-browser-check': 'Candidate browser check',
+};
+`
+    );
+    execFileSync('git', ['add', 'scripts'], { cwd: checkout });
+    execFileSync('git', ['commit', '-qm', 'Register candidate browser check'], { cwd: checkout });
+    return '```flow-result\n' + JSON.stringify({ focusedTests }) + '\n```';
+  };
+  const result = await f.run('work');
+  assert.deepEqual(result.result.focusedTests, focusedTests);
+  f.connection.turn = async () =>
+    '```flow-result\n' +
+    JSON.stringify({ focusedTests: [['node', 'scripts/flow-browser.mjs', '--project-discuss']] }) +
+    '\n```';
+  await assert.rejects(f.run('work', { continuing: true }), /argument 3 "--project-discuss"/);
 });
 
 test('Work and Retry distinguish implementation from an earlier idle issue capture', async (t) => {
@@ -1040,6 +1077,39 @@ test('Update Branch leaves publication of the updated candidate to Merge', async
   });
   await f.run('merge', { after: ['updated-branch'] });
   assert.ok(f.observations.some(({ operation }) => operation === 'push'));
+});
+
+test('Merge requires passing proof on the candidate for attached sub-issues only', async (t) => {
+  const f = mergeFixture(t);
+  await f.run('understand');
+  f.issue.issue_group = {
+    children: [
+      { id: 'attached', title: 'Attached issue' },
+      { id: 'detached', title: 'Detached issue', detachedAt: '2026-11-25T00:00:00Z' },
+    ],
+  };
+  const path = join(f.root, '.issues', 'child-proof.json');
+  const proof = JSON.stringify([{ id: 'attached', status: 'passed', observation: 'The requested check passed.' }]);
+  writeFileSync(path, proof);
+  const work = {
+    id: 'work',
+    kind: 'work',
+    after: [],
+    attempts: [
+      {
+        status: 'completed',
+        result: { tree: 'older tree' },
+        artifacts: { files: { subIssueProof: { path, sha256: digest(proof) } } },
+      },
+    ],
+  };
+  f.flow.blocks.push(work);
+  await assert.rejects(f.run('merge', { after: [work.id] }), /passing proof for these sub-issues: Attached issue\./);
+  assert.ok(!f.observations.some(({ operation }) => operation === 'merge'));
+
+  work.attempts[0].result.tree = f.git('rev-parse', 'HEAD^{tree}');
+  const result = await f.run('merge', { after: [work.id] });
+  assert.equal(result.result.revision, 'actual-merge');
 });
 
 function approvalAttempt(result) {

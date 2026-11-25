@@ -28,6 +28,7 @@ import { createServer } from 'node:http';
 import { runtimeInfo } from './runtime.mjs';
 import { queueResponse } from './queue-response.mjs';
 import { readQueue } from './data.mjs';
+import { savedIssueNumbers } from './issue-numbers.mjs';
 import { issueContext } from '../factory-inputs.mjs';
 import { decisionBasis } from './recorded-result.mjs';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
@@ -835,6 +836,22 @@ function closureReportLocation(root, issueId, reopen) {
   return reopen && !existsSync(storedIssuePath(root, issueId)) ? 'closed' : 'open';
 }
 
+function closureSubIssues(root, issue) {
+  const children = issue.issue_group?.children ?? [];
+  if (!children.length) return {};
+  const numbers = savedIssueNumbers(
+    root,
+    children.map(({ id }) => id)
+  );
+  return {
+    subIssues: children.map(({ id, title, detachedAt }) => ({
+      title,
+      number: numbers[id],
+      removed: Boolean(detachedAt),
+    })),
+  };
+}
+
 function issueClosureContext(service, issueId, reopen) {
   requireThat(typeof issueId === 'string' && /^[\w-]+$/.test(issueId), 'Choose a valid saved issue ID.');
   const location = closureReportLocation(service.root, issueId, reopen);
@@ -851,6 +868,7 @@ function issueClosureContext(service, issueId, reopen) {
     basis: decisionBasis(queue, issue),
     closureReasons: queue.closureReasons,
     sharedQueue: Boolean(service.sharedIssues),
+    ...closureSubIssues(service.root, issue),
   };
 }
 

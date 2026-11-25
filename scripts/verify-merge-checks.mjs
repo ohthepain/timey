@@ -21,14 +21,14 @@ function checkNodeTests(args, reject) {
   if (!args.some(nodeTestFile)) reject(args.length + 2, 'Provide at least one local JavaScript test file.');
 }
 
-function checkFlowBrowserTests(args, reject) {
+function checkFlowBrowserTests(args, reject, isSelector) {
   checkTrailingArguments(
     args,
-    (arg) => isFlowBrowserSelector(arg) || arg === flowBrowserOrderModifier,
+    (arg) => arg === flowBrowserOrderModifier || isSelector(arg),
     reject,
     'Use a recognized Flow browser scenario flag or --reverse-fixture-scenarios with a scenario.'
   );
-  if (!args.some(isFlowBrowserSelector)) reject(args.length + 2, 'Provide at least one Flow browser scenario flag.');
+  if (!args.some(isSelector)) reject(args.length + 2, 'Provide at least one Flow browser scenario flag.');
 }
 
 function checkFactoryBrowserTests([scenario = '', extra], reject) {
@@ -81,11 +81,11 @@ const focusedCommands = new Map([
   ],
 ]);
 
-function checkFocusedCommand([command, subcommand, ...args], reject) {
+function checkFocusedCommand([command, subcommand, ...args], reject, isSelector) {
   const commands = focusedCommands.get(command);
   if (!commands) reject(0, 'Use node or pnpm as the command.');
   const check = commands.get(subcommand);
-  if (check) return check(args, reject);
+  if (check) return check(args, reject, isSelector);
   if (command === 'pnpm') reject(1, 'Use pnpm run or pnpm exec for a focused test.');
   checkStandaloneBrowser(subcommand, args, reject);
 }
@@ -120,7 +120,7 @@ function checkArgument(arg, index, reject) {
   }
 }
 
-function requireFocusedCommand(argv, commandIndex) {
+function requireFocusedCommand(argv, commandIndex, isSelector) {
   const prefix = `Record focused test commands as argument arrays. Command ${commandIndex + 1}`;
   if (!Array.isArray(argv)) throw Error(`${prefix} must be an argument array.`);
   function reject(index, rule) {
@@ -129,17 +129,17 @@ function requireFocusedCommand(argv, commandIndex) {
   }
   if (argv.length > 30) reject(30, 'Use at most 30 arguments per command.');
   for (const [index, arg] of argv.entries()) checkArgument(arg, index, reject);
-  checkFocusedCommand(argv, reject);
+  checkFocusedCommand(argv, reject, isSelector);
   return argv;
 }
 
-export function normalizeFocusedTests(value) {
+export function normalizeFocusedTests(value, isSelector = isFlowBrowserSelector) {
   if (!Array.isArray(value) || value.length > 20)
     throw Error('Record up to 20 focused test commands as argument arrays.');
   const unique = new Map();
   for (const [index, argv] of value.entries()) {
     const command = Array.isArray(argv) ? normalizeFocusedCommand(argv) : argv;
-    unique.set(JSON.stringify(requireFocusedCommand(command, index)), command);
+    unique.set(JSON.stringify(requireFocusedCommand(command, index, isSelector)), command);
   }
   return [...unique.values()];
 }

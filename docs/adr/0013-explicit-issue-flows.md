@@ -92,6 +92,19 @@ and honors any evidence the user asks for. If the type changes, the controller
 applies the new type's default flow. Rebuilding preserves the progress of retained blocks
 and keeps displaced blocks in history.
 
+Saving changed **Your words** invalidates Request and every later block across
+all lanes before clarification runs, even if the derived goal and requested
+proof match. Earlier attempts and evidence remain in history. The edit keeps
+the issue checkout, local edits, commits, and any linked open PR. Merged issues
+remain read-only under [ADR 0020](0020-freeze-merged-issues.md).
+
+For code delivery, run Work again against the revised Request. Work starts from
+the existing checkout and removes changes the revised request no longer calls
+for. Publish PR and Merge require completed upstream Work for the revised
+request, including when started manually. If their route includes an upstream
+Verify block, it must also complete after Work. Work's focused checks and Merge's
+checks on the current candidate still apply.
+
 The [user-editable flow design](../plans/user-editable-flows.md) records how
 Markdown defaults, one-time flow building, manual updates, and export work.
 

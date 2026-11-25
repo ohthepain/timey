@@ -2,6 +2,8 @@ import { blockExecutionSettings } from './block-models.mjs';
 import { agentModel, sessionProvider } from './agent-models.mjs';
 import { modelAvailability } from './provider-runtime.mjs';
 import { restoreSourceCheckpoint } from './stores/source-checkpoints.mjs';
+import { hydrateProjectEvidence } from './stores/runtime.mjs';
+import { groupChildren } from './issue-group.mjs';
 import { createWorkProgress } from './work-progress.mjs';
 import { executionPermissionInstructions } from './execution-permissions.mjs';
 import { BlockCatalog } from './block-catalog.mjs';
@@ -44,6 +46,7 @@ import { readQueue } from './data.mjs';
 import { git, cleanEnvironment, requireThat, writeJson, digest } from './common.mjs';
 import { redactValue } from './activity.mjs';
 import { normalizeFocusedTests } from '../verify-merge-checks.mjs';
+import { candidateBrowserScenarioSelector } from './candidate-browser-scenarios.mjs';
 import { flowClosureArtifact, publishFlowPR } from './flow-delivery.mjs';
 import { mergeFlowPR } from './flow-merge.mjs';
 import {
@@ -166,6 +169,9 @@ export function createFlowExecutor(service, options = {}) {
             sourceWorkspace ?? (await workspaceFor(service, context)),
             evidenceDirectory(service, context)
           );
+        if (context.block.kind === 'merge' && groupChildren(context.issue).length) {
+          await hydrateProjectEvidence(service, context.issue.id);
+        }
         const result = !command
           ? await runModel(service, context, owned, runtime)
           : await runReconciledCommand(scopedService, context, {
@@ -490,10 +496,11 @@ export function modelManifest(output) {
   return manifest ? JSON.parse(manifest) : {};
 }
 
-function workFocusedResult(kind, output) {
+function workFocusedResult(kind, output, checkout, head) {
   if (kind !== 'work') return {};
   const { focusedTests } = modelManifest(output) ?? {};
-  return focusedTests === undefined ? {} : { focusedTests: normalizeFocusedTests(focusedTests) };
+  if (focusedTests === undefined) return {};
+  return { focusedTests: normalizeFocusedTests(focusedTests, candidateBrowserScenarioSelector(checkout, head)) };
 }
 
 function modelArtifacts(definition, output, workspace, response) {
@@ -654,6 +661,8 @@ function modelPrompt(ctx, options) {
     return blockInput(ctx, {
       workExecution: {
         issueId: ctx.issue.id,
+        existingChanges:
+          'Review the existing issue changes against the current request. Remove changes that only served an earlier version of the request and preserve unrelated edits.',
         task: 'Implement the saved issue in this checkout. This Work invocation starts implementation of an already-created issue. Capture-only instructions to create an idle issue belong to its earlier creation and are satisfied; use the underlying requested change and its implementation acceptance criteria as the goal and proof. Preserve all product constraints, required human decisions, permission boundaries and later block guards. Issue creation controls and live idle-status checks are not prerequisites for this implementation. If the saved request contains only capture instructions and no underlying change, report the missing scope as human input.',
       },
       workComparisonBase: options.workBase,
@@ -1114,7 +1123,7 @@ async function runModel(service, ctx, owned, options) {
         workspaceBase: workspace.base,
         commit: head,
         uncommitted: candidate.uncommitted,
-        ...workFocusedResult(ctx.block.kind, outputs.at(-1)),
+        ...workFocusedResult(ctx.block.kind, outputs.at(-1), workspace.checkout, head),
       },
       ...(workspace.temporary ? {} : { workspace }),
     };
