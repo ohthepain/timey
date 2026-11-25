@@ -12,6 +12,8 @@ acceptance, so one decision can cover the whole fix without closing unfinished w
 Closing the master for any other reason releases its attached sub-issues for
 independent work. Their reports stay open and link to any relevant master
 evidence. A person can also detach an individual sub-issue while the master is idle.
+Detaching invalidates the master's Request and dependent blocks. A fresh Request
+uses the current membership and preserves the original wording and attempt history.
 
 See the [issue folder design](../plans/issue-folder-strategies.md) for the grouping
 and review workflow.
