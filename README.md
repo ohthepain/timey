@@ -39,7 +39,8 @@ The card layout, title, status, and action controls come from the shared Flow UI
    only the section or field you want to customize.
 4. Choose **Save and reload**. The label updates in place. If the build finds
    an error, the last working UI stays active. If the source changed on disk
-   while you edited, the editor keeps your draft and shows the conflict.
+   while you edited, the editor keeps your draft and shows the conflict. The
+   workspace refreshes its labels from the latest valid source.
 
 ### Edit from a text editor or with an agent
 

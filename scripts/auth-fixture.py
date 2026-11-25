@@ -14,7 +14,10 @@ import urllib.error
 import urllib.request
 
 ROOT = Path(__file__).resolve().parent.parent
-OUT = Path(tempfile.mkdtemp(prefix="timey-auth-foundation-", dir="/private/tmp"))
+FACTORY_ACCOUNT = "--factory-account" in sys.argv
+EVIDENCE = ROOT / ".issues" / "evidence" if FACTORY_ACCOUNT else Path("/private/tmp")
+EVIDENCE.mkdir(parents=True, exist_ok=True)
+OUT = Path(tempfile.mkdtemp(prefix="timey-auth-foundation-", dir=EVIDENCE))
 COMMANDS = []
 ASSERTIONS = {}
 HTTP_EVIDENCE = []
@@ -242,11 +245,12 @@ started = False
 print(f"Authentication fixture evidence: {OUT}", flush=True)
 try:
     run("initdb", ["initdb", "-D", str(OUT / "pgdata"), "-A", "trust", "-U", "fixture"])
+    socket_directory = "''" if FACTORY_ACCOUNT else str(OUT)
     run("pg-start", ["pg_ctl", "-D", str(OUT / "pgdata"), "-l", str(OUT / "postgres.log"),
-                     "-o", f"-h 127.0.0.1 -p {PG_PORT} -k {OUT}", "-w", "start"])
+                     "-o", f"-h 127.0.0.1 -p {PG_PORT} -k {socket_directory}", "-w", "start"])
     started = True
     sql("fixture-roles", "CREATE ROLE auth_owner LOGIN; CREATE ROLE domain_owner LOGIN;", "postgres")
-    if any(flag in sys.argv for flag in ['--practice', '--content', '--beats', '--edit-beats', '--delete-content']):
+    if FACTORY_ACCOUNT or any(flag in sys.argv for flag in ['--practice', '--content', '--beats', '--edit-beats', '--delete-content']):
         sql('create-practice', 'CREATE DATABASE foundation', 'postgres')
         sql('practice-schemas', 'CREATE SCHEMA auth AUTHORIZATION auth_owner; CREATE SCHEMA auth_migrations AUTHORIZATION auth_owner; CREATE SCHEMA domain AUTHORIZATION domain_owner; CREATE SCHEMA domain_migrations AUTHORIZATION domain_owner; GRANT CREATE ON DATABASE foundation TO auth_owner, domain_owner;')
         run('practice-auth-migrate', ['npm', 'run', 'auth:migrate'], owner_env('foundation'))
@@ -282,7 +286,10 @@ try:
         time.sleep(1)
     else:
         raise RuntimeError("Application not ready; inspect application.log")
-    if '--delete-content' in sys.argv:
+    if FACTORY_ACCOUNT:
+        subprocess.run(["node", "scripts/factory-project-account-browser.mjs", "--fixture", str(OUT)],
+                       cwd=ROOT, check=True)
+    elif '--delete-content' in sys.argv:
         run('deletion-browser', ['python3', 'scripts/deletion-browser.py', str(OUT)], expected=0)
     elif '--edit-beats' in sys.argv:
         run('beat-edit-browser', ['python3', 'scripts/beat-edit-browser.py', str(OUT)])

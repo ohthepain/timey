@@ -647,8 +647,7 @@
       leave(() => {
         dialog.close();
         updateUrl(null);
-        document.querySelector('[data-project-home=home]').click();
-        document.querySelector('[data-project-tab=admin]').click();
+        document.getElementById('project-tab-admin').click();
         document.getElementById(button.dataset.settingsMaintenance).click();
       });
     }

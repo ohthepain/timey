@@ -17,7 +17,7 @@ implementation evidence remain below.
 - Investigations concern a chosen aspect of the codebase or the codebase as a
   whole, including opportunities to improve working processes. Investigation is
   distinct from Retro, which reviews what happened on an issue.
-- The investigation operation is available from the project menu and always
+- The investigation operation is available from the Factory header and always
   applies to the entire project. There is no folder scope selector. A chosen
   investigation focus or prompt can still direct attention to a particular aspect.
 - The user can select a branch. It defaults to the project's default branch as
@@ -128,7 +128,7 @@ is retained findings and follow-up issues. Automate me reviews skill changes bef
 Apply; publication is not part of that action.
 
 Project home shares the existing Flow page and sidebar. Project operations are
-available from the project menu, including while viewing an issue. Investigation
+available from the Factory header, including while viewing an issue. Investigation
 conversations and runs use actual Understand attempts; explicit Run additionally
 creates approval-needed follow-ups through the existing retained-evidence capture
 path. Run snapshots the chosen branch and project model settings.

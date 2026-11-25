@@ -322,12 +322,24 @@ state. The fixture uses disposable conversations and issues and starts no model
 work. `node --test scripts/interface-state.check.mjs` reproduces the original
 Discuss collapse and checks selection through growing and replaced activity.
 
-`node scripts/flow-browser.mjs --project-navigation` checks the ordered Home,
-Issues, Discuss, Reports, and Investigate sidebar links, Home tab reset, Issues navigation, and
-the Automate me tab, dialog, reload persistence, and narrow layout. It saves
-`project-navigation.png` and `project-navigation-automate.png` in its evidence directory.
+`node scripts/flow-browser.mjs --project-navigation` checks the full-width header,
+the order and destinations of the Home, Issues, Reports, Discuss, Automate me, and
+Admin tabs, and the relocated Factory controls. It saves desktop and narrow
+screenshots alongside the measured layout and navigation in `project-header-proof.json`.
 The navigation fixture temporarily initializes queue configuration, waits for a
 successful Issues queue response, and unloads the page before restoring configuration.
+Run `--ci-part=1 --project-navigation --sidebar-labels` together to check sidebar
+label styling and verify that visiting Discuss leaves no browser console errors.
+`--ci-part=2 --capture-folder-issue --closed-destination` checks that closed
+flows open and refresh with Destination aligned to the bottom at both tested heights.
+`--ci-part=2 --capture-folder-issue --save-request-route --stop-work` checks that
+the running block stays centered when the workspace header changes height after reload.
+
+`node scripts/factory-project-account-browser.mjs` starts a disposable Timey
+instance and Factory server. It opens every project tab at 390px while Login is
+visible, signs in through Timey's existing form, opens Account, and signs out
+from the header. The reported evidence directory contains desktop and narrow
+screenshots and `project-account.json`.
 
 `pnpm run test:project-home` checks project investigation capture, selected-branch
 execution, automatic follow-up approval and retry, historical closure statistics,
@@ -482,7 +494,7 @@ that PR head, up to 30 minutes from the start of the wait. Factory refreshes the
 PR and its checks once more when the deadline expires. Pending checks still
 block merge. The timeout does not cancel GitHub jobs.
 
-For a PR repairing failed CI tests, record the exact regression commands in
+For a PR repairing failed CI tests or typechecking, record the exact commands in
 `.github/pr-repair-tests.json`. `pnpm run test:pr-repair` runs them by name and
 stops at the first failure. CI runs this plan before broad verification while
 the manifest differs from the PR base; after it merges, unchanged plans are

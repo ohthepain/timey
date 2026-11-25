@@ -206,7 +206,9 @@ const {
   '--polling': pollingCheck,
   '--capture-folder-issue': captureFolderIssueCheck,
   '--starting-point': startingPointCheck,
+  '--closed-destination': closedDestinationCheck,
   '--folder-workspace-grouping': folderWorkspaceGroupingCheck,
+  '--tab-source': tabSourceCheck,
   '--sidebar-issue-names': sidebarIssueNamesCheck,
   '--save-request-route': saveRequestRouteCheck,
   '--flow-menu': flowMenuCheck,
@@ -242,6 +244,7 @@ const playbackWork = Promise.withResolvers();
 const holdFirstWork = (number, block) => number === 1 && block.kind !== 'cleanup';
 let firstWorkProgress;
 const service = new FactoryUI(project);
+service.projectDiscussOptions = { skills: async () => [] };
 const deliveryConfig = { provider: 'github', repository: 'test/fixture', remote: 'origin', target: 'dev' };
 writeFileSync(join(project, '.issues/issue-delivery-config.json'), JSON.stringify(deliveryConfig));
 service.codex.ready = async () => {
@@ -626,7 +629,7 @@ try {
       { width: 760, height: 600 },
     ]) {
       await page.setViewportSize(viewport);
-      for (const section of ['.project-home-menu', '#local-note-list', '#sidebar-file-tree', '#issue-list']) {
+      for (const section of ['#local-note-list', '#sidebar-file-tree', '#issue-list']) {
         const target = page.locator(section);
         await target.scrollIntoViewIfNeeded();
         const bounds = await target.boundingBox();
@@ -657,7 +660,11 @@ try {
       await footer.scrollIntoViewIfNeeded();
       assert.ok(await footer.isVisible());
       const resizer = await page.locator('#sidebar-resizer').boundingBox();
-      assert.ok(resizer.y <= 1 && resizer.height >= 590, 'Sidebar resize handle must remain at the column edge');
+      const sidebar = await page.locator('.sidebar').boundingBox();
+      assert.ok(
+        Math.abs(resizer.y - sidebar.y) <= 1 && Math.abs(resizer.height - sidebar.height) <= 1,
+        'Sidebar resize handle must span the column below the header'
+      );
       await page.locator('#sidebar-resizer').focus();
       const widthBefore = (await page.locator('.sidebar').boundingBox()).width;
       await page.keyboard.press('ArrowRight');
@@ -682,7 +689,9 @@ try {
   );
   await check(issueAnnotationsCheck, () => issueAnnotationBrowserChecks({ page, project, root, output, poll }));
   await check(navigationCheck, () =>
-    withQueueConfiguration({ page, project, root }, () => projectNavigationBrowserChecks({ page, screenshot }))
+    withQueueConfiguration({ page, project, root }, () =>
+      projectNavigationBrowserChecks({ page, poll, screenshot, output, candidate })
+    )
   );
   await check(inboxFlowCheck, () => inboxFlowBrowserChecks({ page, service, project, poll, screenshot, output }));
   await check(reportsCheck, () =>
@@ -1359,7 +1368,15 @@ try {
     assert.equal(await page.getByRole('button', { name: 'Remove from folder', exact: true }).count(), 0);
     await members.getByRole('link', { name: /Keep the save button visible/ }).waitFor();
   });
-  await check('Inspect and edit a tab source without starting work or losing an issue draft', async () => {
+  await check(tabSourceCheck, async () => {
+    const holdSourceEvents = await page.addInitScript(() => {
+      const dispatch = window.dispatchEvent;
+      window.dispatchEvent = function (event) {
+        if (event.type === 'factory-sources-changed') return true;
+        return dispatch.call(this, event);
+      };
+      window.addEventListener('release-source-events', () => (window.dispatchEvent = dispatch), { once: true });
+    });
     await page.goto('/?issue=' + issueId);
     await page.locator('#request-form').waitFor({ state: 'visible' });
     const path = join(project, 'user/flow/overrides/block-inspector.md');
@@ -1402,6 +1419,8 @@ try {
     assert.equal(await page.getByLabel('Label', { exact: true }).inputValue(), 'Stale draft');
     await page.keyboard.press('Escape');
     await page.getByRole('tab', { name: 'External change' }).waitFor();
+    await page.evaluate(() => window.dispatchEvent(new Event('release-source-events')));
+    await holdSourceEvents.dispose();
     writeFileSync(path, '## missing-tab\n\nInvalid override\n');
     await page.locator('#view-source-status').filter({ hasText: 'unknown section' }).waitFor();
     assert.equal(await tab.innerText(), 'External change');
@@ -1519,7 +1538,7 @@ try {
     await page.setViewportSize({ width: 1440, height: 960 });
   });
   let closedId;
-  await check('Closed issues open with Destination flush with the bottom, including short flows', async () => {
+  await check(closedDestinationCheck, async () => {
     const closed = await service.flows.capture({
       folder: 'Inbox',
       requestId: randomUUID(),
@@ -2039,6 +2058,15 @@ try {
       (value) => Math.abs(value.scrollTop - value.expectedCenter) < 2,
       'The running block was not centered within its content bounds on reload.'
     );
+    const header = page.locator('.factory-header');
+    const { viewportHeight } = await selectedGeometry();
+    await header.evaluate((element) => (element.style.paddingBottom = '20px'));
+    await poll(
+      selectedGeometry,
+      (value) => value.viewportHeight < viewportHeight && Math.abs(value.scrollTop - value.expectedCenter) < 2,
+      'The running block lost its centering when the header changed height.'
+    );
+    await header.evaluate((element) => element.style.removeProperty('padding-bottom'));
     assert.equal(await page.locator('#target-update-menu').isDisabled(), true);
     assert.equal(await page.locator('#worktree-menu option[value="update"]').isDisabled(), true);
     await screenshot('work-running-desktop');

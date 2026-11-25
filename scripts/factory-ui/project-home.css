@@ -2,8 +2,8 @@
   grid-template-columns: var(--sidebar-width, 242px) minmax(0, 1fr);
 }
 .workspace[data-project-home-tab='issues'] #issue-list,
-.workspace[data-project-home-tab='issues'] #issue-search,
-.workspace[data-project-home-tab='issues'] #new-issue,
+body:has(.workspace[data-home-view='open'][data-project-home-tab='issues']) .search-box,
+body:has(.workspace[data-home-view='open'][data-project-home-tab='issues']) #new-issue,
 .workspace[data-project-home-tab='issues'] #migrate-issue-folders {
   display: none;
 }
@@ -39,23 +39,23 @@
 .project-home[data-project-tab='admin']:not([hidden]) ~ .flow-footer {
   display: none;
 }
-.project-home-menu {
-  display: flex;
-  gap: 3px;
-  padding: 10px 0 3px;
-  flex-wrap: wrap;
+.workspace[data-home-view='open'] {
+  grid-template-rows: minmax(0, 1fr);
 }
-.project-home-menu button {
-  border: 0;
-  border-radius: 5px;
-  padding: 6px 7px;
-  background: transparent;
-  color: var(--muted);
-  font-size: 12px;
+.workspace[data-home-view='open'] .sidebar,
+.workspace[data-home-view='open'] .flow-main {
+  grid-row: 1;
 }
-.project-home-menu button:hover {
-  color: #dfdfdf;
-  background: #2b2b2b;
+.project-issues,
+.project-discuss-main,
+.project-reports {
+  grid-row: 2;
+}
+
+@media (max-width: 540px) {
+  .project-workspace-tabs {
+    --project-tab-padding: 5px;
+  }
 }
 .project-home {
   overflow: auto;

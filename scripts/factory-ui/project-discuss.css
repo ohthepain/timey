@@ -54,17 +54,17 @@
 .project-workspace-tabs {
   display: flex;
   gap: 5px;
-  border-bottom: 1px solid var(--line);
-  padding-bottom: 12px;
+  flex-wrap: wrap;
+  grid-area: tabs;
 }
 .project-workspace-tabs button {
   border: 0;
   border-radius: 6px;
   background: transparent;
   color: var(--muted);
-  padding: 9px 18px;
-  cursor: pointer;
+  padding: 8px var(--project-tab-padding, 10px);
 }
+.project-workspace-tabs button:focus-visible,
 .project-workspace-tabs [aria-selected='true'] {
   background: #343434;
   color: #eee;

@@ -23,6 +23,7 @@ import { reorderedBlocks } from './flow-order.mjs';
     blockId: null,
     deleteBlockId: null,
     graphScrollIntent: null,
+    graphScrollAnchor: null,
     sidebarWidth: null,
     inspectorWidth: null,
     tab: 'details',
@@ -730,6 +731,7 @@ import { reorderedBlocks } from './flow-order.mjs';
     state.blockId = null;
     state.deleteBlockId = null;
     state.graphScrollIntent = null;
+    state.graphScrollAnchor = null;
     state.view = null;
     state.error = '';
     const url = new URL(location.href);
@@ -1955,7 +1957,10 @@ import { reorderedBlocks } from './flow-order.mjs';
       drawConnections();
       const intent = state.graphScrollIntent;
       state.graphScrollIntent = null;
-      if (intent) scrollToBlock(intent);
+      if (intent) {
+        state.graphScrollAnchor = ['center', 'end'].includes(intent.mode) ? intent : null;
+        scrollToBlock(intent);
+      }
     });
   }
 
@@ -2041,21 +2046,25 @@ import { reorderedBlocks } from './flow-order.mjs';
     }
   }
 
+  function graphNode(nodeId) {
+    return $('graph').querySelector(`[data-node="${CSS.escape(nodeId)}"]`);
+  }
+
+  function graphAlignmentOffset(mode, card, bounds, height) {
+    if (mode === 'start') return card.top - bounds.top;
+    if (mode === 'end') return card.bottom - bounds.top - height;
+    return card.top + card.height / 2 - bounds.top - height / 2;
+  }
+
   function scrollToBlock({ nodeId, mode }) {
-    const node = [...$('graph').querySelectorAll('[data-node]')].find((item) => item.dataset.node === nodeId);
+    const node = graphNode(nodeId);
     if (!node) return;
     const scroll = $('graph-scroll');
     const bounds = scroll.getBoundingClientRect();
     const card = node.getBoundingClientRect();
     if (mode !== 'reveal') {
-      const top =
-        mode === 'start'
-          ? card.top - bounds.top
-          : mode === 'end'
-            ? card.bottom - bounds.top - scroll.clientHeight
-            : card.top + card.height / 2 - bounds.top - scroll.clientHeight / 2;
       scroll.scrollBy({
-        top,
+        top: graphAlignmentOffset(mode, card, bounds, scroll.clientHeight),
         left: card.left + card.width / 2 - bounds.left - scroll.clientWidth / 2,
         behavior: 'instant',
       });
@@ -4435,7 +4444,27 @@ import { reorderedBlocks } from './flow-order.mjs';
     },
     { passive: true }
   );
-  new ResizeObserver(drawConnections).observe($('graph-scroll'));
+  const graphViewport = $('graph-scroll');
+  let graphViewportHeight = graphViewport.clientHeight;
+  function preserveGraphAlignment(previousHeight) {
+    const anchor = state.graphScrollAnchor;
+    if (!anchor) return;
+    const node = graphNode(anchor.nodeId);
+    if (!node) return;
+    const card = node.getBoundingClientRect();
+    const bounds = graphViewport.getBoundingClientRect();
+    if (Math.abs(graphAlignmentOffset(anchor.mode, card, bounds, previousHeight)) < 2)
+      graphViewport.scrollBy({
+        top: graphAlignmentOffset(anchor.mode, card, bounds, graphViewportHeight),
+        behavior: 'instant',
+      });
+  }
+  new ResizeObserver(() => {
+    const previousHeight = graphViewportHeight;
+    graphViewportHeight = graphViewport.clientHeight;
+    drawConnections();
+    if (previousHeight !== graphViewportHeight) preserveGraphAlignment(previousHeight);
+  }).observe(graphViewport);
   let changes;
   let changeSelection;
   let updateTimer;

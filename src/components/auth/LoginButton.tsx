@@ -8,16 +8,20 @@ interface LoginButtonProps {
 }
 
 export function LoginButton(props: LoginButtonProps) {
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
   return (
     <>
       <PracticeSession />
-      <HeaderSignInButton {...props} />
+      <HeaderSignInButton {...props} returnTo={pathname} />
     </>
   );
 }
 
-function HeaderSignInButton({ children = 'Login' }: LoginButtonProps) {
-  const pathname = useRouterState({ select: (state) => state.location.pathname });
+export function HeaderSignInButton({
+  children = 'Login',
+  returnTo,
+  linkProps,
+}: LoginButtonProps & { returnTo: string; linkProps?: Pick<React.ComponentProps<'a'>, 'target' | 'rel'> }) {
   const { data: session, isPending } = useSession();
 
   if (isPending) {
@@ -35,11 +39,12 @@ function HeaderSignInButton({ children = 'Login' }: LoginButtonProps) {
     return null;
   }
 
-  const href = `/auth/login?returnTo=${encodeURIComponent(pathname)}`;
+  const href = `/auth/login?returnTo=${encodeURIComponent(returnTo)}`;
 
   return (
     <a
       href={href}
+      {...linkProps}
       className="px-2 py-1 bg-orange-200 hover:bg-orange-300 text-orange-800 border-2 border-orange-600 rounded-md transition-colors duration-200 text-sm"
     >
       {children}
