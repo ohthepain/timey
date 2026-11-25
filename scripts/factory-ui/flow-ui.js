@@ -27,6 +27,9 @@ import { reorderedBlocks } from './flow-order.mjs';
     inspectorWidth: null,
     tab: 'details',
     search: '',
+    badgeFilter: '',
+    attentionFirst: false,
+    annotationSaving: false,
     draggedIssueId: null,
     collapsedFolders: new Set(view.read('flow-collapsed-folders', [])),
     collapsedCollections: new Set(view.read('flow-collapsed-collections', ['closed-issues', 'archived-issues'])),
@@ -49,6 +52,7 @@ import { reorderedBlocks } from './flow-order.mjs';
   };
   const issueStoreUI = window.createIssueStoreUI({ request: json, post, changed: () => load(true) });
   const issueOwnershipUI = window.createIssueOwnershipUI({ request: json, post, changed: () => load(true) });
+  const excludedWorkChildren = new Map();
   const kinds = {
     request: { icon: '💬', color: '#aaa49b', description: 'The goal and the evidence that will show it is done.' },
     sharpen: { icon: '◇', color: '#c6b66b', description: 'Refine the request and agree on what to do.' },
@@ -708,7 +712,7 @@ import { reorderedBlocks } from './flow-order.mjs';
   });
 
   function sidebarCollapsedFolders() {
-    return state.search ? state.collapsedSearchFolders : state.collapsedFolders;
+    return state.search || state.badgeFilter ? state.collapsedSearchFolders : state.collapsedFolders;
   }
 
   function selectWorkspace({ issue = null, folder = null, fileFolder = null }) {
@@ -746,17 +750,19 @@ import { reorderedBlocks } from './flow-order.mjs';
   function renderSidebar() {
     if (state.draggedIssueId) return;
     void updateProjectActions();
-    const issues = (state.index.issues || []).filter((issue) =>
-      `${issue.title} ${issue.issueNumber || ''}`.toLowerCase().includes(state.search.toLowerCase())
-    );
+    const matches = (issue) =>
+      `${issue.title} ${issue.issueNumber || ''}`.toLowerCase().includes(state.search.toLowerCase()) &&
+      (!state.badgeFilter || issue.badges?.includes(state.badgeFilter));
+    const issues = (state.index.issues || []).filter(matches);
+    const filtering = state.search || state.badgeFilter;
     const folders = [
       ...new Set([...(state.index.folders || []), ...issues.map((issue) => issue.folder).filter(Boolean)]),
     ];
-    const { issueGroups, masterBadge } = window.issueGroupUI;
+    const { issueGroups, issueBadges } = window.issueGroupUI;
     const row = (issue, subIssue = false) =>
-      `<button class="issue-row${issue.id === state.issueId ? ' selected' : ''}" data-issue="${escape(issue.id)}"${subIssue ? ' data-sub-issue' : ''} draggable="${issue.status !== 'closed' && !issue.readOnly && !issue.activeBlock}" title="${escape(issue.title)}"${issue.id === state.issueId ? ' aria-current="page"' : ''}>${issue.activeBlock ? activeSpinner(issue.activeBlock) : statusIcon(issue.humanInput ? 'needs-input' : issue.status)}<span class="issue-name">${issue.issueNumber ? `#${escape(issue.issueNumber)} - ` : ''}${escape(issue.title)}${issue.isMaster ? ' ' + masterBadge(true) : ''}${issue.humanInput ? '<span class="issue-input-label">Needs your input</span>' : ''}</span></button>`;
+      `<button class="issue-row${issue.id === state.issueId ? ' selected' : ''}" data-issue="${escape(issue.id)}"${subIssue ? ' data-sub-issue' : ''} draggable="${issue.status !== 'closed' && !issue.readOnly && !issue.activeBlock}" title="${escape(issue.title)}"${issue.id === state.issueId ? ' aria-current="page"' : ''}>${issue.activeBlock ? activeSpinner(issue.activeBlock) : statusIcon(issue.humanInput ? 'needs-input' : issue.status)}<span class="issue-name"><span class="issue-title-text">${issue.issueNumber ? `#${escape(issue.issueNumber)} - ` : ''}${escape(issue.title)}</span> ${issueBadges(issue, true)}${issue.humanInput ? '<span class="issue-input-label">Needs your input</span>' : ''}</span></button>`;
     const rows = (items) =>
-      issueGroups(items)
+      issueGroups(items, state.attentionFirst)
         .map(({ issue, children }) => row(issue) + children.map((child) => row(child, true)).join(''))
         .join('');
     const groups = folders
@@ -764,7 +770,7 @@ import { reorderedBlocks } from './flow-order.mjs';
         const children = issues
           .filter((issue) => issue.folder === folder && issue.status !== 'closed')
           .sort((a, b) => (Date.parse(b.created) || 0) - (Date.parse(a.created) || 0) || b.id.localeCompare(a.id));
-        if (state.search && children.length === 0) return '';
+        if (filtering && children.length === 0) return '';
         const collapsed = sidebarCollapsedFolders().has(folder);
         const active = children.find((issue) => issue.activeBlock);
         const name = escape(folder);
@@ -774,11 +780,9 @@ import { reorderedBlocks } from './flow-order.mjs';
       .join('');
     const closed = issues.filter((issue) => issue.status === 'closed');
     $('migrate-issue-folders').hidden = !(state.index.legacyFolders || []).length;
-    const archive = (state.archivedIssues || []).filter((issue) =>
-      `${issue.title} ${issue.issueNumber || ''}`.toLowerCase().includes(state.search.toLowerCase())
-    );
+    const archive = (state.archivedIssues || []).filter(matches);
     const collection = (id, name, content) =>
-      `<details id="${id}" class="issue-folder" data-collection data-view-controlled-open${state.search || !state.collapsedCollections.has(id) ? ' open' : ''}><summary class="folder-toggle folder-disclosure">${name}</summary><div class="folder-items">${content}</div></details>`;
+      `<details id="${id}" class="issue-folder" data-collection data-view-controlled-open${filtering || !state.collapsedCollections.has(id) ? ' open' : ''}><summary class="folder-toggle folder-disclosure">${name}</summary><div class="folder-items">${content}</div></details>`;
     const empty = '<p class="sidebar-empty">No matching issues.</p>';
     const statusCollections = [
       { id: 'in-progress-issues', name: 'In progress', matches: (issue) => issue.status === 'running' },
@@ -887,7 +891,7 @@ import { reorderedBlocks } from './flow-order.mjs';
   }
 
   function issueLink(issue) {
-    return `<a href="?issue=${encodeURIComponent(issue.id)}" data-open-folder-issue="${escape(issue.id)}">${escape(issueLabel(issue))}</a>${issue.isMaster ? ' ' + window.issueGroupUI.masterBadge() : ''}`;
+    return `<a href="?issue=${encodeURIComponent(issue.id)}" data-open-folder-issue="${escape(issue.id)}">${escape(issueLabel(issue))}</a>`;
   }
 
   const folderMarkup = new WeakMap();
@@ -902,7 +906,7 @@ import { reorderedBlocks } from './flow-order.mjs';
 
   function folderIssueRow(issue, reason, field, children = '') {
     const check = `<input type="checkbox" name="${field}" value="${escape(issue.id)}" id="${field}-${escape(issue.id)}"${field === 'member' ? (folderSelection.issueIds.has(issue.id) ? ' checked' : '') : ' checked'} aria-label="Select ${escape(issueLabel(issue))}" />`;
-    return `<li>${check}<div>${issueLink(issue)}${reason ? `<p>${escape(reason)}</p>` : ''}${children}</div></li>`;
+    return `<li>${check}<div>${issueLink(issue)} ${window.issueGroupUI.issueBadges(issue)}${reason ? `<p>${escape(reason)}</p>` : ''}${children}</div></li>`;
   }
 
   function folderMemberRows(members, reasons) {
@@ -1204,7 +1208,7 @@ import { reorderedBlocks } from './flow-order.mjs';
   function renderIssueGrouping() {
     const panel = $('issue-grouping');
     const grouping = state.view?.grouping;
-    const { master, children, reasoning, formerMasters } = grouping || {};
+    const { master, children, reasoning, formerMasters, detachedChildren, canReattach } = grouping || {};
     const masterRow = $('issue-master');
     masterRow.hidden = !master;
     updateFolderMarkup(
@@ -1220,11 +1224,11 @@ import { reorderedBlocks } from './flow-order.mjs';
       (children || [])
         .map(
           (child) =>
-            `<li>${issueLink(child)}<button class="small-button" type="button" data-detach-sub-issue="${escape(child.id)}" aria-label="Remove ${escape(issueLabel(child))}"${child.canDetach ? '' : ' disabled'}>Remove</button></li>`
+            `<li>${issueLink(child)}<button class="small-button" type="button" data-detach-action="folder-detach" data-detach-sub-issue="${escape(child.id)}" aria-label="Remove ${escape(issueLabel(child))}"${child.canDetach ? '' : ' disabled'}>Remove</button></li>`
         )
         .join('')
     );
-    panel.hidden = !children?.length && !formerMasters?.length;
+    panel.hidden = !children?.length && !formerMasters?.length && !detachedChildren?.length;
     const groupReasons = new Map(reasoning?.map(({ id, reason }) => [id, reason]));
     const html = [];
     for (const formerMaster of formerMasters || [])
@@ -1236,12 +1240,96 @@ import { reorderedBlocks } from './flow-order.mjs';
           .join('')}</ul>`
       );
     }
+    if (detachedChildren?.length) {
+      html.push(
+        `<details><summary>Detached sub-issues</summary><ul class="folder-run-results">${detachedChildren
+          .map(
+            (child) =>
+              `<li>${issueLink(child)} ${canReattach ? `<button class="small-button" type="button" data-reattach-sub-issue="${escape(child.id)}">Attach again</button>` : ''}</li>`
+          )
+          .join('')}</ul></details>`
+      );
+    }
     updateFolderMarkup(panel, html.join(''));
   }
 
   function renderSubIssue(child, reason) {
     const { requestedProof, proof, nextAction, canDetach } = child;
-    return `<li>${issueLink(child)}${reason ? `<p>${escape(reason)}</p>` : ''}${requestedProof ? `<p>Requested proof: ${escape(requestedProof)}</p>` : ''}${proof ? `<p>${proof.status === 'passed' ? 'Passed' : 'Unmet'}: ${escape(proof.observation)}</p>` : ''}${nextAction ? `<p>${escape(nextAction)}</p>` : ''}${proof?.status === 'failed' ? `<div class="folder-controls"><button class="small-button" type="button" data-group-play>Continue on the master</button>${canDetach ? `<button class="small-button" type="button" data-detach-sub-issue="${escape(child.id)}">Detach and fix separately</button>` : ''}</div>` : ''}</li>`;
+    const blocked = child.badges?.includes('blocked');
+    const detachAction = blocked ? 'folder-detach-blocked' : 'folder-detach';
+    const detachLabel = blocked
+      ? 'Detach blocked child'
+      : proof?.status === 'failed'
+        ? 'Detach and fix separately'
+        : 'Detach';
+    return `<li data-group-child="${escape(child.id)}">${issueLink(child)} ${window.issueGroupUI.issueBadges(child)}${reason ? `<p>${escape(reason)}</p>` : ''}${requestedProof ? `<p>Requested proof: ${escape(requestedProof)}</p>` : ''}${proof ? `<p>${proof.status === 'passed' ? 'Passed' : 'Unmet'}: ${escape(proof.observation)}</p>` : ''}${nextAction ? `<p>${escape(nextAction)}</p>` : ''}<div class="folder-controls">${proof?.status === 'failed' ? '<button class="small-button" type="button" data-group-play>Continue on the master</button>' : ''}${(blocked ? child.canDetachBlocked : canDetach) ? `<button class="small-button" type="button" data-detach-action="${detachAction}" data-detach-sub-issue="${escape(child.id)}">${detachLabel}</button>` : ''}</div></li>`;
+  }
+
+  function annotationRow(annotation) {
+    const { id, author, type, label, createdAt, relatedIssueId, cleared } = annotation;
+    const title = type === 'label' ? window.issueGroupUI.badgeLabels[label] : 'Comment';
+    const byline = (actor, at) =>
+      `${escape(actor.kind)} ${escape(actor.id)} · <time datetime="${escape(at)}" title="${escape(at)}">${escape(date(at))}</time>`;
+    const body = type === 'comment' ? annotation.text : annotation.note;
+    const related =
+      relatedIssueId && (state.index.issues.find(({ id }) => id === relatedIssueId) || { id: relatedIssueId });
+    return `<li data-annotation-id="${escape(id)}"><strong>${escape(title)}</strong> <span>${byline(author, createdAt)}</span>${body ? `<p>${escape(body)}</p>` : ''}${related ? `<p>Related issue ${issueLink(related)}</p>` : ''}${cleared ? `<p>Cleared by ${byline(cleared.by, cleared.at)}</p>` : `<button class="small-button" type="button" data-clear-annotation="${escape(id)}">Clear</button>`}</li>`;
+  }
+
+  function syncAnnotationForm() {
+    const form = $('issue-annotation-form');
+    const comment = form.elements.kind.value === 'comment';
+    $('issue-annotation-text-label').textContent = comment ? 'Comment' : 'Note (optional)';
+    form.elements.content.required = comment;
+  }
+
+  function renderIssueAnnotations(issue) {
+    const panel = $('issue-annotations');
+    panel.hidden = !issue;
+    if (panel.dataset.issue !== (issue?.id || '')) {
+      panel.dataset.issue = issue?.id || '';
+      panel.open = false;
+      $('issue-annotation-history').open = false;
+      $('issue-annotation-error').hidden = true;
+      $('issue-annotation-form').reset();
+      syncAnnotationForm();
+    }
+    const annotations = state.view?.annotations || [];
+    const active = annotations.filter(({ cleared }) => !cleared);
+    const history = annotations.filter(({ cleared }) => cleared);
+    const warning = state.view?.annotationsWarning;
+    $('issue-annotation-warning').hidden = !warning;
+    $('issue-annotation-warning').textContent = warning || '';
+    $('issue-annotation-count').textContent = active.length ? `(${active.length})` : '';
+    $('issue-annotation-history').hidden = !history.length;
+    updateFolderMarkup($('active-issue-annotations'), active.map(annotationRow).join(''));
+    updateFolderMarkup($('cleared-issue-annotations'), history.map(annotationRow).join(''));
+    $('issue-annotation-fields').disabled = state.annotationSaving;
+    $('active-issue-annotations').inert = state.annotationSaving;
+  }
+
+  async function saveAnnotation(fields) {
+    const issueId = state.view?.issue?.id;
+    if (!issueId || state.annotationSaving) return;
+    state.annotationSaving = true;
+    $('issue-annotation-error').hidden = true;
+    renderIssueAnnotations(state.view.issue);
+    try {
+      await post('issue-annotation', { ...fields, issueId });
+      if (state.issueId === issueId && fields.action === 'add') {
+        $('issue-annotation-form').elements.content.value = '';
+        $('issue-annotation-form').elements.relatedIssueId.value = '';
+      }
+      await load(true);
+    } catch (error) {
+      if (state.issueId === issueId) {
+        $('issue-annotation-error').textContent = error.message;
+        $('issue-annotation-error').hidden = false;
+      }
+    } finally {
+      state.annotationSaving = false;
+      renderIssueAnnotations(state.view?.issue);
+    }
   }
 
   async function folderAction(name, fields = {}) {
@@ -2315,10 +2403,44 @@ import { reorderedBlocks } from './flow-order.mjs';
       permissions.map(agentApprovalCard).join('') +
       investigationActions(block) +
       definitionActions(block) +
+      workScopePicker(block) +
       Object.values(sections).join('') +
       contentSection(block)
     );
   }
+
+  function groupWorkChildren(block) {
+    return ['work', 'tdd', 'edit'].includes(block.kind) ? state.view.grouping?.children || [] : [];
+  }
+
+  function workScopePicker(block) {
+    const children = groupWorkChildren(block);
+    if (!children.length || isRunning(block) || state.view.issue.readOnly) return '';
+    const excluded = excludedWorkChildren.get(draftKey());
+    return `<section class="detail-section" aria-label="Work scope"><div class="section-label">Sub-issues for this run</div>${children
+      .map(
+        (child) =>
+          `<label class="check-row"><input type="checkbox" data-work-child="${escape(child.id)}"${excluded?.has(child.id) ? '' : ' checked'} />${escape(issueLabel(child))}</label>`
+      )
+      .join('')}</section>`;
+  }
+
+  function selectedWorkChildren(block) {
+    const children = groupWorkChildren(block);
+    const excluded = excludedWorkChildren.get(draftKey());
+    if (!excluded?.size || !children.length) return;
+    return children.filter(({ id }) => !excluded.has(id)).map(({ id }) => id);
+  }
+
+  $('inspector-body').addEventListener('change', (event) => {
+    const id = event.target.dataset.workChild;
+    if (!id) return;
+    const key = draftKey();
+    const excluded = excludedWorkChildren.get(key) || new Set();
+    if (event.target.checked) excluded.delete(id);
+    else excluded.add(id);
+    excludedWorkChildren.set(key, excluded);
+  });
 
   function conversationMessage(message) {
     const producer = state.view.flow.blocks.find((entry) => entry.id === message.blockId);
@@ -2566,6 +2688,9 @@ import { reorderedBlocks } from './flow-order.mjs';
     issueNumber.textContent = issueNumber.hidden ? '' : `#${issue.issueNumber}`;
     $('issue-title').textContent = issue?.title || '';
     $('issue-master-badge').hidden = !issue?.isMaster;
+    const badges = issue?.badges?.filter((badge) => badge !== 'master-issue');
+    updateFolderMarkup($('issue-heading-badges'), window.issueGroupUI.issueBadges({ badges }));
+    renderIssueAnnotations(issue);
     renderBlockingError();
     renderMergedIssueNotice(issue);
     if ($('rename-issue-form').dataset.issue !== issue?.id) closeRename();
@@ -3094,10 +3219,13 @@ import { reorderedBlocks } from './flow-order.mjs';
       if (state.view.autoplay?.blockId === block.id) await action('cancel-confirmation', { blockId: block.id });
       return;
     }
+    const workIssueIds = selectedWorkChildren(block);
+    if (workIssueIds?.length === 0) return showError('Select at least one sub-issue to work on.');
     const result = await action(block.kind === 'request' ? 'run-request' : name, {
       blockId: block.id,
       confirmedAgentRecovery: nativeRecovery,
       ...investigationRunInput(block),
+      ...(workIssueIds && { workIssueIds }),
       ...(confirmed ? { confirmed: true } : {}),
       ...(approval ? { mergeToken: approval.token } : {}),
     });
@@ -3377,7 +3505,7 @@ import { reorderedBlocks } from './flow-order.mjs';
     const collapsedFolders = sidebarCollapsedFolders();
     const expanded = collapsedFolders.delete(folder);
     if (!expanded) collapsedFolders.add(folder);
-    if (!state.search) view.write('flow-collapsed-folders', [...collapsedFolders]);
+    if (!state.search && !state.badgeFilter) view.write('flow-collapsed-folders', [...collapsedFolders]);
     button.setAttribute('aria-expanded', String(expanded));
     button.setAttribute('aria-label', `${expanded ? 'Collapse' : 'Expand'} ${folder}`);
     button.closest('.issue-folder').querySelector('.folder-items').hidden = !expanded;
@@ -3406,12 +3534,34 @@ import { reorderedBlocks } from './flow-order.mjs';
     const button = event.target.closest('button');
     if (!button || button.disabled) return;
     if (button.dataset.detachSubIssue)
-      return void action('folder-detach', { subIssueId: button.dataset.detachSubIssue });
+      return void action(button.dataset.detachAction, { subIssueId: button.dataset.detachSubIssue });
+    if (button.dataset.reattachSubIssue)
+      return void action('folder-reattach', { subIssueId: button.dataset.reattachSubIssue });
     if (button.hasAttribute('data-group-play') && state.view?.autoplay?.mode === 'paused') $('issue-playback').click();
   }
 
   $('issue-sub-issues').addEventListener('click', handleIssueGroupingClick);
   $('issue-grouping').addEventListener('click', handleIssueGroupingClick);
+
+  $('issue-annotations').addEventListener('click', (event) => {
+    if (followFolderLink(event)) return;
+    const annotationId = event.target.closest('[data-clear-annotation]')?.dataset.clearAnnotation;
+    if (annotationId) void saveAnnotation({ action: 'clear', annotationId });
+  });
+  $('issue-annotation-form').addEventListener('change', syncAnnotationForm);
+  $('issue-annotation-form').addEventListener('submit', (event) => {
+    event.preventDefault();
+    const { kind, content, relatedIssueId } = Object.fromEntries(new FormData(event.currentTarget));
+    const data =
+      kind === 'comment'
+        ? { type: 'comment', text: content }
+        : { type: 'label', label: kind, ...(content.trim() && { note: content }) };
+    void saveAnnotation({
+      action: 'add',
+      ...data,
+      ...(relatedIssueId.trim() && { relatedIssueId: relatedIssueId.trim() }),
+    });
+  });
 
   document.addEventListener(
     'click',
@@ -3978,6 +4128,14 @@ import { reorderedBlocks } from './flow-order.mjs';
   $('issue-search').addEventListener('input', (event) => {
     state.search = event.target.value;
     state.collapsedSearchFolders.clear();
+    renderSidebar();
+  });
+  $('issue-badge-controls').innerHTML = window.issueGroupUI.badgeControls();
+  $('issue-badge-controls').addEventListener('change', (event) => {
+    if (event.target.hasAttribute('data-issue-badge-filter')) {
+      state.badgeFilter = event.target.value;
+      state.collapsedSearchFolders.clear();
+    } else state.attentionFirst = event.target.checked;
     renderSidebar();
   });
   $('new-folder').addEventListener('click', () => {

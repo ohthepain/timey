@@ -25,7 +25,38 @@ export function requestGroupDetails(issue, block) {
   ];
 }
 
-export async function clarifyRequest(root, definition, attempt, signal, discussion = createTextDiscussionRuntime) {
+function isClarificationTransport(method, params) {
+  return (
+    method === 'ui/transportPhase' &&
+    ['initialize', 'thread/start', 'turn/start', 'turn/completed'].includes(params.method) &&
+    ['requested', 'replied', 'waiting', 'rejected', 'finished'].includes(params.phase)
+  );
+}
+
+function countClarificationItem(diagnostic, item) {
+  const type = item?.type;
+  if (['commandExecution', 'agentMessage', 'reasoning'].includes(type))
+    diagnostic.items[type] = (diagnostic.items[type] || 0) + 1;
+}
+
+function recordClarificationDiagnostic(diagnostic, startedAt) {
+  return ({ method, params = {} }) => {
+    if (isClarificationTransport(method, params)) {
+      diagnostic.transport.push({ method: params.method, phase: params.phase, elapsedMs: Date.now() - startedAt });
+      diagnostic.transport = diagnostic.transport.slice(-32);
+    }
+    if (method === 'item/started') countClarificationItem(diagnostic, params.item);
+  };
+}
+
+export async function clarifyRequest(
+  root,
+  definition,
+  attempt,
+  signal,
+  discussion = createTextDiscussionRuntime,
+  tools
+) {
   signal.throwIfAborted();
   requireThat(definition?.usable && definition.prompt, 'Request is missing its Markdown system prompt.');
   const values = definition.artifacts.filter(({ kind, key }) => kind === 'value' && key !== 'wording');
@@ -37,19 +68,9 @@ export async function clarifyRequest(root, definition, attempt, signal, discussi
   const diagnostic = { version: 1, stage: 'starting-provider', transport: [], items: {} };
   const session = discussion(undefined, {
     root,
+    tools,
     model: attempt.modelSettings?.model,
-    onEvent: ({ method, params = {} }) => {
-      if (
-        method === 'ui/transportPhase' &&
-        ['initialize', 'thread/start', 'turn/start', 'turn/completed'].includes(params.method) &&
-        ['requested', 'replied', 'waiting', 'rejected', 'finished'].includes(params.phase)
-      ) {
-        diagnostic.transport.push({ method: params.method, phase: params.phase, elapsedMs: Date.now() - startedAt });
-        diagnostic.transport = diagnostic.transport.slice(-32);
-      }
-      if (method === 'item/started' && ['commandExecution', 'agentMessage', 'reasoning'].includes(params.item?.type))
-        diagnostic.items[params.item.type] = (diagnostic.items[params.item.type] || 0) + 1;
-    },
+    onEvent: recordClarificationDiagnostic(diagnostic, startedAt),
   });
   let timer;
   let cancel;

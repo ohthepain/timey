@@ -2025,3 +2025,25 @@ all lanes, before clarification runs. This includes Work and any retained
 verification, publication or merge results, even if clarification derives the
 same goal and proof criteria. Attempts and evidence stay in history. Rerunning
 unchanged wording keeps the existing criteria-based invalidation behavior.
+
+## Issue annotations and blocked sub-issues
+
+Open **Issue annotations** in Flow to add a blocker, readiness concern, or
+comment. Anyone with annotation access can clear an entry. **Cleared history**
+retains the original entry and the first clearance. A badge stays visible while
+any active entry reports that label. Filter the issue list by badge or turn on
+**Attention first** to move blockers, readiness concerns, and pending approvals
+above other issues.
+
+For a master in Work, select the children the attempt will work on when you run
+the Work block. Factory records that scope and the checkout state before the
+provider receives write access. A master run can detach its own blocked child
+during Request or while Work is scoped to siblings. If a Work grant covered the
+blocked child, or the checkout cannot be reconciled with the Work log, Factory
+keeps the group for review. A reverted change still belongs to the grant under
+which it was made.
+
+A detached child stays open with its annotation history and a link to the former
+master. Work and verification use the remaining children. The original Request
+and earlier attempts remain in history. An empty master pauses. Reattach a
+previously detached child from the master to resume work.

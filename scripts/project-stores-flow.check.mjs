@@ -953,6 +953,10 @@ test('Update Branch block publication failure leaves no local execution or share
   assert.equal(executed, false);
   assert.equal(f.flows.active.has(f.id), false);
   assert.equal(await f.records.get('claims/' + f.id), null);
+  assert.equal(
+    readSnapshot(f.root).claims.some((claim) => claim.issueId === f.id),
+    false
+  );
 });
 
 async function heldRefresh(project) {

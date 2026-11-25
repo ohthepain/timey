@@ -1065,6 +1065,11 @@ folder membership before deletion. `folder-trash.mjs` uses macOS Trash and
 prevents assignments or file writes into a directory while it is being moved.
 `flow-folder-selection.mjs` evaluates folder selections and checks reviewed moves
 against current issue records. `flow-grouping.mjs` owns master issue grouping.
+`flow-group-scope.mjs` projects active child requirements and checks Work
+scope against checkout observations before an authorized detach.
+`issue-annotations.mjs` saves annotations in project coordination records,
+independently of report and Flow revisions. `issue-badges.mjs` combines
+annotations with pending approvals and attachment history for issue views.
 `folder-strategies.mjs` owns strategy prompt reads, explicit copies to user Markdown,
 and folder strategy selection. `folder-operations.mjs` runs scoped AI searches and
 preview-bound per-issue Start and Archive actions, retaining individual outcomes.
