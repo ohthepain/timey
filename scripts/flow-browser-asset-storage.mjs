@@ -92,12 +92,13 @@ async function seedPartialRecordSource(project, config, ref) {
       { encoding: 'json', value: { title: 'Confidential chat title', author: 'Confidential author', ref } },
     ],
     ['private-chat/missing-payload', { encoding: 'artifact', ref: missing }],
+    ['private-chat/unreadable-payload', { encoding: 'artifact', ref }],
   ];
   const records = entries.map(([key, value]) => ({ key, revision: key, value }));
   await raw.commit({
     operationId: 'partial-reference-source',
     expected: entries.map(([key]) => ({ key, revision: null })),
-    writes: [{ key: records[1].key, record: records[1] }],
+    writes: records.slice(1).map((record) => ({ key: record.key, record })),
     receipt: { result: { encoding: 'json', value: { records } } },
   });
 }
@@ -185,9 +186,9 @@ async function checkControls(dialog, hash) {
   assert.match(await dialog.locator('tbody tr').first().innerText(), /35 bytes/);
   await dialog.getByLabel('Recorded references').selectOption('found');
   await dialog.getByText('1 asset · 10 bytes | 0 selected · 0 bytes').waitFor();
-  await dialog.getByText('2 recorded', { exact: true }).click();
+  await dialog.getByText('3 recorded', { exact: true }).click();
   await dialog.getByText('Issue evidence', { exact: true }).waitFor();
-  await dialog.getByText('Restricted reference', { exact: true }).waitFor();
+  assert.equal(await dialog.getByText('Restricted reference', { exact: true }).count(), 2);
   assert.equal(await dialog.getByText('Confidential chat title').count(), 0);
   assert.equal(await dialog.getByRole('button', { name: 'Delete selected' }).count(), 0);
   await dialog.getByLabel('Recorded references').selectOption('zero');
@@ -209,7 +210,7 @@ export async function assetStorageBrowserChecks(context) {
     const dialog = page.locator('#project-settings-dialog');
     await dialog.getByRole('link', { name: 'Asset Storage', exact: true }).waitFor();
     await checkControls(dialog, seeded.sha256);
-    await dialog.getByText('2 recorded', { exact: true }).click();
+    await dialog.getByText('3 recorded', { exact: true }).click();
     await screenshot('asset-storage');
     const read = async () => {
       const response = await page.request.get('/api/project-asset-storage');
@@ -249,6 +250,7 @@ export async function assetStorageBrowserChecks(context) {
             coldLoadMetadataWrites: 0,
             coldLoadCreatedLocalStore: false,
             readableReferencesRetainedWithMissingPayload: true,
+            unreadablePayloadReferenceCountedOnce: true,
             listedAssets: 26,
             filteredBytes: 585,
             selectedBytes: 585,

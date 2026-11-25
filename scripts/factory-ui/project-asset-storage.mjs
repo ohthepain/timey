@@ -67,11 +67,14 @@ function sourceReferences({ records, receipts }) {
 }
 
 function collectReferences(assets, projectId, snapshots) {
-  const sources = new Map(snapshots.flatMap(sourceReferences).map((source) => [source.key, source]));
-  for (const { refs, label } of sources.values()) {
-    const keys = new Set(refs.filter((ref) => ref.key === `${projectId}/sha256/${ref.sha256}`).map(identity));
-    for (const key of keys) assets.get(key)?.references.push(label);
-  }
+  const entries = snapshots
+    .flatMap(sourceReferences)
+    .flatMap(({ key, refs, label }) =>
+      refs
+        .filter((ref) => ref.key === `${projectId}/sha256/${ref.sha256}`)
+        .map((ref) => [JSON.stringify([key, identity(ref)]), { assetKey: identity(ref), label }])
+    );
+  for (const { assetKey, label } of new Map(entries).values()) assets.get(assetKey)?.references.push(label);
 }
 
 async function scanReferences(store) {

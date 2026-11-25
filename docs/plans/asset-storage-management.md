@@ -21,8 +21,9 @@ retained record revisions, including archived issue evidence. References from
 unclassified source records are shown as **Restricted reference**. Counts
 remain unverified while coverage of legacy links, external publication,
 dependent files, and personal saves is incomplete. If a retained record or
-receipt cannot be read, Settings reports incomplete counts and shows references
-from the readable records. Keep every existing asset
+receipt cannot be read, Settings reports incomplete counts. It still counts
+structured references in the readable records and the known payload references
+of unreadable records and receipts. Keep every existing asset
 during the review, including assets with a zero recorded count.
 
 The inventory supports filtering, sorting, page selection, and filtered and
