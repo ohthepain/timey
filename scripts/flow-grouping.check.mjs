@@ -428,8 +428,14 @@ async function blockedGroup(service, flows) {
   return { master, child, sibling: issueIds[0], blocker };
 }
 
-test('Request run detaches its own blocked child exactly once and preserves the Request and open child', async (t) => {
-  const { newFlows, service } = fixture(t);
+test('Request run detaches its own blocked child once and retains the original Request and sibling work', async (t) => {
+  const { newFlows, master, child, sibling, blocker, checkout, finish, owner, root } = await workGroup(t, {
+    scope: 'sibling',
+    change: true,
+  });
+  finish.resolve();
+  await owner.task;
+  const commit = checkoutGit(checkout, 'rev-parse', 'HEAD');
   const clarify = async (_root, _definition, _attempt, _signal, _discussion, tools) => {
     const { revision, attached } = await tools.invoke('master_scope', {});
     assert.equal(attached.length, 2);
@@ -443,13 +449,13 @@ test('Request run detaches its own blocked child exactly once and preserves the 
     return { artifacts: { values: { type: 'bug', goal: 'Superseded clarification.' } } };
   };
   const flows = newFlows({ clarify });
-  const { master, child, sibling, blocker } = await blockedGroup(service, flows);
-  const request = master.flow.blocks.find(({ kind }) => kind === 'request');
+  const current = await flows.view(master.issue.id);
+  const request = current.flow.blocks.find(({ kind }) => kind === 'request');
   const childReport = flows.selected(child).content;
   const result = await flows.action({
     action: 'request',
     issueId: master.issue.id,
-    revision: master.flow.revision,
+    revision: current.flow.revision,
     wording: request.data.wording,
   });
   assert.equal(result.flow.blocks[0].data.wording, request.data.wording);
@@ -464,6 +470,11 @@ test('Request run detaches its own blocked child exactly once and preserves the 
   assert.deepEqual(detached[0].detach.actor, { kind: 'issue', id: master.issue.id });
   assert.equal(detached[0].detach.annotationId, blocker.id);
   const restarted = newFlows();
+  const savedMaster = restarted.selected(master.issue.id);
+  assert.equal(checkoutGit(checkout, 'rev-parse', 'HEAD'), commit);
+  assert.equal(checkoutGit(checkout, 'show', 'HEAD:source.txt'), 'saved');
+  const tree = checkoutGit(checkout, 'rev-parse', 'HEAD^{tree}');
+  assert.equal(requireGroupProof(savedMaster, restarted.read(savedMaster), tree, {}, root).length, 1);
   assert.equal(restarted.selected(child).content, childReport);
   const independent = await restarted.view(child);
   assert.equal(independent.grouping.master, undefined);
@@ -586,7 +597,14 @@ test('Blocked detach preserves grouping for child, shared, reverted, and unexpla
     ['unexplained', { scope: 'sibling', change: true }],
   ]) {
     await t.test(type, async (t) => {
-      const { master, child, sibling, flows, checkout, finish, owner } = await workGroup(t, options);
+      const { master, child, sibling, flows, checkout, ctx, finish, owner } = await workGroup(t, options);
+      if (type === 'shared') {
+        const { revision } = await ctx.tools.invoke('master_scope', {});
+        await assert.rejects(
+          ctx.tools.invoke('detach_blocked_sub_issue', { subIssueId: child, revision }),
+          /running Work scoped to the remaining children/
+        );
+      }
       finish.resolve();
       await owner.task;
       if (type === 'unexplained') writeFileSync(join(checkout, 'untracked.txt'), 'unknown change');
