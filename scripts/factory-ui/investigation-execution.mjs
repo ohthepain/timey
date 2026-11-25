@@ -9,6 +9,7 @@ import {
   supplementalFindingsSignature,
 } from './investigation-flow.mjs';
 import { invalidateBlocks, requestData, latestCurrentAttempt } from './flow-block-data.mjs';
+import { activeGroupRequest, groupScope } from './flow-group-scope.mjs';
 import { branchStartingPoint, flowBranches } from './flow-branches.mjs';
 import { requireValidExecutionSettings } from './issue-execution-settings.mjs';
 
@@ -30,8 +31,11 @@ export function requireInvestigationBlock(owner, issue, flow, input) {
   );
 }
 function requireRepeatableInquiry(issue, block, input) {
+  const currentScope = groupScope(issue);
+  const scope = JSON.stringify(currentScope);
+  const matchesScope = (entry) => JSON.stringify(entry.groupIssueIds ?? currentScope) === scope;
   const completed = block.attempts.some(
-    (entry) => entry.status === 'completed' && entry.investigation?.mode !== 'discussion'
+    (entry) => entry.status === 'completed' && entry.investigation?.mode !== 'discussion' && matchesScope(entry)
   );
   const { investigation = {} } = input;
   requireThat(
@@ -91,8 +95,12 @@ function inquiryPrompt(flow, block) {
   const goal = requestData(flow).fields?.goal;
   return [block.prompt, investigation.prompt || goal, investigation.instructions].filter(Boolean).join('\n\n');
 }
-function attachInquiryMetadata(flow, block, input, attempt) {
-  attempt.investigation = inquiryAttempt(flow, block, input);
+function attachInquiryMetadata(flow, issue, block, input, attempt) {
+  const inquiry = inquiryAttempt(flow, block, input);
+  const scope = issue.issue_group && activeGroupRequest(issue, flow).wording;
+  attempt.investigation = scope
+    ? { ...inquiry, prompt: [inquiry.prompt, scope].filter(Boolean).join('\n\n') }
+    : inquiry;
   attempt.details.push({
     key: 'investigationConfiguration',
     label: 'Investigation configuration',
@@ -114,7 +122,7 @@ function attachOutputDetails(attempt) {
 }
 export function attachInvestigationAttempt(flow, issue, block, input, attempt) {
   if (!isInvestigation(issue, flow)) return;
-  if (inquiryKinds.has(block.kind)) attachInquiryMetadata(flow, block, input, attempt);
+  if (inquiryKinds.has(block.kind)) attachInquiryMetadata(flow, issue, block, input, attempt);
   if (!investigationOutputKinds.has(block.kind)) return;
   Object.assign(attempt, outputAttempt(flow, issue, block, input, attempt));
   attachOutputDetails(attempt);

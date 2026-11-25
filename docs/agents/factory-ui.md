@@ -74,6 +74,9 @@ Understand uses a read-only checkout. Factory retains the final response as its
 Block response artifact; the agent does not need filesystem write access to save
 that response. Missing historical evidence remains a reported gap. Retro follow-ups
 retain the source issue and receive a sanitized snapshot of its saved attempts.
+Conflict and CI repair attempts retain their worker turn IDs and declared command
+logs. The retrospective export links those turns to their attempts and includes
+copies of the logs with their hashes.
 It shows issue folders, a downward block graph, and a block inspector. Issue names
 include their numbers and wrap. The **Worktree** menu appears in the branch status
 row. Its tooltip says whether a worktree has yet to be created or was deleted.
@@ -130,6 +133,10 @@ from Request, with empty sections omitted. On later runs, Publish shows pending
 title and commit changes and preserves the existing GitHub description. A
 matching title and commit show **PR is up to date** with the link. **Confirm
 current PR** completes Publish using the existing PR.
+When the candidate changes issue annotations, shared coordination, or grouped issue
+UI, Publish runs the focused Flow integration cases in the early CI repair plan
+before writing the branch or PR. The publication attempt retains the candidate
+commit, commands, results, and logs.
 The PR menu beside Worktree and Close shows the PR number. **Open** opens the
 pull request. **Approve** opens the GitHub review page, where you submit the
 approval using the GitHub account signed in to your browser.

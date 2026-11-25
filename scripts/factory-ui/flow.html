@@ -311,6 +311,12 @@
             </form>
             <div id="issue-master" class="folder-controls" role="group" aria-label="Master issue" hidden></div>
             <ul id="issue-sub-issues" class="folder-issues issue-sub-issues" aria-label="Sub-issues" hidden></ul>
+            <form id="issue-attach-form" class="folder-controls" hidden>
+              <label for="issue-attach-choice">Sub-issue to attach</label>
+              <select id="issue-attach-choice" required aria-describedby="issue-attach-reason"></select>
+              <button class="small-button" type="submit" disabled>Attach sub-issue</button>
+              <p id="issue-attach-reason" class="muted" role="status" hidden></p>
+            </form>
             <details id="issue-annotations" class="issue-annotations">
               <summary>Annotations <span id="issue-annotation-count"></span></summary>
               <p id="issue-annotation-warning" role="status" hidden></p>
@@ -541,10 +547,17 @@
               </select>
               <label class="folder-check"><input id="folder-select-all" type="checkbox" /> Select all</label>
               <button class="small-button" type="button" data-folder-command="bulk" disabled>Start all</button>
-              <button class="small-button" type="button" data-folder-command="group" disabled>
+              <button
+                class="small-button"
+                type="button"
+                data-folder-command="group"
+                aria-describedby="folder-group-reason"
+                disabled
+              >
                 Create master issue
               </button>
             </div>
+            <p id="folder-group-reason" class="muted" role="status" hidden></p>
             <form id="folder-search-form" class="folder-controls" role="search">
               <input
                 id="folder-search-query"
