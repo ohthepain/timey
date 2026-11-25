@@ -5,12 +5,16 @@ import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { FactoryUI } from './factory-ui/service.mjs';
 import { createFactoryServer } from './factory-ui/http.mjs';
+import { recordFactoryFatalErrors } from './factory-ui/heap-crash.mjs';
 
 // No chat, worker or integration starts until a reviewed browser action is submitted.
 async function main() {
   await waitForPrevious(Number(optionValue('--after-pid') || 0));
   const { project, port } = options();
-  if (!process.argv.includes('--preview')) initializeProviderConfig(project);
+  if (!process.argv.includes('--preview')) {
+    recordFactoryFatalErrors(project);
+    initializeProviderConfig(project);
+  }
   const service = new FactoryUI(project, {
       preview: process.argv.includes('--preview'),
       authoritativeUrl: optionValue('--authoritative-url'),

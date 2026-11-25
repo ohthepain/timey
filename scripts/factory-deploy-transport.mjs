@@ -5,6 +5,7 @@ import { createConnection } from 'node:net';
 import { join } from 'node:path';
 import { readRuntime } from './factory-ui/runtime.mjs';
 import { cleanEnvironment, requireThat } from './factory-ui/common.mjs';
+import { factoryReportFlags } from './factory-ui/heap-crash.mjs';
 
 export async function deploymentSession(address, options = {}) {
   const timeoutMs = options.timeoutMs ?? 10000;
@@ -30,7 +31,7 @@ export function startFactory(checkout, project, port, log) {
   try {
     const child = spawn(
       process.execPath,
-      [join(checkout, 'scripts/factory-ui.mjs'), '--project', project, '--port', String(port)],
+      [...factoryReportFlags, join(checkout, 'scripts/factory-ui.mjs'), '--project', project, '--port', String(port)],
       { cwd: checkout, env: cleanEnvironment(), detached: true, stdio: ['ignore', fd, fd] }
     );
     child.unref();

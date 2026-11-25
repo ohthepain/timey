@@ -5,6 +5,7 @@ import { cleanEnvironment, requireThat } from './common.mjs';
 import { readQueue } from './data.mjs';
 import { progressBasis } from './next-action.mjs';
 import { factoryEntry } from './ui-source.mjs';
+import { factoryReportFlags } from './heap-crash.mjs';
 
 export function handoffRestart(service, server) {
   const port = server.address().port;
@@ -14,7 +15,16 @@ export function handoffRestart(service, server) {
   return new Promise((resolve, reject) => {
     const child = spawn(
       process.execPath,
-      [entry, '--project', service.root, '--port', String(port), '--after-pid', String(process.pid)],
+      [
+        ...factoryReportFlags,
+        entry,
+        '--project',
+        service.root,
+        '--port',
+        String(port),
+        '--after-pid',
+        String(process.pid),
+      ],
       { cwd: process.cwd(), env: cleanEnvironment(), detached: true, stdio: ['ignore', fd, fd] }
     );
     closeSync(fd);

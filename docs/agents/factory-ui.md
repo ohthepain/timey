@@ -1311,6 +1311,20 @@ Queue reports and the registry are mutable context; their current bytes and
 original recorded digests are retained separately from technical evidence.
 Verification and commit operations continue to require current source checks.
 
+## Diagnosing a heap crash
+
+If the browser cannot reach Factory, run `pnpm factory:health --url http://127.0.0.1:4317`
+with the address from the affected tab. The command checks whether that server
+responds and reports the latest recorded Node heap crash separately. A previous
+crash can still appear after recovery.
+
+Run the server with `pnpm factory:ui` or the Factory restart controls to enable
+Node's fatal diagnostic reports. They go in `.issues/factory-ui/node-crashes/`.
+The launchers pass Node's environment and network exclusion flags before
+startup. The health command can also identify fatal heap errors
+in older restart logs. A crash report records what stopped Node. It takes
+separate evidence to identify what held the memory.
+
 ## Programmatic restart
 
 Run `pnpm factory:restart` from the selected checkout. It defaults to this checkout,

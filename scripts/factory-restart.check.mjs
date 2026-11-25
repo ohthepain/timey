@@ -9,14 +9,70 @@ import {
   writeFileSync,
   existsSync,
   readdirSync,
+  mkdtempSync,
+  rmSync,
 } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { tmpdir } from 'node:os';
 import { createServer } from 'node:net';
 import { spawnSync } from 'node:child_process';
 import { deliveryFixture } from './factory-workflow-fixture.mjs';
 import { restartFactory } from './factory-restart.mjs';
 import { startFactory, waitFor, portReleased } from './factory-deploy-transport.mjs';
 import { readRuntime } from './factory-ui/runtime.mjs';
+import { factoryReportFlags } from './factory-ui/heap-crash.mjs';
+
+test('Factory health reports a real Node heap crash while the server is offline', (t) => {
+  const project = mkdtempSync(join(tmpdir(), 'factory-heap-crash-'));
+  t.after(() => rmSync(project, { recursive: true, force: true }));
+  const recorder = new URL('./factory-ui/heap-crash.mjs', import.meta.url).href;
+  const child = spawnSync(
+    process.execPath,
+    [
+      '--max-old-space-size=16',
+      ...factoryReportFlags,
+      '--input-type=module',
+      '-e',
+      `import { recordFactoryFatalErrors } from ${JSON.stringify(recorder)};
+       recordFactoryFatalErrors(process.cwd());
+       const retained = [];
+       while (true) retained.push(Array(8000).fill(42));`,
+    ],
+    { cwd: project, env: { ...process.env, FACTORY_HEAP_TEST_SECRET: 'excluded-heap-test-secret' }, timeout: 10000 }
+  );
+  assert.match(child.stderr.toString(), /FATAL ERROR: .*JavaScript heap out of memory/);
+  const health = spawnSync(
+    process.execPath,
+    [resolve('scripts/factory-health.mjs'), '--project', project, '--url', 'http://127.0.0.1:1'],
+    { encoding: 'utf8', timeout: 10000 }
+  );
+  assert.equal(health.status, 1, health.stderr);
+  assert.match(health.stderr, /Factory is unavailable/);
+  assert.match(health.stdout, /Latest recorded Factory Node heap crash/);
+  const path = health.stdout.trim().split('\n').at(-1);
+  const report = JSON.parse(readFileSync(path, 'utf8'));
+  assert.equal(report.header.processId, child.pid);
+  assert.equal(Object.hasOwn(report, 'environmentVariables'), false);
+  assert.equal(Object.hasOwn(report.header, 'networkInterfaces'), false);
+});
+
+test('Factory health recognizes the fatal markers from earlier launcher logs', (t) => {
+  const project = mkdtempSync(join(tmpdir(), 'factory-heap-log-'));
+  t.after(() => rmSync(project, { recursive: true, force: true }));
+  const evidence = join(project, '.issues', 'evidence');
+  mkdirSync(evidence, { recursive: true });
+  const log = join(evidence, 'restart-previous.json.log');
+  for (const reason of ['Reached heap limit', 'Ineffective mark-compacts near heap limit']) {
+    writeFileSync(log, `FATAL ERROR: ${reason} Allocation failed - JavaScript heap out of memory\n`);
+    const health = spawnSync(
+      process.execPath,
+      [resolve('scripts/factory-health.mjs'), '--project', project, '--url', 'http://127.0.0.1:1'],
+      { encoding: 'utf8', timeout: 10000 }
+    );
+    assert.match(health.stdout, /Latest recorded Factory Node heap crash/);
+    assert.ok(health.stdout.includes(log));
+  }
+});
 
 async function fixture(t) {
   let serverUrl, serverPort, initialChild;
