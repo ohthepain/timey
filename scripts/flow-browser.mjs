@@ -706,7 +706,7 @@ try {
       projectSettingsBrowserChecks({ page, project, service, logs, poll, screenshot, output, candidate })
     )
   );
-  await check(assetStorageCheck, () => assetStorageBrowserChecks({ page, project, service, output, screenshot }));
+  await check(assetStorageCheck, () => assetStorageBrowserChecks({ page, output, screenshot }));
   await check(storesCheck, () => issueStoresBrowserChecks({ page, project, service, logs, poll, screenshot }));
   await check(aiTextCheck, () => aiTextBrowserChecks({ page, project, service, poll, screenshot }));
   await check(interfaceStateCheck, () => interfaceStateBrowserChecks({ page, project, service, poll, screenshot }));

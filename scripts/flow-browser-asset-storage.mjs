@@ -1,9 +1,12 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { once } from 'node:events';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { S3Client } from '@aws-sdk/client-s3';
 import { git } from './factory-ui/common.mjs';
+import { createFactoryServer } from './factory-ui/http.mjs';
+import { FactoryUI } from './factory-ui/service.mjs';
 import { projectAssetStorage } from './factory-ui/project-asset-storage.mjs';
 import { InvestigationReports } from './factory-ui/investigation-reports.mjs';
 import { openFilesRecords } from './factory-ui/stores/providers/files.mjs';
@@ -177,7 +180,7 @@ async function setup({ project, service, output }, key) {
     expected: [{ key: evidence.key, revision: evidence.revision }],
     writes: [{ key: evidence.key, value: { files: [] } }],
   });
-  return { sha256, path, ref };
+  return { sha256, ref };
 }
 
 async function checkControls(dialog, hash) {
@@ -236,8 +239,8 @@ function retainLocalContent(project, bytes) {
   return { id, unpublish: () => reports.deleteReports([id]) };
 }
 
-async function copyPublishedEvidence(page, report) {
-  await page.goto('/?projectTab=reports&report=' + report);
+async function copyPublishedEvidence(page, origin, report) {
+  await page.goto(origin + '/?projectTab=reports&report=' + report);
   const url = new URL('/api/report-evidence?report=' + report + '&item=0', page.url());
   await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], { origin: url.origin });
   await page.getByRole('button', { name: 'Copy link', exact: true }).click();
@@ -246,23 +249,39 @@ async function copyPublishedEvidence(page, report) {
   return url.pathname + url.search;
 }
 
-export async function assetStorageBrowserChecks(context) {
-  const { page, screenshot, output } = context;
+export async function assetStorageBrowserChecks({ page, screenshot, output }) {
+  const project = join(output, 'asset-storage-project');
+  mkdirSync(join(project, '.issues'), { recursive: true });
+  git(project, 'init', '-q', '-b', 'dev');
+  git(
+    project,
+    '-c',
+    'user.name=Asset Storage browser fixture',
+    '-c',
+    'user.email=fixture@example.invalid',
+    'commit',
+    '--allow-empty',
+    '-qm',
+    'Asset Storage fixture base'
+  );
+  const service = new FactoryUI(project);
+  const server = createFactoryServer(service);
   const fixture = fixtures();
   const mock = mockS3(fixture);
-  let path;
   try {
-    const seeded = await setup(context, fixture.first);
-    path = seeded.path;
-    const publication = retainLocalContent(context.project, fixture.image.body);
-    await page.goto('/?settings=asset-storage');
+    const seeded = await setup({ project, service, output }, fixture.first);
+    const publication = retainLocalContent(project, fixture.image.body);
+    server.listen(0, '127.0.0.1');
+    await once(server, 'listening');
+    const origin = 'http://127.0.0.1:' + server.address().port;
+    await page.goto(origin + '/?settings=asset-storage');
     const dialog = page.locator('#project-settings-dialog');
     await dialog.getByRole('link', { name: 'Asset Storage', exact: true }).waitFor();
     await checkControls(dialog, seeded.sha256);
     await dialog.getByText('5 recorded', { exact: true }).click();
     await screenshot('asset-storage');
     const read = async () => {
-      const response = await page.request.get('/api/project-asset-storage');
+      const response = await page.request.get(origin + '/api/project-asset-storage');
       assert.equal(response.status(), 200, await response.text());
       const result = await response.json();
       assert.equal(JSON.stringify(result).includes('Confidential'), false);
@@ -270,28 +289,28 @@ export async function assetStorageBrowserChecks(context) {
       return result.assets.find(({ name }) => name === seeded.sha256);
     };
     const before = await read();
-    const copiedEvidencePath = await copyPublishedEvidence(page, publication.id);
+    const copiedEvidencePath = await copyPublishedEvidence(page, origin, publication.id);
     const afterCopy = await read();
     assert.deepEqual(afterCopy, before);
     assert.equal(
       mock.calls.every((name) => /^(ListObjectsV2|HeadObject|GetObject)Command$/.test(name)),
       true
     );
-    const move = await context.service.projectStores.moveIssue({
+    const move = await service.projectStores.moveIssue({
       issueId: archived,
       storeId: 'metadata',
       artifactStoreId: 'secondary',
       operationId: 'inventory-checked-move-fixture',
     });
     assert.equal(move.status, 'confirmed');
-    const movedIssue = await context.service.projectStores.readIssue(archived);
+    const movedIssue = await service.projectStores.readIssue(archived);
     assert.equal(movedIssue.artifactStoreId, 'secondary');
-    const issueArtifacts = await context.service.projectStores.issueArtifacts(archived);
+    const issueArtifacts = await service.projectStores.issueArtifacts(archived);
     const readsBeforeIssueArtifact = mock.reads.length;
     assert.deepEqual(await issueArtifacts.get(seeded.ref), fixture.image.body);
     assert.equal(mock.reads[readsBeforeIssueArtifact], 'secondary-fixture');
     const alias = 'artifact-locations/' + seeded.sha256;
-    await context.service.projectStores.records.commit({
+    await service.projectStores.records.commit({
       operationId: 'inventory-location-fixture',
       expected: [{ key: alias, revision: null }],
       writes: [{ key: alias, value: { ref: { ...seeded.ref, storeId: 'secondary' } } }],
@@ -301,7 +320,7 @@ export async function assetStorageBrowserChecks(context) {
     assert.deepEqual(after, { ...before, stores: ['primary', 'secondary'] });
     assert.ok(mock.reads.slice(readsBefore).includes('secondary-fixture'));
     assert.deepEqual(fixture.copy.get(fixture.first).body, fixture.image.body);
-    await page.goto('/?settings=asset-storage');
+    await page.goto(origin + '/?settings=asset-storage');
     await dialog.getByLabel('Store', { exact: false }).selectOption('secondary');
     await dialog.getByText('1 asset · 10 bytes | 0 selected · 0 bytes').waitFor();
     assert.equal(mock.calls.filter((name) => name === 'PutObjectCommand').length, 1);
@@ -340,8 +359,13 @@ export async function assetStorageBrowserChecks(context) {
       )
     );
   } finally {
-    await page.goto('about:blank');
-    if (path) rmSync(path);
-    mock.restore();
+    try {
+      await page.goto('about:blank');
+    } finally {
+      mock.restore();
+      server.closeAllConnections();
+      if (server.listening) await new Promise((done) => server.close(done));
+      service.close();
+    }
   }
 }

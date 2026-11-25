@@ -4,6 +4,20 @@
   "suite": "flow-integration",
   "tests": [
     {
+      "name": "Asset Storage lists project S3 artifacts and retained references in Settings after issue scenarios",
+      "command": [
+        "node",
+        "scripts/flow-browser.mjs",
+        "--ci-part=1",
+        "--error-recovery",
+        "--project-issues",
+        "--master-issues",
+        "--investigative-grouping",
+        "--issue-annotations",
+        "--asset-storage"
+      ]
+    },
+    {
       "name": "managed deployment drains the real listener and checks replacement identity",
       "command": [
         "node",
@@ -105,18 +119,6 @@
     {
       "name": "Classic Factory closure can be confirmed and retried (factory-browser-close.mjs)",
       "command": ["node", "scripts/factory-browser.mjs", "--scenario=factory-browser-close.mjs"]
-    },
-    {
-      "name": "Issue annotations retain history and drive badge filters and attention order",
-      "command": [
-        "node",
-        "scripts/flow-browser.mjs",
-        "--ci-part=1",
-        "--project-issues",
-        "--master-issues",
-        "--investigative-grouping",
-        "--issue-annotations"
-      ]
     },
     {
       "name": "Run beside the Work name starts exactly one block, then Publish previews the exact description",
