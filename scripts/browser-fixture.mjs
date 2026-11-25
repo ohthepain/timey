@@ -180,6 +180,19 @@ export function browserFixture(root) {
           JSON.stringify({ mode: 'preview', project: data.root, checkout: root, revision: data.head })
         );
       if (url.pathname === '/api/issue-chat') return response.end('{"messages":[],"totalMessages":0}');
+      if (url.pathname === '/api/issue-closure') {
+        const issue = issues.find(({ id }) => id === url.searchParams.get('issue'));
+        if (issue && issue.state !== 'closed')
+          return response.end(
+            JSON.stringify({
+              issueId: issue.id,
+              state: issue.state,
+              basis: 'fixture-closure-basis',
+              closureReasons: data.closureReasons,
+              sharedQueue: false,
+            })
+          );
+      }
       if (url.pathname === '/api/fixture-update') {
         issues[1].updated = '2026-04-01';
         return response.end('{}');

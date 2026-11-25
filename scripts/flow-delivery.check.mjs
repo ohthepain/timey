@@ -208,7 +208,7 @@ for (const failure of [null, 'check', 'registry']) {
       f.source.git('commit', '-m', 'Change issue annotations');
       const head = f.source.git('rev-parse', 'HEAD');
       f.input.revision = head;
-      const plan = JSON.parse(readFileSync(new URL('../.github/flow-integration-tests.json', import.meta.url))).tests;
+      const plan = JSON.parse(readFileSync(new URL('./flow-integration-tests.json', import.meta.url))).tests;
       const { execute } = f.options;
       const actual = [];
       let evidence;

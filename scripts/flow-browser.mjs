@@ -93,7 +93,7 @@ writeFileSync(join(project, 'source.txt'), 'Original fixture source.\n');
 writeFileSync(join(project, '.gitignore'), '/.issues/\n');
 git(project, 'add', 'source.txt', '.gitignore');
 git(project, 'commit', '-qm', 'Browser fixture base');
-if (ciPart === '--ci-part=2') {
+if (ciPart === '--ci-part=2' || process.argv.includes('--worktree-update')) {
   const { lifecycle } = readProjectSettings(project);
   writeFileSync(join(project, lifecycle.path), lifecycle.content);
 }
@@ -199,6 +199,7 @@ const {
   '--polling': pollingCheck,
   '--capture-folder-issue': captureFolderIssueCheck,
   '--folder-workspace-grouping': folderWorkspaceGroupingCheck,
+  '--starting-branch': startingBranchCheck,
   '--sidebar-issue-names': sidebarIssueNamesCheck,
   '--save-request-route': saveRequestRouteCheck,
   '--add-parallel-block': addParallelBlockCheck,
@@ -208,6 +209,8 @@ const {
   '--stop-work': stopWorkCheck,
   '--retry-work': retryWorkCheck,
   '--reload-flow-history': reloadFlowHistoryCheck,
+  '--worktree-update': worktreeUpdateCheck,
+  '--publish-preview': publishPreviewCheck,
   '--timers': timersCheck,
   '--proposals': proposalsCheck,
 } = flowBrowserScenarioNames;
@@ -1402,8 +1405,10 @@ try {
     assert.equal(await page.locator('.graph-note').count(), 0);
     assert.equal(logs.execution.length, 0);
   });
-  await check('Starting point lists every branch in date order, saves selection and survives polling', async () => {
+  await check(startingBranchCheck, async () => {
+    await page.goto('/?issue=' + issueId);
     const selector = page.locator('#starting-branch');
+    await selector.waitFor();
     const data = await view();
     const options = await selector
       .locator('option')
@@ -1660,7 +1665,7 @@ try {
   const { wording: original, ...clarified } = edited;
   const savedWording =
     original +
-    '\n' +
+    '\n\n### User details\n\nKeep this exact text.\n' +
     Object.entries({ ...clarified, type: 'bug' })
       .map(([key, value]) => key + ': ' + value)
       .join('\n');
@@ -2189,7 +2194,7 @@ try {
     assert.equal(logs.execution.length, 3);
     assert.equal(logs.execution.at(-1).blockId, open.id);
   });
-  await check('Worktree menu opens the saved checkout and updates it from the remote target', async () => {
+  await check(worktreeUpdateCheck, async () => {
     await page.goto('/flow?issue=' + issueId);
     await page.locator('[data-node="__base"]').waitFor();
     const menu = page
@@ -2281,19 +2286,37 @@ try {
     assert.equal(git(checkout, 'show', 'HEAD:branch-draft.txt'), 'Preserve this local change.');
     assert.equal(git(project, 'rev-parse', 'HEAD'), base);
   });
-  await check('Publish previews the exact description and refreshes it before any remote write', async () => {
+  await check(publishPreviewCheck, async () => {
     const issue = service.flows.selected(issueId);
-    const flow = service.flows.read(issue);
+    let flow = service.flows.read(issue);
     git(project, 'remote', 'set-url', '--push', 'origin', 'git@github.com:test/fixture.git');
     const publish = flow.blocks.find((block) => block.kind === 'publish');
-    const request = flow.blocks.find((block) => block.kind === 'request');
-    request.data.wording = 'Original wording with a heading\n\n### User details\n\nKeep this exact text.';
-    request.data.fields = {
-      type: 'feature',
-      goal: 'Preview exactly',
-      requestedProof: 'Browser output',
-    };
-    await service.flows.store.save(flow, flow.revision);
+    const findAdditionalWork = (block) => block.kind === 'work' && block.id !== workId;
+    if (!flow.blocks.some(findAdditionalWork)) {
+      ({ flow } = await service.flows.action({
+        action: 'add',
+        kind: 'work',
+        afterId: workId,
+        issueId,
+        revision: flow.revision,
+      }));
+    }
+    const additionalWork = flow.blocks.find(findAdditionalWork);
+    const branchExecutor = service.flows.executor;
+    service.flows.executor = executor;
+    try {
+      await service.flows.action({ action: 'start', issueId, blockId: additionalWork.id, revision: flow.revision });
+      await service.flows.active.get(issueId)?.task;
+    } finally {
+      service.flows.executor = branchExecutor;
+    }
+    assert.equal(
+      service.flows
+        .read(issue)
+        .blocks.find(({ id }) => id === additionalWork.id)
+        .attempts.at(-1)?.status,
+      'completed'
+    );
     await page.reload();
     await selectBlock(publish.id);
     assert.equal(await page.locator('#issue-pr-menu').isVisible(), false);
@@ -2303,8 +2326,7 @@ try {
     await description.waitFor();
     assert.equal(
       await description.textContent(),
-      '## Goal\n\nPreview exactly\n\n## Requested proof\n\nBrowser output\n\n## Original wording\n\n' +
-        request.data.wording
+      `## Goal\n\n${clarified.goal}\n\n## Requested proof\n\n${clarified.requestedProof}\n\n## Original wording\n\n${savedWording}`
     );
     await screenshot('publish-preview');
     let saved = service.flows.read(issue);

@@ -1,12 +1,12 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import plan from '../../.github/flow-integration-tests.json' with { type: 'json' };
+import plan from '../flow-integration-tests.json' with { type: 'json' };
 import { digest, git, writeJson } from './common.mjs';
 import { normalizeFocusedTests } from '../verify-merge-checks.mjs';
 import { candidateBrowserScenarioSelector } from './candidate-browser-scenarios.mjs';
 
 const affectedPaths = [
-  /^\.github\/flow-integration-tests\.json$/,
+  /^scripts\/flow-integration-tests\.json$/,
   /^scripts\/(?:browser-scenario-policy|flow-browser|flow-browser-(?:issue-annotations|master-issues))\.mjs$/,
   /^scripts\/(?:shared-issue-queue|project-stores-flow|issue-annotations|flow-grouping)\.check\.mjs$/,
   /^scripts\/factory-ui\/(?:flow-(?:service|delivery|executor|publication-checks|group[^/]*|ui)\.(?:mjs|js)|flow\.(?:html|css)|index\.html)$/,
