@@ -175,6 +175,19 @@ export function browserFixture(root) {
           JSON.stringify({ ...data, issueScoped: true, issues: issues.filter((issue) => issue.id === issueId) })
         );
       }
+      if (url.pathname === '/api/issue-closure') {
+        const issue = issues.find(({ id }) => id === url.searchParams.get('issue'));
+        if (issue)
+          return response.end(
+            JSON.stringify({
+              issueId: issue.id,
+              state: issue.state,
+              basis: 'fixture-closure-basis',
+              closureReasons: data.closureReasons,
+              sharedQueue: false,
+            })
+          );
+      }
       if (url.pathname === '/api/runtime')
         return response.end(
           JSON.stringify({ mode: 'preview', project: data.root, checkout: root, revision: data.head })

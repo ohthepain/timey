@@ -72,7 +72,7 @@ p {
   margin: 0;
 }
 .workspace {
-  height: 100dvh;
+  min-height: 0;
   display: grid;
   grid-template-columns: var(--sidebar-width, 242px) minmax(380px, 1fr) var(--inspector-width, 390px);
   overflow: hidden;
@@ -144,11 +144,11 @@ html[data-project-issue-request-embed='true'] .request-embed-error {
 .project-header {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
 }
 .project-header .brand {
-  flex: 1;
   min-width: 0;
+  max-width: 100%;
 }
 .project-header > button {
   flex: none;
@@ -192,15 +192,15 @@ html[data-project-issue-request-embed='true'] .request-embed-error {
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  margin: 12px 8px 4px;
+  min-width: 0;
 }
 .project-actions-row .actions-switch {
   font-size: 10px;
 }
 .project-actions-message {
   display: block;
-  min-height: 14px;
-  margin: 0 8px 14px;
+  grid-area: status;
+  overflow-wrap: anywhere;
   color: var(--muted);
   font-size: 10px;
 }
@@ -219,9 +219,9 @@ html[data-project-issue-request-embed='true'] .request-embed-error {
   display: flex;
   align-items: center;
   gap: 8px;
-  width: 100%;
+  flex: none;
   text-align: left;
-  padding: 9px 10px;
+  padding: 5px 8px;
   border: 1px solid #3e3e3e;
   background: #292929;
   border-radius: 6px;
@@ -247,7 +247,7 @@ kbd {
   align-items: center;
   gap: 8px;
   color: #999;
-  margin: 15px 8px 25px;
+  max-width: 220px;
 }
 .search-box > span {
   font-size: 22px;
@@ -1730,7 +1730,7 @@ kbd {
   }
   .workspace {
     grid-template-columns: var(--sidebar-width, 190px) minmax(300px, 1fr);
-    grid-template-rows: 58dvh minmax(250px, 42dvh);
+    grid-template-rows: 58% minmax(250px, 42%);
     overflow: auto;
   }
   .sidebar {
@@ -1789,7 +1789,7 @@ kbd {
 @media (max-width: 540px) {
   .workspace {
     grid-template-columns: var(--sidebar-width, 124px) minmax(0, 1fr);
-    grid-template-rows: 55dvh minmax(270px, 45dvh);
+    grid-template-rows: 55% minmax(270px, 45%);
   }
   .sidebar {
     --sidebar-padding-left: 6px;
@@ -1807,9 +1807,9 @@ kbd {
   .brand-tag {
     display: none;
   }
-  .project-actions {
-    margin-left: 5px;
-    font-size: 9px;
+  .factory-header {
+    --header-column-gap: 6px;
+    --header-padding: 8px;
   }
   .new-issue {
     padding: 8px 6px;
@@ -1820,8 +1820,8 @@ kbd {
     display: none;
   }
   .search-box {
-    margin-left: 5px;
-    margin-right: 5px;
+    max-width: 160px;
+    min-width: 0;
     gap: 4px;
   }
   .search-box input {
@@ -2524,4 +2524,89 @@ kbd {
 }
 .folder-issues ul {
   padding-inline-start: var(--sub-issue-indent);
+}
+
+body {
+  display: grid;
+  height: 100dvh;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+html[data-project-issue-request-embed='true'] body {
+  display: block;
+}
+html[data-project-issue-request-embed='true'] .factory-header {
+  display: none;
+}
+.factory-header {
+  display: grid;
+  grid-template-columns: minmax(35rem, max-content) minmax(0, 1fr) auto;
+  grid-template-areas:
+    'project tabs account'
+    'tools tabs account'
+    'status status status';
+  align-items: start;
+  column-gap: var(--header-column-gap, 16px);
+  padding: 8px var(--header-padding, 14px);
+  border-bottom: 1px solid var(--line);
+  background: #1d1d1d;
+}
+.factory-header-tools {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px 16px;
+  min-width: 0;
+  grid-area: tools;
+  padding-top: 6px;
+}
+.factory-project-account {
+  grid-area: account;
+  justify-self: end;
+  position: relative;
+  width: 12rem;
+  height: 40px;
+}
+.factory-project-account:not(:has(iframe)) {
+  display: none;
+}
+.factory-project-account iframe {
+  position: absolute;
+  inset: 0 0 auto;
+  width: 100%;
+  min-height: 100%;
+  border: 0;
+  z-index: 20;
+}
+.project-actions-message:empty {
+  display: none;
+}
+.project-header {
+  grid-area: project;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.project-name {
+  max-width: min(24ch, 35vw);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (max-width: 1180px) {
+  .factory-header {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'project account'
+      'tools tools'
+      'tabs tabs'
+      'status status';
+    row-gap: 4px;
+  }
+  .factory-header-tools {
+    padding-top: 0;
+  }
+}
+@media (max-width: 540px) {
+  .factory-project-account {
+    width: min(12rem, 40vw);
+  }
 }

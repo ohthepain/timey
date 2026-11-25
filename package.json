@@ -50,6 +50,7 @@
     "test:project-home:browser": "node scripts/flow-browser.mjs --project-home",
     "test:project-discuss": "node --test scripts/interface-state.check.mjs scripts/project-discuss.check.mjs scripts/project-discuss-provider.check.mjs scripts/project-discuss-tools.check.mjs scripts/required-skills.check.mjs",
     "test:project-discuss:browser": "node scripts/flow-browser.mjs --project-discuss",
+    "test:project-account:browser": "node scripts/factory-project-account-browser.mjs",
     "test:local-notes": "node --test scripts/local-notes.check.mjs",
     "test:local-notes:browser": "node scripts/flow-browser.mjs --local-notes",
     "update:playwright": "pnpm exec playwright-cli install-browser chromium",

@@ -8,9 +8,11 @@ authorizes this documentation update; it does not authorize implementation.
 
 ## Confirmed decisions
 
-- The project workspace design has Home, Issues, Discuss, and Admin tabs in that
-  order. The Add menu remains a separate action. Home retains the current
-  activity statistics, improvement operations, and saved-session navigation.
+- Factory shows the project controls and the Home, Issues, Reports, Discuss,
+  Automate me, and Admin tabs in a shared header above the workspace columns.
+  Investigate remains a separate action. At narrow widths the tabs wrap below
+  the project controls and account. Home retains the activity statistics,
+  improvement operations, and saved-session navigation.
   The Issues tab and its relationship to folder views are defined in the
   [Project Issues tab design](project-issues.md).
 - Discuss provides project conversations about the project as a whole, distinct

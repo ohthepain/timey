@@ -25,6 +25,7 @@ import { prepareDeployment } from './deployment.mjs';
 import { serverControl } from './server-control.mjs';
 import { toggleRoute } from './route-toggle.mjs';
 import { createServer } from 'node:http';
+import { z } from 'zod';
 import { runtimeInfo } from './runtime.mjs';
 import { queueResponse } from './queue-response.mjs';
 import { readQueue } from './data.mjs';
@@ -53,6 +54,7 @@ import { SidebarFiles } from './sidebar-files.mjs';
 import { folderSettingsView, changeFolderSettings } from './folder-settings-routes.mjs';
 import { folderStrategies, changeFolderStrategy } from './folder-strategies.mjs';
 import { defaultIssueFolder } from './issue-folder-settings.mjs';
+import { projectAssetStorage } from './project-asset-storage.mjs';
 import { initializeProjectLifecycle } from './project-settings.mjs';
 import { readProjectSettingsOverview, changeProjectSettings } from './project-settings-overview.mjs';
 import { readProjectPreferences, saveProjectPreferences } from './project-preferences.mjs';
@@ -590,6 +592,9 @@ async function mutation(service, path, value, owner) {
   throw Error('Unknown operation. No action was taken.');
 }
 export function createFactoryServer(service, options = {}) {
+  const accountOrigin = projectAccountOrigin(
+    options.projectAccountOrigin ?? process.env.FACTORY_PROJECT_ACCOUNT_ORIGIN
+  );
   service.serverControl = serverControl(service, options.restart);
   service.flowChanges = createFlowChanges(service.root);
   service.sharedChatToolOptions = { flows: () => flows(service), home: () => projectHome(service) };
@@ -600,9 +605,10 @@ export function createFactoryServer(service, options = {}) {
     const projectIssueEmbed = request.method === 'GET' && request.url.startsWith('/classic?embed=project-issues');
     const projectIssueRequestEmbed =
       request.method === 'GET' && request.url.startsWith('/?embed=project-issue-request');
+    const accountFrameOrigin = frameAccountOrigin(request, projectIssueRequestEmbed, accountOrigin);
     response.setHeader(
       'Content-Security-Policy',
-      `default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors ${projectIssueEmbed || projectIssueRequestEmbed ? "'self'" : "'none'"}; base-uri 'none'; form-action 'self'`
+      `default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-ancestors ${projectIssueEmbed || projectIssueRequestEmbed ? "'self'" : "'none'"}; base-uri 'none'; form-action 'self'${accountFrameSource(accountFrameOrigin)}`
     );
     try {
       requireThat(request.headers.host === `127.0.0.1:${server.address().port}`, 'Use the local factory address.');
@@ -610,7 +616,7 @@ export function createFactoryServer(service, options = {}) {
         response.statusCode = 204;
         return response.end();
       }
-      await respond(service, request, response, token, server.address().port);
+      await respond(service, request, response, token, server.address().port, accountFrameOrigin);
     } catch (error) {
       response.statusCode = 400;
       response.setHeader('Content-Type', 'application/json');
@@ -625,8 +631,30 @@ export function createFactoryServer(service, options = {}) {
   return server;
 }
 
-async function respond(service, request, response, token, port) {
-  if (isPage(request)) return page(service, request, response, token, port);
+function projectAccountOrigin(value) {
+  if (!value) return '';
+  const parsed = z
+    .url({ protocol: /^http$/, hostname: /^127\.0\.0\.1$/ })
+    .refine((url) => URL.parse(url)?.origin === url)
+    .safeParse(value);
+  requireThat(
+    parsed.success,
+    'FACTORY_PROJECT_ACCOUNT_ORIGIN must be the origin of the trusted Timey server on http://127.0.0.1.'
+  );
+  return parsed.data;
+}
+
+function frameAccountOrigin(request, projectIssueRequestEmbed, origin) {
+  if (request.method !== 'GET' || projectIssueRequestEmbed || !/^\/(?:flow)?(?:\?|$)/.test(request.url)) return '';
+  return origin;
+}
+
+function accountFrameSource(origin) {
+  return origin ? `; frame-src 'self' ${origin}` : '';
+}
+
+async function respond(service, request, response, token, port, accountOrigin) {
+  if (isPage(request)) return page(service, request, response, token, port, accountOrigin);
   authorize(request, token, port);
   const url = new URL(request.url, 'http://127.0.0.1');
   if (request.method === 'GET' && url.pathname === '/api/flow-changes')
@@ -643,7 +671,7 @@ async function respond(service, request, response, token, port) {
   response.statusCode = 405;
   response.end(JSON.stringify({ error: 'Unsupported method' }));
 }
-function page(service, request, response, token, port) {
+function page(service, request, response, token, port, accountOrigin) {
   response.setHeader('Set-Cookie', `timey_factory_${port}=${token}; HttpOnly; SameSite=Strict; Path=/`);
   response.setHeader('Content-Type', 'text/html; charset=utf-8');
   const name = request.url.startsWith('/native-chat?')
@@ -651,7 +679,11 @@ function page(service, request, response, token, port) {
     : request.url.startsWith('/classic')
       ? 'index.html'
       : 'flow.html';
-  response.end(readFileSync(join(uiDirectory(service), name)));
+  const html = readFileSync(join(uiDirectory(service), name), 'utf8');
+  if (!accountOrigin) return response.end(html);
+  const query = new URLSearchParams({ factoryOrigin: `http://127.0.0.1:${port}` });
+  const frame = `<iframe title="Timey account" src="${accountOrigin}/auth/factory-account?${query}" height="40" sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"></iframe><script src="/project-account-ui.js" defer></script>`;
+  response.end(html.replace('<!-- project-account -->', frame));
 }
 function displayRead(url) {
   return url.pathname !== '/api/issue-store-recovery';
@@ -717,6 +749,7 @@ async function read(service, request, response, owner) {
       readProviderConfig(service.root) ? providerSettings(service.root) : { providers: [] },
     '/api/ai-providers': () => providerSettings(service.root, { initialize: service.reviewMode !== 'preview' }),
     '/api/project-settings': () => readProjectSettingsOverview(service),
+    '/api/project-asset-storage': () => projectAssetStorage(service),
     '/api/project-preferences': () => readProjectPreferences(service.root),
     '/api/project-home': () => projectHome(service).view(),
     '/api/investigation-reports': () => {
@@ -936,13 +969,16 @@ function readResource(service, request, response, owner) {
     '/flow-interactions.css': 'flow-interactions.css',
     '/branch-repair-ui.js': 'branch-repair-ui.js',
     '/project-home-ui.js': 'project-home-ui.js',
+    '/project-account-ui.js': 'project-account-ui.js',
     '/github-calls-ui.js': 'github-calls-ui.js',
     '/github-calls.css': 'github-calls.css',
     '/diagnostics-ui.js': 'diagnostics-ui.js',
     '/diagnostics.css': 'diagnostics.css',
     '/provider-settings-ui.js': 'provider-settings-ui.js',
     '/project-settings-ui.js': 'project-settings-ui.js',
+    '/project-asset-storage-ui.js': 'project-asset-storage-ui.js',
     '/project-settings.css': 'project-settings.css',
+    '/project-asset-storage.css': 'project-asset-storage.css',
     '/hotkeys-ui.js': 'hotkeys-ui.js',
     '/project-admin-ui.js': 'project-admin-ui.js',
     '/investigation-issue-ui.js': 'investigation-issue-ui.js',

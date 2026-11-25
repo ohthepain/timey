@@ -2,6 +2,7 @@
   const badgeLabels = {
     blocked: 'Blocked',
     'not-ready': 'Not ready',
+    investigate: 'Investigate',
     'needs-approval': 'Needs approval',
     'needs-git-approval': 'Needs Git approval',
     'master-issue': 'Master issue',

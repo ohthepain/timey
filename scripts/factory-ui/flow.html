@@ -11,11 +11,13 @@
     <script src="/ai-text-ui.js" defer></script>
     <link rel="stylesheet" href="/project-home.css" />
     <link rel="stylesheet" href="/project-settings.css" />
+    <link rel="stylesheet" href="/project-asset-storage.css" />
     <link rel="stylesheet" href="/github-calls.css" />
     <script src="/github-calls-ui.js" defer></script>
     <link rel="stylesheet" href="/diagnostics.css" />
     <script src="/diagnostics-ui.js" defer></script>
     <script src="/provider-settings-ui.js" defer></script>
+    <script src="/project-asset-storage-ui.js" defer></script>
     <script src="/project-settings-ui.js" defer></script>
     <link rel="stylesheet" href="/project-discuss.css" />
     <link rel="stylesheet" href="/project-reports.css" />
@@ -53,99 +55,159 @@
       if (new URLSearchParams(location.search).get('embed') === 'project-issue-request')
         document.documentElement.dataset.projectIssueRequestEmbed = 'true';
     </script>
+    <header class="factory-header" aria-label="Factory">
+      <div class="project-header">
+        <a class="brand" href="/" aria-label="Project home"
+          ><span class="brand-mark" aria-hidden="true">⌘</span> <span id="project-name">Factory</span
+          ><span class="brand-tag">FLOW</span></a
+        >
+        <button
+          class="diagnostics-trigger"
+          id="diagnostics-trigger"
+          type="button"
+          popovertarget="diagnostics-panel"
+          aria-label="Performance and usage"
+          title="Codex API requests and usage"
+        >
+          <svg
+            width="17"
+            height="17"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.7"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M2 12h5l3-7 4 14 3-7h5" />
+          </svg>
+          <span id="codex-call-total">–</span>
+        </button>
+        <button
+          class="github-calls-button"
+          id="github-calls-button"
+          popovertarget="github-calls"
+          aria-label="GitHub API calls"
+        >
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+            <path
+              d="M12 .75a11.25 11.25 0 0 0-3.56 21.92c.56.1.77-.24.77-.54v-2.09c-3.13.68-3.79-1.33-3.79-1.33-.51-1.3-1.25-1.65-1.25-1.65-1.02-.7.08-.69.08-.69 1.13.08 1.72 1.16 1.72 1.16 1.01 1.72 2.64 1.22 3.28.94.1-.73.39-1.22.71-1.5-2.5-.28-5.13-1.25-5.13-5.56 0-1.23.44-2.23 1.16-3.02-.12-.28-.5-1.43.11-2.98 0 0 .95-.3 3.09 1.15a10.77 10.77 0 0 1 5.63 0c2.15-1.45 3.09-1.15 3.09-1.15.62 1.55.23 2.7.12 2.98.72.79 1.15 1.79 1.15 3.02 0 4.32-2.63 5.27-5.14 5.55.4.35.76 1.03.76 2.08v3.09c0 .3.21.65.78.54A11.25 11.25 0 0 0 12 .75Z"
+            />
+          </svg>
+          <span id="github-call-total">–</span>
+          <span class="github-call-failed" id="github-call-failed" hidden></span>
+        </button>
+        <button class="icon-button" id="project-settings" aria-label="Factory settings" title="Factory settings">
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.5"
+            aria-hidden="true"
+          >
+            <path
+              d="m9 3-.6 2.4-2.1 1.2L4 6l-2 3.5 1.7 1.8v2.4L2 15.5 4 19l2.3-.6 2.1 1.2L9 22h4l.6-2.4 2.1-1.2 2.3.6 2-3.5-1.7-1.8v-2.4L20 9l-2-3.5-2.3.6-2.1-1.2L13 3Z"
+            />
+            <circle cx="11" cy="12.5" r="3.5" />
+          </svg>
+        </button>
+        <button type="button" class="small-button" data-project-home="investigate">Investigate</button>
+      </div>
+      <div class="factory-header-tools">
+        <div class="project-actions-row">
+          <button
+            class="project-actions"
+            id="project-actions"
+            type="button"
+            aria-haspopup="dialog"
+            aria-expanded="false"
+          >
+            0 actions running
+          </button>
+          <label class="actions-switch" id="flow-actions-switch"
+            ><input type="checkbox" role="switch" data-server-toggle /> <span>No new actions</span></label
+          >
+          <button class="small-button" id="flow-server-restart" type="button" data-server-restart>
+            Restart server
+          </button>
+        </div>
+        <button class="new-issue" id="new-issue"><span aria-hidden="true">＋</span> New issue <kbd>N</kbd></button>
+        <label class="search-box"
+          ><span aria-hidden="true">⌕</span
+          ><input id="issue-search" type="search" placeholder="Find an issue…" aria-label="Find an issue"
+        /></label>
+      </div>
+      <div class="project-workspace-tabs" role="tablist" aria-label="Project workspace">
+        <button
+          id="project-tab-home"
+          type="button"
+          role="tab"
+          aria-selected="true"
+          aria-controls="project-home-content"
+          data-project-tab="home"
+        >
+          Home
+        </button>
+        <button
+          id="project-tab-issues"
+          type="button"
+          role="tab"
+          aria-selected="false"
+          aria-controls="project-issues"
+          data-project-tab="issues"
+        >
+          Issues
+        </button>
+        <button
+          id="project-tab-reports"
+          type="button"
+          role="tab"
+          aria-selected="false"
+          aria-controls="project-reports"
+          data-project-tab="reports"
+        >
+          Reports
+        </button>
+        <button
+          id="project-tab-discuss"
+          type="button"
+          role="tab"
+          aria-selected="false"
+          aria-controls="project-discuss"
+          data-project-tab="discuss"
+        >
+          Discuss
+        </button>
+        <button
+          id="project-tab-automate"
+          type="button"
+          role="tab"
+          aria-selected="false"
+          aria-controls="project-automate"
+          data-project-tab="automate"
+        >
+          Automate me
+        </button>
+        <button
+          id="project-tab-admin"
+          type="button"
+          role="tab"
+          aria-selected="false"
+          aria-controls="project-admin"
+          data-project-tab="admin"
+        >
+          Admin
+        </button>
+      </div>
+      <div id="factory-project-account" class="factory-project-account"><!-- project-account --></div>
+      <small class="project-actions-message" data-server-message role="status"></small>
+    </header>
     <div id="app" class="workspace">
       <aside class="sidebar" aria-label="Factory sidebar">
         <div class="sidebar-content">
-          <div class="project-header">
-            <a class="brand" href="/" aria-label="Project home"
-              ><span class="brand-mark" aria-hidden="true">⌘</span> <span id="project-name">Factory</span
-              ><span class="brand-tag">FLOW</span></a
-            >
-            <button
-              class="diagnostics-trigger"
-              id="diagnostics-trigger"
-              type="button"
-              popovertarget="diagnostics-panel"
-              aria-label="Performance and usage"
-              title="Codex API requests and usage"
-            >
-              <svg
-                width="17"
-                height="17"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.7"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-                aria-hidden="true"
-              >
-                <path d="M2 12h5l3-7 4 14 3-7h5" />
-              </svg>
-              <span id="codex-call-total">–</span>
-            </button>
-            <button
-              class="github-calls-button"
-              id="github-calls-button"
-              popovertarget="github-calls"
-              aria-label="GitHub API calls"
-            >
-              <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                <path
-                  d="M12 .75a11.25 11.25 0 0 0-3.56 21.92c.56.1.77-.24.77-.54v-2.09c-3.13.68-3.79-1.33-3.79-1.33-.51-1.3-1.25-1.65-1.25-1.65-1.02-.7.08-.69.08-.69 1.13.08 1.72 1.16 1.72 1.16 1.01 1.72 2.64 1.22 3.28.94.1-.73.39-1.22.71-1.5-2.5-.28-5.13-1.25-5.13-5.56 0-1.23.44-2.23 1.16-3.02-.12-.28-.5-1.43.11-2.98 0 0 .95-.3 3.09 1.15a10.77 10.77 0 0 1 5.63 0c2.15-1.45 3.09-1.15 3.09-1.15.62 1.55.23 2.7.12 2.98.72.79 1.15 1.79 1.15 3.02 0 4.32-2.63 5.27-5.14 5.55.4.35.76 1.03.76 2.08v3.09c0 .3.21.65.78.54A11.25 11.25 0 0 0 12 .75Z"
-                />
-              </svg>
-              <span id="github-call-total">–</span>
-              <span class="github-call-failed" id="github-call-failed" hidden></span>
-            </button>
-            <button class="icon-button" id="project-settings" aria-label="Factory settings" title="Factory settings">
-              <svg
-                width="18"
-                height="18"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.5"
-                aria-hidden="true"
-              >
-                <path
-                  d="m9 3-.6 2.4-2.1 1.2L4 6l-2 3.5 1.7 1.8v2.4L2 15.5 4 19l2.3-.6 2.1 1.2L9 22h4l.6-2.4 2.1-1.2 2.3.6 2-3.5-1.7-1.8v-2.4L20 9l-2-3.5-2.3.6-2.1-1.2L13 3Z"
-                />
-                <circle cx="11" cy="12.5" r="3.5" />
-              </svg>
-            </button>
-          </div>
-          <nav class="project-home-menu" aria-label="Project menu">
-            <button type="button" data-project-home="home">Home</button>
-            <button type="button" data-project-home="issues">Issues</button>
-            <button type="button" data-project-home="discuss">Discuss</button>
-            <button type="button" data-project-home="reports">Reports</button>
-            <button type="button" data-project-home="investigate">Investigate</button>
-          </nav>
-          <div class="project-actions-row">
-            <button
-              class="project-actions"
-              id="project-actions"
-              type="button"
-              aria-haspopup="dialog"
-              aria-expanded="false"
-            >
-              0 actions running
-            </button>
-            <label class="actions-switch" id="flow-actions-switch"
-              ><input type="checkbox" role="switch" data-server-toggle /> <span>No new actions</span></label
-            >
-            <button class="small-button" id="flow-server-restart" type="button" data-server-restart>
-              Restart server
-            </button>
-          </div>
-          <small class="project-actions-message" data-server-message role="status"></small>
-
-          <button class="new-issue" id="new-issue"><span aria-hidden="true">＋</span> New issue <kbd>N</kbd></button>
-          <label class="search-box"
-            ><span aria-hidden="true">⌕</span
-            ><input id="issue-search" type="search" placeholder="Find an issue…" aria-label="Find an issue"
-          /></label>
           <section id="local-notes" class="local-notes" aria-label="Local notes">
             <header class="sidebar-folder-row">
               <button
@@ -251,6 +313,12 @@
             </form>
             <div id="issue-master" class="folder-controls" role="group" aria-label="Master issue" hidden></div>
             <ul id="issue-sub-issues" class="folder-issues issue-sub-issues" aria-label="Sub-issues" hidden></ul>
+            <form id="issue-attach-form" class="folder-controls" hidden>
+              <label for="issue-attach-choice">Sub-issue to attach</label>
+              <select id="issue-attach-choice" required aria-describedby="issue-attach-reason"></select>
+              <button class="small-button" type="submit" disabled>Attach sub-issue</button>
+              <p id="issue-attach-reason" class="muted" role="status" hidden></p>
+            </form>
             <details id="issue-annotations" class="issue-annotations">
               <summary>Annotations <span id="issue-annotation-count"></span></summary>
               <p id="issue-annotation-warning" role="status" hidden></p>
@@ -481,10 +549,17 @@
               </select>
               <label class="folder-check"><input id="folder-select-all" type="checkbox" /> Select all</label>
               <button class="small-button" type="button" data-folder-command="bulk" disabled>Start all</button>
-              <button class="small-button" type="button" data-folder-command="group" disabled>
+              <button
+                class="small-button"
+                type="button"
+                data-folder-command="group"
+                aria-describedby="folder-group-reason"
+                disabled
+              >
                 Create master issue
               </button>
             </div>
+            <p id="folder-group-reason" class="muted" role="status" hidden></p>
             <form id="folder-search-form" class="folder-controls" role="search">
               <input
                 id="folder-search-query"
@@ -582,68 +657,6 @@
         </section>
         <section id="project-home" class="project-home" aria-label="Project home" hidden>
           <p id="home-error" class="home-error" role="alert"></p>
-          <div class="project-workspace-tabs" role="tablist" aria-label="Project workspace">
-            <button
-              id="project-tab-home"
-              type="button"
-              role="tab"
-              aria-selected="true"
-              aria-controls="project-home-content"
-              data-project-tab="home"
-            >
-              Home
-            </button>
-            <button
-              id="project-tab-issues"
-              type="button"
-              role="tab"
-              aria-selected="false"
-              aria-controls="project-issues"
-              data-project-tab="issues"
-            >
-              Issues
-            </button>
-            <button
-              id="project-tab-reports"
-              type="button"
-              role="tab"
-              aria-selected="false"
-              aria-controls="project-reports"
-              data-project-tab="reports"
-            >
-              Reports
-            </button>
-            <button
-              id="project-tab-discuss"
-              type="button"
-              role="tab"
-              aria-selected="false"
-              aria-controls="project-discuss"
-              data-project-tab="discuss"
-            >
-              Discuss
-            </button>
-            <button
-              id="project-tab-automate"
-              type="button"
-              role="tab"
-              aria-selected="false"
-              aria-controls="project-automate"
-              data-project-tab="automate"
-            >
-              Automate me
-            </button>
-            <button
-              id="project-tab-admin"
-              type="button"
-              role="tab"
-              aria-selected="false"
-              aria-controls="project-admin"
-              data-project-tab="admin"
-            >
-              Admin
-            </button>
-          </div>
           <div
             id="project-home-content"
             class="project-home-content"

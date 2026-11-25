@@ -192,53 +192,29 @@ export async function openGitRecords(config, { root, projectId }) {
     if (!contention || attempt === 4) throw failure(error);
     return null;
   }
-  async function listAt(head, start) {
-    if (!head) return [];
-    const entries = (await git(['ls-tree', '-rz', head, '--', `${prefix}records/`])).split('\0').filter(Boolean);
-    if (!entries.length) return [];
-    const objects = entries.map((entry) => {
-      const match = /^100644 blob ([a-f0-9]+)\t/.exec(entry);
-      assertStore(match, 'Git store records must be regular files.');
-      return match[1];
-    });
-    const records = [];
-    for (let offset = 0; offset < objects.length; offset += 128) {
-      const batch = objects.slice(offset, offset + 128);
-      const contents = Buffer.from(await plumbing(['cat-file', '--batch'], batch.join('\n') + '\n'));
-      let cursor = 0;
-      for (const object of batch) {
-        const boundary = contents.indexOf(10, cursor);
-        const header = contents.subarray(cursor, boundary).toString().split(' ');
-        const size = Number(header[2]);
-        assertStore(
-          boundary >= cursor && header[0] === object && header[1] === 'blob' && Number.isSafeInteger(size) && size >= 0,
-          'Git returned an invalid store record batch.'
-        );
-        const end = boundary + 1 + size;
-        assertStore(contents[end] === 10, 'Git returned a truncated store record batch.');
-        const record = JSON.parse(contents.subarray(boundary + 1, end).toString());
-        if (record.key.startsWith(start)) records.push(record);
-        cursor = end + 1;
-      }
-      assertStore(cursor === contents.length, 'Git returned unexpected store record contents.');
+  async function readTree(head, directory, visit) {
+    if (!head) return;
+    const entries = (await git(['ls-tree', '-rz', '-l', head, '--', directory])).split('\0').filter(Boolean);
+    for (const batch of treeBatches(entries.map(treeEntry))) {
+      const objects = batch.map(({ object }) => object).join('\n') + '\n';
+      const contents = Buffer.from(await plumbing(['cat-file', '--batch'], objects));
+      await visitTreeBatch(contents, batch, visit);
     }
+  }
+  async function listAt(head, start, visit) {
+    const records = [];
+    await readTree(head, `${prefix}records/`, (record) => {
+      if (record.key.startsWith(start)) return visit ? visit(record) : records.push(record);
+    });
     return records.sort((a, b) => a.key.localeCompare(b.key));
   }
-  async function receiptsAt(head) {
-    if (!head) return [];
-    const paths = (await git(['ls-tree', '-rz', '--name-only', head, '--', `${prefix}operations/`]))
-      .split('\0')
-      .filter(Boolean);
+  async function receiptsAt(head, visit) {
+    const directory = `${prefix}operations/`;
     const receipts = [];
-    for (let index = 0; index < paths.length; index += 4)
-      receipts.push(
-        ...(await Promise.all(
-          paths.slice(index, index + 4).map(async (path) => ({
-            id: path.slice((prefix + 'operations/').length, -5),
-            receipt: await readPath(head, path),
-          }))
-        ))
-      );
+    await readTree(head, directory, (receipt, path) => {
+      const entry = { id: path.slice(directory.length, -5), receipt };
+      return visit ? visit(entry) : receipts.push(entry);
+    });
     return receipts;
   }
   function retainedOperationPath(id) {
@@ -282,11 +258,11 @@ export async function openGitRecords(config, { root, projectId }) {
         throw failure(error);
       }
     },
-    async retainedPayloads() {
+    async retainedPayloads({ visitRecord, visitReceipt } = {}) {
       try {
         return await withSnapshot(async (head) => ({
-          records: await listAt(head, ''),
-          receipts: await receiptsAt(head),
+          records: await listAt(head, '', visitRecord),
+          receipts: await receiptsAt(head, visitReceipt),
         }));
       } catch (error) {
         throw failure(error);
@@ -344,6 +320,45 @@ export async function openGitRecords(config, { root, projectId }) {
       });
     },
   };
+}
+
+function treeEntry(entry) {
+  const match = /^100644 blob ([a-f0-9]+) +(\d+)\t(.+)$/.exec(entry);
+  assertStore(match, 'Git store records must be regular files.');
+  return { object: match[1], bytes: Number(match[2]), path: match[3] };
+}
+
+function treeBatchFull(count, bytes) {
+  return count === 128 || (count > 0 && bytes > 16 * 1024 * 1024);
+}
+
+function* treeBatches(entries) {
+  let batch = [];
+  let bytes = 0;
+  for (const entry of entries) {
+    if (treeBatchFull(batch.length, bytes + entry.bytes)) {
+      yield batch;
+      batch = [];
+      bytes = 0;
+    }
+    batch.push(entry);
+    bytes += entry.bytes;
+  }
+  if (batch.length) yield batch;
+}
+
+async function visitTreeBatch(contents, batch, visit) {
+  let cursor = 0;
+  for (const { object, bytes, path } of batch) {
+    const header = Buffer.from(`${object} blob ${bytes}\n`);
+    const start = cursor + header.length;
+    const end = start + bytes;
+    assertStore(contents.subarray(cursor, start).equals(header), 'Git returned an invalid store record batch.');
+    assertStore(contents[end] === 10, 'Git returned a truncated store record batch.');
+    await visit(JSON.parse(contents.subarray(start, end).toString()), path);
+    cursor = end + 1;
+  }
+  assertStore(cursor === contents.length, 'Git returned unexpected store record contents.');
 }
 
 function failure(error) {

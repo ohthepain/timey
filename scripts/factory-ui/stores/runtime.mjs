@@ -41,7 +41,12 @@ function lazyProvider(runtime, kind, config) {
   let pending;
   const open = () => {
     pending ||= (async () => {
-      const options = { root: runtime.service.root, projectId: runtime.config.projectId, artifacts: runtime.artifacts };
+      const options = {
+        root: runtime.service.root,
+        projectId: runtime.config.projectId,
+        artifacts: runtime.artifacts,
+        readOnly: runtime.readOnly,
+      };
       const create = { issue: openIssueStore, records: openRecordStore, artifact: openArtifactStore }[kind];
       const provider = await create(config, options);
       runtime.opened.add(provider);
@@ -75,7 +80,7 @@ function providersFor(runtime, role, kind) {
   );
 }
 
-function buildProject(runtime, config) {
+function buildProject(runtime, config, runnerId) {
   const previous = runtime.config;
   runtime.config = config;
   const artifactStores = providersFor(runtime, 'artifact', 'artifact');
@@ -84,7 +89,7 @@ function buildProject(runtime, config) {
     runtime.artifacts = createArtifactRouter({
       active,
       stores: artifactStores,
-      records: () => runtime.project?.records,
+      records: () => runtime.inspectionRecords ?? runtime.project?.records,
     });
   else {
     for (const [id, store] of artifactStores) runtime.artifacts.stores.set(id, store);
@@ -101,6 +106,7 @@ function buildProject(runtime, config) {
   runtime.project = createProjectStores({
     root: runtime.service.root,
     projectId: config.projectId,
+    runnerId,
     records: recordStores.get(config.coordination),
     issueStores,
     artifacts: runtime.artifacts,
@@ -109,6 +115,31 @@ function buildProject(runtime, config) {
   });
   runtime.service.projectStores = runtime.project;
   runtime.service.artifacts = runtime.artifacts;
+}
+
+async function inspectionRecordAccess(records) {
+  const prefix = 'artifact-locations/';
+  try {
+    const snapshot = await records.list(prefix);
+    const locations = new Map(snapshot.map((record) => [record.key, record]));
+    return {
+      get: (key) => (key.startsWith(prefix) ? (locations.get(key) ?? null) : records.get(key)),
+    };
+  } catch {
+    return records;
+  }
+}
+
+export async function inspectProjectStores(root, config, inspect) {
+  const service = { root };
+  const runtime = { service, providers: new Map(), opened: new Set(), readOnly: true };
+  buildProject(runtime, config, randomUUID());
+  try {
+    runtime.inspectionRecords = await inspectionRecordAccess(runtime.project.records);
+    return await inspect(runtime.project);
+  } finally {
+    await closeProviders(runtime);
+  }
 }
 
 function legacyReports(root) {
@@ -470,6 +501,33 @@ function snapshotRefreshNeeded(runtime, { fresh, display, allowPending }) {
   return fresh || display || (!allowPending && needsInitialSnapshot(runtime));
 }
 
+function refreshCoversScope(runtime, scope) {
+  const pendingScope = runtime.pendingScope;
+  return runtime.pendingFresh && (!pendingScope || (scope && [...scope].every((id) => pendingScope.has(id))));
+}
+
+async function awaitStoreRefresh(runtime, pending) {
+  const wait = beginActivity('stores', 'Wait for stores', diagnosticContext(runtime.service.root));
+  try {
+    await pending;
+    wait('Completed');
+  } catch (error) {
+    wait('Failed');
+    throw error;
+  }
+}
+
+async function waitForStoreRefresh(runtime, fresh, scope) {
+  let satisfied;
+  do {
+    if (runtime.pending) countStoreRead(runtime.service.root, 'Joined refreshes');
+    const pending = synchronizeOnce(runtime, fresh, scope);
+    satisfied = !fresh || refreshCoversScope(runtime, scope);
+    await awaitStoreRefresh(runtime, pending);
+  } while (!satisfied);
+  return runtime.project;
+}
+
 export async function ensureProjectStores(
   service,
   { fresh = false, allowCached = false, allowPending = false, display = false, issueIds } = {}
@@ -501,22 +559,7 @@ export async function ensureProjectStores(
   fresh = snapshotRefreshNeeded(runtime, { fresh, display, allowPending });
   const scope = issueIds?.length && snapshot?.projectId === config.projectId ? new Set(issueIds) : null;
   try {
-    for (;;) {
-      if (runtime.pending) countStoreRead(service.root, 'Joined refreshes');
-      const pending = synchronizeOnce(runtime, fresh, scope);
-      const wait = beginActivity('stores', 'Wait for stores', diagnosticContext(service.root));
-      const pendingFresh = runtime.pendingFresh;
-      const pendingScope = runtime.pendingScope;
-      await pending.then(
-        () => wait('Completed'),
-        (error) => {
-          wait('Failed');
-          throw error;
-        }
-      );
-      const coversScope = !pendingScope || (scope && [...scope].every((id) => pendingScope.has(id)));
-      if (!fresh || (pendingFresh && coversScope)) return runtime.project;
-    }
+    return await waitForStoreRefresh(runtime, fresh, scope);
   } catch (error) {
     if (allowCached && readSnapshot(service.root)) return runtime.project;
     throw error;
@@ -540,11 +583,15 @@ export async function testStoreConnection(service, storeId) {
   return { ok: true, message: 'Store connection verified.' };
 }
 
+function closeProviders(runtime) {
+  return Promise.allSettled([...runtime.opened].map((provider) => provider.close?.()));
+}
+
 export async function closeProjectStores(service) {
   const runtime = runtimes.get(service);
   if (!runtime) return;
   runtime.unregister?.();
-  await Promise.allSettled([...runtime.opened].map((provider) => provider.close?.()));
+  await closeProviders(runtime);
   for (const evidence of runtime.evidence?.values() || []) evidence.unregister();
   runtimes.delete(service);
 }

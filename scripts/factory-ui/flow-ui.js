@@ -23,6 +23,7 @@ import { reorderedBlocks } from './flow-order.mjs';
     blockId: null,
     deleteBlockId: null,
     graphScrollIntent: null,
+    graphScrollAnchor: null,
     sidebarWidth: null,
     inspectorWidth: null,
     tab: 'details',
@@ -325,7 +326,7 @@ import { reorderedBlocks } from './flow-order.mjs';
       });
     document
       .querySelectorAll(
-        '#issue-flow-picker, #issue-settings-form, #issue-store-form, #rename-issue-form, #issue-master, #issue-sub-issues, #issue-grouping, [data-skill-picker]'
+        '#issue-flow-picker, #issue-settings-form, #issue-store-form, #rename-issue-form, #issue-master, #issue-sub-issues, #issue-attach-form, #issue-grouping, [data-skill-picker]'
       )
       .forEach((element) => {
         element.inert = true;
@@ -569,6 +570,7 @@ import { reorderedBlocks } from './flow-order.mjs';
     $('issue-grouping').inert = busy;
     $('issue-master').inert = busy;
     $('issue-sub-issues').inert = busy;
+    $('issue-attach-form').inert = busy;
     const attached = Boolean(state.view?.grouping?.master);
     const frozen = Boolean(state.view?.issue?.readOnly);
     document
@@ -730,6 +732,7 @@ import { reorderedBlocks } from './flow-order.mjs';
     state.blockId = null;
     state.deleteBlockId = null;
     state.graphScrollIntent = null;
+    state.graphScrollAnchor = null;
     state.view = null;
     state.error = '';
     const url = new URL(location.href);
@@ -984,7 +987,13 @@ import { reorderedBlocks } from './flow-order.mjs';
     const mayRun =
       folderSelection.view === 'open' &&
       selected.every((issue) => !issue.masterId && !issue.activeBlock && issue.state !== 'needs-approval');
-    enable('group', count >= 2 && mayGroup);
+    const mixed = new Set(selected.map(({ type }) => type === 'investigation')).size > 1;
+    const groupReason = $('folder-group-reason');
+    groupReason.hidden = folderSelection.view !== 'open' || !mixed;
+    groupReason.textContent = groupReason.hidden
+      ? ''
+      : 'A master cannot mix investigative and non-investigative sub-issues.';
+    enable('group', count >= 2 && mayGroup && !mixed);
     enable('plan-night', count > 0 && mayRun && !overnightActive(folderRun()) && !state.newActionsPaused);
     const visible = folderMembers();
     const selectedVisible = visible.filter((issue) => folderSelection.issueIds.has(issue.id)).length;
@@ -1206,9 +1215,47 @@ import { reorderedBlocks } from './flow-order.mjs';
     renderFolderButtons();
   }
 
+  function renderAttachChoice() {
+    const form = $('issue-attach-form');
+    const choice = $('issue-attach-choice');
+    const candidate = state.index.issues.find(({ id }) => id === choice.value);
+    const investigative = state.view?.grouping?.investigative;
+    const incompatible = candidate && (candidate.type === 'investigation') !== investigative;
+    const reason = $('issue-attach-reason');
+    reason.hidden = !incompatible;
+    reason.textContent = !incompatible
+      ? ''
+      : investigative
+        ? 'Investigation masters accept only investigative sub-issues.'
+        : 'Non-investigation masters accept only non-investigative sub-issues.';
+    form.querySelector('button').disabled = form.hidden || !candidate || incompatible;
+  }
+
+  function renderIssueAttachment(grouping) {
+    const form = $('issue-attach-form');
+    const choice = $('issue-attach-choice');
+    const detached = new Set(grouping?.detachedChildren?.map(({ id }) => id));
+    const candidates = grouping?.canAttach
+      ? state.index.issues.filter(
+          (issue) => issue.folder === state.view.flow.folder && issue.groupEligible && !detached.has(issue.id)
+        )
+      : [];
+    form.hidden = !candidates.length;
+    const selected = form.dataset.issue === state.issueId ? choice.value : '';
+    form.dataset.issue = state.issueId || '';
+    updateFolderMarkup(
+      choice,
+      '<option value="">Choose an issue</option>' +
+        candidates.map((issue) => `<option value="${escape(issue.id)}">${escape(issueLabel(issue))}</option>`).join('')
+    );
+    choice.value = candidates.some(({ id }) => id === selected) ? selected : '';
+    renderAttachChoice();
+  }
+
   function renderIssueGrouping() {
     const panel = $('issue-grouping');
     const grouping = state.view?.grouping;
+    renderIssueAttachment(grouping);
     const { master, children, reasoning, formerMasters, detachedChildren, canReattach } = grouping || {};
     const masterRow = $('issue-master');
     masterRow.hidden = !master;
@@ -1298,12 +1345,18 @@ import { reorderedBlocks } from './flow-order.mjs';
     const annotations = state.view?.annotations || [];
     const active = annotations.filter(({ cleared }) => !cleared);
     const history = annotations.filter(({ cleared }) => cleared);
+    const investigate = issue?.badges?.includes('investigate');
+    const count = active.length + Number(Boolean(investigate));
     const warning = state.view?.annotationsWarning;
     $('issue-annotation-warning').hidden = !warning;
     $('issue-annotation-warning').textContent = warning || '';
-    $('issue-annotation-count').textContent = active.length ? `(${active.length})` : '';
+    $('issue-annotation-count').textContent = count ? `(${count})` : '';
     $('issue-annotation-history').hidden = !history.length;
-    updateFolderMarkup($('active-issue-annotations'), active.map(annotationRow).join(''));
+    updateFolderMarkup(
+      $('active-issue-annotations'),
+      (investigate ? '<li data-annotation-label="investigate"><strong>Investigate</strong></li>' : '') +
+        active.map(annotationRow).join('')
+    );
     updateFolderMarkup($('cleared-issue-annotations'), history.map(annotationRow).join(''));
     $('issue-annotation-fields').disabled = state.annotationSaving;
     $('active-issue-annotations').inert = state.annotationSaving;
@@ -1905,7 +1958,10 @@ import { reorderedBlocks } from './flow-order.mjs';
       drawConnections();
       const intent = state.graphScrollIntent;
       state.graphScrollIntent = null;
-      if (intent) scrollToBlock(intent);
+      if (intent) {
+        state.graphScrollAnchor = ['center', 'end'].includes(intent.mode) ? intent : null;
+        scrollToBlock(intent);
+      }
     });
   }
 
@@ -1991,21 +2047,25 @@ import { reorderedBlocks } from './flow-order.mjs';
     }
   }
 
+  function graphNode(nodeId) {
+    return $('graph').querySelector(`[data-node="${CSS.escape(nodeId)}"]`);
+  }
+
+  function graphAlignmentOffset(mode, card, bounds, height) {
+    if (mode === 'start') return card.top - bounds.top;
+    if (mode === 'end') return card.bottom - bounds.top - height;
+    return card.top + card.height / 2 - bounds.top - height / 2;
+  }
+
   function scrollToBlock({ nodeId, mode }) {
-    const node = [...$('graph').querySelectorAll('[data-node]')].find((item) => item.dataset.node === nodeId);
+    const node = graphNode(nodeId);
     if (!node) return;
     const scroll = $('graph-scroll');
     const bounds = scroll.getBoundingClientRect();
     const card = node.getBoundingClientRect();
     if (mode !== 'reveal') {
-      const top =
-        mode === 'start'
-          ? card.top - bounds.top
-          : mode === 'end'
-            ? card.bottom - bounds.top - scroll.clientHeight
-            : card.top + card.height / 2 - bounds.top - scroll.clientHeight / 2;
       scroll.scrollBy({
-        top,
+        top: graphAlignmentOffset(mode, card, bounds, scroll.clientHeight),
         left: card.left + card.width / 2 - bounds.left - scroll.clientWidth / 2,
         behavior: 'instant',
       });
@@ -3543,6 +3603,11 @@ import { reorderedBlocks } from './flow-order.mjs';
 
   $('issue-sub-issues').addEventListener('click', handleIssueGroupingClick);
   $('issue-grouping').addEventListener('click', handleIssueGroupingClick);
+  $('issue-attach-choice').addEventListener('change', renderAttachChoice);
+  $('issue-attach-form').addEventListener('submit', (event) => {
+    event.preventDefault();
+    void action('folder-attach', { subIssueId: $('issue-attach-choice').value });
+  });
 
   $('issue-annotations').addEventListener('click', (event) => {
     if (followFolderLink(event)) return;
@@ -4403,7 +4468,27 @@ import { reorderedBlocks } from './flow-order.mjs';
     },
     { passive: true }
   );
-  new ResizeObserver(drawConnections).observe($('graph-scroll'));
+  const graphViewport = $('graph-scroll');
+  let graphViewportHeight = graphViewport.clientHeight;
+  function preserveGraphAlignment(previousHeight) {
+    const anchor = state.graphScrollAnchor;
+    if (!anchor) return;
+    const node = graphNode(anchor.nodeId);
+    if (!node) return;
+    const card = node.getBoundingClientRect();
+    const bounds = graphViewport.getBoundingClientRect();
+    if (Math.abs(graphAlignmentOffset(anchor.mode, card, bounds, previousHeight)) < 2)
+      graphViewport.scrollBy({
+        top: graphAlignmentOffset(anchor.mode, card, bounds, graphViewportHeight),
+        behavior: 'instant',
+      });
+  }
+  new ResizeObserver(() => {
+    const previousHeight = graphViewportHeight;
+    graphViewportHeight = graphViewport.clientHeight;
+    drawConnections();
+    if (previousHeight !== graphViewportHeight) preserveGraphAlignment(previousHeight);
+  }).observe(graphViewport);
   let changes;
   let changeSelection;
   let updateTimer;
