@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { setTimeout as delay, setImmediate } from 'node:timers/promises';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { captureFixture } from './factory-capture-fixture.mjs';
 import { startFactoryHttp } from './factory-http-fixture.mjs';
 import { ensureProjectStores } from './factory-ui/stores/runtime.mjs';
@@ -176,6 +178,39 @@ async function closureDialogFixture(t) {
   });
   return { dom, panel, approve, error, ui };
 }
+
+test('Close shows attached and removed sub-issues from the saved master', async (t) => {
+  const { service, root } = captureFixture(t);
+  const report = join(root, '.issues', '20261025-existing.md');
+  const group = [
+    'issue_group:',
+    '  children:',
+    '    - id: 20261025-attached',
+    '      title: Keep this issue attached',
+    '      requestedProof: Show the behavior.',
+    '    - id: 20261025-removed',
+    '      title: Remove <this> issue',
+    '      requestedProof: Show the behavior.',
+    '      detachedAt: 2026-11-25T00:00:00Z',
+    '',
+  ].join('\n');
+  writeFileSync(report, readFileSync(report, 'utf8').replace('autonomy: ask\n', 'autonomy: ask\n' + group));
+  for (const id of ['20261025-attached', '20261025-removed']) {
+    writeFileSync(join(root, '.issues', id + '.md'), `---\nid: ${id}\ntitle: ${id}\nstate: backlog\n---\n`);
+  }
+  const { url, cookie } = await startFactoryHttp(t, service);
+  const { panel, ui } = await closureDialogFixture(t);
+  const response = await fetch(url + '/api/issue-closure?issue=20261025-existing', { headers: { cookie } });
+  assert.equal(response.status, 200, await response.clone().text());
+  const context = await response.json();
+  assert.equal(context.subIssues?.length, 2, JSON.stringify(context.subIssues));
+  await ui.open(() => context);
+  assert.deepEqual(
+    [...panel.querySelectorAll('li')].map((row) => row.textContent.replace(/^#\d+ /, '')),
+    ['Keep this issue attached · Attached', 'Remove <this> issue · Removed']
+  );
+  assert.equal(Object.hasOwn(ui.decision(), 'subIssues'), false);
+});
 
 test('Close shows loading feedback until context is ready and keeps confirmation guarded on failure', async (t) => {
   const { panel, approve, error, ui } = await closureDialogFixture(t);

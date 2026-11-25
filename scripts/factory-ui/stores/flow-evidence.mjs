@@ -21,10 +21,13 @@ async function retainAttemptEvidence(stores, owner, attempt) {
   });
   const key = 'evidence/' + owner.issueId;
   const previous = await stores.coordination.get(key);
+  const retained = previous?.value ?? {};
+  const { files = [], gaps = [] } = retained;
   const manifest = {
+    ...retained,
     ...incoming,
-    files: unique([...(previous?.value.files || []), ...incoming.files], (file) => file.path + '\0' + file.sha256),
-    gaps: unique([...(previous?.value.gaps || []), ...incoming.gaps], (gap) => JSON.stringify(gap)),
+    files: unique([...files, ...incoming.files], (file) => file.path + '\0' + file.sha256),
+    gaps: unique([...gaps, ...incoming.gaps], (gap) => JSON.stringify(gap)),
   };
   if (previous && inputDigest(previous.value) === inputDigest(manifest)) return incoming.gaps;
   const claim = await stores.coordination.owned(owner);

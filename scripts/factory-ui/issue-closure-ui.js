@@ -34,7 +34,7 @@
       approve.disabled = true;
       dialog.showModal();
       try {
-        const { closureReasons, sharedQueue, ...decision } = await getContext();
+        const { closureReasons, sharedQueue, subIssues, ...decision } = await getContext();
         if (!showing(session)) return;
         session.decision = decision;
         if (decision.cleanupOnly) {
@@ -42,6 +42,7 @@
           approve.textContent = 'Run Cleanup';
         }
         initializeFields(session, closureReasons, sharedQueue);
+        session.heading.insertAdjacentHTML('afterend', subIssueSummary(subIssues));
       } catch (failure) {
         showError(session, failure);
       } finally {
@@ -194,6 +195,17 @@
   };
 
   const sharedExplanation = 'The factory prepares a queue PR for the report. Local work is preserved.';
+
+  function subIssueSummary(subIssues) {
+    if (!subIssues?.length) return '';
+    const rows = subIssues
+      .map(({ title, number, removed }) => {
+        const label = number == null ? title : '#' + number + ' ' + title;
+        return `<li>${esc(label)} · ${removed ? 'Removed' : 'Attached'}</li>`;
+      })
+      .join('');
+    return `<section aria-labelledby="closure-sub-issues"><h3 id="closure-sub-issues">Sub-issues</h3><p>Closing as Fixed also closes the attached sub-issues.</p><ul>${rows}</ul></section>`;
+  }
 
   function reasonOption(choice) {
     const selected = choice.id === 'fixed' ? ' selected' : '';

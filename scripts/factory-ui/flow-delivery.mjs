@@ -17,6 +17,8 @@ import { StrategyProvider } from './strategy-provider.mjs';
 import { queueReportPaths } from './shared-issue-config.mjs';
 import { recheckedGroupProof, requireGroupProof } from './flow-group-proof.mjs';
 import { evidencePath } from './stores/evidence.mjs';
+import { hydrateProjectEvidence } from './stores/runtime.mjs';
+import { groupChildren } from './issue-group.mjs';
 import { fetchIssueTarget } from './flow-update-branch.mjs';
 
 const execute = promisify(execFile);
@@ -466,7 +468,8 @@ export async function flowClosureArtifact(service, ctx, workspace, folder, optio
   requireThat(pr, 'No PR exists for this issue branch. Publish and merge its PR before closing.');
   const delivered = await provider.inspectExternalDelivery(pr.number, { requiredChecksOnly: true });
   assertMatchingDelivery(ctx.flow, workspace, pr.number, delivered, merged);
-  return recordClosureDelivery(ctx, workspace, folder, delivered, merged?.verification);
+  const [retained] = groupChildren(ctx.issue).length ? await hydrateProjectEvidence(service, ctx.issue.id) : [];
+  return recordClosureDelivery(ctx, workspace, folder, delivered, merged?.verification, retained?.manifest.groupProof);
 }
 
 function assertMatchingDelivery(flow, workspace, number, delivered, merged) {
@@ -486,7 +489,7 @@ function assertMatchingDelivery(flow, workspace, number, delivered, merged) {
   );
 }
 
-function recordClosureDelivery(ctx, workspace, folder, delivered, verification) {
+function recordClosureDelivery(ctx, workspace, folder, delivered, verification, retained) {
   const candidate = {
     head: delivered.head,
     tree: git(workspace.checkout, 'rev-parse', delivered.head + '^{tree}'),
@@ -498,7 +501,8 @@ function recordClosureDelivery(ctx, workspace, folder, delivered, verification) 
     candidate.tree,
     ctx.block,
     ctx.evidenceRoot,
-    ctx.issue.issue_group ? recheckedGroupProof(workspace.checkout, candidate, ctx.evidenceRoot) : undefined
+    ctx.issue.issue_group ? recheckedGroupProof(workspace.checkout, candidate, ctx.evidenceRoot) : undefined,
+    retained?.head === candidate.head && retained.tree === candidate.tree ? retained.file : undefined
   );
   ctx.signal.throwIfAborted();
   const path = join(folder, 'merged-delivery.json');

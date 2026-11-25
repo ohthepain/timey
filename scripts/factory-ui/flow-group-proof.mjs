@@ -65,10 +65,13 @@ export function groupProofRows(flow, tree, block = {}, root, rechecked) {
   );
 }
 
-export function requireGroupProof(issue, flow, candidateTree, block, root, rechecked) {
+export function requireGroupProof(issue, flow, candidateTree, block, root, rechecked, retainedProof) {
   const children = groupChildren(issue);
   if (!children.length) return [];
   const proofs = groupProofRows(flow, candidateTree, block, root, rechecked);
+  for (const entry of readProof(retainedProof, root)) {
+    proofs.set(entry.id, { ...entry, file: retainedProof });
+  }
   const missing = children.filter(({ id }) => proofs.get(id)?.status !== 'passed');
   requireThat(
     !missing.length,

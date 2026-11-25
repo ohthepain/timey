@@ -1042,6 +1042,39 @@ test('Update Branch leaves publication of the updated candidate to Merge', async
   assert.ok(f.observations.some(({ operation }) => operation === 'push'));
 });
 
+test('Merge requires passing proof on the candidate for attached sub-issues only', async (t) => {
+  const f = mergeFixture(t);
+  await f.run('understand');
+  f.issue.issue_group = {
+    children: [
+      { id: 'attached', title: 'Attached issue' },
+      { id: 'detached', title: 'Detached issue', detachedAt: '2026-11-25T00:00:00Z' },
+    ],
+  };
+  const path = join(f.root, '.issues', 'child-proof.json');
+  const proof = JSON.stringify([{ id: 'attached', status: 'passed', observation: 'The requested check passed.' }]);
+  writeFileSync(path, proof);
+  const work = {
+    id: 'work',
+    kind: 'work',
+    after: [],
+    attempts: [
+      {
+        status: 'completed',
+        result: { tree: 'older tree' },
+        artifacts: { files: { subIssueProof: { path, sha256: digest(proof) } } },
+      },
+    ],
+  };
+  f.flow.blocks.push(work);
+  await assert.rejects(f.run('merge', { after: [work.id] }), /passing proof for these sub-issues: Attached issue\./);
+  assert.ok(!f.observations.some(({ operation }) => operation === 'merge'));
+
+  work.attempts[0].result.tree = f.git('rev-parse', 'HEAD^{tree}');
+  const result = await f.run('merge', { after: [work.id] });
+  assert.equal(result.result.revision, 'actual-merge');
+});
+
 function approvalAttempt(result) {
   return { id: 'approval-attempt', status: 'blocked', result: result.result };
 }

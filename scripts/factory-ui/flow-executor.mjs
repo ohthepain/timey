@@ -2,6 +2,8 @@ import { blockExecutionSettings } from './block-models.mjs';
 import { agentModel, sessionProvider } from './agent-models.mjs';
 import { modelAvailability } from './provider-runtime.mjs';
 import { restoreSourceCheckpoint } from './stores/source-checkpoints.mjs';
+import { hydrateProjectEvidence } from './stores/runtime.mjs';
+import { groupChildren } from './issue-group.mjs';
 import { createWorkProgress } from './work-progress.mjs';
 import { executionPermissionInstructions } from './execution-permissions.mjs';
 import { BlockCatalog } from './block-catalog.mjs';
@@ -160,6 +162,9 @@ export function createFlowExecutor(service, options = {}) {
             await workspaceFor(service, context),
             evidenceDirectory(service, context)
           );
+        if (context.block.kind === 'merge' && groupChildren(context.issue).length) {
+          await hydrateProjectEvidence(service, context.issue.id);
+        }
         const result = !command
           ? await runModel(service, context, owned, runtime)
           : await runReconciledCommand(scopedService, context, {

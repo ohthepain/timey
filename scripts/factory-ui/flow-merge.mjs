@@ -17,6 +17,7 @@ import { blockerKey, permissionFailure, repairableBlocker } from './strategy-rep
 import { fetchIssueTarget, mergeIssueTarget } from './flow-update-branch.mjs';
 import { queueReportPaths } from './shared-issue-config.mjs';
 import { observeMergeWait, startMergeWait } from './flow-merge-wait.mjs';
+import { requireGroupProof } from './flow-group-proof.mjs';
 
 const headOf = (workspace) => git(workspace.checkout, 'rev-parse', 'HEAD');
 const treeOf = (workspace) => git(workspace.checkout, 'rev-parse', 'HEAD^{tree}');
@@ -155,9 +156,16 @@ async function attemptRepair(error, operation) {
   }
 }
 
+function requireMergeGroupProof(ctx, workspace, root) {
+  if (ctx.issue.issue_group) {
+    requireGroupProof(ctx.issue, ctx.flow, treeOf(workspace), ctx.block, root);
+  }
+}
+
 async function mergeWhenReady(service, ctx, workspace, provider, pr, readiness, state) {
   const { head, target } = readiness;
   const confirmation = mergeConfirmation(ctx, provider, pr, readiness);
+  requireMergeGroupProof(ctx, workspace, service.root);
   requireThat(
     !service.sharedIssues || !git(workspace.checkout, 'diff', '--name-only', target, head, '--', ...queueReportPaths()),
     'Shared issue reports require a separate queue PR.'

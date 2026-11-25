@@ -52,7 +52,10 @@ Offer **Continue on the master** and **Detach and fix separately**. Recommend th
 next action based on what failed.
 
 The original reports remain as sub-issues and cannot start independent work.
+Merge requires passing proof for every attached sub-issue on the final PR
+candidate. A detached sub-issue does not participate in the merge check.
 Before accepting the master as Fixed, require proof for each attached sub-issue.
+The Close dialog lists both attached and removed sub-issues.
 Required human checks follow their sub-issues to the master and still require
 the person's own observations or judgment.
 Detach any issue whose request remains unmet. The user's acceptance of the master
