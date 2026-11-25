@@ -40,7 +40,8 @@ function checkFactoryBrowserTests([scenario = '', extra], reject) {
 }
 
 function checkPnpmScript([script = '', extra], reject) {
-  if (!/^test:[\w:-]+$/.test(script)) reject(2, 'Use a named pnpm test script starting with test:.');
+  if (!/^(?:typecheck|test:[\w:-]+)$/.test(script))
+    reject(2, 'Use typecheck or a named pnpm test script starting with test:.');
   if (aggregateScripts.has(script)) reject(2, 'Aggregate suites are reserved for full verification.');
   if (extra !== undefined) reject(3, 'Pass only the focused pnpm test script name.');
 }

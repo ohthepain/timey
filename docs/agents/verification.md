@@ -488,7 +488,7 @@ that PR head, up to 30 minutes from the start of the wait. Factory refreshes the
 PR and its checks once more when the deadline expires. Pending checks still
 block merge. The timeout does not cancel GitHub jobs.
 
-For a PR repairing failed CI tests, record the exact regression commands in
+For a PR repairing failed CI tests or typechecking, record the exact commands in
 `.github/pr-repair-tests.json`. `pnpm run test:pr-repair` runs them by name and
 stops at the first failure. CI runs this plan before broad verification while
 the manifest differs from the PR base; after it merges, unchanged plans are

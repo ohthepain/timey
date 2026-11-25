@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { createMiddleware } from '@tanstack/react-start';
-import { setResponseHeaders } from '@tanstack/react-start/server';
+import { setResponseHeader } from '@tanstack/react-start/server';
 import { useEffect, useRef } from 'react';
 import { z } from 'zod';
 import { AuthScreen } from '~/components/auth/AuthScreen';
@@ -19,10 +19,8 @@ const accountFrameHeaders = createMiddleware().server(({ request, next }) => {
   const url = new URL(request.url);
   if (url.pathname === '/auth/factory-account') {
     const parent = factoryOrigin.parse(url.searchParams.get('factoryOrigin'));
-    setResponseHeaders({
-      'Cache-Control': 'no-store',
-      'Content-Security-Policy': `frame-ancestors ${parent || "'none'"}`,
-    });
+    setResponseHeader('Cache-Control', 'no-store');
+    setResponseHeader('Content-Security-Policy', `frame-ancestors ${parent || "'none'"}`);
   }
   return next();
 });
