@@ -27,6 +27,8 @@ of unreadable records and receipts. Keep every existing asset
 during the review, including assets with a zero recorded count.
 The inventory scans Git and Postgres metadata in batches and retains only the
 information needed to count and describe references.
+Each scan reads the recorded artifact locations once when the coordination
+store is available.
 
 The inventory supports filtering, sorting, page selection, and filtered and
 selected byte totals. A provider failure is visible alongside results from

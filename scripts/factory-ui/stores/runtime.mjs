@@ -89,7 +89,7 @@ function buildProject(runtime, config, runnerId) {
     runtime.artifacts = createArtifactRouter({
       active,
       stores: artifactStores,
-      records: () => runtime.project?.records,
+      records: () => runtime.inspectionRecords ?? runtime.project?.records,
     });
   else {
     for (const [id, store] of artifactStores) runtime.artifacts.stores.set(id, store);
@@ -117,11 +117,25 @@ function buildProject(runtime, config, runnerId) {
   runtime.service.artifacts = runtime.artifacts;
 }
 
+async function inspectionRecordAccess(records) {
+  const prefix = 'artifact-locations/';
+  try {
+    const snapshot = await records.list(prefix);
+    const locations = new Map(snapshot.map((record) => [record.key, record]));
+    return {
+      get: (key) => (key.startsWith(prefix) ? (locations.get(key) ?? null) : records.get(key)),
+    };
+  } catch {
+    return records;
+  }
+}
+
 export async function inspectProjectStores(root, config, inspect) {
   const service = { root };
   const runtime = { service, providers: new Map(), opened: new Set(), readOnly: true };
   buildProject(runtime, config, randomUUID());
   try {
+    runtime.inspectionRecords = await inspectionRecordAccess(runtime.project.records);
     return await inspect(runtime.project);
   } finally {
     await closeProviders(runtime);

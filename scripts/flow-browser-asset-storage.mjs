@@ -46,6 +46,7 @@ function listObjects(contents, Prefix, ContinuationToken) {
 function mockS3({ objects, copy }) {
   const original = S3Client.prototype.send;
   const calls = [];
+  const reads = [];
   const buckets = new Map([
     ['secondary-fixture', copy],
     ['primary-fixture', objects],
@@ -72,12 +73,14 @@ function mockS3({ objects, copy }) {
     const name = command.constructor.name;
     const { Bucket } = command.input;
     calls.push(name);
+    if (name === 'GetObjectCommand') reads.push(Bucket);
     if (!buckets.has(Bucket)) throw Error('Fixture store unavailable');
     assert.ok(Object.hasOwn(handlers, name), 'Unexpected S3 command ' + name);
     return handlers[name](buckets.get(Bucket), command.input);
   };
   return {
     calls,
+    reads,
     restore: () => {
       S3Client.prototype.send = original;
     },
@@ -173,7 +176,7 @@ async function setup({ project, service, output }, key) {
     expected: [{ key: evidence.key, revision: evidence.revision }],
     writes: [{ key: evidence.key, value: { files: [] } }],
   });
-  return { sha256, path };
+  return { sha256, path, ref };
 }
 
 async function checkControls(dialog, hash) {
@@ -234,8 +237,16 @@ export async function assetStorageBrowserChecks(context) {
       operationId: 'inventory-checked-move-fixture',
     });
     assert.equal(move.status, 'confirmed');
+    const alias = 'artifact-locations/' + seeded.sha256;
+    await context.service.projectStores.records.commit({
+      operationId: 'inventory-location-fixture',
+      expected: [{ key: alias, revision: null }],
+      writes: [{ key: alias, value: { ref: { ...seeded.ref, storeId: 'secondary' } } }],
+    });
+    const readsBefore = mock.reads.length;
     const after = await read();
     assert.deepEqual(after, { ...before, stores: ['primary', 'secondary'] });
+    assert.ok(mock.reads.slice(readsBefore).includes('secondary-fixture'));
     assert.deepEqual(fixture.copy.get(fixture.first).body, fixture.image.body);
     await page.reload();
     await dialog.getByLabel('Store', { exact: false }).selectOption('secondary');
@@ -254,6 +265,7 @@ export async function assetStorageBrowserChecks(context) {
             readableReferencesRetainedWithMissingPayload: true,
             unreadablePayloadReferenceCountedOnce: true,
             retainedInventoryWhenAnObjectDisappeared: true,
+            retainedPayloadReadsFollowedRecordedLocation: true,
             listedAssets: 26,
             filteredBytes: 585,
             selectedBytes: 585,
