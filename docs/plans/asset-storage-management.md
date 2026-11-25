@@ -89,8 +89,10 @@ revision or chat message counts until that record is permanently removed.
 ## Published links and dependent files
 
 Publishing through Timey adds a reference that lasts until unpublishing.
-Copying a URL leaves the reference count unchanged. A copied URL works only
-while another reference keeps the asset alive.
+In a published investigation report, **Copy link** copies the URL for a
+verified retained evidence file. Copying a URL leaves the reference count
+unchanged. A copied URL works only while another reference keeps the asset
+alive.
 
 In the first release, register each dependent file against the content that
 uses it. Treat a bundle that must move and delete together as one asset. Defer

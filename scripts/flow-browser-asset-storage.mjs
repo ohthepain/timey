@@ -233,7 +233,17 @@ function retainLocalContent(project, bytes) {
     report,
     evidence: [evidence],
   });
-  return () => reports.deleteReports([id]);
+  return { id, unpublish: () => reports.deleteReports([id]) };
+}
+
+async function copyPublishedEvidence(page, report) {
+  await page.goto('/?projectTab=reports&report=' + report);
+  const url = new URL('/api/report-evidence?report=' + report + '&item=0', page.url());
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], { origin: url.origin });
+  await page.getByRole('button', { name: 'Copy link', exact: true }).click();
+  await page.getByText('Link copied.', { exact: true }).waitFor();
+  assert.equal(await page.evaluate(() => navigator.clipboard.readText()), url.href);
+  return url.pathname + url.search;
 }
 
 export async function assetStorageBrowserChecks(context) {
@@ -244,7 +254,7 @@ export async function assetStorageBrowserChecks(context) {
   try {
     const seeded = await setup(context, fixture.first);
     path = seeded.path;
-    const unpublish = retainLocalContent(context.project, fixture.image.body);
+    const publication = retainLocalContent(context.project, fixture.image.body);
     await page.goto('/?settings=asset-storage');
     const dialog = page.locator('#project-settings-dialog');
     await dialog.getByRole('link', { name: 'Asset Storage', exact: true }).waitFor();
@@ -260,6 +270,9 @@ export async function assetStorageBrowserChecks(context) {
       return result.assets.find(({ name }) => name === seeded.sha256);
     };
     const before = await read();
+    const copiedEvidencePath = await copyPublishedEvidence(page, publication.id);
+    const afterCopy = await read();
+    assert.deepEqual(afterCopy, before);
     assert.equal(
       mock.calls.every((name) => /^(ListObjectsV2|HeadObject|GetObject)Command$/.test(name)),
       true
@@ -282,11 +295,11 @@ export async function assetStorageBrowserChecks(context) {
     assert.deepEqual(after, { ...before, stores: ['primary', 'secondary'] });
     assert.ok(mock.reads.slice(readsBefore).includes('secondary-fixture'));
     assert.deepEqual(fixture.copy.get(fixture.first).body, fixture.image.body);
-    await page.reload();
+    await page.goto('/?settings=asset-storage');
     await dialog.getByLabel('Store', { exact: false }).selectOption('secondary');
     await dialog.getByText('1 asset · 10 bytes | 0 selected · 0 bytes').waitFor();
     assert.equal(mock.calls.filter((name) => name === 'PutObjectCommand').length, 1);
-    unpublish();
+    publication.unpublish();
     const afterUnpublish = await read();
     assert.deepEqual(
       afterUnpublish.references,
@@ -299,6 +312,8 @@ export async function assetStorageBrowserChecks(context) {
           provider: 'S3 SDK fixture',
           observed: {
             before,
+            copiedEvidencePath,
+            afterCopy,
             after,
             afterUnpublish,
             coldLoadMetadataWrites: 0,
