@@ -2,7 +2,8 @@
 
 Timey issue #217 tracks this work. The user confirmed the initial design on
 2026-11-24 and approved the remaining design decisions on 2026-11-25.
-Implementation requires separate approval.
+Starting Work authorizes implementation within this design. Review the
+read-only inventory before enabling deletion for existing project data.
 
 ## Confirmed behavior
 

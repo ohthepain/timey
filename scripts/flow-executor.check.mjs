@@ -44,8 +44,8 @@ function fixture(t, options = {}) {
       retain({ status: 'ready', threadId: 'the-one-issue-chat' });
       return 'the-one-issue-chat';
     },
-    async resume(id, cwd, sandbox) {
-      calls.push({ method: 'resume', id, cwd, sandbox });
+    async resume(id, cwd, sandbox, instructions) {
+      calls.push({ method: 'resume', id, cwd, sandbox, instructions });
     },
     async call(method, params) {
       calls.push({ method, params });
@@ -340,6 +340,39 @@ test('Work and Retry distinguish implementation from an earlier idle issue captu
     assert.deepEqual(input.details, details);
   }
   assert.equal(f.calls.filter(({ method }) => method === 'resume').length, 1);
+});
+
+test('Work and Retry authorize implementation from the saved Asset Storage design', async (t) => {
+  const f = fixture(t);
+  const details = [
+    { key: 'goal', value: 'Add Asset Storage management' },
+    {
+      key: 'report',
+      value:
+        'Finish the design interview, record the remaining decisions in the plan, and obtain the user’s confirmation of shared understanding and explicit approval before implementing or enabling deletion behavior.',
+    },
+    {
+      key: 'constraints',
+      value: 'Enabling deletion for existing project data requires explicit approval after the review.',
+    },
+  ];
+  await f.run('work', { details });
+  await f.run('work', { details, continuing: true });
+
+  const sessions = f.calls.filter(({ method }) => method === 'start' || method === 'resume');
+  assert.deepEqual(
+    sessions.map(({ method }) => method),
+    ['start', 'resume']
+  );
+  for (const { instructions } of sessions) {
+    assert.match(instructions, /Running Work authorizes implementation within the saved issue scope/);
+    assert.match(instructions, /generic design or implementation sign-off/);
+    assert.match(instructions, /Preserve explicit checkpoints for specific operations/);
+    assert.match(instructions, /Continue with independent work/);
+  }
+  for (const turn of f.calls.filter(({ method }) => method === 'turn')) {
+    assert.deepEqual(JSON.parse(turn.prompt).details, details);
+  }
 });
 
 test('a new checkout uses the selected starting commit and retains it when the source branch moves', async (t) => {
