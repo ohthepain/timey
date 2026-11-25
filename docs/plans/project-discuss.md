@@ -25,7 +25,8 @@ authorizes this documentation update; it does not authorize implementation.
 - Issues created from Discuss describe the agreed future work and its acceptance
   criteria. Instructions to create only and leave the issue idle apply to the
   creation operation and stay in the conversation and receipt. Saved descriptions
-  retain product constraints, prerequisites and required human approvals.
+  retain product constraints and specific decisions or operations reserved for
+  the person. Starting Work authorizes implementation within the saved scope.
 - Discuss uses the destination folder’s inherited Issue storage profile for new
   issues unless the person specifies a profile. It can move idle issues to an
   existing folder and create an idle master issue from a grouping preview. Moving

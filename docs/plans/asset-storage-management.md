@@ -2,8 +2,8 @@
 
 Timey issue #217 tracks this work. The user confirmed the initial design on
 2026-11-24 and approved the remaining design decisions on 2026-11-25.
-Paul approved implementation of issue #217. Enabling deletion for existing
-project data requires explicit approval after reviewing real project data.
+Paul approved implementation of issue #217. Starting Work authorizes
+implementation within this design.
 
 ## Read-only release
 
@@ -38,12 +38,34 @@ references that make up its reference count.
 Each asset has a permanent identity independent of its location and public URL.
 Existing references continue to identify the same asset after a move.
 
+## First release and deletion approval
+
+Issue #217 covers the full Asset Storage feature, including personal saves and
+both kinds of deletion. Acceptance testing must let the user observe real
+stored assets being deleted in a regular project with configured S3 storage.
+Use newly uploaded disposable assets for the test. Remove the last verified
+reference to one asset to exercise automatic deletion. In Settings, force-delete
+another asset that a report still references. Verify removal from S3 in both
+cases and confirm that the report remains readable and displays **Asset deleted**.
+
+Release the Settings inventory and reference counts as a read-only first
+release for existing project data. Before enabling automatic or forced deletion
+for that data, review the inventory and reference counts in the real project.
+Include archived issues, older chat messages, published links, and moved assets
+in that review.
+Enabling deletion for existing project data requires explicit approval after
+the review.
+
 ## Existing assets and retained history
 
 Inventory existing project-owned assets and verify their references before
 enabling automatic deletion. If a store or source record is unavailable for
 verification, keep the affected assets and show their reference status as
 unverified.
+
+Keep existing project-owned assets discovered with zero verified references
+visible for manual review. Automatic deletion begins when Timey observes the
+removal of an asset's last verified reference.
 
 Retained content keeps its references, including archived issues, content in the
 icebox, older chat messages, and retained report revisions. A link in a retained
@@ -79,6 +101,14 @@ Users with permission to manage project storage can force-delete referenced
 assets. The confirmation shows the selected asset count, total size, and which
 issue, report, or chat references will show **Asset deleted**. Include personal
 saves in the impact count.
+
+Block forced deletion while an asset is required to resume or recover work or
+to complete verification. Explain which operation depends on it and what must
+finish before it can be deleted.
+
+A person with force-delete permission can delete an asset with references to
+content they cannot read. Include restricted references in the impact count and
+hide their titles, links, and authors in the inventory and confirmation.
 
 Keep the referring issues, reports, and chats. They show **Asset deleted** in
 place of the asset. Keep a deletion record so retries and surviving references

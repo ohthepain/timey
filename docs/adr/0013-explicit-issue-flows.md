@@ -120,6 +120,10 @@ An earlier instruction to capture an idle issue is satisfied by creation;
 Work implements the underlying change and checks its implementation acceptance
 criteria while preserving product constraints and human decision boundaries.
 Historical wording and clarified fields remain available unchanged.
+Running Work authorizes in-scope implementation. The executor supplies this
+authority on new and resumed sessions even when older reports carry generic
+design or implementation sign-off. Specific reserved decisions, operation
+checkpoints and native permissions still govern affected work.
 Work formats issue changes and checks Fallow before running focused tests. It
 selects relevant tests from the changed behavior and Requested Proof, and adds a
 focused test when existing tests cannot demonstrate the behavior. A failure that

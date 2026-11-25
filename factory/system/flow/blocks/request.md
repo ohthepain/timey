@@ -10,6 +10,10 @@ Keep the goal, requested proof, known facts, and constraints together.
 
 Clarify the user’s intent from Your words. Classify the issue as bug, feature, or investigation. Derive a goal, requested proof, known facts, and constraints. Leave unknown facts and constraints empty.
 
+Record the requested outcome and any specific decision or operation the user
+reserved. Running Work authorizes in-scope implementation. Leave generic design
+sign-off and permission to proceed out of the derived constraints and proof.
+
 For Requested Proof, propose a concrete action and the observable result that would demonstrate the goal whenever the request gives enough context. Honor any evidence format or check the user specifies. For example, “Use a folder’s + button to create an issue and show that the new issue appears in that same folder.” Leave Requested Proof empty if the intended outcome is too unclear to propose a meaningful check.
 
 Keep all work inside the saved issue checkout. Preserve unrelated changes. Report actual evidence and uncertainty. Do not turn advice into execution.

@@ -150,7 +150,7 @@ export function createProjectDiscussTools(service, options = {}) {
     },
     issue_create: {
       description:
-        'Create an idle issue from a user-requested description. Use the named folder when specified. Storage defaults to the destination folder’s inherited profile. Pass a profile ID only for a requested override. Creation does not start work. Reuse the same UUID requestId when retrying.',
+        'Create an idle issue from a user-requested description. Describe the outcome, proof and constraints, including any specific decision or operation the person reserved. Starting Work authorizes in-scope implementation; leave generic design or implementation sign-off out of the description. Set needsApproval only when the person asks to make approval a prerequisite for starting this issue. Use the named folder when specified. Storage defaults to the destination folder’s inherited profile. Pass a profile ID only for a requested override. Creation does not start work. Reuse the same UUID requestId when retrying.',
       schema: z
         .object({
           description: text.min(1),
@@ -192,7 +192,7 @@ export function createProjectDiscussTools(service, options = {}) {
     },
     issue_edit: {
       description:
-        'Edit only an open issue’s original prompt and/or issue type. Query issues_list for the issue ID and current revision first. Changing the original prompt reruns Request clarification; changing type applies that type’s default flow. This never starts issue work.',
+        'Edit only an open issue’s original prompt and/or issue type. Record design decisions as scope and constraints. Starting Work authorizes in-scope implementation; retain only specific decisions or operations the person reserved. Query issues_list for the issue ID and current revision first. Changing the original prompt reruns Request clarification; changing type applies that type’s default flow. This never starts issue work.',
       schema: z
         .object({
           action: z.literal('edit-request'),
