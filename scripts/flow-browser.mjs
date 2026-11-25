@@ -205,10 +205,12 @@ const {
   '--folder-workspace-grouping': folderWorkspaceGroupingCheck,
   '--sidebar-issue-names': sidebarIssueNamesCheck,
   '--save-request-route': saveRequestRouteCheck,
+  '--flow-menu': flowMenuCheck,
   '--add-parallel-block': addParallelBlockCheck,
   '--reorder-saved-blocks': reorderSavedBlocksCheck,
   '--assign-folder': assignFolderCheck,
   '--save-block-comment': saveBlockCommentCheck,
+  '--work-markdown': workMarkdownCheck,
   '--stop-work': stopWorkCheck,
   '--retry-work': retryWorkCheck,
   '--reload-flow-history': reloadFlowHistoryCheck,
@@ -1692,7 +1694,7 @@ try {
     assert.equal(await page.locator('#issue-flow-name').textContent(), 'Standard delivery');
     workId = data.flow.blocks.find((item) => item.kind === 'work').id;
   });
-  await check('The Flow menu saves and switches routes, and the wand rebuilds with results intact', async () => {
+  await check(flowMenuCheck, async () => {
     const menu = page.locator('#issue-flow-menu');
     const flows = page.getByRole('group', { name: 'Flows for this issue type' });
     const expected = (await view()).flow.blocks.find((block) => block.kind === 'request').attempts;
@@ -1916,14 +1918,16 @@ try {
     return data.flow.blocks.find((item) => item.kind === 'work' && item.id !== workId).id;
   }
   let extraWorkId;
-  await check('Work Markdown reloads headings and lists without changing layout, drafts or actions', async () => {
+  await check(workMarkdownCheck, async () => {
     const id = await addExtraWork();
     extraWorkId = id;
     await block(id);
     const prose = page.locator('.block-content');
     await prose.getByRole('heading', { name: 'Work block' }).waitFor();
     await page.locator('#block-form .system-prompt summary').click();
-    await page.locator('#block-form [name="prompt-mode"]').selectOption('skill');
+    const promptMode = page.locator('#block-form [name="prompt-mode"]');
+    const originalPromptMode = await promptMode.inputValue();
+    await promptMode.selectOption('skill');
     const skillOptions = page.locator('#block-form [name="skill"] option');
     assert.ok((await skillOptions.allTextContents()).includes('poteto-mode'));
     const card = page.locator('[data-block="' + id + '"]');
@@ -1972,6 +1976,9 @@ try {
     rmSync(extension);
     await prose.getByRole('heading', { name: 'Work block' }).waitFor();
     await draft.fill(original);
+    await promptMode.selectOption(originalPromptMode);
+    await clickAction(page.locator('#block-form button[type="submit"]'));
+    await page.locator('#draft-note').filter({ hasText: 'Saved locally' }).waitFor();
   });
   await check(stopWorkCheck, async () => {
     await block(workId);

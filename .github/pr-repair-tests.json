@@ -1,13 +1,25 @@
 {
   "version": 1,
-  "sourceRun": "https://github.com/ohthepain/timey/actions/runs/45612548820",
+  "sourceRun": "https://github.com/ohthepain/timey/actions/runs/45616131013",
   "tests": [
     {
       "name": "Classic Factory closure can be confirmed and retried (factory-browser-close.mjs)",
       "command": ["node", "scripts/factory-browser.mjs", "--scenario=factory-browser-close.mjs"]
     },
     {
-      "name": "Publish previews the exact description and refreshes it before any remote write",
+      "name": "Issue annotations retain history and drive badge filters and attention order",
+      "command": [
+        "node",
+        "scripts/flow-browser.mjs",
+        "--ci-part=1",
+        "--project-issues",
+        "--master-issues",
+        "--investigative-grouping",
+        "--issue-annotations"
+      ]
+    },
+    {
+      "name": "Run beside the Work name starts exactly one block, then Publish previews the exact description",
       "command": [
         "node",
         "scripts/flow-browser.mjs",
@@ -15,6 +27,11 @@
         "--capture-folder-issue",
         "--starting-point",
         "--save-request-route",
+        "--flow-menu",
+        "--add-parallel-block",
+        "--reorder-saved-blocks",
+        "--save-block-comment",
+        "--work-markdown",
         "--stop-work",
         "--retry-work",
         "--run-extra-work",
