@@ -217,20 +217,43 @@ function isInventoryReceipt(receipt, storeId) {
   return receipt.records.length > 0 && receipt.records.every((record) => inventoryRecord(record, storeId));
 }
 
-async function retainedPayloads(backend, decode, unpackPayload, { excludeArtifactInventory, storeId, onUnreadable }) {
-  const raw = await backend.retainedPayloads();
+function referenceDetails({ key, revision, value, refs }) {
+  return { key, revision, value: { kind: value?.kind }, refs };
+}
+
+function referenceReceiptDetails({ id, identity, payloadRef, records }) {
+  return { id, identity, payloadRef, records: records.map(referenceDetails) };
+}
+
+const unchanged = (entry) => entry;
+
+async function readRetainedReceipt(entry, decode, unpackPayload, onUnreadable) {
+  const receipt = await retainedEntry(() => retainedReceipt(entry, decode, unpackPayload, onUnreadable), onUnreadable);
+  return receipt ?? unreadableReceipt(entry);
+}
+
+async function visitRetained(backend, referencesOnly, visitRecord, visitReceipt) {
+  const raw = await backend.retainedPayloads(referencesOnly ? { visitRecord, visitReceipt } : undefined);
+  for (const record of raw.records) await visitRecord(record);
+  for (const entry of raw.receipts) await visitReceipt(entry);
+}
+
+async function collectRetained(backend, decode, unpackPayload, settings) {
+  const { excludeArtifactInventory, storeId, onUnreadable, referencesOnly } = settings;
   const records = [];
   const receipts = [];
-  for (const record of raw.records) {
+  const projectRecord = referencesOnly ? referenceDetails : unchanged;
+  const projectReceipt = referencesOnly ? referenceReceiptDetails : unchanged;
+  const visitRecord = async (record) => {
     const decoded = await decodedWithRefs(record, decode, onUnreadable);
-    if (!excludeArtifactInventory || !inventoryRecord(decoded, storeId)) records.push(decoded);
-  }
-  for (const entry of raw.receipts) {
-    const receipt =
-      (await retainedEntry(() => retainedReceipt(entry, decode, unpackPayload, onUnreadable), onUnreadable)) ??
-      unreadableReceipt(entry);
-    if (receipt && (!excludeArtifactInventory || !isInventoryReceipt(receipt, storeId))) receipts.push(receipt);
-  }
+    if (!excludeArtifactInventory || !inventoryRecord(decoded, storeId)) records.push(projectRecord(decoded));
+  };
+  const visitReceipt = async (entry) => {
+    const receipt = await readRetainedReceipt(entry, decode, unpackPayload, onUnreadable);
+    if (receipt && (!excludeArtifactInventory || !isInventoryReceipt(receipt, storeId)))
+      receipts.push(projectReceipt(receipt));
+  };
+  await visitRetained(backend, referencesOnly, visitRecord, visitReceipt);
   return { records, receipts };
 }
 
@@ -339,11 +362,12 @@ export function recordStore(backend, artifacts, { allowInlineLarge = false, stor
         writes: expected.map(({ key }) => ({ key, value: null })),
       });
     },
-    async retainedPayloads({ excludeArtifactInventory = false, onUnreadable } = {}) {
-      return retainedPayloads(backend, decode, unpackPayload, {
+    async retainedPayloads({ excludeArtifactInventory = false, onUnreadable, referencesOnly = false } = {}) {
+      return collectRetained(backend, decode, unpackPayload, {
         excludeArtifactInventory,
         storeId,
         onUnreadable,
+        referencesOnly,
       });
     },
     async artifactReceipts(ref) {

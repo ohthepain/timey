@@ -25,6 +25,8 @@ receipt cannot be read, Settings reports incomplete counts. It still counts
 structured references in the readable records and the known payload references
 of unreadable records and receipts. Keep every existing asset
 during the review, including assets with a zero recorded count.
+The inventory scans Git metadata in bounded batches and retains only the
+information needed to count and describe references.
 
 The inventory supports filtering, sorting, page selection, and filtered and
 selected byte totals. A provider failure is visible alongside results from

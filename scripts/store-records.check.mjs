@@ -735,6 +735,11 @@ for (const kind of providers) {
     assert.equal(roots.receipts.length, 1);
     assert.equal(roots.receipts[0].records[0].key, unrelated);
     assert.ok(roots.receipts[0].refs.some((item) => item.sha256 === ref.sha256));
+    const inventory = await store.retainedPayloads({ excludeArtifactInventory: true, referencesOnly: true });
+    const reference = { key: unrelated, revision: roots.records[0].revision, value: { kind: undefined }, refs: [ref] };
+    assert.deepEqual(inventory.records, [reference]);
+    assert.deepEqual(inventory.receipts[0].records, [reference]);
+    assert.equal(inventory.receipts.length, 1);
     await f.checkSource();
   });
 }

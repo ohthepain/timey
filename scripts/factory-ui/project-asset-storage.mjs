@@ -81,6 +81,7 @@ async function scanReferences(store) {
   let incomplete = false;
   const snapshot = await store.retainedPayloads({
     excludeArtifactInventory: true,
+    referencesOnly: true,
     onUnreadable: () => {
       incomplete = true;
     },
@@ -89,8 +90,8 @@ async function scanReferences(store) {
 }
 
 async function readReferenceSources(project) {
-  const stores = new Set([project.records, ...project.recordStores.values(), ...project.issueStores.values()]);
-  const results = await Promise.allSettled([...stores].map(scanReferences));
+  const stores = new Map([...project.issueStores, ...project.recordStores]);
+  const results = await Promise.allSettled([...stores.values()].map(scanReferences));
   return {
     snapshots: results.flatMap((result) => (result.status === 'fulfilled' ? [result.value.snapshot] : [])),
     unavailable: results.filter((result) => result.status === 'rejected' || result.value.incomplete).length,
