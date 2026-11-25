@@ -71,6 +71,19 @@ review the SQL, and check it in with `pnpm run domain:migrate`. History is store
 in `domain_migrations.__drizzle_migrations`. Keep auth history continuous. Do not
 copy the old disposable experiment's history or dependency-probe table into this foundation.
 
+## Timey account in Factory
+
+Run Timey on `127.0.0.1` with `BETTER_AUTH_URL` set to that origin. Set
+`FACTORY_PROJECT_ACCOUNT_ORIGIN` to the same origin when starting Factory. For
+example, use `http://127.0.0.1:3000` for both values when Timey uses port 3000.
+Factory then embeds the Timey header account control. Login and Account open in
+Timey tabs, and Sign out ends the Timey session from the header.
+
+Use a trusted local Timey server. Both services use the same loopback host so
+the embedded control can see Timey's existing same-site session. Browsers send
+host cookies across ports, so the local Timey server also receives the Factory
+cookie. Without this setting, Factory runs without the Timey account control.
+
 ## Request and session boundary
 
 `/api/auth/$` forwards real Requests/Responses through the installed TanStack Start

@@ -1,4 +1,4 @@
-import { HeadContent, Outlet, Scripts, createRootRoute } from '@tanstack/react-router';
+import { HeadContent, Outlet, Scripts, createRootRoute, useRouterState } from '@tanstack/react-router';
 import { TanStackRouterDevtools } from '@tanstack/react-router-devtools';
 import { DefaultCatchBoundary } from '~/components/DefaultCatchBoundary';
 import { NotFound } from '~/components/NotFound';
@@ -41,33 +41,43 @@ export const Route = createRootRoute({
 });
 
 function RootComponent() {
+  const accountFrame = useRouterState({ select: (state) => state.location.pathname === '/auth/factory-account' });
+  const frameStyle = accountFrame ? { background: 'transparent', colorScheme: 'dark' } : undefined;
+  return (
+    <html style={frameStyle}>
+      <head>
+        <HeadContent />
+      </head>
+      <body style={frameStyle}>
+        {accountFrame ? <Outlet /> : <TimeyApp />}
+        <Scripts />
+      </body>
+    </html>
+  );
+}
+
+function TimeyApp() {
   useRestoreLastUrl();
   const [showMidiPopup, setShowMidiPopup] = useState(false);
   const [showMetronomeSettings, setShowMetronomeSettings] = useState(false);
 
   return (
-    <html>
-      <head>
-        <HeadContent />
-      </head>
-      <body>
-        <AppHeader onOpenMetronome={() => setShowMetronomeSettings(true)} onOpenMidi={() => setShowMidiPopup(true)} />
-        <hr />
-        <SettingsModal
-          open={showMetronomeSettings}
-          onClose={() => setShowMetronomeSettings(false)}
-          overlayClassName="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50"
-          panelClassName="bg-white p-4 rounded shadow-lg relative"
-        >
-          <MetronomeMidiSettings />
-        </SettingsModal>
-        <SettingsModal open={showMidiPopup} onClose={() => setShowMidiPopup(false)} title="MIDI Settings">
-          <MidiSelector />
-        </SettingsModal>
-        <Outlet />
-        <TanStackRouterDevtools position="bottom-right" />
-        <Scripts />
-      </body>
-    </html>
+    <>
+      <AppHeader onOpenMetronome={() => setShowMetronomeSettings(true)} onOpenMidi={() => setShowMidiPopup(true)} />
+      <hr />
+      <SettingsModal
+        open={showMetronomeSettings}
+        onClose={() => setShowMetronomeSettings(false)}
+        overlayClassName="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50"
+        panelClassName="bg-white p-4 rounded shadow-lg relative"
+      >
+        <MetronomeMidiSettings />
+      </SettingsModal>
+      <SettingsModal open={showMidiPopup} onClose={() => setShowMidiPopup(false)} title="MIDI Settings">
+        <MidiSelector />
+      </SettingsModal>
+      <Outlet />
+      <TanStackRouterDevtools position="bottom-right" />
+    </>
   );
 }

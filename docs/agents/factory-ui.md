@@ -45,10 +45,11 @@ starts no work. Retry a blocked flow step explicitly after setup. Read-only bloc
 remain available while the lifecycle file is missing.
 
 The default page opens **Project home**, with rolling seven-day issue statistics,
-saved investigations, and investigation controls. The left project menu lists
-**Home**, **Issues**, and **Investigate** in that order. **Issues** opens Home's
-Issues tab. Home also has Discuss, Automate me, and Admin tabs. The **Automate me**
-tab contains the session history and the control to start a conversation.
+saved investigations, and investigation controls. The shared header stays above
+the workspace columns and contains **Home**, **Issues**, **Reports**, **Discuss**,
+**Automate me**, and **Admin**, in that order. **Investigate** is a separate
+header action. **Automate me** contains the session history and the control to
+start a conversation.
 Investigations always cover the project and use a selected branch, defaulting to
 the branch in Project settings. Optional discussion retains goals and codebase
 questions in the investigation conversation. Its ordinary route is Request,
@@ -217,8 +218,8 @@ Unmatched assignment kinds stay visible under Other work.
 
 ### Files and issue folders
 
-The entire left column scrolls together, including the project menu, local notes,
-Files and Issues. Its resize handle stays at the column edge while scrolling.
+Local notes, Files, and Issues scroll together in the left column. The resize
+handle stays at the column edge, and the shared header stays above the column.
 
 The sidebar shows the installation's flow and skill folders and the
 project's `user/` directory. Use the plus icon on a writable folder row to

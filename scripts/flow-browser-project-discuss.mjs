@@ -69,9 +69,8 @@ export async function projectDiscussBrowserChecks({ page, service, project, poll
     };
   });
   await page.goto('/');
-  await page.locator('#project-tab-home').waitFor();
-  assert.equal(await page.locator('#project-tab-home').getAttribute('aria-selected'), 'true');
   await page.getByRole('button', { name: 'Start an investigation', exact: true }).waitFor();
+  assert.equal(await page.locator('#project-tab-home').getAttribute('aria-selected'), 'true');
   assert.equal(await page.locator('#error-banner').isVisible(), false, 'Home must load without a selected issue.');
   assert.equal(await page.locator('#fix-branch').isVisible(), false, 'Branch repair needs a selected issue.');
   assert.equal(calls.length, 0);

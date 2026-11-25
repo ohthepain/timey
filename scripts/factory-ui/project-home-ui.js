@@ -74,6 +74,11 @@
       if (frame && !frame.hasAttribute('src')) frame.src = frame.dataset.src;
     }
 
+    function updateTabSelection() {
+      for (const button of tabs)
+        button.setAttribute('aria-selected', String(state.visible && button.dataset.projectTab === projectTab));
+    }
+
     function selectProjectTab(tab) {
       projectTab = tab;
       saveProjectTab(tab);
@@ -85,10 +90,14 @@
       $('project-admin').hidden = tab !== 'admin';
       $('project-automate').hidden = tab !== 'automate';
       updateChatVisibility(state.visible, projectTab, discuss, reports);
-      for (const button of tabs) button.setAttribute('aria-selected', String(button.dataset.projectTab === tab));
+      updateTabSelection();
       loadIssuesFrame();
     }
-    for (const button of tabs) button.addEventListener('click', () => selectProjectTab(button.dataset.projectTab));
+    for (const button of tabs)
+      button.addEventListener('click', () => {
+        selectProjectTab(button.dataset.projectTab);
+        if (!state.visible) navigateHome();
+      });
     selectProjectTab(projectTab);
 
     function syncIssueDetailWidth() {
@@ -388,12 +397,6 @@
     }
     function projectNavigation(button) {
       const route = button.dataset.projectHome;
-      if (['home', 'issues', 'discuss', 'reports'].includes(route)) {
-        navigateHome();
-        selectProjectTab(route);
-        void refresh();
-        return;
-      }
       openDialog(route === 'automate' ? 'automate' : 'investigation');
     }
     function savedNavigation(button) {
@@ -475,6 +478,7 @@
         const wasVisible = state.visible;
         state.visible = value;
         $('project-home').hidden = !value;
+        updateTabSelection();
         updateChatVisibility(state.visible, projectTab, discuss, reports);
         loadIssuesFrame();
         if (value && !wasVisible) void refresh();

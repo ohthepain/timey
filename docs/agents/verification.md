@@ -322,12 +322,18 @@ state. The fixture uses disposable conversations and issues and starts no model
 work. `node --test scripts/interface-state.check.mjs` reproduces the original
 Discuss collapse and checks selection through growing and replaced activity.
 
-`node scripts/flow-browser.mjs --project-navigation` checks the ordered Home,
-Issues, Discuss, Reports, and Investigate sidebar links, Home tab reset, Issues navigation, and
-the Automate me tab, dialog, reload persistence, and narrow layout. It saves
-`project-navigation.png` and `project-navigation-automate.png` in its evidence directory.
+`node scripts/flow-browser.mjs --project-navigation` checks the full-width header,
+the order and destinations of the Home, Issues, Reports, Discuss, Automate me, and
+Admin tabs, and the relocated Factory controls. It saves desktop and narrow
+screenshots alongside the measured layout and navigation in `project-header-proof.json`.
 The navigation fixture temporarily initializes queue configuration, waits for a
 successful Issues queue response, and unloads the page before restoring configuration.
+
+`node scripts/factory-project-account-browser.mjs` starts a disposable Timey
+instance and Factory server. It opens every project tab at 390px while Login is
+visible, signs in through Timey's existing form, opens Account, and signs out
+from the header. The reported evidence directory contains desktop and narrow
+screenshots and `project-account.json`.
 
 `pnpm run test:project-home` checks project investigation capture, selected-branch
 execution, automatic follow-up approval and retry, historical closure statistics,

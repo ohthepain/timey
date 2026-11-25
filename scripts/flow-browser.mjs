@@ -613,7 +613,7 @@ try {
       { width: 760, height: 600 },
     ]) {
       await page.setViewportSize(viewport);
-      for (const section of ['.project-home-menu', '#local-note-list', '#sidebar-file-tree', '#issue-list']) {
+      for (const section of ['#local-note-list', '#sidebar-file-tree', '#issue-list']) {
         const target = page.locator(section);
         await target.scrollIntoViewIfNeeded();
         const bounds = await target.boundingBox();
@@ -644,7 +644,11 @@ try {
       await footer.scrollIntoViewIfNeeded();
       assert.ok(await footer.isVisible());
       const resizer = await page.locator('#sidebar-resizer').boundingBox();
-      assert.ok(resizer.y <= 1 && resizer.height >= 590, 'Sidebar resize handle must remain at the column edge');
+      const sidebar = await page.locator('.sidebar').boundingBox();
+      assert.ok(
+        Math.abs(resizer.y - sidebar.y) <= 1 && Math.abs(resizer.height - sidebar.height) <= 1,
+        'Sidebar resize handle must span the column below the header'
+      );
       await page.locator('#sidebar-resizer').focus();
       const widthBefore = (await page.locator('.sidebar').boundingBox()).width;
       await page.keyboard.press('ArrowRight');
@@ -666,7 +670,9 @@ try {
   await check(masterIssuesCheck, () => masterIssueBrowserChecks({ page, project, root, output }));
   await check(issueAnnotationsCheck, () => issueAnnotationBrowserChecks({ page, project, root, output, poll }));
   await check(navigationCheck, () =>
-    withQueueConfiguration({ page, project, root }, () => projectNavigationBrowserChecks({ page, screenshot }))
+    withQueueConfiguration({ page, project, root }, () =>
+      projectNavigationBrowserChecks({ page, poll, screenshot, output, candidate })
+    )
   );
   await check(inboxFlowCheck, () => inboxFlowBrowserChecks({ page, service, project, poll, screenshot, output }));
   await check(reportsCheck, () =>

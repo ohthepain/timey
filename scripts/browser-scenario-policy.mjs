@@ -34,7 +34,7 @@ export const flowBrowserScenarioNames = {
   '--sidebar-labels': 'Issues and Local notes use matching text styles',
   '--sidebar-scroll': 'The whole sidebar scrolls over every section',
   '--project-home': 'Project home investigates selected branches and reviews Automate me skills',
-  '--project-navigation': 'Project navigation exposes Home Issues Investigate and an Automate me tab',
+  '--project-navigation': 'The shared Factory header keeps every project tab and relocated control usable',
   '--project-discuss': 'Project Discuss retains independent conversations, settings and explicit controls',
   '--project-settings': 'Project Settings addressable pages preserve drafts, sources and explicit saves',
   '--ai-providers': 'Factory provider settings save enablement and quota warnings',
