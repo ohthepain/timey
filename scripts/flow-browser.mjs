@@ -195,6 +195,10 @@ const {
   '--block-inspection': blockInspectionCheck,
   '--storage-status': storageStatusCheck,
   '--polling': pollingCheck,
+  '--capture-folder-issue': captureFolderIssueCheck,
+  '--save-request-route': saveRequestRouteCheck,
+  '--add-parallel-block': addParallelBlockCheck,
+  '--reorder-saved-blocks': reorderSavedBlocksCheck,
   '--timers': timersCheck,
   '--proposals': proposalsCheck,
 } = flowBrowserScenarioNames;
@@ -1156,7 +1160,7 @@ try {
   part = '--ci-part=2';
   const description =
     'Understand why the save button loses text\nDone: The text survives a reload.\nProof: Retained saved text.\nKnown facts: The problem occurs after refresh.\nConstraints: Reproduce before changing code.';
-  await check('Folder plus creates an issue directly in that folder and retains typed wording', async () => {
+  await check(captureFolderIssueCheck, async () => {
     await page.goto('/');
     await page.locator('#new-folder').click();
     await page.locator('#folder-name').fill('Browser folder');
@@ -1628,7 +1632,7 @@ try {
     Object.entries({ ...clarified, type: 'bug' })
       .map(([key, value]) => key + ': ' + value)
       .join('\n');
-  await check('Saving Your words retains derived fields and applies the new type default', async () => {
+  await check(saveRequestRouteCheck, async () => {
     await page.locator('#request-form [name="wording"]').fill(savedWording);
     await clickAction(page.locator('#request-form button[type="submit"]'));
     await poll(
@@ -1736,7 +1740,7 @@ try {
     await page.locator('.issue-folder .issue-row').filter({ hasText: 'Understand why' }).waitFor();
     assert.equal(logs.execution.length, 0);
   });
-  await check('Adding and saving a block retains the selected prompt mode and parallel lane', async () => {
+  await check(addParallelBlockCheck, async () => {
     await page.getByRole('button', { name: 'Add a step', exact: true }).click();
     const data = await clickAction(page.locator('[data-add-kind="understand"]'));
     addedId = data.flow.blocks.find((item) => item.kind === 'understand' && item.id !== workId).id;
@@ -1760,12 +1764,16 @@ try {
     assert.equal(saved.attempts.length, 0);
     assert.equal(logs.modelCalls.length, 0);
   });
-  await check('Sequence controls reorder saved blocks', async () => {
+  await check(reorderSavedBlocksCheck, async () => {
     const before = (await view()).flow.blocks.map((item) => item.id);
     const requestBlock = (await view()).flow.blocks.find((item) => item.kind === 'request');
     assert.equal(await page.locator(`[data-node="${requestBlock.id}"] .block-icon`).textContent(), '💬');
-    await clickAction(page.locator('[data-action="move"][data-direction="up"]'));
-    const after = (await view()).flow.blocks.map((item) => item.id);
+    await page.locator(`#graph [data-block="${addedId}"]`).press('Alt+ArrowDown');
+    const after = await poll(
+      async () => (await view()).flow.blocks.map((item) => item.id),
+      (order) => order.indexOf(addedId) !== before.indexOf(addedId),
+      'Keyboard reorder did not save.'
+    );
     assert.equal(after.indexOf(addedId), before.indexOf(addedId) + 1);
     assert.deepEqual(new Set(after), new Set(before));
     await screenshot('flow-desktop');
