@@ -944,6 +944,8 @@ function readResource(service, request, response, owner) {
     '/investigation-followups-ui.js': 'investigation-followups-ui.js',
     '/view-inspection.js': 'view-inspection.js',
     '/flow.css': 'flow.css',
+    '/issue-group-ui.js': 'issue-group-ui.js',
+    '/issue-group.css': 'issue-group.css',
     '/native-chat-ui.js': 'native-chat-ui.js',
     '/server-control-ui.js': 'server-control-ui.js',
     '/queue-lifecycle-ui.js': 'queue-lifecycle-ui.js',

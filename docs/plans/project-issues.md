@@ -38,6 +38,11 @@ column stay visible. Tapping an issue title opens its normal Flow workspace in t
 Checkboxes select issues for bulk actions.
 Selecting the **Issues** heading opens the Issues tab.
 
+The Issues list and the left column place visible attached sub-issues directly
+under their master, with an indent. If the current list excludes the master, its
+matching sub-issues remain visible. Master issues carry a yellow **m** in the
+left column and **Master** in the Issues list and the issue heading.
+
 A real issue folder uses this same workspace with the list scoped to that folder.
 Folder-specific controls such as choosing the default issue folder or finding
 issues to add do not appear in the project-wide Issues view.

@@ -269,8 +269,8 @@ injected model and check responses. It preserves staged and uncommitted edits.
 red check-failure state, progress after reload, candidate diff, and explicit
 approval in a disposable checkout. It holds an explicit issue refresh and
 checks that repair controls remain available, then releases the refresh before
-accepting a repair command. The scenario uses an injected repair worker in the
-disposable checkout.
+accepting a repair command. It waits for the injected repair worker to save
+progress before reloading and checks that the reopened dialog shows that output.
 
 `node --test scripts/block-skills.check.mjs scripts/flow-folder-settings.check.mjs`
 checks per-block defaults, personal/project extensions and explicit skill choices.
@@ -290,6 +290,8 @@ Home/issue dispatch in disposable projects. `pnpm run test:project-discuss:brows
 checks that Home opens without a selected issue or a Branch Fix control, then
 drives Home/Discuss navigation, retained drafts, Markdown, model/effort and skill
 selection, Tab acceptance, downloading retained attachment copies, queued edits and Stop.
+The clarification dropdown offers setup while the fixture omits `grill-me` and
+removes the option when refreshed discovery finds the skill.
 It also checks opening a long conversation after delayed history and image loading,
 reloads, returning to Discuss, and preserving manual scrolling through a polling
 rerender. It retains those observations in `project-discuss-scroll.json`. Dictation
@@ -550,10 +552,13 @@ suites such as `pnpm run test:factory` to GitHub CI. Add a focused test when nee
 Fallow after Work's response.
 
 A standalone focused browser check can be recorded as `node scripts/<name>-browser.mjs`
-without extra arguments. The main Flow browser runner still requires a scenario
-flag, and the aggregate Factory browser runner belongs to full verification.
+without extra arguments. A focused Flow browser command requires a recognized
+scenario flag. You can add `--reverse-fixture-scenarios` to change fixture order.
+The aggregate Factory browser runner belongs to full verification.
 Work accepts the Node `--test-name-pattern` value as a separate argument or
 joined with `=`. It stores both forms as the same command.
+When Factory rejects a focused command, its diagnostic identifies the entry in
+`focusedTests`, the rejected argument when present, and the rule it violated.
 
 Fallow 3.35.0 can miss CSS consumers in plain JavaScript HTML strings, and its
 source-location attribution can mark unchanged findings as introduced when an
@@ -1060,6 +1065,10 @@ relative card bounds and viewport height in the polling diagnostic.
 
 `node scripts/flow-browser.mjs --error-recovery` triggers a rejected branch update
 and verifies that a successful explicit Refresh clears its old error banner.
+Run it with `--manual-close --error-recovery` to exercise refresh after the
+manual-close scenario has initialized the Issue Store. Set
+`TIMEY_FLOW_BROWSER_OUTPUT` to a new directory under a symlink to also check
+that fixture writes use the canonical project path.
 Background polling retains action errors. The running-Work browser scenario also
 checks that both Update Branch entry points are disabled while a block is active;
 opening the worktree remains available.
@@ -1227,9 +1236,9 @@ screenshots. Provider observations and execution results are disposable fixtures
 this does not establish live model entitlements or output quality.
 
 The PR repair-first step records V8 coverage under `.issues/repair-first-coverage`.
-The following strict static audit consumes that actual coverage before broad
-verification, so tested runtime helpers are evaluated with measured coverage.
-No changed repair plan means the focused step skips, as before.
+The early suite's Fallow audit consumes that coverage when the directory exists.
+The parallel test suites run without the early job's coverage settings.
+With no changed repair plan, the focused step skips.
 `node --test scripts/store-git-transaction.check.mjs` checks atomic Git metadata
 publication, rollback, competing writes, replay, lost push responses, pinned
 reads and detached callbacks. The manual operation tests in
