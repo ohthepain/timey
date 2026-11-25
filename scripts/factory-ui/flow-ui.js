@@ -670,10 +670,11 @@ import { reorderedBlocks } from './flow-order.mjs';
     button.hidden = mode === 'hidden';
     const issueState = playbackIssueState();
     const indicator = $('closed-issue-indicator');
+    const indicatorLabel = issueState ? 'Issue ' + issueState : '';
     indicator.hidden = !issueState || showArchive || (issueState === 'blocked' && mode !== 'hidden');
     indicator.innerHTML = issueState ? statusIcon(issueState) : '';
-    indicator.setAttribute('aria-label', issueState ? words(issueState) + ' issue' : '');
-    indicator.title = issueState ? words(issueState) + ' issue' : '';
+    indicator.setAttribute('aria-label', indicatorLabel);
+    indicator.title = indicatorLabel;
     button.disabled =
       busy ||
       !playback ||
