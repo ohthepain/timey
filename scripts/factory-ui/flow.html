@@ -187,6 +187,7 @@
           <button type="button" class="small-button" id="migrate-issue-folders" hidden>
             Move existing issue folders
           </button>
+          <div id="issue-badge-controls"></div>
           <nav id="issue-list" class="issue-list" aria-label="Issue list">
             <p class="sidebar-empty">Loading issues…</p>
           </nav>
@@ -231,7 +232,8 @@
             <div class="issue-title-row">
               <span class="issue-number" id="issue-number" hidden></span>
               <h1 id="issue-title"></h1>
-              <span class="master-badge" id="issue-master-badge" hidden>Master</span>
+              <span class="master-badge" id="issue-master-badge" data-issue-badge="master-issue" hidden>Master</span>
+              <span class="issue-heading-badges" id="issue-heading-badges"></span>
               <button
                 class="icon-button"
                 id="rename-issue"
@@ -249,6 +251,33 @@
             </form>
             <div id="issue-master" class="folder-controls" role="group" aria-label="Master issue" hidden></div>
             <ul id="issue-sub-issues" class="folder-issues issue-sub-issues" aria-label="Sub-issues" hidden></ul>
+            <details id="issue-annotations" class="issue-annotations">
+              <summary>Annotations <span id="issue-annotation-count"></span></summary>
+              <p id="issue-annotation-warning" role="status" hidden></p>
+              <ul id="active-issue-annotations" aria-label="Active annotations"></ul>
+              <details id="issue-annotation-history" hidden>
+                <summary>Cleared history</summary>
+                <ul id="cleared-issue-annotations" aria-label="Cleared annotations"></ul>
+              </details>
+              <form id="issue-annotation-form">
+                <fieldset id="issue-annotation-fields" class="folder-settings-fields">
+                  <label class="field"
+                    >Annotation type<select name="kind">
+                      <option value="comment">Comment</option>
+                      <option value="blocked">Blocked</option>
+                      <option value="not-ready">Not ready</option>
+                    </select></label
+                  >
+                  <label class="field"
+                    ><span id="issue-annotation-text-label">Comment</span>
+                    <textarea name="content" rows="2" maxlength="8000" required></textarea>
+                  </label>
+                  <label class="field">Related issue ID (optional)<input name="relatedIssueId" /></label>
+                  <button class="small-button" type="submit">Add annotation</button>
+                </fieldset>
+                <p id="issue-annotation-error" class="inline-error" role="alert" hidden></p>
+              </form>
+            </details>
             <details id="issue-settings" class="issue-settings">
               <summary>Issue settings</summary>
               <form id="issue-settings-form">

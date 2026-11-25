@@ -1,25 +1,55 @@
 {
   "version": 1,
-  "sourceRun": "https://github.com/ohthepain/timey/actions/runs/45559967222",
+  "sourceRun": "https://github.com/ohthepain/timey/actions/runs/45582351964",
   "tests": [
     {
-      "name": "Storage profiles preserve explicit destinations and perform checked moves without workspace updates",
-      "command": ["node", "scripts/flow-browser.mjs", "--investigation-reports", "--investigation-flows", "--stores"]
+      "name": "Flow can approve a Retro item as soon as its proposal PR lands",
+      "command": [
+        "node",
+        "--test",
+        "--test-name-pattern=^Flow can approve a Retro item as soon as its proposal PR lands$",
+        "scripts/shared-issue-queue.check.mjs"
+      ]
     },
     {
-      "name": "Reload retains flow settings, comments, folder and attempt history",
+      "name": "moving an unpublished proposal retains its failed publication and retries the new folder",
+      "command": [
+        "node",
+        "--test",
+        "--test-name-pattern=^moving an unpublished proposal retains its failed publication and retries the new folder$",
+        "scripts/shared-issue-queue.check.mjs"
+      ]
+    },
+    {
+      "name": "two Flow clones share the separate branch without advancing code",
+      "command": [
+        "node",
+        "--test",
+        "--test-name-pattern=^two Flow clones share the separate branch without advancing code$",
+        "scripts/shared-issue-queue.check.mjs"
+      ]
+    },
+    {
+      "name": "Update Branch block publication failure leaves no local execution or shared claim",
+      "command": [
+        "node",
+        "--test",
+        "--test-name-pattern=^Update Branch block publication failure leaves no local execution or shared claim$",
+        "scripts/project-stores-flow.check.mjs"
+      ]
+    },
+    {
+      "name": "Issue annotations retain history and drive badge filters and attention order",
+      "command": ["node", "scripts/flow-browser.mjs", "--master-issues", "--issue-annotations"]
+    },
+    {
+      "name": "Numbered full issue names wrap and sidebar resizing survives reload",
       "command": [
         "node",
         "scripts/flow-browser.mjs",
         "--capture-folder-issue",
-        "--save-request-route",
-        "--assign-folder",
-        "--add-parallel-block",
-        "--reorder-saved-blocks",
-        "--save-block-comment",
-        "--stop-work",
-        "--retry-work",
-        "--reload-flow-history"
+        "--folder-workspace-grouping",
+        "--sidebar-issue-names"
       ]
     }
   ]
