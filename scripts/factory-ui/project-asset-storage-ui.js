@@ -19,7 +19,7 @@
     const types = [...new Set(assets.map((asset) => asset.mediaType))].sort();
     const storeNames = new Map(stores.map(({ id, label }) => [id, label]));
     container.innerHTML = `
-      <p>Read-only inventory. Counts show references found in shared records and retained revisions.
+      <p>Read-only inventory. Counts include shared records, retained revisions, and matching local report and Discuss files.
         Reference coverage is unverified. Review assets with zero recorded references before any deletion.</p>
       ${unavailableReferenceSources ? '<p role="status">Some retained records could not be read. Counts may be incomplete.</p>' : ''}
       ${unavailable.length ? `<p role="status">Stores unavailable: ${unavailable.map(({ label }) => esc(label)).join(', ')}.</p>` : ''}

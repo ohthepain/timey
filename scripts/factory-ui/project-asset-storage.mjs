@@ -1,3 +1,4 @@
+import { retainedContentReferences } from './project-asset-retained-content.mjs';
 import { readStoreConfig } from './stores/config.mjs';
 import { inspectProjectStores } from './stores/runtime.mjs';
 
@@ -103,10 +104,14 @@ async function assetInventory(project, configs) {
     storedAssets(configs.map((config) => ({ config, store: project.artifactStores.get(config.id) })))
   );
   const assets = inventoryRows(results, project.projectId);
-  const { snapshots, unavailable } = assets.size
-    ? await readReferenceSources(project)
-    : { snapshots: [], unavailable: 0 };
-  collectReferences(assets, project.projectId, snapshots);
+  const [shared, retained] = assets.size
+    ? await Promise.all([readReferenceSources(project), retainedContentReferences(project.root)])
+    : [
+        { snapshots: [], unavailable: 0 },
+        { refs: [], unavailable: false },
+      ];
+  collectReferences(assets, project.projectId, shared.snapshots);
+  for (const ref of retained.refs) assets.get(identity(ref))?.references.push(ref.label);
   return {
     assets: [...assets.values()],
     stores: results.map(({ config, refs }) => ({
@@ -114,7 +119,7 @@ async function assetInventory(project, configs) {
       label: config.label,
       available: refs !== null,
     })),
-    unavailableReferenceSources: unavailable,
+    unavailableReferenceSources: shared.unavailable + Number(retained.unavailable),
   };
 }
 

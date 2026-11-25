@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { existsSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { S3Client } from '@aws-sdk/client-s3';
 import { git } from './factory-ui/common.mjs';
 import { projectAssetStorage } from './factory-ui/project-asset-storage.mjs';
+import { InvestigationReports } from './factory-ui/investigation-reports.mjs';
 import { openFilesRecords } from './factory-ui/stores/providers/files.mjs';
 import { ensureProjectStores } from './factory-ui/stores/runtime.mjs';
 
@@ -191,9 +192,10 @@ async function checkControls(dialog, hash) {
   assert.match(await dialog.locator('tbody tr').first().innerText(), /35 bytes/);
   await dialog.getByLabel('Recorded references').selectOption('found');
   await dialog.getByText('1 asset · 10 bytes | 0 selected · 0 bytes').waitFor();
-  await dialog.getByText('3 recorded', { exact: true }).click();
+  await dialog.getByText('5 recorded', { exact: true }).click();
   await dialog.getByText('Issue evidence', { exact: true }).waitFor();
-  assert.equal(await dialog.getByText('Restricted reference', { exact: true }).count(), 2);
+  await dialog.getByText('Published investigation evidence', { exact: true }).waitFor();
+  assert.equal(await dialog.getByText('Restricted reference', { exact: true }).count(), 3);
   assert.equal(await dialog.getByText('Confidential chat title').count(), 0);
   assert.equal(await dialog.getByRole('button', { name: 'Delete selected' }).count(), 0);
   await dialog.getByLabel('Recorded references').selectOption('zero');
@@ -201,6 +203,37 @@ async function checkControls(dialog, hash) {
   assert.equal(await dialog.getByText(hash).count(), 0);
   await dialog.getByLabel('Recorded references').selectOption('');
   await dialog.getByLabel('Asset type').selectOption('image/png');
+}
+
+function retainLocalContent(project, bytes) {
+  const directory = join(project, '.issues/factory-ui/project-discuss/private');
+  mkdirSync(join(directory, 'attachments'), { recursive: true });
+  writeFileSync(join(directory, 'attachments/attachment.bin'), bytes);
+  const attachment = { id: 'attachment', size: bytes.length, name: 'Confidential attachment' };
+  writeFileSync(
+    join(directory, 'conversation.json'),
+    JSON.stringify({
+      closedAt: '2026-11-25T00:00:00Z',
+      messages: [
+        { id: 'older', text: 'Confidential older message', attachments: [attachment, attachment] },
+        { id: 'newer', attachments: [] },
+      ],
+    })
+  );
+  const reports = new InvestigationReports(project);
+  const report = join(project, 'asset-storage-report.md');
+  const evidence = join(project, 'asset-storage-evidence.bin');
+  writeFileSync(report, '# Retained report\n');
+  writeFileSync(evidence, bytes);
+  const { id } = reports.publish({
+    source: { issueId: archived, blockId: 'findings', attemptId: 'source', revision: 'a'.repeat(40) },
+    attemptId: 'publication',
+    publicationId: 'fixture',
+    title: 'Confidential publication title',
+    report,
+    evidence: [evidence],
+  });
+  return () => reports.deleteReports([id]);
 }
 
 export async function assetStorageBrowserChecks(context) {
@@ -211,11 +244,12 @@ export async function assetStorageBrowserChecks(context) {
   try {
     const seeded = await setup(context, fixture.first);
     path = seeded.path;
+    const unpublish = retainLocalContent(context.project, fixture.image.body);
     await page.goto('/?settings=asset-storage');
     const dialog = page.locator('#project-settings-dialog');
     await dialog.getByRole('link', { name: 'Asset Storage', exact: true }).waitFor();
     await checkControls(dialog, seeded.sha256);
-    await dialog.getByText('3 recorded', { exact: true }).click();
+    await dialog.getByText('5 recorded', { exact: true }).click();
     await screenshot('asset-storage');
     const read = async () => {
       const response = await page.request.get('/api/project-asset-storage');
@@ -252,6 +286,12 @@ export async function assetStorageBrowserChecks(context) {
     await dialog.getByLabel('Store', { exact: false }).selectOption('secondary');
     await dialog.getByText('1 asset · 10 bytes | 0 selected · 0 bytes').waitFor();
     assert.equal(mock.calls.filter((name) => name === 'PutObjectCommand').length, 1);
+    unpublish();
+    const afterUnpublish = await read();
+    assert.deepEqual(
+      afterUnpublish.references,
+      after.references.filter((label) => label !== 'Published investigation evidence')
+    );
     writeFileSync(
       join(output, 'asset-storage-observations.json'),
       JSON.stringify(
@@ -260,6 +300,7 @@ export async function assetStorageBrowserChecks(context) {
           observed: {
             before,
             after,
+            afterUnpublish,
             coldLoadMetadataWrites: 0,
             coldLoadCreatedLocalStore: false,
             readableReferencesRetainedWithMissingPayload: true,

@@ -17,10 +17,16 @@ copy. The inventory identifies legacy objects by digest because their object
 keys do not record a display name.
 
 Reference counts cover structured artifact references in shared records and
-retained record revisions, including archived issue evidence. References from
+retained record revisions, including archived issue evidence. The inventory also
+counts matching local copies retained by published investigation reports and
+Discuss, including older messages and closed conversations. It matches the
+retained bytes to listed S3 assets by digest and size. References from
 unclassified source records are shown as **Restricted reference**. Counts
 remain unverified while coverage of legacy links, external publication,
-dependent files, and personal saves is incomplete. If a retained record or
+dependent files, and personal saves is incomplete. Matching bytes can
+identify a retained local copy, but provide no shared reference record across
+runners. The inventory reads only the local publications and conversations
+available to the current runner. If a retained record or
 receipt cannot be read, Settings reports incomplete counts. It still counts
 structured references in the readable records and the known payload references
 of unreadable records and receipts. Keep every existing asset
