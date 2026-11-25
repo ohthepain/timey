@@ -4,6 +4,7 @@ import { rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { S3Client } from '@aws-sdk/client-s3';
 import { git } from './factory-ui/common.mjs';
+import { projectAssetStorage } from './factory-ui/project-asset-storage.mjs';
 import { ensureProjectStores } from './factory-ui/stores/runtime.mjs';
 
 const projectId = 'asset-storage-fixture';
@@ -105,6 +106,9 @@ async function setup({ project, service, output }, key) {
       stores,
     })
   );
+  const coldInventory = await projectAssetStorage({ root: project });
+  assert.equal(coldInventory.assets.length, 26);
+  assert.equal(git(project, 'ls-remote', '--heads', 'asset-storage'), '', 'Browsing must leave metadata untouched');
   const storesRuntime = await ensureProjectStores(service, { fresh: true });
   await storesRuntime.importIssue({
     id: archived,
@@ -207,7 +211,14 @@ export async function assetStorageBrowserChecks(context) {
       JSON.stringify(
         {
           provider: 'S3 SDK fixture',
-          observed: { before, after, listedAssets: 26, filteredBytes: 585, selectedBytes: 585 },
+          observed: {
+            before,
+            after,
+            coldLoadMetadataWrites: 0,
+            listedAssets: 26,
+            filteredBytes: 585,
+            selectedBytes: 585,
+          },
           providerCommands: [...new Set(mock.calls)],
         },
         null,

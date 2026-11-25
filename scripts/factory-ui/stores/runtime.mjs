@@ -75,7 +75,7 @@ function providersFor(runtime, role, kind) {
   );
 }
 
-function buildProject(runtime, config) {
+function buildProject(runtime, config, runnerId) {
   const previous = runtime.config;
   runtime.config = config;
   const artifactStores = providersFor(runtime, 'artifact', 'artifact');
@@ -101,6 +101,7 @@ function buildProject(runtime, config) {
   runtime.project = createProjectStores({
     root: runtime.service.root,
     projectId: config.projectId,
+    runnerId,
     records: recordStores.get(config.coordination),
     issueStores,
     artifacts: runtime.artifacts,
@@ -109,6 +110,17 @@ function buildProject(runtime, config) {
   });
   runtime.service.projectStores = runtime.project;
   runtime.service.artifacts = runtime.artifacts;
+}
+
+export async function inspectProjectStores(root, config, inspect) {
+  const service = { root };
+  const runtime = { service, providers: new Map(), opened: new Set() };
+  buildProject(runtime, config, randomUUID());
+  try {
+    return await inspect(runtime.project);
+  } finally {
+    await closeProviders(runtime);
+  }
 }
 
 function legacyReports(root) {
@@ -540,11 +552,15 @@ export async function testStoreConnection(service, storeId) {
   return { ok: true, message: 'Store connection verified.' };
 }
 
+function closeProviders(runtime) {
+  return Promise.allSettled([...runtime.opened].map((provider) => provider.close?.()));
+}
+
 export async function closeProjectStores(service) {
   const runtime = runtimes.get(service);
   if (!runtime) return;
   runtime.unregister?.();
-  await Promise.allSettled([...runtime.opened].map((provider) => provider.close?.()));
+  await closeProviders(runtime);
   for (const evidence of runtime.evidence?.values() || []) evidence.unregister();
   runtimes.delete(service);
 }

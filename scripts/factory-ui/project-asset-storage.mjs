@@ -1,5 +1,5 @@
 import { readStoreConfig } from './stores/config.mjs';
-import { ensureProjectStores } from './stores/runtime.mjs';
+import { inspectProjectStores } from './stores/runtime.mjs';
 
 const identity = (ref) => ref.sha256 + ':' + ref.bytes;
 const sourceTypes = new Map([
@@ -105,22 +105,11 @@ async function assetInventory(project, configs) {
   };
 }
 
-async function inventoryProject(service) {
-  try {
-    return await ensureProjectStores(service, { allowCached: true, display: true });
-  } catch (error) {
-    if (!service.projectStores) throw error;
-    return service.projectStores;
-  }
-}
-
 export async function projectAssetStorage(service) {
   const empty = { assets: [], stores: [], unavailableReferenceSources: 0 };
   if (service.reviewMode === 'preview') return empty;
-  const stores = readStoreConfig(service.root).stores.filter((store) => store.kind === 's3');
+  const config = readStoreConfig(service.root);
+  const stores = config.stores.filter((store) => store.kind === 's3' && store.roles.includes('artifact'));
   if (!stores.length) return empty;
-  return assetInventory(
-    await inventoryProject(service),
-    stores.filter((store) => store.roles.includes('artifact'))
-  );
+  return inspectProjectStores(service.root, config, (project) => assetInventory(project, stores));
 }

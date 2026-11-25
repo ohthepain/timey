@@ -10,6 +10,8 @@ implementation within this design.
 Open **Settings > Asset Storage** to review assets in configured S3 Artifact
 stores. The inventory reads objects under the project's exact content-addressed
 namespace and groups identical content across configured stores under one ID.
+Opening the inventory reads configured stores without starting legacy import or
+publishing storage metadata.
 The displayed object date is S3's last-modified date for the oldest listed
 copy. The inventory identifies legacy objects by digest because their object
 keys do not record a display name.
