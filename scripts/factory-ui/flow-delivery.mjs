@@ -1,3 +1,4 @@
+import { activeGroupRequest } from './flow-group-scope.mjs';
 import { issueTypes } from './flow-definitions.mjs';
 import { mergedDelivery } from './merged-issue.mjs';
 import {
@@ -213,8 +214,8 @@ export async function prepareFlowPublication(service, ctx, workspace, options = 
     if (git(workspace.checkout, 'diff', '--name-only', base, candidate.head, '--', ...queueReportPaths()))
       return blocked('Shared issue report changes require a separate queue PR.');
   }
-  const { goal, requestedProof } = requestData(ctx.flow).fields ?? {};
-  const wording = requestData(ctx.flow).wording;
+  const { fields, wording } = activeGroupRequest(ctx.issue, ctx.flow);
+  const { goal, requestedProof } = fields ?? {};
   const title = ctx.issue.title;
   const body = pr
     ? undefined
@@ -432,7 +433,7 @@ export async function assertPublicationIdle(provider, pr, branch) {
 }
 
 function deliveryWorkProof(ctx, candidate) {
-  const requested = requestData(ctx.flow).fields?.requestedProof;
+  const requested = activeGroupRequest(ctx.issue, ctx.flow).fields?.requestedProof;
   const work = upstreamBlocks(ctx.block, ctx.flow.blocks).filter(({ kind }) => kind === 'work');
   return {
     requested,

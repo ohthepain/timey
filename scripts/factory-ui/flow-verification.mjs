@@ -1,3 +1,4 @@
+import { activeGroupRequest } from './flow-group-scope.mjs';
 import { diagnosticContext } from './diagnostic-activity.mjs';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, join, resolve } from 'node:path';
@@ -5,12 +6,12 @@ import { fileURLToPath } from 'node:url';
 import { dependencyPreflight, workspacePackages } from '../verify-preflight.mjs';
 import { digest, git, requireThat } from './common.mjs';
 import { commandSummary } from './checks.mjs';
-import { deliveryTarget, requestData } from './flow-block-data.mjs';
+import { deliveryTarget } from './flow-block-data.mjs';
 import { evidencePath } from './stores/evidence.mjs';
 
 export const workVerificationScript = fileURLToPath(new URL('../verify.mjs', import.meta.url));
 function flowVerificationOptions(ctx) {
-  const { goal, requestedProof } = requestData(ctx.flow).fields ?? {};
+  const { goal, requestedProof } = activeGroupRequest(ctx.issue, ctx.flow, ctx.attempt?.groupIssueIds).fields ?? {};
   const { remote, branch } = deliveryTarget(ctx.flow);
   return {
     auditPolicy: 'required',

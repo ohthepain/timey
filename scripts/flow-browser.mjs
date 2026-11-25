@@ -1,4 +1,5 @@
 import { masterIssueBrowserChecks } from './flow-browser-master-issues.mjs';
+import { issueAnnotationBrowserChecks } from './flow-browser-issue-annotations.mjs';
 import { blockModelsBrowserChecks } from './flow-browser-block-models.mjs';
 import { providerSettingsBrowserChecks } from './flow-browser-provider-settings.mjs';
 import { activityBrowserChecks } from './flow-browser-activity.mjs';
@@ -167,6 +168,7 @@ const candidate = { revision: git(root, 'rev-parse', 'HEAD'), assets: fingerprin
 const results = [];
 const {
   '--master-issues': masterIssuesCheck,
+  '--issue-annotations': issueAnnotationsCheck,
   '--folder-settings': folderSettingsCheck,
   '--block-deletion': blockDeletionCheck,
   '--investigation-followups': followupsCheck,
@@ -638,6 +640,7 @@ try {
     projectIssuesBrowserChecks({ page, project, root, output })
   );
   await check(masterIssuesCheck, () => masterIssueBrowserChecks({ page, project, root, output }));
+  await check(issueAnnotationsCheck, () => issueAnnotationBrowserChecks({ page, project, root, output, poll }));
   await check(navigationCheck, () =>
     withQueueConfiguration({ page, project, root }, () => projectNavigationBrowserChecks({ page, screenshot }))
   );

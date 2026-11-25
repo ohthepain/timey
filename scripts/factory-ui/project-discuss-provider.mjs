@@ -65,7 +65,11 @@ class ProjectDiscussProvider {
     this.injectedConnection = Boolean(options.connection);
     this.tools =
       options.tools ||
-      createProjectDiscussTools(service, { ...options, reportContext: () => this.active?.message.reportContext });
+      createProjectDiscussTools(service, {
+        ...options,
+        reportContext: () => this.active?.message.reportContext,
+        annotationActor: () => ({ kind: 'chat', id: this.active?.session.id }),
+      });
     this.connection = options.connection || new DiscussConnection({ experimentalApi: true, root: service.root });
     this.connection.toolHandler = (params) => this.invokeTool(params);
     this.connection.onEvent = (event) => this.event(event);

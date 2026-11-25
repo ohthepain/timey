@@ -62,6 +62,10 @@ import { flowOwnsIssue } from './flow-ownership.mjs';
 import { SidebarFiles } from './sidebar-files.mjs';
 import { trashDirectory, whileTrashingDirectory } from './folder-trash.mjs';
 import { FlowGrouping } from './flow-grouping.mjs';
+import { issueRunTools } from './issue-run-tools.mjs';
+import { issueAnnotations } from './issue-annotations.mjs';
+import { issueBadgeIndex, issueBadges } from './issue-badges.mjs';
+import { groupScope, scopedRequest, workScopeIds } from './flow-group-scope.mjs';
 import { FlowFollowups } from './flow-followups.mjs';
 import { isInvestigation } from './investigation-records.mjs';
 import {
@@ -166,7 +170,13 @@ const branchActions = new Set([
 const retroFolder = 'Retro items';
 const closureActions = new Set(['retro-setting', 'auto-close-setting', 'retry-closure', 'skip-retro', 'cleanup-again']);
 const folderSelectionActions = new Set(['folder-selection', 'folder-scan', 'folder-move', 'folder-remove']);
-const folderGroupActions = new Set(['folder-group-preview', 'folder-group-create', 'folder-detach']);
+const folderGroupActions = new Set([
+  'folder-group-preview',
+  'folder-group-create',
+  'folder-detach',
+  'folder-detach-blocked',
+  'folder-reattach',
+]);
 const folderNightActions = new Set(['folder-night-plan', 'folder-night-start', 'folder-night-stop']);
 const folderOperationActions = new Set(['folder-ai-search', 'folder-bulk-preview', 'folder-bulk-run']);
 const folderActions = new Set([
@@ -182,6 +192,8 @@ const scopedFolderActions = new Set([
   'folder-group-create',
   'folder-group-preview',
   'folder-detach',
+  'folder-detach-blocked',
+  'folder-reattach',
   'folder-move',
   'folder-remove',
   'folder-bulk-preview',
@@ -193,9 +205,9 @@ const scopedFolderActions = new Set([
 const cachedFlowActions = new Set(['agent-answer', 'cancel-confirmation', 'reveal-definition', 'open-block-extension']);
 
 export async function prepareFlowActionStores(service, input) {
-  const { action, issueId, subIssueId } = input;
+  const { action, issueId, subIssueId, masterId } = input;
   const ids = Array.isArray(input.issueIds) ? input.issueIds : [];
-  const issueIds = [...new Set([issueId, subIssueId, ...ids])].filter(
+  const issueIds = [...new Set([issueId, subIssueId, masterId, ...ids])].filter(
     (id) => typeof id === 'string' && /^[\w-]+$/.test(id)
   );
   const queueWide = folderActions.has(action) && !scopedFolderActions.has(action);
@@ -563,7 +575,7 @@ class IssueFlows {
     const needsInitialReport = id && !this.issues(id).length;
     return this.service.sharedIssues.refreshInBackground(Boolean(needsInitialReport));
   }
-  indexIssue(issue, flow, issues, resolveFolder) {
+  indexIssue(issue, flow, issues, resolveFolder, badgeIndex) {
     const masterId = this.groups.masterId(issue.id, issues);
     const activeBlock = flow.blocks.find((block) =>
       ['running', 'stopping', 'in-progress'].includes(block.attempts.at(-1)?.status)
@@ -576,12 +588,14 @@ class IssueFlows {
         this.service.projectStores &&
         readSnapshot(this.service.root)?.claims?.some((claim) => claim.issueId === issue.id && claim.attemptId)
       );
+    const approvals = this.agentApprovals(issue.id);
     return {
       id: issue.id,
       title: issue.title,
       issueNumber: issue.issueNumber,
       state: issue.state,
       type: requestData(flow).fields?.type ?? flow.routeType,
+      badges: issueBadges(issue, badgeIndex, { masterId, approvals, flow }),
       masterId,
       isMaster: Boolean(issue.issue_group),
       folder: flow.folder,
@@ -593,7 +607,7 @@ class IssueFlows {
       storeId: issue.storeId,
       resolvedBranch: deliveryTarget(flow).branch,
       activeBlock: activeBlock ? { id: activeBlock.id, kind: activeBlock.kind } : null,
-      humanInput: availableHumanInput(issue, flow, this.agentApprovals(issue.id)[0]),
+      humanInput: availableHumanInput(issue, flow, approvals[0]),
       paused: Boolean(this.autoplay.get(issue.id)?.userPaused),
       waitingForApproval: this.autoplay.get(issue.id)?.mode === 'waiting',
       status: masterId && !issue.closed ? 'new' : flowStatus(flow, issue, active),
@@ -633,9 +647,27 @@ class IssueFlows {
   agentApprovals(issueId) {
     return this.executor.approvals ? this.executor.approvals(issueId) : [];
   }
+  async badgedList(result, rows = this.issues()) {
+    const { records, warning } = await issueAnnotations(this.service).view();
+    const index = issueBadgeIndex(records, [...rows, ...this.groups.archivedGroups()]);
+    const issueById = new Map(rows.map((issue) => [issue.id, issue]));
+    return {
+      ...result,
+      issues: result.issues.map((row) => {
+        const issue = issueById.get(row.id) ?? row;
+        const path = this.store.path(row.id);
+        const flow = existsSync(path) ? this.store.read(issue, flowTarget(this.service.root)) : undefined;
+        const approvals = this.agentApprovals(row.id);
+        return { ...row, badges: issueBadges(issue, index, { masterId: row.masterId, approvals, flow }) };
+      }),
+      ...(warning && { annotationsWarning: warning }),
+    };
+  }
   async view(id, { requestOnly = false, refresh = false } = {}) {
     const { ownership, ...storage } = await this.storageView(id, { refresh });
     const issues = this.issues();
+    const { records: annotations, warning: annotationsWarning } = await issueAnnotations(this.service).view();
+    const badgeIndex = issueBadgeIndex(annotations, [...issues, ...this.groups.archivedGroups()]);
     const { entries: catalog, errors: catalogErrors } = this.catalog.read();
     let branches = [];
     let branchCatalogError;
@@ -653,10 +685,17 @@ class IssueFlows {
     const index = requestOnly
       ? []
       : issues.map((issue) =>
-          this.indexIssue(issue, this.read(issue, catalog, assignableFolders, resolveFolder), issues, resolveFolder)
+          this.indexIssue(
+            issue,
+            this.read(issue, catalog, assignableFolders, resolveFolder),
+            issues,
+            resolveFolder,
+            badgeIndex
+          )
         );
     const data = {
       ...storage,
+      ...(annotationsWarning && { annotationsWarning }),
       project: basename(this.service.root),
       folderMigrationErrors: this.folderMigrationErrors,
       branches,
@@ -698,33 +737,13 @@ class IssueFlows {
     const issueSettings = this.issueSettings(issue, savedFlow, resolveFolder);
     assignBlockSkills(flow, catalog, issueSettings);
     const flowDefinitions = requestOnly ? null : this.flowDefinitionOptions(flow, catalog);
-    const legacyRun = this.service.store?.runs?.findLast(
-      (run) => run.issueId === id && this.service.store.connected.has(run.id)
-    );
-    const legacyChat = this.service.issueChats?.active?.get(id);
-    if (!this.active.has(id) && (legacyRun || legacyChat || this.service.lifecycleTasks?.has(id))) {
-      const block = makeBlock('work', ['request'], false, catalog);
-      block.id = 'existing-operation';
-      block.label = 'Existing issue operation';
-      block.readOnly = true;
-      block.attempts = [
-        {
-          id: legacyRun?.id || legacyChat?.messageId || 'legacy',
-          status: 'running',
-          startedAt: legacyRun?.created,
-          summary:
-            legacyRun?.summary ||
-            'This existing operation owns the issue conversation. Its original controls remain in Classic.',
-          output: '',
-        },
-      ];
-      flow.blocks.splice(1, 0, block);
-    }
+    this.addLegacyOperation(flow, id, catalog);
     this.suggestTargetUpdate(flow, environment, catalog);
     const issuesWithSelected = issues.some((entry) => entry.id === id) ? issues : [...issues, issue];
-    const selectedRow = requestOnly
-      ? this.indexIssue(issue, savedFlow, issuesWithSelected, resolveFolder)
-      : selectedFlowRow(data.issues, id);
+    const selectedRow =
+      requestOnly || issue.location === 'archive'
+        ? this.indexIssue(issue, savedFlow, issuesWithSelected, resolveFolder, badgeIndex)
+        : selectedFlowRow(data.issues, id);
     if (requestOnly) data.issues = [selectedRow];
     if (!['closed', 'needs-approval'].includes(selectedRow.status) && !this.active.has(id)) {
       if (environment.pr?.mergedAt) selectedRow.status = 'merged';
@@ -750,6 +769,7 @@ class IssueFlows {
         ownership,
         status: selectedRow.status,
         isMaster: selectedRow.isMaster,
+        badges: selectedRow.badges,
         ...mergedIssueState(flow),
         closure: issue.closure,
       },
@@ -764,7 +784,8 @@ class IssueFlows {
           ['branch', 'skill', 'model', 'effort'].includes(key)
         ),
       },
-      grouping: this.groups.view(issue, flow, issues),
+      grouping: this.groupingView(issue, flow, issues, index, badgeIndex),
+      annotations: annotations.filter(({ issueId }) => issueId === id),
       sharedQueue: this.service.sharedIssues?.view(id),
       closureBusy: this.closureBusy(id),
       autoplay: this.autoplay.get(id) ?? { mode: 'paused' },
@@ -789,6 +810,40 @@ class IssueFlows {
       artifacts: this.artifacts(flow, { fresh: false }),
       conversation: conversationMessages(this.service.root, id).slice(-100),
     };
+  }
+  addLegacyOperation(flow, id, catalog) {
+    const legacyRun = this.service.store?.runs?.findLast(
+      (run) => run.issueId === id && this.service.store.connected.has(run.id)
+    );
+    const legacyChat = this.service.issueChats?.active?.get(id);
+    if (!this.active.has(id) && (legacyRun || legacyChat || this.service.lifecycleTasks?.has(id))) {
+      const block = makeBlock('work', ['request'], false, catalog);
+      block.id = 'existing-operation';
+      block.label = 'Existing issue operation';
+      block.readOnly = true;
+      block.attempts = [
+        {
+          id: legacyRun?.id || legacyChat?.messageId || 'legacy',
+          status: 'running',
+          startedAt: legacyRun?.created,
+          summary:
+            legacyRun?.summary ||
+            'This existing operation owns the issue conversation. Its original controls remain in Classic.',
+          output: '',
+        },
+      ];
+      flow.blocks.splice(1, 0, block);
+    }
+  }
+  groupingView(issue, flow, issues, index, badgeIndex) {
+    const grouping = this.groups.view(issue, flow, issues);
+    if (grouping) {
+      const byId = new Map(index.map((row) => [row.id, row.badges]));
+      for (const child of grouping.children) {
+        child.badges = byId.get(child.id) ?? issueBadges(child, badgeIndex, { masterId: issue.id });
+      }
+    }
+    return grouping;
   }
   populateBlockDetails(flow, issue, catalog) {
     const definitions = definitionMap(catalog);
@@ -1234,6 +1289,7 @@ class IssueFlows {
       this.service.serverControl?.allow('/api/flow-action', { action: 'play', issueId });
       this.service.ownServer();
       const issue = this.selected(issueId);
+      this.groups.requireChildren(issue);
       const { entries: catalog } = this.catalog.read();
       const flow = this.read(issue, catalog);
       if (mergedDelivery(flow)) return this.pause(issueId, 'This issue has merged. Close it when ready.');
@@ -1299,7 +1355,7 @@ class IssueFlows {
     if (!claim) return;
     const owner = this.active.get(input.issueId)?.storeOwner;
     requireThat(
-      input.action === 'play' && sameOwner(claim.value, owner),
+      ['play', 'folder-detach-blocked'].includes(input.action) && sameOwner(claim.value, owner),
       'Stop or explicitly recover the owning attempt before editing or starting this issue.'
     );
   }
@@ -1321,6 +1377,7 @@ class IssueFlows {
       await this.requireAvailableClaim(input);
     }
     const waiting = this.autoplay.get(input.issueId);
+    this.groups.requireScopeStable(input.issueId);
     try {
       return await this.dispatch(input);
     } catch (error) {
@@ -1526,6 +1583,7 @@ class IssueFlows {
     if (input.action === 'preview-publish' || input.action === 'confirm-publish')
       return this.reviewPublication(issue, flow, input, catalog);
     if (input.action === 'play') {
+      this.groups.requireChildren(issue);
       requireThat(!issue.closed, 'Reopen this issue before starting or resuming the route.');
       if (!['playing', 'waiting'].includes(this.autoplay.get(issue.id)?.mode)) {
         this.autoplay.set(issue.id, { mode: 'playing' });
@@ -2283,15 +2341,30 @@ class IssueFlows {
       'reviewed'
     );
   }
-  makeAttempt(flow, issue, block, catalog) {
+  makeAttempt(flow, issue, block, catalog, workIssueIds) {
     const definitions = definitionMap(catalog);
     const definition = definitions.get(blockDefinitionId(block));
     const details = blockDetails(flow, issue, block, definitions).map(({ candidates, ...detail }) => detail);
+    const groupIssueIds = issue.issue_group && (workIssueIds ?? groupScope(issue));
+    if (
+      groupIssueIds &&
+      (issue.issue_group.children.some(({ detachedAt }) => detachedAt) ||
+        groupIssueIds.length !== groupScope(issue).length)
+    ) {
+      this.groups.projectDetails(
+        block,
+        definition,
+        details,
+        scopedRequest(this.groups.withSavedScope(issue, flow), flow, groupIssueIds)
+      );
+    }
     block.links ??= {};
     for (const { key, selected } of details) if (selected) block.links[key] = selected;
     const startedAt = new Date().toISOString();
     return {
       id: randomUUID(),
+      ...(groupIssueIds && { groupIssueIds }),
+      ...(workIssueIds && { workIssueIds }),
       status: 'running',
       startedAt,
       lastActiveAt: startedAt,
@@ -2419,7 +2492,10 @@ class IssueFlows {
     return this.view(issue.id);
   }
   async start(issue, flow, input, catalog, publication = null, overnightRunId = null) {
-    if (!input.closureId) await this.requireEditableIssue(issue.id);
+    if (!input.closureId) {
+      this.groups.requireChildren(issue);
+      await this.requireEditableIssue(issue.id);
+    }
     requireInvestigationBlock(this, issue, flow, input);
     this.groups.requireIndependent(issue.id);
     requireThat(
@@ -2483,7 +2559,8 @@ class IssueFlows {
       flow.resolvedBranch = settings.values.branch;
     }
     await prepareInvestigationBlock(this, issue, flow, block, input);
-    const attempt = this.makeAttempt(flow, issue, block, catalog);
+    const scope = workScopeIds(issue, block, input.workIssueIds);
+    const attempt = this.makeAttempt(flow, issue, block, catalog, scope);
     attachInvestigationAttempt(flow, issue, block, input, attempt);
     if (input.closureId) attempt.closureId = input.closureId;
     if (block.kind === 'cleanup' && flow.closing.cleanupGeneration)
@@ -2521,20 +2598,21 @@ class IssueFlows {
     );
     return { accepted: true, issueId: issue.id, blockId: block.id, attemptId: attempt.id };
   }
-  async admitAttempt(issue, flow, block, attempt, controller, purpose = 'edit') {
-    try {
-      return await this.attemptMetadata(block, () =>
-        this.admitAttemptState(issue, flow, block, attempt, controller, purpose)
-      );
-    } catch (error) {
-      this.active.delete(issue.id);
-      throw error;
-    }
+  admitAttempt(issue, flow, block, attempt, controller, purpose = 'edit') {
+    return this.attemptMetadata(block, () => this.admitAttemptState(issue, flow, block, attempt, controller, purpose));
   }
   attemptMetadata(block, run) {
     return block.kind === 'update-branch' ? runMetadataOperation(this.service.projectStores, run) : run();
   }
   async admitAttemptState(issue, flow, block, attempt, controller, purpose) {
+    if (!['detach-blocked-child', 'reattach-child'].includes(block.operation)) {
+      this.groups.requireScopeStable(issue.id);
+      requireThat(
+        JSON.stringify(groupScope(issue)) === JSON.stringify(groupScope(this.selected(issue.id))),
+        'The attached sub-issues changed. Refresh before starting work.'
+      );
+    }
+    requireThat(!this.active.has(issue.id), 'An attempt already owns this issue.');
     const owned = { blockId: block.id, attemptId: attempt.id, controller };
     this.active.set(issue.id, owned);
     try {
@@ -2620,9 +2698,19 @@ class IssueFlows {
       });
       if (!owner && !['request', 'retro', 'cleanup', 'close'].includes(block.kind))
         claim = queue?.acquireFlowBlock(issue, blockId, input.action === 'continue');
+      const tools = issueRunTools(
+        this.service,
+        issue,
+        controller.signal,
+        issue.issue_group &&
+          (block.kind === 'request' || isWorkBlock(block)) && {
+            current: () => this.groups.scopeView(issue.id, attempt.id),
+            detach: (request) => this.groups.detachFromRun(issue.id, attempt.id, request),
+          }
+      );
       const result =
         block.kind === 'request'
-          ? await this.clarify(this.service.root, definition, attempt, controller.signal)
+          ? await this.clarify(this.service.root, definition, attempt, controller.signal, undefined, tools)
           : await this.executor.run({
               definition,
               details: Object.fromEntries(
@@ -2634,6 +2722,11 @@ class IssueFlows {
               attempt,
               signal: controller.signal,
               continuing: input.action === 'continue',
+              tools,
+              onWorkSource: (phase, observation) =>
+                this.changeAttempt(issue, blockId, attemptId, (current) => {
+                  (current.workSource ??= {})[phase] = observation;
+                }),
               input,
               onReconciled: (reason = 'The original issue conversation was observed idle before this continuation.') =>
                 this.changeAttempt(issue, blockId, attemptId, (_, current) => {
@@ -2674,6 +2767,7 @@ class IssueFlows {
                   current.inputRequestedAt ??= new Date().toISOString();
                 }),
             });
+      await this.groups.waitForScope(issue.id);
       this.changeAttempt(issue, blockId, attemptId, (current, saved) => {
         Object.assign(current, result, { status: result.status || 'completed', endedAt: new Date().toISOString() });
         if (current.status === 'completed') resolveBlockingErrors(saved, blockId, ['play']);
@@ -2687,7 +2781,13 @@ class IssueFlows {
             title: result.result.title,
           });
         }
-        if (block.kind === 'request' && !current.invalidatedAt && current.status === 'completed') {
+        if (
+          block.kind === 'request' &&
+          !current.invalidatedAt &&
+          current.status === 'completed' &&
+          JSON.stringify(current.groupIssueIds) ===
+            JSON.stringify(this.selected(issue.id).issue_group && groupScope(this.selected(issue.id)))
+        ) {
           const request = requestBlock(saved);
           for (const previous of request.attempts.filter(
             (entry) => entry.id !== current.id && unresolvedAttempt(entry)
@@ -2727,6 +2827,7 @@ class IssueFlows {
     } finally {
       providerGuard?.close();
       clearInterval(checkpoint);
+      await this.groups.waitForScope(issue.id);
       if (owner && outcome) await this.finalizeAttempt(issue, owner, outcome, block);
       if (claim && outcome && !unresolvedAttempt(outcome)) {
         try {

@@ -55,6 +55,7 @@ import {
 import { moveIssueBase, startingBranchUpstream, updateIssueBranch } from './flow-update-branch.mjs';
 import { runRetro } from './flow-retro.mjs';
 import { groupProofRequest, withGroupProof } from './flow-group-proof.mjs';
+import { sourceObservation } from './flow-group-scope.mjs';
 import { isInvestigation } from './investigation-records.mjs';
 import { investigationSnapshot, removeInvestigationSnapshot } from './investigation-snapshot.mjs';
 import { inquiryKinds, investigationOutputKinds } from './investigation-flow.mjs';
@@ -131,6 +132,7 @@ export function createFlowExecutor(service, options = {}) {
         options.verifyWork || ((ctx, workspace, folder) => runWorkVerification(ctx, workspace, folder, execute));
       const prepareWorkDependencies = (ctx, workspace, folder) =>
         resumeWorkDependencies(ctx, workspace, folder, execute);
+      let sourceWorkspace;
       try {
         context.signal.throwIfAborted();
         service.ownServer();
@@ -154,10 +156,14 @@ export function createFlowExecutor(service, options = {}) {
           owned.snapshot = investigationSnapshot(service.root, revision);
           context.snapshot = owned.snapshot;
         }
+        if (ctx.attempt.workIssueIds) {
+          sourceWorkspace = await workspaceFor(service, context);
+          ctx.onWorkSource('before', sourceObservation(sourceWorkspace));
+        }
         if (!command && context.block.kind === 'work')
           await prepareWorkDependencies(
             context,
-            await workspaceFor(service, context),
+            sourceWorkspace ?? (await workspaceFor(service, context)),
             evidenceDirectory(service, context)
           );
         const result = !command
@@ -177,6 +183,13 @@ export function createFlowExecutor(service, options = {}) {
         owned.connection?.close();
         removeInvestigationSnapshot(owned.snapshot);
         active.delete(ctx.issue.id);
+        if (sourceWorkspace) {
+          try {
+            ctx.onWorkSource('after', sourceObservation(sourceWorkspace));
+          } catch {
+            ctx.onProgress?.('The Work checkout could not be recorded for child attribution.');
+          }
+        }
       }
     },
     approvals(issueId) {
@@ -187,6 +200,8 @@ export function createFlowExecutor(service, options = {}) {
         blockId: owned.blockId,
         attemptId: owned.attemptId,
         params: request.params,
+        ...(request.method === 'item/commandExecution/requestApproval' &&
+          /(?:^|\s|[;&|])git\s/.test(String(request.params.command ?? '')) && { operation: 'git' }),
         options:
           request.method === 'item/tool/requestUserInput'
             ? []
@@ -438,7 +453,7 @@ function blockInput(ctx, extra = {}) {
       details: (ctx.attempt.details ?? []).map(({ key, value }) => ({ key, value: value ?? null })),
       notes: (ctx.block.comments || []).slice(-20).map((comment) => comment.text),
       ...(ctx.sourceEvidence && { sourceIssue: ctx.sourceEvidence }),
-      ...(ctx.issue.issue_group && { subIssues: groupProofRequest(ctx.issue) }),
+      ...(ctx.issue.issue_group && { subIssues: groupProofRequest(ctx.issue, ctx.attempt.groupIssueIds) }),
       ...extra,
     },
     null,
@@ -826,6 +841,24 @@ function modelConversationBinding(service, ctx, state, savedBlock, basis) {
   return { previous, recover, binding };
 }
 
+function modelConversationBasis(ctx, tools) {
+  return digest(
+    JSON.stringify([
+      ctx.attempt.definitionChecksum,
+      ctx.attempt.details,
+      ctx.attempt.groupIssueIds,
+      tools?.definitions.map(({ name }) => name),
+      ctx.block.skill,
+      ctx.block.prompt,
+      ctx.block.comments,
+    ])
+  );
+}
+
+function modelToolRegistry(outputExecution, ctx) {
+  return outputExecution?.tools ?? ctx.tools;
+}
+
 async function runModel(service, ctx, owned, options) {
   ctx = withGroupProof(ctx);
   ctx = {
@@ -843,6 +876,7 @@ async function runModel(service, ctx, owned, options) {
   assertSharedBlockClaim(service, ctx);
   const workspace = ctx.snapshot || (await workspaceFor(service, ctx));
   const outputExecution = investigationOutputExecution(service, ctx, workspace);
+  const tools = modelToolRegistry(outputExecution, ctx);
   const sandbox = workspace.temporary
     ? 'workspace-write'
     : readOnlyBlocks.has(ctx.block.kind)
@@ -855,15 +889,7 @@ async function runModel(service, ctx, owned, options) {
     !savedBlock?.startup || savedBlock.startup.status === 'ready',
     'Chat startup is uncertain. Reconcile the original connection before continuing.'
   );
-  const basis = digest(
-    JSON.stringify([
-      ctx.attempt.definitionChecksum,
-      ctx.attempt.details,
-      ctx.block.skill,
-      ctx.block.prompt,
-      ctx.block.comments,
-    ])
-  );
+  const basis = modelConversationBasis(ctx, tools);
   const { previous, recover, binding } = modelConversationBinding(service, ctx, state, savedBlock, basis);
   service.issueChats?.release(ctx.issue.id);
   const folder = modelEvidenceDirectory(service, ctx, options.repair);
@@ -884,7 +910,7 @@ async function runModel(service, ctx, owned, options) {
     root: service.root,
     ...(ctx.block.kind === 'sol' ? {} : settings),
     threadId: binding.threadId,
-    experimentalApi: Boolean(outputExecution),
+    experimentalApi: Boolean(tools),
     onEvent(message) {
       if (finished) return;
       ctx.onEvent?.(message);
@@ -988,7 +1014,7 @@ async function runModel(service, ctx, owned, options) {
     }
     threadId = await Promise.race([
       stopped,
-      options.attach(connection, workspace.checkout, binding, retain, sandbox, instructions, outputExecution?.tools),
+      options.attach(connection, workspace.checkout, binding, retain, sandbox, instructions, tools),
     ]);
     ctx.signal.throwIfAborted();
     await ctx.onReconciled?.();

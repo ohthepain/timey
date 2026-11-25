@@ -3,35 +3,38 @@ import { requireThat } from './common.mjs';
 import { agentModel, sessionProvider } from './agent-models.mjs';
 import { NativeAgentConnection } from './native-agent.mjs';
 
+export function handleTurnTool(connection, message, tools) {
+  if (message.method !== 'item/tool/call' || !tools) return false;
+  Promise.resolve()
+    .then(async () => {
+      const params = message.params;
+      const turn = connection.turns.get(params.threadId);
+      requireThat(turn, 'This output turn is no longer running.');
+      const started = await turn.started;
+      requireThat(started.turn.id === params.turnId, 'This tool belongs to another output turn.');
+      return tools.invoke(params.tool, params.arguments, params);
+    })
+    .then(
+      (value) =>
+        connection.send({
+          id: message.id,
+          result: { success: true, contentItems: [{ type: 'inputText', text: JSON.stringify(value) }] },
+        }),
+      (error) =>
+        connection.send({
+          id: message.id,
+          result: { success: false, contentItems: [{ type: 'inputText', text: error.message }] },
+        })
+    );
+  return true;
+}
+
 class IssueChatConnection extends CodexConnection {
   interrupt(threadId) {
     return interruptCodexTurn(this, threadId);
   }
   request(message) {
-    if (message.method === 'item/tool/call' && this.blockTools) {
-      Promise.resolve()
-        .then(async () => {
-          const params = message.params;
-          const turn = this.turns.get(params.threadId);
-          requireThat(turn, 'This output turn is no longer running.');
-          const started = await turn.started;
-          requireThat(started.turn.id === params.turnId, 'This tool belongs to another output turn.');
-          return this.blockTools.invoke(params.tool, params.arguments, params);
-        })
-        .then(
-          (value) =>
-            this.send({
-              id: message.id,
-              result: { success: true, contentItems: [{ type: 'inputText', text: JSON.stringify(value) }] },
-            }),
-          (error) =>
-            this.send({
-              id: message.id,
-              result: { success: false, contentItems: [{ type: 'inputText', text: error.message }] },
-            })
-        );
-      return;
-    }
+    if (handleTurnTool(this, message, this.blockTools)) return;
     if (this.issueChatSandboxes?.get(message.params?.threadId) === 'workspace-write') return super.request(message);
     this.send({
       id: message.id,

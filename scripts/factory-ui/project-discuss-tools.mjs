@@ -4,8 +4,10 @@ import { requireThat } from './common.mjs';
 import { readQueue } from './data.mjs';
 import { listIssueStorage, moveIssueStorage } from './issue-storage-actions.mjs';
 import { issueTypes } from './flow-definitions.mjs';
+import { requestData } from './flow-block-data.mjs';
 import { LocalNotes, localNoteActionSchema } from './local-notes.mjs';
 import { inheritedIssueCaptureProfile } from './stores/settings.mjs';
+import { annotationToolSchema, annotationTool, annotationTools, issueAnnotations } from './issue-annotations.mjs';
 
 const text = z.string().max(16000);
 const id = z
@@ -87,6 +89,15 @@ export function createProjectDiscussTools(service, options = {}) {
   const home = () => options.home?.() || service.projectHome;
   const flows = () => options.flows?.() || service.flows;
   const registry = {
+    ...(options.annotationActor && {
+      issue_annotation: {
+        description: annotationTool.description,
+        schema: annotationToolSchema,
+        path: '/api/issue-annotation',
+        pauseSafe: true,
+        run: (input) => annotationTools(service, options.annotationActor()).invoke(annotationTool.name, input),
+      },
+    }),
     local_notes: {
       description: 'Read this project’s private local notes and current edit basis. Reading starts no work.',
       schema: z.object({}).strict(),
@@ -112,41 +123,8 @@ export function createProjectDiscussTools(service, options = {}) {
       schema: z
         .object({ location: z.enum(['open', 'closed', 'archive']).default('open'), issueId: id.optional() })
         .strict(),
-      run: ({ location, issueId }) => {
-        if (location !== 'open') {
-          const result = listIssueStorage(service, location);
-          return issueId ? { issues: result.issues.filter((issue) => issue.id === issueId) } : result;
-        }
-        const { issues, issueFolders } = readQueue(service.root, issueId ? { issueId } : {});
-        return {
-          folders: issueFolders.map(({ id, name }) => ({ id, name })),
-          issues: issues.map((issue) => {
-            const record = {
-              id: issue.id,
-              title: issue.title,
-              issueNumber: issue.issueNumber,
-              state: issue.state,
-              folderId: issue.folderId,
-              url: '/?issue=' + encodeURIComponent(issue.id),
-            };
-            if (issueId) {
-              const flow = flows().read(issue);
-              record.revision = flow.revision;
-              record.folder = flow.folder;
-              const request = flow.blocks.find((block) => block.kind === 'request');
-              record.originalPrompt = request?.data.wording || '';
-              record.issueType = request?.data.fields?.type || flow.routeType;
-              record.blocks = flow.blocks.map((block) => ({
-                id: block.id,
-                kind: block.kind,
-                label: block.label,
-                status: block.attempts.at(-1)?.status || 'ready',
-              }));
-            }
-            return record;
-          }),
-        };
-      },
+      run: ({ location, issueId }) =>
+        location === 'open' ? openIssueList(service, issueId, flows) : storedIssueList(service, location, issueId),
     },
     issue_create: {
       description:
@@ -286,6 +264,52 @@ export function createProjectDiscussTools(service, options = {}) {
       return descriptor.run(parsed);
     },
   };
+}
+
+function storedIssueList(service, location, issueId) {
+  const result = listIssueStorage(service, location);
+  return issueId ? { issues: result.issues.filter((issue) => issue.id === issueId) } : result;
+}
+
+function listedIssue(issue) {
+  return {
+    id: issue.id,
+    title: issue.title,
+    issueNumber: issue.issueNumber,
+    state: issue.state,
+    folderId: issue.folderId,
+    url: '/?issue=' + encodeURIComponent(issue.id),
+  };
+}
+
+function issueRequestSummary(flow) {
+  const { wording, fields } = requestData(flow);
+  return { originalPrompt: wording || '', issueType: fields?.type || flow.routeType };
+}
+
+function issueControlSnapshot(issue, flow, { records, warning }) {
+  return {
+    ...listedIssue(issue),
+    ...issueRequestSummary(flow),
+    revision: flow.revision,
+    folder: flow.folder,
+    annotations: records.filter(({ issueId }) => issueId === issue.id),
+    annotationsWarning: warning,
+    blocks: flow.blocks.map((block) => ({
+      id: block.id,
+      kind: block.kind,
+      label: block.label,
+      status: block.attempts.at(-1)?.status || 'ready',
+    })),
+  };
+}
+
+async function openIssueList(service, issueId, flows) {
+  const { issues, issueFolders } = readQueue(service.root, { issueId });
+  const folders = issueFolders.map(({ id, name }) => ({ id, name }));
+  if (!issueId || !issues.length) return { folders, issues: issues.map(listedIssue) };
+  const annotations = await issueAnnotations(service).view();
+  return { folders, issues: issues.map((issue) => issueControlSnapshot(issue, flows().read(issue), annotations)) };
 }
 
 function receipt(result, action) {
