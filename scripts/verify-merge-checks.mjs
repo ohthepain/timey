@@ -1,4 +1,4 @@
-import { flowBrowserOrderModifier, isFlowBrowserSelector } from './browser-scenario-policy.mjs';
+import { flowBrowserCiParts, flowBrowserOrderModifier, isFlowBrowserSelector } from './browser-scenario-policy.mjs';
 
 const fullFactory = 'test:factory';
 const aggregateScripts = new Set([fullFactory, 'test:browser', 'test:flow', 'test:flow:browser']);
@@ -24,10 +24,12 @@ function checkNodeTests(args, reject) {
 function checkFlowBrowserTests(args, reject, isSelector) {
   checkTrailingArguments(
     args,
-    (arg) => arg === flowBrowserOrderModifier || isSelector(arg),
+    (arg) => arg === flowBrowserOrderModifier || flowBrowserCiParts.has(arg) || isSelector(arg),
     reject,
-    'Use a recognized Flow browser scenario flag or --reverse-fixture-scenarios with a scenario.'
+    'Use a recognized Flow browser scenario flag, --ci-part=1, --ci-part=2, or --reverse-fixture-scenarios.'
   );
+  const parts = args.filter((arg) => flowBrowserCiParts.has(arg));
+  if (parts.length > 1) reject(args.lastIndexOf(parts[1]) + 2, 'Select at most one Flow browser CI part.');
   if (!args.some(isSelector)) reject(args.length + 2, 'Provide at least one Flow browser scenario flag.');
 }
 

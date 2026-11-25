@@ -8,6 +8,10 @@ import { isWorkBlock } from './flow-store.mjs';
 
 export const groupScope = (issue) => groupChildren(issue).map(({ id }) => id);
 
+export function childRequestSection({ id, issueNumber, title, wording, requestedProof }) {
+  return `## ${issueNumber ? `#${issueNumber} ` : ''}${title}\n\nIssue ID: ${id}\n\n${wording}\n\nRequested proof:\n${requestedProof}`;
+}
+
 function selectWorkScope(attached, ids) {
   requireThat(Array.isArray(ids) && ids.length, 'Choose at least one attached sub-issue for Work.');
   const selected = attached.filter((id) => ids.includes(id));
@@ -51,8 +55,9 @@ export function scopedRequest(issue, flow, ids) {
     children.every(({ wording }) => typeof wording === 'string'),
     'The original child scope is unavailable. Review this group.'
   );
-  const excluded = issue.issue_group.children.filter(({ id }) => !selected.has(id));
-  const scope = excluded.reduce(omitChildWording, requestData(flow).wording).trim();
+  const excluded = issue.issue_group.children.filter(({ id, appended }) => !appended && !selected.has(id));
+  const original = excluded.reduce(omitChildWording, requestData(flow).wording).trim();
+  const scope = [original, ...children.filter(({ appended }) => appended).map(childRequestSection)].join('\n\n');
   const requestedProof = children
     .map(({ id, title, requestedProof }) => `${title} (${id})\n${requestedProof}`)
     .join('\n\n');
@@ -77,7 +82,7 @@ export function scopedRequest(issue, flow, ids) {
 export function activeGroupRequest(issue, flow, ids) {
   const request = requestData(flow);
   if (
-    !issue?.issue_group?.children.some(({ detachedAt }) => detachedAt) &&
+    !issue?.issue_group?.children.some(({ detachedAt, appended }) => detachedAt || appended) &&
     (!ids || ids.length === groupScope(issue).length)
   )
     return request;
@@ -139,7 +144,8 @@ const nonWriters = new Set([
 function sourceAttempts(flow) {
   return [...flow.blocks, ...(flow.retiredBlocks ?? [])]
     .filter(
-      ({ kind, operation }) => !nonWriters.has(kind) && !['detach-blocked-child', 'reattach-child'].includes(operation)
+      ({ kind, operation }) =>
+        !nonWriters.has(kind) && !['detach-blocked-child', 'reattach-child', 'attach-child'].includes(operation)
     )
     .flatMap(({ attempts }) => attempts)
     .sort((a, b) => String(a.startedAt).localeCompare(String(b.startedAt)));

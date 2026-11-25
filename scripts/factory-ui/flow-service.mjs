@@ -177,6 +177,7 @@ const folderGroupActions = new Set([
   'folder-detach',
   'folder-detach-blocked',
   'folder-reattach',
+  'folder-attach',
 ]);
 const folderNightActions = new Set(['folder-night-plan', 'folder-night-start', 'folder-night-stop']);
 const folderOperationActions = new Set(['folder-ai-search', 'folder-bulk-preview', 'folder-bulk-run']);
@@ -194,7 +195,6 @@ const scopedFolderActions = new Set([
   'folder-group-preview',
   'folder-detach',
   'folder-detach-blocked',
-  'folder-reattach',
   'folder-move',
   'folder-remove',
   'folder-bulk-preview',
@@ -379,9 +379,9 @@ function captureIdentity(
 
 function captureGroupMetadata(grouping) {
   if (!grouping) return {};
-  const { children, reasoning, humanChecks } = grouping;
+  const { children, reasoning, humanChecks, investigative } = grouping;
   return {
-    issue_group: { children, reasoning },
+    issue_group: { children, reasoning, ...(investigative !== undefined && { investigative }) },
     ...(humanChecks?.length && { human_checks: humanChecks }),
   };
 }
@@ -1746,6 +1746,13 @@ class IssueFlows {
     const editsWording = input.wording !== undefined;
     const editsType = input.type !== undefined;
     requireThat(editsWording || editsType, 'Choose an original prompt or issue type to edit.');
+    if (editsType) {
+      requireThat(issueTypes.includes(input.type), 'Choose a valid issue type.');
+      requireThat(
+        !issue.issue_group || this.groups.investigative(issue, flow) === (input.type === 'investigation'),
+        'The issue type must match the work type of the master’s sub-issues.'
+      );
+    }
     if (editsWording) {
       requireThat(
         typeof input.wording === 'string' && input.wording.trim() && input.wording.length <= 24000,
@@ -1757,7 +1764,6 @@ class IssueFlows {
       }
     }
     if (editsType) {
-      requireThat(issueTypes.includes(input.type), 'Choose a valid issue type.');
       const request = requestBlock(flow);
       const fields = request.data.fields || {};
       const currentType = fields.type ?? flow.routeType;
@@ -2390,7 +2396,7 @@ class IssueFlows {
     const groupIssueIds = issue.issue_group && (workIssueIds ?? groupScope(issue));
     if (
       groupIssueIds &&
-      (issue.issue_group.children.some(({ detachedAt }) => detachedAt) ||
+      (issue.issue_group.children.some(({ detachedAt, appended }) => detachedAt || appended) ||
         groupIssueIds.length !== groupScope(issue).length)
     ) {
       this.groups.projectDetails(
@@ -2642,7 +2648,7 @@ class IssueFlows {
     return { accepted: true, issueId: issue.id, blockId: block.id, attemptId: attempt.id };
   }
   async admitAttempt(issue, flow, block, attempt, controller, purpose = 'edit') {
-    if (!['detach-blocked-child', 'reattach-child'].includes(block.operation)) {
+    if (!['detach-blocked-child', 'reattach-child', 'attach-child'].includes(block.operation)) {
       this.groups.requireScopeStable(issue.id);
       requireThat(
         JSON.stringify(groupScope(issue)) === JSON.stringify(groupScope(this.selected(issue.id))),
@@ -2752,7 +2758,15 @@ class IssueFlows {
       );
       const result =
         block.kind === 'request'
-          ? await this.clarify(this.service.root, definition, attempt, controller.signal, undefined, tools)
+          ? await this.clarify(
+              this.service.root,
+              definition,
+              attempt,
+              controller.signal,
+              undefined,
+              tools,
+              issue.issue_group && this.groups.investigative(issue, flow)
+            )
           : await this.executor.run({
               definition,
               details: Object.fromEntries(
@@ -2810,6 +2824,11 @@ class IssueFlows {
                 }),
             });
       await this.groups.waitForScope(issue.id);
+      if (block.kind === 'request' && issue.issue_group && result.artifacts?.values?.type)
+        requireThat(
+          (result.artifacts.values.type === 'investigation') === this.groups.investigative(issue, flow),
+          'Request clarification must preserve the work type of the master’s sub-issues.'
+        );
       this.changeAttempt(issue, blockId, attemptId, (current, saved) => {
         Object.assign(current, result, { status: result.status || 'completed', endedAt: new Date().toISOString() });
         if (current.status === 'completed') resolveBlockingErrors(saved, blockId, ['play']);

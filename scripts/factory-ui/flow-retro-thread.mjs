@@ -19,13 +19,15 @@ const publicItems = new Set([
 ]);
 
 export function exportRetroThread(id, thread, attempts = [], unavailableReason = null) {
-  const linked = attempts.filter((attempt) => attempt.result?.threadId === id);
+  const linked = attempts.filter(
+    (attempt) => attempt.result?.threadId === id || repairTurns(attempt).some((repair) => repair.threadId === id)
+  );
   const base = { id, attemptIds: linked.map((attempt) => attempt.id) };
   if (!Array.isArray(thread?.turns)) return unavailableThread(base, unavailableReason);
   return redactValue({
     ...base,
     createdAt: thread.createdAt ?? null,
-    turns: thread.turns.map((turn, sequence) => exportTurn(turn, sequence, linked)),
+    turns: thread.turns.map((turn, sequence) => exportTurn(turn, sequence, linked, id)),
     coverage:
       'Turns and items retain provider order. Missing timestamps are null. Thread attempt IDs identify linked attempts, not ownership of every turn. Permission decisions absent from provider records are unavailable. Private reasoning is excluded. Unknown item payloads are unavailable.',
   });
@@ -39,14 +41,24 @@ function unavailableThread(base, reason) {
   });
 }
 
-function exportTurn(turn, sequence, linked) {
-  const attemptIds = linked.filter((attempt) => matchesTurn(attempt, turn.id)).map((attempt) => attempt.id);
+export function repairTurns(attempt) {
+  return (attempt.evidence ?? []).flatMap(({ repairTurn }) => (repairTurn ? [repairTurn] : []));
+}
+
+function exportTurn(turn, sequence, linked, threadId) {
+  const repairsForTurn = (attempt) =>
+    repairTurns(attempt).filter((repair) => repair.threadId === threadId && repair.turnId === turn.id);
+  const attemptIds = linked
+    .filter((attempt) => matchesTurn(attempt, turn.id) || repairsForTurn(attempt).length)
+    .map((attempt) => attempt.id);
+  const repairAttemptIds = linked.flatMap((attempt) => repairsForTurn(attempt).map(({ id }) => id));
   const items = (turn.items || []).map(exportItem);
   return {
     ...Object.fromEntries(['id', 'startedAt', 'completedAt'].map((key) => [key, turn[key] ?? null])),
     sequence,
     status: turn.status,
     attemptIds,
+    repairAttemptIds,
     attemptAssociation: attemptIds.length ? 'recorded-turn-id' : 'unavailable',
     items,
     permissionDecisions: permissionAvailability(items),

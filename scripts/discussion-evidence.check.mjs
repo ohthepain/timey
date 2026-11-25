@@ -143,6 +143,34 @@ test('text discussions reject oversized input before dispatch instead of linking
   assert.equal(f.records().filter(({ method }) => method === 'turn/start').length, 0);
 });
 
+test('Request clarification preserves the master work type', async (t) => {
+  const { root } = gitFixture(t, 'master-request-');
+  for (const [investigative, acceptedTypes, incompatible] of [
+    [true, ['investigation'], 'bug'],
+    [false, ['bug', 'feature'], 'investigation'],
+  ]) {
+    const clarify = (type) =>
+      clarifyRequest(
+        root,
+        { usable: true, prompt: 'Derive fields', artifacts: [{ key: 'type', kind: 'value' }] },
+        { id: 'master-request-' + type, details: [] },
+        new AbortController().signal,
+        () => ({
+          async begin() {},
+          async ask(_input, _attachments, schema) {
+            assert.deepEqual(new Set(schema.properties.type.enum), new Set(acceptedTypes));
+            return JSON.stringify({ type });
+          },
+          close() {},
+        }),
+        undefined,
+        investigative
+      );
+    await assert.rejects(clarify(incompatible), /must preserve the master’s work type/);
+    for (const type of acceptedTypes) assert.equal((await clarify(type)).artifacts.values.type, type);
+  }
+});
+
 test('Request timeout retains bounded generation diagnostics without supplied or provider text', async (t) => {
   const { root } = gitFixture(t, 'request-timeout-');
   const entered = Promise.withResolvers();

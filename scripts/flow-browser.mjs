@@ -1,4 +1,5 @@
 import { masterIssueBrowserChecks } from './flow-browser-master-issues.mjs';
+import { investigativeGroupingBrowserChecks } from './flow-browser-investigative-grouping.mjs';
 import { issueAnnotationBrowserChecks } from './flow-browser-issue-annotations.mjs';
 import { blockModelsBrowserChecks } from './flow-browser-block-models.mjs';
 import { providerSettingsBrowserChecks } from './flow-browser-provider-settings.mjs';
@@ -10,6 +11,7 @@ import { projectIssuesBrowserChecks } from './flow-browser-project-issues.mjs';
 import { errorRecoveryBrowserChecks } from './flow-browser-error-recovery.mjs';
 import { mergeStateBrowserChecks } from './flow-browser-merge-state.mjs';
 import {
+  flowBrowserCiParts,
   flowBrowserOrderModifier,
   flowBrowserScenarioNames,
   flowBrowserScenarioSelected,
@@ -75,7 +77,7 @@ import { issueStoresBrowserChecks } from './flow-browser-stores.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const ciPart = process.argv.find((argument) => argument.startsWith('--ci-part='));
-assert.ok(!ciPart || ['--ci-part=1', '--ci-part=2'].includes(ciPart), 'Choose Flow browser CI part 1 or 2.');
+assert.ok(!ciPart || flowBrowserCiParts.has(ciPart), 'Choose Flow browser CI part 1 or 2.');
 let part = '--ci-part=1';
 const outputPath = resolve(
   process.env.TIMEY_FLOW_BROWSER_OUTPUT ||
@@ -180,6 +182,7 @@ Object.assign(flowBrowserScenarioNames, {
 });
 const {
   '--master-issues': masterIssuesCheck,
+  '--investigative-grouping': investigativeGroupingCheck,
   '--issue-annotations': issueAnnotationsCheck,
   '--folder-settings': folderSettingsCheck,
   '--block-deletion': blockDeletionCheck,
@@ -202,16 +205,22 @@ const {
   '--storage-status': storageStatusCheck,
   '--polling': pollingCheck,
   '--capture-folder-issue': captureFolderIssueCheck,
+  '--starting-point': startingPointCheck,
   '--folder-workspace-grouping': folderWorkspaceGroupingCheck,
   '--sidebar-issue-names': sidebarIssueNamesCheck,
   '--save-request-route': saveRequestRouteCheck,
+  '--flow-menu': flowMenuCheck,
   '--add-parallel-block': addParallelBlockCheck,
   '--reorder-saved-blocks': reorderSavedBlocksCheck,
   '--assign-folder': assignFolderCheck,
   '--save-block-comment': saveBlockCommentCheck,
+  '--work-markdown': workMarkdownCheck,
   '--stop-work': stopWorkCheck,
   '--retry-work': retryWorkCheck,
   '--reload-flow-history': reloadFlowHistoryCheck,
+  '--run-extra-work': runExtraWorkCheck,
+  '--update-worktree': updateWorktreeCheck,
+  '--publish-preview': publishPreviewCheck,
   '--timers': timersCheck,
   '--proposals': proposalsCheck,
 } = flowBrowserScenarioNames;
@@ -668,6 +677,9 @@ try {
     projectIssuesBrowserChecks({ page, project, root, output })
   );
   await check(masterIssuesCheck, () => masterIssueBrowserChecks({ page, project, root, output }));
+  await check(investigativeGroupingCheck, () =>
+    investigativeGroupingBrowserChecks({ page, project, output, candidate, clickAction, poll })
+  );
   await check(issueAnnotationsCheck, () => issueAnnotationBrowserChecks({ page, project, root, output, poll }));
   await check(navigationCheck, () =>
     withQueueConfiguration({ page, project, root }, () => projectNavigationBrowserChecks({ page, screenshot }))
@@ -1407,8 +1419,9 @@ try {
     assert.equal(await page.locator('.graph-note').count(), 0);
     assert.equal(logs.execution.length, 0);
   });
-  await check('Starting point lists every branch in date order, saves selection and survives polling', async () => {
+  await check(startingPointCheck, async () => {
     const selector = page.locator('#starting-branch');
+    await selector.waitFor();
     const data = await view();
     const options = await selector
       .locator('option')
@@ -1665,7 +1678,7 @@ try {
   const { wording: original, ...clarified } = edited;
   const savedWording =
     original +
-    '\n' +
+    '\n\n### User details\n\nKeep this exact text.\n' +
     Object.entries({ ...clarified, type: 'bug' })
       .map(([key, value]) => key + ': ' + value)
       .join('\n');
@@ -1687,7 +1700,7 @@ try {
     assert.equal(await page.locator('#issue-flow-name').textContent(), 'Standard delivery');
     workId = data.flow.blocks.find((item) => item.kind === 'work').id;
   });
-  await check('The Flow menu saves and switches routes, and the wand rebuilds with results intact', async () => {
+  await check(flowMenuCheck, async () => {
     const menu = page.locator('#issue-flow-menu');
     const flows = page.getByRole('group', { name: 'Flows for this issue type' });
     const expected = (await view()).flow.blocks.find((block) => block.kind === 'request').attempts;
@@ -1905,15 +1918,22 @@ try {
     assert.equal(logs.execution.length, 0);
   });
   const workOverride = join(project, 'user/flow/overrides/blocks/work.md');
-  await check('Work Markdown reloads headings and lists without changing layout, drafts or actions', async () => {
+  async function addExtraWork() {
     await page.getByRole('button', { name: 'Add a step', exact: true }).click();
     const data = await clickAction(page.locator('[data-add-kind="work"]'));
-    const id = data.flow.blocks.find((item) => item.kind === 'work' && item.id !== workId).id;
+    return data.flow.blocks.find((item) => item.kind === 'work' && item.id !== workId).id;
+  }
+  let extraWorkId;
+  await check(workMarkdownCheck, async () => {
+    const id = await addExtraWork();
+    extraWorkId = id;
     await block(id);
     const prose = page.locator('.block-content');
     await prose.getByRole('heading', { name: 'Work block' }).waitFor();
     await page.locator('#block-form .system-prompt summary').click();
-    await page.locator('#block-form [name="prompt-mode"]').selectOption('skill');
+    const promptMode = page.locator('#block-form [name="prompt-mode"]');
+    const originalPromptMode = await promptMode.inputValue();
+    await promptMode.selectOption('skill');
     const skillOptions = page.locator('#block-form [name="skill"] option');
     assert.ok((await skillOptions.allTextContents()).includes('poteto-mode'));
     const card = page.locator('[data-block="' + id + '"]');
@@ -1962,6 +1982,9 @@ try {
     rmSync(extension);
     await prose.getByRole('heading', { name: 'Work block' }).waitFor();
     await draft.fill(original);
+    await promptMode.selectOption(originalPromptMode);
+    await clickAction(page.locator('#block-form button[type="submit"]'));
+    await page.locator('#draft-note').filter({ hasText: 'Saved locally' }).waitFor();
   });
   await check(stopWorkCheck, async () => {
     await block(workId);
@@ -2180,21 +2203,24 @@ try {
     assert.equal(logs.execution.length, 2);
     assert.equal(logs.modelCalls.length, 0);
   });
-  await check('Run beside the Work name starts exactly one block', async () => {
-    const open = (await view()).flow.blocks.find((item) => item.kind === 'work');
-    await block(open.id);
+  await check(runExtraWorkCheck, async () => {
+    if (!extraWorkId) {
+      await block(workId);
+      extraWorkId = await addExtraWork();
+    }
+    await block(extraWorkId);
     await clickAction(page.locator('#run-block'));
     await poll(
       view,
       (data) =>
-        data.flow.blocks.find((item) => item.id === open.id).attempts.at(-1)?.status === 'completed' &&
+        data.flow.blocks.find((item) => item.id === extraWorkId).attempts.at(-1)?.status === 'completed' &&
         !service.flows.active.has(issueId),
       'The Markdown Work block did not finish.'
     );
     assert.equal(logs.execution.length, 3);
-    assert.equal(logs.execution.at(-1).blockId, open.id);
+    assert.equal(logs.execution.at(-1).blockId, extraWorkId);
   });
-  await check('Worktree menu opens the saved checkout and updates it from the remote target', async () => {
+  await check(updateWorktreeCheck, async () => {
     await page.goto('/flow?issue=' + issueId);
     await page.locator('[data-node="__base"]').waitFor();
     const menu = page
@@ -2286,30 +2312,21 @@ try {
     assert.equal(git(checkout, 'show', 'HEAD:branch-draft.txt'), 'Preserve this local change.');
     assert.equal(git(project, 'rev-parse', 'HEAD'), base);
   });
-  await check('Publish previews the exact description and refreshes it before any remote write', async () => {
+  await check(publishPreviewCheck, async () => {
     const issue = service.flows.selected(issueId);
     const flow = service.flows.read(issue);
     git(project, 'remote', 'set-url', '--push', 'origin', 'git@github.com:test/fixture.git');
     const publish = flow.blocks.find((block) => block.kind === 'publish');
-    const request = flow.blocks.find((block) => block.kind === 'request');
-    request.data.wording = 'Original wording with a heading\n\n### User details\n\nKeep this exact text.';
-    request.data.fields = {
-      type: 'feature',
-      goal: 'Preview exactly',
-      requestedProof: 'Browser output',
-    };
-    await service.flows.store.save(flow, flow.revision);
     await page.reload();
     await selectBlock(publish.id);
     assert.equal(await page.locator('#issue-pr-menu').isVisible(), false);
     await page.getByRole('button', { name: 'Open Request' }).waitFor();
-    await page.locator('#run-block').click();
+    await clickAction(page.locator('#run-block'));
     const description = page.locator('#publish-description');
     await description.waitFor();
     assert.equal(
       await description.textContent(),
-      '## Goal\n\nPreview exactly\n\n## Requested proof\n\nBrowser output\n\n## Original wording\n\n' +
-        request.data.wording
+      `## Goal\n\n${clarified.goal}\n\n## Requested proof\n\n${clarified.requestedProof}\n\n## Original wording\n\n${savedWording}`
     );
     await screenshot('publish-preview');
     let saved = service.flows.read(issue);

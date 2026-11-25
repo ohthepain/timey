@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { execFileSync, spawnSync } from 'node:child_process';
+import flowIntegration from './flow-integration-tests.json' with { type: 'json' };
 import { normalizeFocusedTests } from './verify-merge-checks.mjs';
 
 const manifest = '.github/pr-repair-tests.json';
@@ -9,14 +10,17 @@ if (base && !execFileSync('git', ['diff', '--name-only', base, 'HEAD', '--', man
   console.log('No changed PR repair test plan.');
 } else {
   const plan = JSON.parse(readFileSync(manifest, 'utf8'));
-  if (plan.version !== 1 || !Array.isArray(plan.tests) || !plan.tests.length || plan.tests.length > 20)
+  const named = plan.tests ?? [];
+  if (plan.version !== 1 || !Array.isArray(named))
     throw Error('Record 1–20 named PR repair tests using manifest version 1.');
-  for (const test of plan.tests) {
+  const tests = plan.suite === 'flow-integration' ? [...named, ...flowIntegration.tests] : named;
+  if (!tests.length || tests.length > 20) throw Error('Record 1–20 named PR repair tests using manifest version 1.');
+  for (const test of tests) {
     if (typeof test.name !== 'string' || !test.name.trim() || /[\r\n]/.test(test.name))
       throw Error('Each PR repair test needs a single-line name.');
     normalizeFocusedTests([test.command]);
   }
-  for (const test of plan.tests) {
+  for (const test of tests) {
     console.log('RUN PR repair: ' + test.name);
     const [command, ...argv] = test.command;
     const env = { ...process.env };

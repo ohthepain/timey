@@ -21,6 +21,7 @@ import { evidencePath } from './stores/evidence.mjs';
 import { hydrateProjectEvidence } from './stores/runtime.mjs';
 import { groupChildren } from './issue-group.mjs';
 import { fetchIssueTarget } from './flow-update-branch.mjs';
+import { checkFlowPublication } from './flow-publication-checks.mjs';
 
 const execute = promisify(execFile);
 
@@ -310,8 +311,11 @@ export async function publishFlowPR(service, ctx, workspace, folder, options) {
   });
   try {
     requirePreviewHead();
-    if (preview.status === 'confirm')
+    if (preview.status === 'confirm') {
       service.guard(service.root, { id: ctx.attempt.id, issues: [ctx.issue.id] }, 'implement', workspace.base);
+      evidence.push(...(await checkFlowPublication(ctx, workspace.checkout, candidate, folder, options.execute)));
+      requirePreviewHead();
+    }
     if (preview.push) {
       ctx.signal.throwIfAborted();
       await options.execute({
