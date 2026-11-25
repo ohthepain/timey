@@ -63,6 +63,7 @@ export const flowBrowserScenarioNames = {
   '--starting-point': 'Starting point lists every branch in date order, saves selection and survives polling',
   '--closed-destination': 'Closed issues open with Destination flush with the bottom, including short flows',
   '--folder-workspace-grouping': 'The folder workspace reviews moves and creates a master without starting work',
+  '--tab-source': 'Inspect and edit a tab source without starting work or losing an issue draft',
   '--sidebar-issue-names': 'Numbered full issue names wrap and sidebar resizing survives reload',
   '--save-request-route': 'Saving Your words retains derived fields and applies the new type default',
   '--flow-menu': 'The Flow menu saves and switches routes, and the wand rebuilds with results intact',

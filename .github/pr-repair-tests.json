@@ -1,10 +1,21 @@
 {
   "version": 1,
-  "sourceRun": "https://github.com/ohthepain/timey/actions/runs/45659297241/job/139368746760",
+  "sourceRun": "https://github.com/ohthepain/timey/actions/runs/45661818000/job/139379109580",
   "tests": [
     {
       "name": "typecheck (tsc --noEmit)",
       "command": ["pnpm", "run", "typecheck"]
+    },
+    {
+      "name": "Inspect and edit a tab source without starting work or losing an issue draft",
+      "command": [
+        "node",
+        "scripts/flow-browser.mjs",
+        "--ci-part=2",
+        "--capture-folder-issue",
+        "--folder-workspace-grouping",
+        "--tab-source"
+      ]
     },
     {
       "name": "Issues and Local notes use matching text styles",

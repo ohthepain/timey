@@ -253,6 +253,7 @@
     } catch (error) {
       errorBox.textContent = error.message;
       errorBox.hidden = false;
+      refreshPending = true;
     } finally {
       saving = false;
       if (refreshPending) void refresh();

@@ -204,6 +204,7 @@ const {
   '--starting-point': startingPointCheck,
   '--closed-destination': closedDestinationCheck,
   '--folder-workspace-grouping': folderWorkspaceGroupingCheck,
+  '--tab-source': tabSourceCheck,
   '--sidebar-issue-names': sidebarIssueNamesCheck,
   '--save-request-route': saveRequestRouteCheck,
   '--flow-menu': flowMenuCheck,
@@ -1362,7 +1363,15 @@ try {
     assert.equal(await page.getByRole('button', { name: 'Remove from folder', exact: true }).count(), 0);
     await members.getByRole('link', { name: /Keep the save button visible/ }).waitFor();
   });
-  await check('Inspect and edit a tab source without starting work or losing an issue draft', async () => {
+  await check(tabSourceCheck, async () => {
+    const holdSourceEvents = await page.addInitScript(() => {
+      const dispatch = window.dispatchEvent;
+      window.dispatchEvent = function (event) {
+        if (event.type === 'factory-sources-changed') return true;
+        return dispatch.call(this, event);
+      };
+      window.addEventListener('release-source-events', () => (window.dispatchEvent = dispatch), { once: true });
+    });
     await page.goto('/?issue=' + issueId);
     await page.locator('#request-form').waitFor({ state: 'visible' });
     const path = join(project, 'user/flow/overrides/block-inspector.md');
@@ -1405,6 +1414,8 @@ try {
     assert.equal(await page.getByLabel('Label', { exact: true }).inputValue(), 'Stale draft');
     await page.keyboard.press('Escape');
     await page.getByRole('tab', { name: 'External change' }).waitFor();
+    await page.evaluate(() => window.dispatchEvent(new Event('release-source-events')));
+    await holdSourceEvents.dispose();
     writeFileSync(path, '## missing-tab\n\nInvalid override\n');
     await page.locator('#view-source-status').filter({ hasText: 'unknown section' }).waitFor();
     assert.equal(await tab.innerText(), 'External change');
