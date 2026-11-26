@@ -4,6 +4,8 @@ Check the existing PR and GitHub checks before repairing tests. If the PR is alr
 
 At the start of a new Merge run, abort any pending local merge before syncing the target into the issue branch. Push each new candidate, then wait for GitHub's required checks before merging the PR. Do not abort merges created by conflict repair within the same run.
 
+If GitHub is still calculating mergeability or reports a conflict, sync the target before waiting for checks. Repair local Git conflicts immediately. If the candidate already contains the fetched target and GitHub reports a conflict, stop and report the disagreement.
+
 Fetch Destination again before merging. If the target advanced, repeat from the sync step. If a conflict or verification failure needs a decision, or repair stops making progress, pause for input. Under human-first policy, wait for approval of the current PR commit and target revision.
 
 Temporary GitHub request failures get up to three retries with 1, 2 and 4 second delays. Retain the redacted error reason in progress and the final failure. Do not retry permission, authentication or validation failures. Before repeating an uncertain merge request, inspect the existing PR and recheck readiness through the protected merge guard; preserve the checkout. Stop interrupts retry backoff.
