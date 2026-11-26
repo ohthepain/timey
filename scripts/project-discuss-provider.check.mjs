@@ -4,6 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CodexConnection } from './factory-ui/codex.mjs';
+import { desktopThreadWriter } from './factory-ui/codex-thread-writer.mjs';
 import { createProjectDiscussProvider } from './factory-ui/project-discuss-provider.mjs';
 
 function fixture(t, hook = async () => {}, { useProjectTools = false, ...providerOptions } = {}) {
@@ -232,6 +233,24 @@ test('a persistent Discuss lock ends with a useful Retry message and no model tu
   await assert.rejects(() => f.provider.turn(f.session, f.message, f.context), /ChatGPT desktop app.*Retry/);
   assert.equal(f.session.threadLock, null);
   assert.ok(!f.calls.some(({ method }) => ['thread/start', 'provider/turn'].includes(method)));
+});
+
+test('a single desktop lock holder is named and ambiguous holders are left unidentified', async () => {
+  const thread = '01a2146c-da41-7d21-a874-231f31fa5422';
+  const lookup = (holders) =>
+    desktopThreadWriter(thread, {
+      platform: 'darwin',
+      async execute(command, args) {
+        if (command === '/usr/sbin/lsof') {
+          assert.ok(args.at(-1).endsWith(`/thread-writer-locks/${thread}.lock`));
+          return { stdout: holders };
+        }
+        assert.deepEqual(args, ['-ww', '-p', '84565', '-o', 'comm=']);
+        return { stdout: '/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex\n' };
+      },
+    });
+  assert.equal(await lookup('p84565\nf82\n'), 'the ChatGPT desktop app');
+  assert.equal(await lookup('p84565\nf82\np94565\nf17\n'), undefined);
 });
 
 test('dynamic calls are bound to current thread and turn, retain receipts and never repeat a completed identity', async (t) => {
