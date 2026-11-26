@@ -1162,24 +1162,20 @@ test('Merge requires approval of its exact commit and target', async (t) => {
   assert.equal(f.calls.filter((item) => item.method === 'guard').at(-1).args[2], 'merge');
 });
 
-test('overnight prepare checks GitHub readiness and stops before automatic merge', async (t) => {
+test('Automatic Merge can continue from a previously saved approval handoff', async (t) => {
   const f = mergeFixture(t);
   await f.run('understand');
-  const result = await f.run('merge', {
+  const prepared = await f.run('merge', humanFirstMerge);
+  assert.ok(prepared.result.mergeConfirmation);
+
+  const merged = await f.run('merge', {
     definition: { mergeWorkflow: { ...humanFirstMerge.definition.mergeWorkflow, policy: 'automatic' } },
-    input: { prepareMerge: true, confirmed: true },
+    attempts: [approvalAttempt(prepared)],
+    continuing: true,
   });
-  assert.equal(result.status, 'blocked');
-  assert.equal(result.result.mergeConfirmation.pr, 9);
-  assert.equal(result.result.mergeConfirmation.head, result.result.head);
-  assert.deepEqual(
-    f.observations.map(({ operation }) => operation),
-    ['ready']
-  );
-  assert.equal(
-    f.calls.some((item) => item.method === 'guard' && item.args[2] === 'merge'),
-    false
-  );
+
+  assert.equal(merged.result.revision, 'actual-merge');
+  assert.equal(merged.result.mergeConfirmation, undefined);
 });
 
 test('Merge pushes each new candidate, then expires approval if the target moves again', async (t) => {

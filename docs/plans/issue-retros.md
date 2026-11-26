@@ -16,6 +16,9 @@ the closure sequence.
   before Cleanup removes the worktree transcript or archives chats.
 - If Retro fails, the issue stays Closed and Cleanup waits. The user can retry
   Retro or explicitly continue to Cleanup.
+- Retro shows when it collects history, starts the review session, and reviews
+  the history. It has a five-minute deadline. A timeout names the step and links
+  the evidence index if Retro has exported it.
 - Retro creates follow-ups immediately in the **Retro items** issue folder.
   Each follow-up retains its source issue ID. Subsequent blocks receive a sanitized
   snapshot of that issue's report and timestamped attempts from the coordinator,

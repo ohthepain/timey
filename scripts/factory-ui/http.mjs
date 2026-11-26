@@ -55,7 +55,7 @@ import { SidebarFiles } from './sidebar-files.mjs';
 import { folderSettingsView, changeFolderSettings } from './folder-settings-routes.mjs';
 import { folderStrategies, changeFolderStrategy } from './folder-strategies.mjs';
 import { defaultIssueFolder } from './issue-folder-settings.mjs';
-import { projectAssetStorage } from './project-asset-storage.mjs';
+import { projectAssetStorage, projectAssetStorageStatus } from './project-asset-storage.mjs';
 import { initializeProjectLifecycle } from './project-settings.mjs';
 import { readProjectSettingsOverview, changeProjectSettings } from './project-settings-overview.mjs';
 import { readProjectPreferences, saveProjectPreferences } from './project-preferences.mjs';
@@ -776,7 +776,10 @@ async function read(service, request, response, owner) {
       readProviderConfig(service.root) ? providerSettings(service.root) : { providers: [] },
     '/api/ai-providers': () => providerSettings(service.root, { initialize: service.reviewMode !== 'preview' }),
     '/api/project-settings': () => readProjectSettingsOverview(service),
-    '/api/project-asset-storage': () => projectAssetStorage(service),
+    '/api/project-asset-storage': () =>
+      url.searchParams.has('status')
+        ? projectAssetStorageStatus(service, url.searchParams.get('refresh') === 'true')
+        : projectAssetStorage(service),
     '/api/project-preferences': () => readProjectPreferences(service.root),
     '/api/project-home': () => projectHome(service).view(),
     '/api/investigation-reports': () => {

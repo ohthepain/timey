@@ -455,13 +455,19 @@ async function waitForNightSignal(signal, label) {
   }
 }
 
-test('Work All Night keeps dependency failures separate and retains the exact handoff', async (t) => {
+test('Work All Night keeps dependency failures separate and records the normal automatic merge', async (t) => {
   const { id, root, service } = fixture(t);
   const dependent = '20261113-dependent';
   const child = '20261113-dependent-child';
   const independent = '20261113-independent';
-  for (const next of [dependent, child, independent]) {
-    const dependency = next === child ? `\n## Blocked by\n\n- ${id}\n` : '';
+  const afterMerge = '20261113-after-merge';
+  const dependencies = new Map([
+    [child, id],
+    [afterMerge, independent],
+  ]);
+  for (const next of [dependent, child, independent, afterMerge]) {
+    const prerequisite = dependencies.get(next);
+    const dependency = prerequisite ? `\n## Blocked by\n\n- ${prerequisite}\n` : '';
     const grouping = next === dependent ? `issue_group:\n  children:\n    - id: ${child}\n` : '';
     writeFileSync(
       join(root, '.issues', next + '.md'),
@@ -469,14 +475,23 @@ test('Work All Night keeps dependency failures separate and retains the exact ha
     );
   }
   const started = [];
+  const mergeStarted = Promise.withResolvers();
+  const finishMerge = Promise.withResolvers();
   const flows = createIssueFlows(service, {
     clarify: async () => ({ artifacts: { values: { type: 'bug', goal: 'Repair Save' } } }),
     executor: executor(async ({ issue, block, input }) => {
       started.push([issue.id, block.kind]);
       if (issue.id === id) return { status: 'blocked', summary: 'Save regression check failed.' };
+      if (issue.id === afterMerge) return { status: 'blocked', summary: 'Needs input on the next change.' };
       if (block.kind === 'publish') assert.equal(input.automaticPublication, true);
       if (block.kind === 'merge') {
-        assert.equal(input.prepareMerge, true);
+        mergeStarted.resolve();
+        await finishMerge.promise;
+        if (!input.prepareMerge)
+          return {
+            summary: 'GitHub confirms the protected merge.',
+            result: { pr: 5, revision: 'confirmed-merge', mergeOrigin: 'factory-confirmed' },
+          };
         return {
           status: 'blocked',
           summary: 'PR checks passed.',
@@ -489,7 +504,7 @@ test('Work All Night keeps dependency failures separate and retains the exact ha
   t.after(() => flows.close());
   const folder = 'Save repairs';
   await flows.action({ action: 'create-folder', name: folder });
-  const issueIds = [id, dependent, independent];
+  const issueIds = [id, dependent, independent, afterMerge];
   for (const issueId of issueIds) {
     const flow = flows.read(flows.selected(issueId));
     flow.folder = folder;
@@ -501,6 +516,19 @@ test('Work All Night keeps dependency failures separate and retains the exact ha
     issueIds
   );
   await flows.action({ action: 'folder-night-start', planId: plan.id });
+  try {
+    await waitForNightSignal(mergeStarted.promise, 'start Merge');
+    const before = flows.read(flows.selected(independent));
+    await assert.rejects(
+      flows.action({ action: 'play', issueId: independent, revision: before.revision }),
+      /Stop Work All Night before changing this issue/
+    );
+    const after = flows.read(flows.selected(independent));
+    assert.equal(after.revision, before.revision);
+    assert.deepEqual(after.blockingErrors, before.blockingErrors);
+  } finally {
+    finishMerge.resolve();
+  }
   let report;
   for (let retries = 0; retries < 100; retries += 1) {
     report = flows.overnight.reports()[folder];
@@ -510,18 +538,20 @@ test('Work All Night keeps dependency failures separate and retains the exact ha
   assert.equal(report.status, 'finished');
   assert.deepEqual(
     report.issues.map(({ status }) => status),
-    ['paused', 'paused', 'ready'],
+    ['paused', 'paused', 'merged', 'paused'],
     [JSON.stringify(report), report.issues.map(({ summary }) => summary).join('\n')].join('\n')
   );
   assert.equal(report.issues[0].failedCheck, 'Work');
   assert.match(report.issues[0].summary, /regression check failed/);
   assert.match(report.issues[1].summary, /Blocked by/);
   assert.equal(report.issues[2].pr, 5);
+  assert.equal(report.issues[3].summary, 'Needs input on the next change.');
   assert.deepEqual(started, [
     [id, 'work'],
     [independent, 'work'],
     [independent, 'publish'],
     [independent, 'merge'],
+    [afterMerge, 'work'],
   ]);
   const restarted = createIssueFlows(service, { executor: executor(() => assert.fail('Replayed saved work')) });
   t.after(() => restarted.close());

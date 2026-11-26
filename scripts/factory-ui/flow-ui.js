@@ -1893,7 +1893,7 @@ import { reorderedBlocks } from './flow-order.mjs';
     if (!attempt) return '';
     if (blockHumanInput(block)) return 'Needs your input';
     if (attempt.inputRequestedAt || attempt.input) return 'Needs input';
-    if (attempt.result?.mergeConfirmation && currentStatus === 'blocked') return 'Needs approval';
+    if (mergeApproval(block)) return 'Needs approval';
     const start = Date.parse(attempt.startedAt);
     if (isRunning(block) && Number.isFinite(start)) {
       const now = Date.now();
@@ -3459,7 +3459,9 @@ import { reorderedBlocks } from './flow-order.mjs';
   }
 
   function mergeApproval(block) {
-    return block?.kind === 'merge' && status(block) === 'blocked' ? latest(block)?.result?.mergeConfirmation : null;
+    if (block?.kind !== 'merge' || status(block) !== 'blocked') return null;
+    const definition = state.index.catalog.find((item) => item.id === (block.definition ?? block.kind));
+    return definition?.mergeWorkflow?.policy === 'automatic' ? null : latest(block)?.result?.mergeConfirmation;
   }
 
   async function startBlock(name, block) {
