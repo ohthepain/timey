@@ -1,3 +1,4 @@
+import { fixtureRoute } from './flow-browser-routes.mjs';
 import { importBrowserIssue, writeBrowserIssue } from './flow-browser-fixture.mjs';
 import assert from 'node:assert/strict';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
@@ -448,7 +449,7 @@ async function deleteArchivedReports(page, { root }, screenshot) {
 async function cleanRemoteBranches(page, screenshot) {
   const endpoint = '**/api/project-remote-branch-cleanup';
   const requests = [];
-  await page.route(endpoint, async (route) => {
+  const removeReport = await fixtureRoute(page, endpoint, async (route) => {
     if (route.request().method() === 'GET') {
       return route.fulfill({
         json: {
@@ -491,7 +492,7 @@ async function cleanRemoteBranches(page, screenshot) {
   assert.deepEqual(requests, [{ id: 'reviewed-preview', selected: ['merged-one', 'merged-two'] }]);
   await dialog.getByRole('button', { name: 'Close' }).click();
   await page.getByRole('tab', { name: 'Home' }).click();
-  await page.unroute(endpoint);
+  await removeReport();
 }
 
 async function cleanLocalBranches(page, service, screenshot) {

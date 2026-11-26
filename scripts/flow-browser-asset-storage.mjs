@@ -4,7 +4,8 @@ import { once } from 'node:events';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { S3Client } from '@aws-sdk/client-s3';
-import { git } from './factory-ui/common.mjs';
+import { digest, git } from './factory-ui/common.mjs';
+import { retainFlowEvidence } from './factory-ui/stores/flow-evidence.mjs';
 import { createFactoryServer } from './factory-ui/http.mjs';
 import { FactoryUI } from './factory-ui/service.mjs';
 import { projectAssetStorage } from './factory-ui/project-asset-storage.mjs';
@@ -398,6 +399,27 @@ async function copyPublishedEvidence(page, origin, report) {
   return url.pathname + url.search;
 }
 
+async function checkMergeObservationReference(project, service) {
+  const path = join(project, '.issues', 'final-candidate-observations.json');
+  const bytes = JSON.stringify({ batch: ['first', 'second'], selected: ['second'], bytes: 42 });
+  const sha256 = digest(bytes);
+  writeFileSync(path, bytes);
+  const stores = service.projectStores;
+  const evidence = { path, sha256, label: 'Final candidate browser observations' };
+  const flow = { result: { browser: { files: [evidence] } } };
+  assert.deepEqual(await retainFlowEvidence(stores, archived, flow, 'merge-observations-fixture'), []);
+  const manifest = await stores.coordination.get('evidence/' + archived);
+  const { ref } = manifest.value.files.find((file) => file.sha256 === sha256);
+  const artifacts = await stores.issueArtifacts(archived);
+  assert.equal(ref.storeId, 'secondary');
+  assert.equal((await artifacts.get(ref)).toString(), bytes);
+  const inventory = await projectAssetStorage(service);
+  const asset = inventory.assets.find((entry) => entry.name === sha256);
+  assert.equal(asset.bytes, Buffer.byteLength(bytes));
+  assert.deepEqual(asset.references, ['Issue evidence']);
+  return { ref, counted: asset.references.length };
+}
+
 export async function assetStorageBrowserChecks({ page, screenshot, output }) {
   const project = join(output, 'asset-storage-project');
   mkdirSync(join(project, '.issues'), { recursive: true });
@@ -493,12 +515,14 @@ export async function assetStorageBrowserChecks({ page, screenshot, output }) {
       afterUnpublish.references,
       after.references.filter((label) => label !== 'Published investigation evidence')
     );
+    const retainedMergeObservation = await checkMergeObservationReference(project, service);
     writeFileSync(
       join(output, 'asset-storage-observations.json'),
       JSON.stringify(
         {
           provider: 'S3 SDK fixture',
           browsing,
+          retainedMergeObservation,
           observed: {
             before,
             copiedEvidencePath,

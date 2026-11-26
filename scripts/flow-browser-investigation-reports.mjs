@@ -1,3 +1,4 @@
+import { fixtureRoute } from './flow-browser-routes.mjs';
 import assert from 'node:assert/strict';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -255,7 +256,7 @@ export async function investigationReportsBrowserChecks({ page, service, project
   const releaseDiscussion = Promise.withResolvers();
   const resumedDiscussion = Promise.withResolvers();
   const discussionRoute = /\/api\/report-discuss\?/;
-  await page.route(discussionRoute, async (route) => {
+  const removeDiscussion = await fixtureRoute(page, discussionRoute, async (route) => {
     restoringDiscussion.resolve();
     await releaseDiscussion.promise;
     await route.continue();
@@ -266,7 +267,7 @@ export async function investigationReportsBrowserChecks({ page, service, project
   await page.locator('.report-reading').evaluate((node) => node.dispatchEvent(new Event('scroll')));
   releaseDiscussion.resolve();
   await resumedDiscussion.promise;
-  await page.unroute(discussionRoute);
+  await removeDiscussion();
   await poll(
     () => page.locator('#report-discuss-draft').inputValue(),
     (value) => value === 'Saved report-specific draft',

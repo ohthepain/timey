@@ -1,3 +1,4 @@
+import { fixtureRoute } from './flow-browser-routes.mjs';
 import assert from 'node:assert/strict';
 import { readRequiredSkillSets } from './factory-ui/required-skills.mjs';
 import { writeFileSync, readFileSync, mkdirSync } from 'node:fs';
@@ -425,7 +426,7 @@ export async function projectDiscussBrowserChecks({ page, service, project, poll
   const initialHistory = Promise.withResolvers();
   let imageRequested = false;
   const imageLoaded = Promise.withResolvers();
-  await page.route(historyImageUrl, async (route) => {
+  const removeImage = await fixtureRoute(page, historyImageUrl, async (route) => {
     imageRequested = true;
     await imageLoaded.promise;
     await route.fulfill({
@@ -434,7 +435,7 @@ export async function projectDiscussBrowserChecks({ page, service, project, poll
     });
   });
   let heldHistory = false;
-  await page.route(/\/api\/project-discuss(?:\?|$)/, async (route) => {
+  const removeHistory = await fixtureRoute(page, /\/api\/project-discuss(?:\?|$)/, async (route) => {
     const response = await route.fetch();
     if (!heldHistory) {
       heldHistory = true;
@@ -455,7 +456,7 @@ export async function projectDiscussBrowserChecks({ page, service, project, poll
     'Delayed history image did not finish rendering.'
   );
   await assertOpenedAtBottom('First opening after delayed history and image');
-  await page.unroute(/\/api\/project-discuss(?:\?|$)/);
+  await removeHistory();
   const following = service.projectDiscuss.read(history.id);
   following.messages.push({
     ...template,
@@ -483,9 +484,9 @@ export async function projectDiscussBrowserChecks({ page, service, project, poll
   await page.locator('#project-tab-home').click();
   await page.locator('#project-tab-discuss').click();
   await assertOpenedAtBottom('Returning to Discuss after reading older messages');
-  await page.unroute(historyImageUrl);
+  await removeImage();
   const lateImage = Promise.withResolvers();
-  await page.route(historyImageUrl, async (route) => {
+  const removeLateImage = await fixtureRoute(page, historyImageUrl, async (route) => {
     await lateImage.promise;
     await route.fulfill({
       contentType: 'image/svg+xml',
@@ -510,6 +511,7 @@ export async function projectDiscussBrowserChecks({ page, service, project, poll
   assert.equal(afterLateImage.latestVisible, false, 'Late image loading pulled the reader down.');
   assert.ok(afterLateImage.bottomDistance > 500);
   await screenshot('project-discuss-scroll');
+  await removeLateImage();
 
   await conversationTabOverflowChecks({ page, service, project, screenshot, attachedConversation });
 }

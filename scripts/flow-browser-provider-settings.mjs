@@ -1,3 +1,4 @@
+import { fixtureRoute } from './flow-browser-routes.mjs';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
@@ -26,7 +27,7 @@ async function setupGuidanceScroll({ page, project, screenshot, id }) {
     requests = [];
   observeProvider(project, id, { ready: false, setup: null, message: 'Not set up' });
   await page.goto('/?settings=providers');
-  await page.route('**/api/ai-provider-action', async (route) => {
+  const removeAction = await fixtureRoute(page, '**/api/ai-provider-action', async (route) => {
     const input = route.request().postDataJSON();
     assert.equal(input.provider, id);
     requests.push(input.action);
@@ -80,7 +81,7 @@ async function setupGuidanceScroll({ page, project, screenshot, id }) {
     );
   } finally {
     release.resolve();
-    await page.unroute('**/api/ai-provider-action');
+    await removeAction();
     if (original.ready) {
       observeProvider(project, id, { ...original, setup: original.setup || null });
       await page.evaluate(() => window.dispatchEvent(new Event('factory-provider-settings-saved')));

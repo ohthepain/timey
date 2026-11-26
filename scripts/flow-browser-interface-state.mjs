@@ -1,3 +1,4 @@
+import { fixtureRoute } from './flow-browser-routes.mjs';
 import assert from 'node:assert/strict';
 import { renameStoredIssue } from './factory-ui/issue-report-storage.mjs';
 import { randomUUID } from 'node:crypto';
@@ -69,7 +70,7 @@ export async function interfaceStateBrowserChecks({ page, service, project, scre
   }
   const id = await capture('Preserve reading and editing');
   const error = 'This error message must stay selected while the issue refreshes.';
-  await page.route('**/api/flow?**', async (route) => {
+  const removeFlow = await fixtureRoute(page, '**/api/flow?**', async (route) => {
     const response = await route.fetch();
     const result = await response.json();
     if (result.issue?.id === id) result.error = error;
@@ -177,5 +178,5 @@ export async function interfaceStateBrowserChecks({ page, service, project, scre
   await page.goBack();
   await assertRestoredEditor();
   await screenshot('interface-state');
-  await page.unroute('**/api/flow?**');
+  await removeFlow();
 }

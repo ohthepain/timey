@@ -1,3 +1,4 @@
+import { fixtureRoute } from './flow-browser-routes.mjs';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync, mkdirSync, copyFileSync, writeFileSync } from 'node:fs';
 import { createCaptures } from './factory-ui/issue-capture.mjs';
@@ -240,7 +241,7 @@ async function checkSharedMigrationResume({ page, service, issue, storeId, poll,
     posted.resolve(input);
     return route.continue();
   };
-  await page.route('**/api/issue-store-action', resumeRoute);
+  const removeResume = await fixtureRoute(page, '**/api/issue-store-action', resumeRoute);
   try {
     await page.locator('#resume-issue-store').click();
     assert.equal((await posted.promise).operationId, operationId, 'A new browser must resume the shared receipt.');
@@ -250,7 +251,7 @@ async function checkSharedMigrationResume({ page, service, issue, storeId, poll,
       'The pending shared migration did not resume.'
     );
   } finally {
-    await page.unroute('**/api/issue-store-action', resumeRoute);
+    await removeResume();
   }
 }
 
@@ -426,7 +427,7 @@ export async function issueStoresBrowserChecks({ page, project, service, poll, s
     }
     return route.continue();
   };
-  await page.route('**/api/issue-store-action', migrationRoute);
+  const removeMigration = await fixtureRoute(page, '**/api/issue-store-action', migrationRoute);
   await moveFromIssueSettings(page, 'files');
   await page
     .locator('#issue-store-error')
@@ -449,7 +450,7 @@ export async function issueStoresBrowserChecks({ page, project, service, poll, s
     ({ selected, savedStorage }) => selected === 'files' && savedStorage.artifactStoreId === 'files',
     'Checked move did not switch the saved Issue home.'
   );
-  await page.unroute('**/api/issue-store-action', migrationRoute);
+  await removeMigration();
   assert.equal(moveIds.length, 2);
   assert.equal(moveIds[0], moveIds[1], 'Reloading a pending move must retain its operation identity.');
   assert.equal(git(project, 'rev-parse', 'HEAD'), sourceHead);

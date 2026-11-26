@@ -1,3 +1,4 @@
+import { fixtureRoute } from './flow-browser-routes.mjs';
 import assert from 'node:assert/strict';
 import { cpSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -142,13 +143,13 @@ async function checkManualClose({ page, flows, id, close, screenshot }) {
   const dialog = page.getByRole('dialog', { name: 'Close this issue' });
   const contextRoute = '**/api/issue-closure?**';
   const unavailable = (route) => route.abort();
-  await page.route(contextRoute, unavailable);
+  const removeUnavailable = await fixtureRoute(page, contextRoute, unavailable);
   try {
     await close.click();
     await dialog.getByRole('combobox', { name: 'Reason' }).waitFor({ timeout: 5000 });
     assert.equal(await dialog.getByRole('button', { name: 'Close issue', exact: true }).isEnabled(), true);
   } finally {
-    await page.unroute(contextRoute, unavailable);
+    await removeUnavailable();
   }
   assert.equal(flows.selected(id).closed, false);
   const retroAlignment = await checkRetroAlignment(dialog);
@@ -160,7 +161,7 @@ async function checkManualClose({ page, flows, id, close, screenshot }) {
   const holdConfirmation = async (route) => {
     submitted.resolve(route);
   };
-  await page.route(confirmation, holdConfirmation);
+  const removeConfirmation = await fixtureRoute(page, confirmation, holdConfirmation);
   await close.click();
   await dialog.getByRole('button', { name: 'Close issue', exact: true }).click();
   const request = await submitted.promise;
@@ -173,7 +174,7 @@ async function checkManualClose({ page, flows, id, close, screenshot }) {
     await page.getByText('The test rejected the pending close.').waitFor();
     assert.equal(flows.selected(id).closed, false);
   } finally {
-    await page.unroute(confirmation, holdConfirmation);
+    await removeConfirmation();
   }
   return {
     automatic: false,

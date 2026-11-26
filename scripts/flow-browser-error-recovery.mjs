@@ -33,6 +33,7 @@ export async function errorRecoveryBrowserChecks({ page, service, project, outpu
     assert.equal(await screen.locator('#error-banner').isVisible(), false, 'Refresh retained the old action error.');
     await screen.screenshot({ path: join(output, 'error-recovery.png'), fullPage: true });
   } finally {
+    await screen.unrouteAll({ behavior: 'wait' });
     await screen.close();
   }
 }
