@@ -59,7 +59,7 @@ export async function actionsMenuBrowserChecks({ page, project, service, poll, s
       assert.equal(await card.locator('h3').innerText(), 'Work');
       assert.match(await card.innerText(), /Block: Work/);
       assert.equal((await card.innerText()).split(`Running action ${index + 1}`).length - 1, 1);
-      const href = await card.getByRole('link', { name: 'Action output', exact: true }).getAttribute('href');
+      const href = await card.locator('[data-action-output]').getAttribute('href');
       const url = new URL(href, page.url());
       assert.equal(url.searchParams.get('issue'), id);
       assert.equal(url.searchParams.get('block'), service.flows.active.get(id).blockId);

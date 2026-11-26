@@ -1,6 +1,5 @@
 import { mkdirSync, writeFileSync, readFileSync, readdirSync } from 'node:fs';
-import { join } from 'node:path';
-import { tmpdir, homedir } from 'node:os';
+import { basename, join, resolve } from 'node:path';
 import { mkdtempSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
@@ -8,7 +7,9 @@ import assert from 'node:assert/strict';
 import { captureFixture, proposal } from './factory-capture-fixture.mjs';
 import { createFactoryServer } from './factory-ui/http.mjs';
 
-const evidence = mkdtempSync(join(tmpdir(), 'timey-capture-browser-'));
+const evidenceRoot = resolve('.issues/evidence');
+mkdirSync(evidenceRoot, { recursive: true });
+const evidence = mkdtempSync(join(evidenceRoot, 'factory-capture-browser-'));
 const output = join(evidence, 'output/playwright');
 mkdirSync(output, { recursive: true });
 const cleanup = [];
@@ -39,11 +40,12 @@ const server = createFactoryServer(service);
 server.listen(0, '127.0.0.1');
 await once(server, 'listening');
 const url = `http://127.0.0.1:${server.address().port}`;
-const cli = join(homedir(), '.codex/skills/playwright/scripts/playwright_cli.sh');
+const cli = resolve('node_modules/.bin/playwright-cli');
+const session = basename(evidence);
 const commands = [];
 async function run(label, ...args) {
   const result = await new Promise((resolve, reject) => {
-    const child = spawn(cli, ['--session', 'capture-1aab', ...args], { cwd: output, env: process.env });
+    const child = spawn(cli, ['--session', session, ...args], { cwd: output, env: process.env });
     let text = '';
     child.stdout.on('data', (s) => {
       text += s;

@@ -38,7 +38,7 @@ export async function flowFollowupsBrowserChecks({ page, service, logs, screensh
   await page.reload();
   await page.locator('#graph [data-block="' + source.blockId + '"]').click();
   await page.locator('[data-investigation-followups]').click();
-  await dialog.getByRole('link', { name: 'Open issue', exact: true }).waitFor();
+  await dialog.locator('a[href="/?issue=' + encodeURIComponent(child.id) + '"]').waitFor();
   assert.equal(await dialog.locator('[data-proposal]:disabled').count(), 1);
   assert.equal(service.flows.issues().length, before + 1);
   await dialog.locator('[data-followups-close]').click();

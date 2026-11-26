@@ -295,7 +295,7 @@ async function checkClassicStoreCapture({ page, service, folder, storeId, poll, 
     });
     try {
       await page.goto('/classic');
-      await page.locator('#capture-submit').click();
+      await page.locator('#create-issue').click();
       const dialog = page.locator('#create-issue-dialog');
       await dialog
         .locator('#capture-description')

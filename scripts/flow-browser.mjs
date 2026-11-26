@@ -1494,7 +1494,7 @@ try {
     await page.locator('#view-source-label').fill('Block notes');
     await page.locator('#view-source-save').click();
     await page
-      .locator('#tab-details')
+      .locator('#tab-details [data-ui-label]')
       .filter({ hasText: /^Block notes$/ })
       .waitFor();
     assert.match(readFileSync(path, 'utf8'), /## details-tab\n\nBlock notes/);
@@ -1517,7 +1517,7 @@ try {
     assert.equal(await page.locator('#view-source-label').inputValue(), 'Stale draft');
     await page.keyboard.press('Escape');
     await page
-      .locator('#tab-details')
+      .locator('#tab-details [data-ui-label]')
       .filter({ hasText: /^External change$/ })
       .waitFor();
     await page.evaluate(() => window.dispatchEvent(new Event('release-source-events')));
@@ -2597,7 +2597,7 @@ try {
     const executionCount = logs.execution.length;
     await close.click();
     await dialog.locator('#closure-reason').locator('option[value="fixed"]').waitFor({ state: 'attached' });
-    await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await dialog.locator('#cancel-issue-closure').click();
     assert.equal(logs.requests.filter(({ path }) => path === '/api/issue-decision').length, 0);
     await close.click();
     await dialog.locator('#closure-reason').selectOption('duplicate');

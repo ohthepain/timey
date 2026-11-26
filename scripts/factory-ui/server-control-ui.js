@@ -199,6 +199,7 @@ const serverControlUI = (() => {
       item.outputHref ||
       `${flowWorkspace ? '/classic' : ''}#/issue/${encodeURIComponent(item.issues[0].id)}?run=${encodeURIComponent(item.id)}`;
     output.textContent = 'Action output';
+    output.dataset.actionOutput = '';
     return output;
   }
   function actionControls(item, request, drafts) {

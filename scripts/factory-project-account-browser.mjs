@@ -88,7 +88,7 @@ async function exerciseAccount(page, { base, factoryOrigin, output }) {
   assert.ok(frameResponse.ok(), `Timey's account frame returned HTTP ${frameResponse.status()}`);
   assert.equal(frameResponse.headers()['content-security-policy'], `frame-ancestors ${factoryOrigin}`);
   const account = page.frameLocator('iframe[title="Timey account"]');
-  const login = account.getByRole('link', { name: 'Login', exact: true });
+  const login = account.locator('a[href^="/auth/login"]');
   await login.waitFor();
   await page.screenshot({ path: join(output, 'project-account-signed-out.png') });
 
@@ -98,16 +98,16 @@ async function exerciseAccount(page, { base, factoryOrigin, output }) {
   const [loginPage] = await Promise.all([page.waitForEvent('popup'), login.click()]);
   assert.equal(new URL(loginPage.url()).origin, base, 'Login opens the target Timey server');
   assert.equal(new URL(loginPage.url()).pathname, '/auth/login');
-  await loginPage.getByLabel('Username or email').fill(user.username);
-  await loginPage.getByLabel('Password', { exact: true }).fill(user.password);
-  await loginPage.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await loginPage.locator('input[name="identifier"]').fill(user.username);
+  await loginPage.locator('input[name="password"]').fill(user.password);
+  await loginPage.locator('form button[type="submit"]').click();
   const signedInText = await loginPage.getByText(/^Signed in as/).innerText();
   assert.ok(signedInText.includes(user.name), 'Timey confirmed the display name for the signed-in fixture');
   await loginPage.close();
 
   await openAccountMenu(account, user.name, output);
-  const accountLink = account.getByRole('link', { name: 'Account', exact: true });
-  const signOut = account.getByRole('button', { name: 'Sign out', exact: true });
+  const accountLink = account.locator('a[href="/auth/session"]');
+  const signOut = account.locator('[data-account-sign-out]');
   await page.waitForFunction(() => Number(document.querySelector('iframe[title="Timey account"]').height) > 40);
   const menuBounds = await Promise.all([accountLink, signOut].map(visibleMenuItemBounds));
   await page.screenshot({ path: join(output, 'project-account-narrow-signed-in.png') });
@@ -146,7 +146,10 @@ async function visibleMenuItemBounds(item) {
 
 async function openAccountMenu(account, name, output) {
   try {
-    await account.getByRole('button', { name, exact: true }).click({ timeout: 12000 });
+    const menu = account.locator('[data-account-menu]');
+    await menu.waitFor({ timeout: 12000 });
+    assert.equal(await menu.getAttribute('aria-label'), name);
+    await menu.click();
   } catch (error) {
     const state = await account.locator('main').evaluate(async (main) => {
       const response = await fetch('/api/auth/get-session');
@@ -168,17 +171,19 @@ async function checkNarrowHeader(page, login) {
   const rightGap = header.x + header.width - (frame.x + frame.width);
   assert.ok(rightGap >= 0 && rightGap <= 24, 'The Timey account stays at the right edge of the narrow header');
 
-  const tabs = page.getByRole('tablist', { name: 'Project workspace' });
+  const tabs = page.locator('.project-workspace-tabs');
   const order = ['Home', 'Issues', 'Reports', 'Discuss', 'Automate me', 'Admin'];
+  const identifiers = ['home', 'issues', 'reports', 'discuss', 'automate', 'admin'];
   assert.deepEqual(
     (await tabs.getByRole('tab').allTextContents()).map((label) => label.trim()),
     order
   );
-  for (const name of order) {
-    await tabs.getByRole('tab', { name, exact: true }).click();
-    await tabs.getByRole('tab', { name, exact: true, selected: true }).waitFor();
+  for (const id of identifiers) {
+    const selector = '#project-tab-' + id;
+    await tabs.locator(selector).click();
+    await tabs.locator(selector + '[aria-selected="true"]').waitFor();
     await login.waitFor();
   }
-  await tabs.getByRole('tab', { name: 'Home', exact: true }).click();
+  await tabs.locator('#project-tab-home').click();
   return { header, frame, rightGap, tabs: order };
 }

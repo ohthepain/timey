@@ -40,7 +40,7 @@ export default async function modelSettingsBrowserChecks(page) {
 
   await page.goto(new URL('/#/issue/a', page.url()).href);
   await page.getByRole('heading', { name: 'Newer low issue', exact: true }).waitFor();
-  if ((await page.locator('[data-issue-model="b"]').inputValue()) !== '')
+  if ((await page.locator('[data-issue-model="a"]').inputValue()) !== '')
     throw Error('A global change became an explicit per-issue model choice.');
   const options = await page.evaluate(async () => (await (await fetch('/api/queue')).json()).modelSettings.defaults);
   if (options.model !== 'gpt-6.1-terra' || options.effort !== 'high') throw Error('Saved defaults did not persist.');

@@ -46,7 +46,7 @@ async function choosePage(page, name) {
 async function unsavedChoice(page, choice) {
   const prompt = page.locator('#settings-unsaved-dialog');
   await prompt.waitFor({ state: 'visible' });
-  await prompt.getByRole('button', { name: choice, exact: true }).click();
+  await prompt.locator(`[data-unsaved-choice="${choice}"]`).click();
   await prompt.waitFor({ state: 'hidden' });
   await page.locator('#project-settings-dialog:not([inert])').waitFor({ state: 'attached' });
 }
@@ -135,19 +135,19 @@ async function checkPromptDrafts({ page, poll, observations }) {
   await project.waitFor();
   await project.fill('Project-only prompt fixture.');
   await choosePage(page, 'hotkeys');
-  await unsavedChoice(page, 'Cancel');
+  await unsavedChoice(page, 'cancel');
   assert.equal(await project.inputValue(), 'Project-only prompt fixture.');
   assert.equal(new URL(page.url()).searchParams.get('settings'), 'prompts');
   assert.equal((await preferences(page)).prompts.project.value, before.prompts.project.value);
   await choosePage(page, 'hotkeys');
-  await unsavedChoice(page, 'Discard');
+  await unsavedChoice(page, 'discard');
   await dialog.locator('[name="newNote"]').waitFor();
   assert.equal((await preferences(page)).prompts.project.value, before.prompts.project.value);
   await choosePage(page, 'prompts');
   await project.waitFor();
   await project.fill('Saved project-only prompt fixture.');
   await choosePage(page, 'hotkeys');
-  await unsavedChoice(page, 'Save');
+  await unsavedChoice(page, 'save');
   await dialog.locator('[name="newNote"]').waitFor();
   await poll(
     () => preferences(page),
@@ -158,17 +158,17 @@ async function checkPromptDrafts({ page, poll, observations }) {
   await project.waitFor();
   await project.fill('Retained closing draft.');
   await dialog.locator('[data-settings-close]').click();
-  await unsavedChoice(page, 'Cancel');
+  await unsavedChoice(page, 'cancel');
   assert.equal(await project.inputValue(), 'Retained closing draft.');
   await dialog.locator('[data-settings-close]').click();
-  await unsavedChoice(page, 'Discard');
+  await unsavedChoice(page, 'discard');
   await dialog.waitFor({ state: 'hidden' });
   assert.equal((await preferences(page)).prompts.project.value, 'Saved project-only prompt fixture.');
   await settingsPage(page, 'prompts');
   await project.waitFor();
   await project.fill('Saved while closing.');
   await dialog.locator('[data-settings-close]').click();
-  await unsavedChoice(page, 'Save');
+  await unsavedChoice(page, 'save');
   await dialog.waitFor({ state: 'hidden' });
   assert.equal((await preferences(page)).prompts.project.value, 'Saved while closing.');
   await settingsPage(page, 'prompts');
@@ -220,7 +220,7 @@ async function checkHotkeyDrafts({ page, logs, poll, observations }) {
   await page.locator('#project-settings-error:not([hidden])').waitFor();
   assert.deepEqual((await preferences(page)).hotkeys.values, before.hotkeys.values);
   await choosePage(page, 'prompts');
-  await rejectedSettingsAction({ page, logs }, 'project-preferences', () => unsavedChoice(page, 'Save'));
+  await rejectedSettingsAction({ page, logs }, 'project-preferences', () => unsavedChoice(page, 'save'));
   assert.equal(new URL(page.url()).searchParams.get('settings'), 'hotkeys');
   assert.equal(await note.inputValue(), 'Ctrl+Alt+K', 'Failed save keeps the draft and current page.');
   await issue.fill('Ctrl+Alt+J');
@@ -418,17 +418,17 @@ async function checkDefaultsAndSources({ page, project, poll, observations }) {
 
 async function checkMaintenanceHandoff({ page, project, logs, observations }) {
   const operations = [
-    ['Prune Worktrees', 'admin-prune', 'project-worktree-cleanup', 'apply'],
-    ['Clean up remote branches', 'admin-branches', 'project-remote-branch-cleanup', 'review-button'],
-    ['Clean up local branches', 'admin-branches', 'project-local-branch-cleanup', 'review-button'],
-    ['Delete archived issues', 'admin-archive', 'project-archive-deletion', 'review-button'],
+    ['admin-prune-worktrees', 'admin-prune', 'project-worktree-cleanup', 'apply'],
+    ['admin-remote-open', 'admin-branches', 'project-remote-branch-cleanup', 'review-button'],
+    ['admin-local-open', 'admin-branches', 'project-local-branch-cleanup', 'review-button'],
+    ['admin-archive-open', 'admin-archive', 'project-archive-deletion', 'review-button'],
   ];
-  for (const [label, prefix, endpoint, guard] of operations) {
+  for (const [control, prefix, endpoint, guard] of operations) {
     const dialog = await settingsPage(page, 'git');
     const deliveryPath = join(project, '.issues/issue-delivery-config.json');
     const delivery = readFileSync(deliveryPath);
     rmSync(deliveryPath);
-    const action = () => dialog.getByRole('button', { name: label, exact: true }).click();
+    const action = () => dialog.locator(`[data-settings-maintenance="${control}"]`).click();
     const preview =
       endpoint === 'project-remote-branch-cleanup'
         ? rejectedSettingsAction({ page, logs }, endpoint, action, 'GET')
@@ -448,7 +448,7 @@ async function checkMaintenanceHandoff({ page, project, logs, observations }) {
     } else assert.equal(response.status(), 200, await response.text());
     assert.equal(await page.locator('#' + prefix + '-' + guard).isDisabled(), true);
     await page.locator('#' + prefix + '-close').click();
-    observations.push({ check: 'Settings opens guarded Admin preview', operation: label, passed: true });
+    observations.push({ check: 'Settings opens guarded Admin preview', operation: control, passed: true });
   }
 }
 

@@ -53,9 +53,7 @@ export async function manualCloseBrowserChecks({ page, project, service, output,
       await flows.store.save(flow, flow.revision);
       await page.goto('/?issue=' + id);
       await page.locator('[data-block="request"]').click();
-      const checkbox = page.getByRole('checkbox', {
-        name: 'Close as Fixed and remove the worktree after Factory Merge',
-      });
+      const checkbox = page.locator('#auto-close-setting');
       assert.equal(await checkbox.isChecked(), false);
       const close = page.locator('[data-close-issue]');
       await close.waitFor();
