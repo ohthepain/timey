@@ -265,6 +265,8 @@ const {
   '--run-extra-work': runExtraWorkCheck,
   '--update-worktree': updateWorktreeCheck,
   '--publish-preview': publishPreviewCheck,
+  '--issue-playback': issuePlaybackCheck,
+  '--issue-header-close': issueHeaderCloseCheck,
   '--timers': timersCheck,
   '--proposals': proposalsCheck,
 } = flowBrowserScenarioNames;
@@ -2528,7 +2530,7 @@ try {
     saved.destination = destination;
     await service.flows.store.save(saved, saved.revision);
   });
-  await check('Issue Start and Resume respect No new actions and run Update Branch without confirmation', async () => {
+  await check(issuePlaybackCheck, async () => {
     service.flows.executor.close();
     service.flows.executor = executor;
     const previousIssueId = issueId;
@@ -2592,6 +2594,7 @@ try {
     await block('request');
     await page.locator('#issue-results-message').filter({ hasText: 'Flow complete' }).waitFor();
     assert.equal(await page.locator('#issue-playback[data-playback-mode="close"]').textContent(), 'Close');
+    assert.equal(await page.locator('#close-with-reason').isVisible(), false);
     await page.locator('#issue-playback[data-playback-mode="close"]').click();
     const closeDialog = page.getByRole('dialog', { name: 'Close this issue' });
     await closeDialog.waitFor();
@@ -2605,9 +2608,21 @@ try {
     assert.equal((await view()).flow.blocks.find(({ id }) => id === sync.id).attempts.at(-1).status, 'completed');
     assert.deepEqual(logs.pageErrors, []);
   });
-  await check('The issue header closes with a reason and runs only Cleanup by default', async () => {
-    const close = page.locator('#close-with-reason');
-    assert.equal(await page.locator('#worktree-hint + #close-with-reason').count(), 1);
+  await check(issueHeaderCloseCheck, async () => {
+    const closureIssueId = '20261116-header-close-fixture';
+    await writeBrowserIssue(project, {
+      id: closureIssueId,
+      title: 'Header closure fixture',
+      body: 'Close this open issue with a reason.',
+    });
+    await page.goto('/?issue=' + closureIssueId);
+    await page.locator('#issue-playback[data-playback-mode="start"]').waitFor();
+    const close = await readyControl(page.locator('#environment'), {
+      selector: '#worktree-hint + #close-with-reason',
+      action: 'Close with reason',
+      view: 'Flow issue header',
+      record: closureIssueId,
+    });
     const dialog = page.getByRole('dialog', { name: 'Close this issue' });
     const executionCount = logs.execution.length;
     await close.click();
@@ -2620,12 +2635,13 @@ try {
     await dialog.locator('#confirm-issue-closure').click();
     await dialog.waitFor({ state: 'hidden' });
     await close.waitFor({ state: 'hidden' });
-    await poll(() => !service.flows.closureBusy(issueId), Boolean, 'Close did not finish Cleanup.');
+    await poll(() => !service.flows.closureBusy(closureIssueId), Boolean, 'Close did not finish Cleanup.');
+    const saved = service.flows.selected(closureIssueId);
+    const cleanup = service.flows.read(saved).blocks.find(({ kind }) => kind === 'cleanup');
     assert.deepEqual(
       logs.execution.slice(executionCount).map(({ blockId }) => blockId),
-      [service.flows.read(service.flows.selected(issueId)).blocks.find(({ kind }) => kind === 'cleanup').id]
+      [cleanup.id]
     );
-    const saved = service.flows.selected(issueId);
     assert.equal(saved.location, 'closed');
     assert.equal(saved.closure.reason, 'duplicate');
     assert.equal(saved.closure.details, 'Already covered by issue #44');

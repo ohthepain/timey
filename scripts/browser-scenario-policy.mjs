@@ -96,6 +96,8 @@ export const flowBrowserScenarioNames = {
   '--run-extra-work': 'Run beside the Work name starts exactly one block',
   '--update-worktree': 'Worktree menu opens the saved checkout and updates it from the remote target',
   '--publish-preview': 'Publish previews the exact description and refreshes it before any remote write',
+  '--issue-playback': 'Issue Start and Resume respect No new actions and run Update Branch without confirmation',
+  '--issue-header-close': 'The issue header closes with a reason and runs only Cleanup by default',
   '--timers': 'Block timers reset for each attempt and stop at the last saved time after disconnect',
   '--proposals': proposalsCheck,
   '--delayed-delete': proposalsCheck,
