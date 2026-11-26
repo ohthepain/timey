@@ -219,13 +219,18 @@ function writeCISuite(folder, suite, candidate) {
   const runner = '/github/workspace/.issues/evidence';
   const checks = ciSuites[suite].checks.map((name) => {
     const log = suite + '-' + name + '.log';
-    const outputs = { 'flow-browser': 'PASS Flow fixture' };
+    const outputs = {
+      'flow-browser': 'PASS Flow fixture',
+      'timey-browser': 'PASS Timey fixture',
+    };
     writeFileSync(join(folder, log), outputs[name] ?? (name === 'factory' ? 'ℹ tests 1' : 'passed'));
     const check = { name, passed: true, exit: 0, log: runner + '/' + log };
     if (outputs[name]) {
-      const file = suite + '-results.json';
-      writeFileSync(join(folder, file), 'browser proof');
-      check.artifacts = [{ path: runner + '/' + file, sha256: digest('browser proof') }];
+      const timey = name === 'timey-browser';
+      const file = timey ? 'timey-factory-return.json' : suite + '-results.json';
+      const proof = timey ? JSON.stringify({ revision: candidate.revision, tree: candidate.tree }) : 'browser proof';
+      writeFileSync(join(folder, file), proof);
+      check.artifacts = [{ path: runner + '/' + file, sha256: digest(proof) }];
     }
     return check;
   });
@@ -251,13 +256,13 @@ void test('CI assembles passing evidence across rerun jobs only for one exact sn
   const suites = Object.keys(ciSuites);
   const last = suites.pop();
   for (const suite of suites) writeCISuite(root, suite, candidate);
-  assert.throws(() => assembleCIEvidence(root, candidate), /one report for CI suite flow-browser-2/);
+  assert.throws(() => assembleCIEvidence(root, candidate), /one report for CI suite timey-browser/);
   writeCISuite(root, last, { ...candidate, revision: 'different checkout' });
   assert.throws(() => assembleCIEvidence(root, candidate), /exact candidate/);
   writeCISuite(root, last, candidate);
-  writeFileSync(join(root, last + '-results.json'), 'altered browser proof');
+  writeFileSync(join(root, 'timey-factory-return.json'), 'altered browser proof');
   assert.throws(() => assembleCIEvidence(root, candidate), /artifact changed/);
-  writeFileSync(join(root, last + '-results.json'), 'browser proof');
+  writeCISuite(root, last, candidate);
   const summary = JSON.parse(readFileSync(assembleCIEvidence(root, candidate), 'utf8'));
   assert.equal(summary.checkpoint, 'verification');
   assert.equal(summary.passed, true);

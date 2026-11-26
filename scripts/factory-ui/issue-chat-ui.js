@@ -132,6 +132,7 @@ window.createSkillComposer = function createSkillComposer(form, draft, load) {
       const chip = document.createElement('button');
       chip.type = 'button';
       chip.className = 'skill-chip';
+      chip.dataset.skill = skill.name;
       chip.setAttribute('aria-label', `Remove ${skill.name} skill`);
       const icon = document.createElement('span');
       icon.textContent = skill.icon || '✦';
@@ -289,5 +290,3 @@ window.createSkillComposer = function createSkillComposer(form, draft, load) {
     render,
   };
 };
-
-/* The issue conversation is saved by the server. This view retains only unsent drafts. */

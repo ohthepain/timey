@@ -76,7 +76,7 @@ async function observeArchiveBatch({ page, frame, project, output, titles, archi
     }).observe(node, { childList: true });
   });
   const dialog = frame.getByRole('dialog', { name: 'Archive selected issues' });
-  await frame.getByRole('button', { name: 'Archive selected', exact: true }).click();
+  await frame.locator('[data-archive-project-issues]').click();
   const summary = `Archived ${archived.length} ${archived.length === 1 ? 'issue' : 'issues'}.`;
   await dialog.getByText(summary, { exact: true }).waitFor();
 
@@ -106,7 +106,7 @@ async function observeArchiveBatch({ page, frame, project, output, titles, archi
   assert.equal(await dialog.isVisible(), true);
   const screenshot = join(output, failed.length ? 'closed-archive-partial-failure.png' : 'closed-archive-success.png');
   await page.screenshot({ path: screenshot, fullPage: true });
-  await dialog.getByRole('button', { name: 'Dismiss', exact: true }).click();
+  await dialog.locator('#archive-progress-dismiss').click();
   await dialog.waitFor({ state: 'hidden' });
   return { progress, layout, summary, failures, screenshot, stayedOpenAfterRefresh: true, dismissed: true };
 }
@@ -165,7 +165,7 @@ export async function projectIssuesBrowserChecks({ page, project, root, output, 
     writeFileSync(join(output, 'classic-retirement.json'), JSON.stringify({ legacy, retired }, null, 2) + '\n');
     await page.goto('/?projectTab=issues');
     const frame = page.frameLocator('#project-issues iframe');
-    await frame.getByRole('button', { name: 'Open', exact: true }).waitFor();
+    await frame.locator('[data-project-issue-mode="open"]').waitFor();
     assert.equal(await frame.locator('#queue-direction').isVisible(), false);
     await frame.locator('#queue-sort').selectOption('created');
     assert.equal(await frame.locator('#queue-direction').isVisible(), true);
@@ -174,15 +174,15 @@ export async function projectIssuesBrowserChecks({ page, project, root, output, 
     assert.equal(await frame.locator('#queue-direction').isVisible(), false);
     await frame.locator(`[data-select-issue="${open}"]`).check();
     await frame.getByText('Edit shared fields across the selection.', { exact: true }).waitFor();
-    await frame.getByRole('button', { name: 'Closed', exact: true }).click();
+    await frame.locator('[data-project-issue-mode="closed"]').click();
     await frame.locator(`[data-select-issue="${closed[0]}"]`).waitFor();
     assert.equal(await frame.locator(`[data-select-issue="${open}"]`).count(), 0);
     assert.equal(await frame.locator('.issue-workspace-content').count(), 0);
-    await frame.getByRole('button', { name: 'Open', exact: true }).click();
+    await frame.locator('[data-project-issue-mode="open"]').click();
     await frame.locator(`[data-select-issue="${open}"]`).waitFor();
     assert.equal(await frame.locator(`[data-select-issue="${open}"]`).isChecked(), false);
     assert.equal(await frame.locator('.issue-workspace-content').count(), 0);
-    await frame.getByRole('button', { name: 'Closed', exact: true }).click();
+    await frame.locator('[data-project-issue-mode="closed"]').click();
     await frame.locator(`[data-select-issue="${closed[0]}"]`).check();
     await frame.locator(`[data-select-issue="${closed[1]}"]`).check();
     assert.equal(await frame.locator(`[data-issue-row="${closed[0]}"] small`).textContent(), 'Closed');
@@ -226,7 +226,7 @@ export async function projectIssuesBrowserChecks({ page, project, root, output, 
       join(output, 'closed-issues-archive-progress.json'),
       JSON.stringify({ success, partialFailure }, null, 2) + '\n'
     );
-    await frame.getByRole('button', { name: 'Open', exact: true }).click();
+    await frame.locator('[data-project-issue-mode="open"]').click();
     await frame.locator(`[data-select-issue="${open}"]`).check();
     await frame.getByText('Edit shared fields across the selection.', { exact: true }).waitFor();
     assert.equal(await frame.locator('.issue-workspace-content').count(), 1);

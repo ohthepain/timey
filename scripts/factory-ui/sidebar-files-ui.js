@@ -102,6 +102,8 @@
   function renderFolder(root, base, name) {
     const details = node('details');
     details.classList.add('sidebar-file-directory');
+    details.dataset.directoryRoot = base.root;
+    details.dataset.directoryPath = base.path;
     const summary = node('summary');
     summary.classList.add('sidebar-folder-row');
     const disclosure = action(
@@ -156,6 +158,13 @@
     return details;
   }
 
+  function fileButton(name, target) {
+    const button = action(name, () => openFile(target), 'sidebar-file-link');
+    button.dataset.fileRoot = target.root;
+    button.dataset.filePath = target.path;
+    return button;
+  }
+
   function directoryActions(entry) {
     const { root, base } = entry;
     const operations = node('div');
@@ -190,9 +199,7 @@
         const target = { root: root.id, path: childPath(base.path, row.name) };
         const existing = nodes.get(id(target));
         fragment.append(
-          row.directory
-            ? existing?.details || renderFolder(root, target, row.name)
-            : action(row.name, () => openFile(target), 'sidebar-file-link')
+          row.directory ? existing?.details || renderFolder(root, target, row.name) : fileButton(row.name, target)
         );
       }
       if (!rows.length) fragment.append(node('p', 'No Markdown files.', 'sidebar-empty'));

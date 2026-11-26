@@ -37,7 +37,7 @@ const ciSuite = ciIndex < 0 ? null : args[ciIndex + 1];
 if (ciIndex >= 0 && (!Object.hasOwn(ciSuites, ciSuite) || staged || auditOnly || workChecks || step))
   throw Error('Run exactly one recognized CI suite using --ci-suite.');
 const suite = ciSuites[ciSuite];
-const isBrowserCheck = (name) => ['browser', 'flow-browser'].includes(name);
+const isBrowserCheck = (name) => ['browser', 'flow-browser', 'timey-browser'].includes(name);
 // Preserve the source index (including an alternate hook index), but never leak
 // repository-local Git variables into the disposable clone or child checks.
 const sourceEnv = { ...process.env };
@@ -163,6 +163,7 @@ async function run(name, command, commandArgs) {
             ...isolatedEnv,
             TIMEY_BROWSER_OUTPUT: browserOutput,
             TIMEY_FLOW_BROWSER_OUTPUT: join(browserOutput, 'flow'),
+            TIMEY_RETURN_BROWSER_OUTPUT: join(browserOutput, 'timey'),
           }
         : isolatedEnv,
     },
@@ -206,6 +207,7 @@ function verificationCommands() {
   const commands = {
     browser: ['pnpm', 'run', 'test:browser'],
     'flow-browser': flowVerificationCommand(),
+    'timey-browser': [process.execPath, '--test', 'scripts/timey-factory-return.check.mjs'],
     factory: factoryVerificationCommand(),
     typecheck: [bin('tsc'), '--noEmit'],
     tests: [bin('vp'), 'test', 'run'],

@@ -125,8 +125,34 @@ jobs:
           suite: flow-browser-2
           base: ${{ needs.early.outputs.base }}
 
+  timey-browser:
+    name: Timey browser
+    needs: early
+    runs-on: ubuntu-latest
+    outputs:
+      artifact-id: ${{ steps.verify.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/verify-suite
+        id: verify
+        with:
+          suite: timey-browser
+          base: ${{ needs.early.outputs.base }}
+
   test:
-    needs: [early, non-browser-1, non-browser-2, non-browser-app, flow-browser-1, flow-browser-1b, flow-browser-2]
+    needs:
+      [
+        early,
+        non-browser-1,
+        non-browser-2,
+        non-browser-app,
+        flow-browser-1,
+        flow-browser-1b,
+        flow-browser-2,
+        timey-browser,
+      ]
     if: always()
     runs-on: ubuntu-latest
     steps:

@@ -4,6 +4,8 @@ import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { withQueueConfiguration } from './flow-browser-queue-configuration.mjs';
 import { randomUUID } from 'node:crypto';
+import { collectEvidence } from './factory-ui/stores/evidence.mjs';
+import { git } from './factory-ui/common.mjs';
 import {
   createIssueFolderSettings,
   readFolderSettings,
@@ -18,7 +20,7 @@ async function checkProjectStoreSettings(page, poll) {
   const label = added.locator('input[name$=":label"]');
   const storeId = (await label.getAttribute('name')).split(':')[1];
   await label.fill('UI project storage');
-  await settings.getByRole('button', { name: 'Save', exact: true }).click();
+  await settings.locator('[data-settings-form] button[type="submit"]').click();
   await poll(
     () => settings.locator(`[data-store-test="${storeId}"]`).isEnabled(),
     Boolean,
@@ -45,7 +47,7 @@ async function checkProjectStoreSettings(page, poll) {
     assert.equal(response.status(), 200, JSON.stringify(result));
     assert.equal(result.status, 'confirmed', `The ${role} store move was not confirmed.`);
   });
-  await Promise.all([...confirmations, settings.getByRole('button', { name: 'Save', exact: true }).click()]);
+  await Promise.all([...confirmations, settings.locator('[data-settings-form] button[type="submit"]').click()]);
   const response = await page.request.get('/api/issue-stores');
   assert.equal(response.status(), 200, await response.text());
   const { coordination, artifacts } = await response.json();
@@ -143,8 +145,8 @@ async function checkOwnershipRecovery({ page, service, issueId, poll, screenshot
   await stores.refresh();
   await page.goto('/?issue=' + issueId);
   const banner = page.getByRole('region', { name: 'Issue blocker', exact: true });
-  const release = banner.getByRole('button', { name: 'Release claim', exact: true });
-  await banner.getByRole('button', { name: 'Open block details' }).waitFor({ state: 'visible' });
+  const release = banner.locator('#release-issue-claim');
+  await banner.locator('#issue-blocker-open').waitFor({ state: 'visible' });
   await release.click();
   await page.locator('#issue-ownership-controls').waitFor({ state: 'visible' });
   assert.equal((await stores.records.get('claims/' + issueId)).value.token, owner.token);
@@ -184,7 +186,7 @@ async function checkStaleFlowSave({ page, stores, issueId, owner, flow, screensh
   });
   await page.goto('/?settings=storage');
   await page.locator('[data-store-discover]').click();
-  await page.getByRole('button', { name: 'Reconcile stale save' }).click();
+  await page.locator('[data-store-reconcile-flow]').click();
   await page.getByText('Superseded flow save reconciled. Its history was retained.').waitFor();
   const actual = await stores.records.get(saved.key);
   assert.equal(actual.value.status, 'rejected');

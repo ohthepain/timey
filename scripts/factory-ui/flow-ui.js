@@ -3014,6 +3014,7 @@ import { reorderedBlocks } from './flow-order.mjs';
   function renderPlaybackButton(mode) {
     const labels = { start: 'Start', resume: 'Resume', pause: 'Pause', close: 'Close', archive: 'Archive' };
     const issueState = playbackIssueState();
+    $('issue-playback').dataset.playbackMode = mode;
     $('issue-playback').innerHTML =
       (mode === 'archive' || issueState === 'blocked'
         ? statusIcon(mode === 'archive' ? 'closed' : issueState) + ' '

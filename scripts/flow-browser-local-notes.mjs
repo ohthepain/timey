@@ -93,13 +93,13 @@ export async function localNotesBrowserChecks({ page, service, project, poll, sc
   await page.getByRole('button', { name: 'Remember the quick thought', exact: true }).waitFor();
   await page.keyboard.press('Alt+n');
   await page.locator('#local-note-editor[open]').waitFor();
-  await page.getByRole('textbox', { name: 'Note text', exact: true }).fill('Second thought');
-  await page.locator('#local-note-edit-form').getByRole('button', { name: 'Save note', exact: true }).click();
+  await page.locator('#local-note-edit-text').fill('Second thought');
+  await page.locator('#local-note-edit-form').locator('button[type="submit"]').click();
   await page.getByRole('button', { name: 'Second thought', exact: true }).waitFor();
   const second = notes.view().notes.find((note) => note.text === 'Second thought');
   const row = page.locator(`[data-note-id="${second.id}"]`);
   await row.locator('summary').click();
-  await row.getByRole('button', { name: 'Move note down', exact: true }).click();
+  await row.locator('[data-note-action="down"]').click();
   await poll(
     () => notes.view().notes[1]?.id,
     (value) => value === second.id,
@@ -107,12 +107,15 @@ export async function localNotesBrowserChecks({ page, service, project, poll, sc
   );
   await row.getByRole('checkbox').check();
   await poll(() => notes.get(second.id).done, Boolean, 'Note completion');
-  await row.getByRole('button', { name: 'Second thought', exact: true }).click();
-  await page.getByRole('textbox', { name: 'Note text', exact: true }).fill('Edited second thought');
-  await page.locator('#local-note-edit-form').getByRole('button', { name: 'Save note', exact: true }).click();
-  await row.getByRole('button', { name: 'Edited second thought', exact: true }).waitFor();
+  await row.locator('[data-note-edit]').click();
+  await page.locator('#local-note-edit-text').fill('Edited second thought');
+  await page.locator('#local-note-edit-form').locator('button[type="submit"]').click();
+  await row
+    .locator('[data-note-edit]')
+    .filter({ hasText: /^Edited second thought$/ })
+    .waitFor();
   await screenshot('local-notes-sidebar');
-  await row.getByRole('button', { name: 'Discuss', exact: true }).click();
+  await row.locator('[data-note-action="discuss"]').click();
   await page.locator('#discuss-draft').waitFor();
   await poll(
     () => page.locator('#discuss-draft').inputValue(),
@@ -132,7 +135,7 @@ export async function localNotesBrowserChecks({ page, service, project, poll, sc
   await page.getByText('Let’s discuss this note.', { exact: true }).waitFor();
   const noteRow = page.locator(`[data-note-id="${second.id}"]`);
   await noteRow.locator('summary').click();
-  await noteRow.getByRole('button', { name: 'Turn into issue', exact: true }).click();
+  await noteRow.locator('[data-note-action="issue"]').click();
   await page.locator('#capture-dialog[open]').waitFor();
   assert.equal(await page.locator('#capture-description').inputValue(), 'Edited second thought');
   await page.locator('#capture-description').fill('An issue from the quick note');
@@ -142,26 +145,24 @@ export async function localNotesBrowserChecks({ page, service, project, poll, sc
   registry.next = 182;
   writeFileSync(registryPath, JSON.stringify(registry));
   await page.locator('#capture-form button[type="submit"]').click();
-  await page.getByRole('button', { name: 'Delete original note', exact: true }).waitFor();
+  await page.locator('[data-discuss-delete-note]').waitFor();
   const link = page.locator('#discuss-messages').getByRole('link', { name: 'the new issue', exact: true });
   assert.match(await link.getAttribute('href'), /\?issue=/);
   assert.ok(notes.get(second.id).issueId);
   const createdPrompts = page.locator('[data-discuss-recommendations]');
-  await createdPrompts.getByRole('button', { name: 'Delete note', exact: true }).waitFor();
-  assert.equal(await createdPrompts.getByRole('button', { name: 'Create issue', exact: true }).count(), 0);
-  assert.equal(await createdPrompts.getByRole('button', { name: 'Create, delete & next', exact: true }).count(), 0);
+  await createdPrompts.locator('[data-prompt-id="delete"]').waitFor();
+  assert.equal(await createdPrompts.locator('[data-prompt-id="create"]').count(), 0);
+  assert.equal(await createdPrompts.locator('[data-prompt-id="create-delete-next"]').count(), 0);
   assert.equal(turns.length, 1);
   await screenshot('local-note-created-issue');
   const issueId = notes.get(second.id).issueId;
-  const sidebarLink = page.locator(`[data-note-id="${second.id}"]`).getByRole('link', {
-    name: 'Open issue #182',
-    exact: true,
-  });
+  const sidebarLink = page.locator(`[data-note-id="${second.id}"] .local-note-issue`);
   await sidebarLink.waitFor();
   const conversationUrl = page.url();
   await page.reload();
   await sidebarLink.waitFor();
   const label = await sidebarLink.textContent();
+  assert.equal(label, 'Open issue #182');
   const href = await sidebarLink.getAttribute('href');
   assert.equal(href, '/?issue=' + encodeURIComponent(issueId));
   await screenshot('local-note-issue-number');
@@ -192,8 +193,8 @@ export async function localNotesBrowserChecks({ page, service, project, poll, sc
     ) + '\n'
   );
   await page.goto(conversationUrl);
-  await page.getByRole('button', { name: 'Delete original note', exact: true }).waitFor();
-  await page.getByRole('button', { name: 'Delete original note', exact: true }).click();
+  await page.locator('[data-discuss-delete-note]').waitFor();
+  await page.locator('[data-discuss-delete-note]').click();
   await poll(
     () => notes.view().notes.length,
     (value) => value === 1,
@@ -217,7 +218,8 @@ export async function localNotesBrowserChecks({ page, service, project, poll, sc
   }
   await page.reload();
   for (const note of sentenceNotes) {
-    const button = page.getByRole('button', { name: note.preview, exact: true });
+    const { id } = notes.view().notes.find(({ text }) => text === note.text);
+    const button = page.locator(`[data-note-edit="${id}"]`);
     await button.waitFor();
     assert.equal(await button.textContent(), note.preview);
     await button.click();
@@ -254,7 +256,7 @@ async function fixtureCreateAndAdvance(service, session, context) {
 async function openNoteFromSidebar(page, id) {
   const row = page.locator('[data-note-id="' + id + '"]');
   await row.locator('summary').click();
-  await row.getByRole('button', { name: 'Discuss', exact: true }).click();
+  await row.locator('[data-note-action="discuss"]').click();
 }
 
 async function checkNoteRecommendations({ page, notes, turns, poll, screenshot, output }) {
@@ -263,7 +265,7 @@ async function checkNoteRecommendations({ page, notes, turns, poll, screenshot, 
   const prompts = page.locator('[data-discuss-recommendations]');
   const names = () => prompts.getByRole('button').allTextContents();
   await openNoteFromSidebar(page, first.id);
-  await prompts.getByRole('button', { name: 'Next', exact: true }).waitFor();
+  await prompts.locator('[data-prompt-id="next"]').waitFor();
   const firstUrl = page.url();
   const top = await names();
   assert.ok(!top.includes('Prev'));
@@ -277,18 +279,18 @@ async function checkNoteRecommendations({ page, notes, turns, poll, screenshot, 
   assert.equal(above, true);
   await screenshot('note-recommendations');
   await openNoteFromSidebar(page, currentNotes.at(-1).id);
-  await prompts.getByRole('button', { name: 'Prev', exact: true }).waitFor();
+  await prompts.locator('[data-prompt-id="prev"]').waitFor();
   const last = await names();
   assert.ok(!last.includes('Next'));
   await page.goto(firstUrl);
-  await prompts.getByRole('button', { name: 'Next', exact: true }).click();
+  await prompts.locator('[data-prompt-id="next"]').click();
   await page.waitForURL((url) => url.href !== firstUrl);
   const secondUrl = page.url();
-  await prompts.getByRole('button', { name: 'Prev', exact: true }).waitFor();
-  await prompts.getByRole('button', { name: 'Prev', exact: true }).click();
+  await prompts.locator('[data-prompt-id="prev"]').waitFor();
+  await prompts.locator('[data-prompt-id="prev"]').click();
   await page.waitForURL(firstUrl);
   await page.goto(secondUrl);
-  const combined = prompts.getByRole('button', { name: 'Create, delete & next', exact: true });
+  const combined = prompts.locator('[data-prompt-id="create-delete-next"]');
   await combined.click();
   await page.getByText('Fixture issue creation failed.', { exact: true }).waitFor();
   assert.equal(page.url(), secondUrl);
@@ -303,7 +305,7 @@ async function checkNoteRecommendations({ page, notes, turns, poll, screenshot, 
     notes.view().notes.some(({ id }) => id === second.id),
     false
   );
-  await prompts.getByRole('button', { name: 'Delete note', exact: true }).click();
+  await prompts.locator('[data-prompt-id="delete"]').click();
   await page.getByText('Deleted the source note.', { exact: true }).waitFor();
   assert.equal(
     notes.view().notes.some(({ id }) => id === third.id),

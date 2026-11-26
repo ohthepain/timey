@@ -196,6 +196,7 @@ const serverControlUI = (() => {
     const output = document.createElement('a');
     output.href = href;
     output.textContent = 'Action output';
+    output.dataset.actionOutput = '';
     return output;
   }
   function actionControls(item, request, drafts) {
