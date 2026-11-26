@@ -512,6 +512,10 @@ shared plan lives at `scripts/flow-integration-tests.json` so it travels with th
 installed Factory server and is also available to the CI runner.
 A named Flow browser check can include one `--ci-part` flag to use the same
 fixture setup as that GitHub job.
+`node scripts/flow-browser.mjs --ci-part=1 --inbox-flow` checks Inbox dates,
+statuses, folder ordering and block drag in isolation. It scrolls the target
+block into the graph viewport before measuring the drag, then checks the
+projected order, saved revision and connections after reload.
 Include `--stores` when reproducing browser failures after storage activation;
 an isolated legacy-storage run does not establish that the store-backed case
 passed. `--proposals --delayed-delete` holds a proposal Delete request for 16
@@ -1174,10 +1178,12 @@ remain stable. It saves `issue-scrollbar.json` and screenshots of the idle,
 scrolling and stopped states in the reported evidence directory.
 
 `node scripts/flow-browser.mjs --server-heap` checks the Flow and Classic header
-readings against the running Factory process. It observes refresh and recovery
-without navigation, and saves `server-heap.json` and screenshots of the live and
-unavailable readings. The scenario configures the fixture queue before opening
-Classic. Run `node scripts/flow-browser.mjs --ci-part=1 --manual-close --server-heap --project-navigation --sidebar-labels --local-notes`
+readings against the running Factory process. It records the header write for each
+response, including two consecutive fixture responses that round to the same label.
+A comparison failure includes the response bytes and the rendered label. The check
+covers refresh and recovery without navigation and saves `server-heap.json` and
+screenshots of the live and unavailable readings. The scenario configures the
+fixture queue before opening Classic. Run `node scripts/flow-browser.mjs --ci-part=1 --manual-close --server-heap --project-navigation --sidebar-labels --local-notes`
 to check the sidebar console after the intentional Close and heap errors. Each
 expected failed response accounts for one matching console entry.
 
