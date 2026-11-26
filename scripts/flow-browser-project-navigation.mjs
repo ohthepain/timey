@@ -176,10 +176,12 @@ async function checkAutomateAndHome(page, tablist, header) {
   assert.equal(new URL(page.url()).searchParams.has('projectTab'), false);
 }
 
+export const unavailableNavigationIssue = '20261125-navigation-second';
+
 async function navigationFixtures(project, service, root) {
   installBrowserHumanInput(project, root);
   const first = '20261125-navigation-first';
-  const second = '20261125-navigation-second';
+  const second = unavailableNavigationIssue;
   const investigation = '20261125-navigation-investigation';
   await writeBrowserIssue(project, { id: first, title: 'Fix login', body: '## Original request\n\nFix login.' });
   await writeBrowserIssue(project, { id: second, title: 'Fix search', body: '## Original request\n\nFix search.' });

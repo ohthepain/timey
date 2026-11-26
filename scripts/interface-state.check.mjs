@@ -36,7 +36,7 @@ test('Discuss activity persists through streaming and refresh, and stops for inp
   const { window, selected, ui } = discussFixture(t);
   ui.setVisible(true);
   await new Promise((resolve) => setImmediate(resolve));
-  const indicator = () => window.document.querySelector('#discuss-messages > .activity-indicator');
+  const indicator = () => window.document.querySelector('#discuss-messages > [data-chat-live] [data-sparkle-text]');
   assert.equal(indicator(), null);
   selected.status = 'running';
   await ui.refresh();

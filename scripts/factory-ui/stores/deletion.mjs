@@ -230,8 +230,9 @@ function artifactHomes(project) {
 }
 
 async function localArtifactHome(root, store) {
-  if (store.config.kind !== 'files') return false;
-  const directory = await realpath(store.directory).catch(() => null);
+  const localDirectory = await store.localDirectory?.();
+  if (!localDirectory) return false;
+  const directory = await realpath(localDirectory).catch(() => null);
   return directory?.startsWith(root + sep);
 }
 

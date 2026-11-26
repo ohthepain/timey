@@ -56,7 +56,7 @@ import { flowFolderSettingsBrowserChecks } from './flow-browser-folder-settings.
 import { flowFollowupsBrowserChecks } from './flow-browser-followups.mjs';
 import { investigationProposals } from './investigation-followups-fixture.mjs';
 import { withQueueConfiguration } from './flow-browser-queue-configuration.mjs';
-import { projectNavigationBrowserChecks } from './flow-browser-project-navigation.mjs';
+import { projectNavigationBrowserChecks, unavailableNavigationIssue } from './flow-browser-project-navigation.mjs';
 import {
   projectHomeBrowserChecks,
   investigationFlowsBrowserChecks,
@@ -349,16 +349,19 @@ function expectedReportConsoleError({ text, location }) {
   );
 }
 
+const expectedBadRequestSuffixes = [
+  '/api/ui-sources',
+  '/api/site-review-sources',
+  '/api/flow?issue=' + unavailableNavigationIssue,
+  '/api/issue-stores?issueId=' + unavailableNavigationIssue,
+];
+
 function unexpectedConsoleErrors(entries) {
   const errors = entries.filter((item) => item.type === 'error' && !expectedReportConsoleError(item));
   return errors.filter((item) => {
     const url = item.location?.url || '';
     if (!/Failed to load resource/.test(item.text) || !item.text.includes('400')) return true;
-    return !(
-      url.includes('/api/folder-settings') ||
-      url.endsWith('/api/ui-sources') ||
-      url.endsWith('/api/site-review-sources')
-    );
+    return !url.includes('/api/folder-settings') && !expectedBadRequestSuffixes.some((suffix) => url.endsWith(suffix));
   });
 }
 function unexpectedWorkflowConsoleErrors() {
