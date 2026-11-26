@@ -1158,24 +1158,58 @@ test('Merge requires approval of its exact commit and target', async (t) => {
   assert.equal(f.calls.filter((item) => item.method === 'guard').at(-1).args[2], 'merge');
 });
 
-test('overnight prepare checks GitHub readiness and stops before automatic merge', async (t) => {
-  const f = mergeFixture(t);
+test('overnight Merge polls required checks and merges without a Factory confirmation', async (t) => {
+  const { StrategyProvider } = await import('./factory-ui/strategy-provider.mjs');
+  const pendingCheck = { name: 'verify', isRequired: true, status: 'IN_PROGRESS' };
+  let check = pendingCheck;
+  const bypass = [];
+  const provider = new StrategyProvider('.', { repository: 'test/fixture', target: 'dev' });
+  provider.canBypassOwnReview = (pr) => {
+    bypass.push(pr.number);
+    return true;
+  };
+  const f = mergeFixture(t, {
+    onReady(pr, branch, head, settings) {
+      provider.gh = () =>
+        JSON.stringify([
+          {
+            data: {
+              repository: {
+                pullRequest: {
+                  headRefOid: head,
+                  baseRefName: 'dev',
+                  baseRefOid: f.git('rev-parse', 'dev'),
+                  mergeStateStatus: 'BLOCKED',
+                  reviewDecision: 'REVIEW_REQUIRED',
+                  commits: { nodes: [{ commit: { statusCheckRollup: { contexts: { nodes: [check] } } } }] },
+                },
+              },
+            },
+          },
+        ]);
+      return provider.ready(pr, branch, head, settings);
+    },
+    onWait() {
+      assert.deepEqual(bypass, []);
+      assert.deepEqual(
+        f.observations.map(({ operation }) => operation),
+        ['ready']
+      );
+      check = { ...pendingCheck, status: 'COMPLETED', conclusion: 'SUCCESS' };
+    },
+  });
   await f.run('understand');
   const result = await f.run('merge', {
-    definition: { mergeWorkflow: { ...humanFirstMerge.definition.mergeWorkflow, policy: 'automatic' } },
-    input: { prepareMerge: true, confirmed: true },
+    ...humanFirstMerge,
+    input: { overnightMerge: true },
   });
-  assert.equal(result.status, 'blocked');
-  assert.equal(result.result.mergeConfirmation.pr, 9);
-  assert.equal(result.result.mergeConfirmation.head, result.result.head);
+  assert.equal(result.result.revision, 'actual-merge');
+  assert.deepEqual(bypass, [9, 9]);
   assert.deepEqual(
     f.observations.map(({ operation }) => operation),
-    ['ready']
+    ['ready', 'ready', 'ready', 'merge']
   );
-  assert.equal(
-    f.calls.some((item) => item.method === 'guard' && item.args[2] === 'merge'),
-    false
-  );
+  assert.ok(f.calls.some((item) => item.method === 'guard' && item.args[2] === 'merge'));
 });
 
 test('Merge pushes each new candidate, then expires approval if the target moves again', async (t) => {
@@ -1236,7 +1270,7 @@ test('Merge repairs a target conflict even when GitHub only reports blocked read
         config: { repository: 'test/fixture', target: 'dev' },
         gh: () => JSON.stringify([{ data: { repository: { pullRequest: live } } }]),
       };
-      await inspectReadiness(provider, pr, branch, head, undefined, waitForChecks);
+      await inspectReadiness(provider, pr, branch, head, { waitForChecks });
     },
   });
   await f.run('understand');
@@ -2436,7 +2470,7 @@ void test('Merge waits for newly published checks to register before merging', a
         config: { repository: 'test/fixture', target: 'dev' },
         gh: async () => JSON.stringify([{ data: { repository: { pullRequest: view } } }]),
       };
-      return inspectReadiness(provider, pr, branch, head, undefined, settings?.waitForChecks);
+      return inspectReadiness(provider, pr, branch, head, settings);
     },
     onWait() {
       waits++;

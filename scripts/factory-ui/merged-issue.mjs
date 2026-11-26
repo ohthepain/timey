@@ -5,7 +5,7 @@ import { requireThat } from './common.mjs';
 export const mergedIssueMessage =
   'This issue has merged and is read-only. Close it when ready. Reopening is not available yet.';
 
-function confirmedMerge(attempt) {
+export function confirmedMerge(attempt) {
   if (attempt.status !== 'completed') return false;
   const result = attempt.result;
   return Boolean(result?.revision) && Number.isSafeInteger(result.pr);

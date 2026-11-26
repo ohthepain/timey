@@ -930,8 +930,9 @@ user-facing copy and its linked `report-design.md` for a self-contained editoria
 HTML document. Internal issue records and machine-readable outputs keep their
 existing formats. The Generate report block delegates copy and layout to the
 selected skill.
-`project-reports-ui.js` owns the Reports library and full-width reader. Complete
-HTML reports render in a script-disabled iframe with isolated styles and a
+`project-reports-ui.js` owns the Reports library and full-width reader. It links
+issues created by the selected run using provenance from saved issue records.
+Complete HTML reports render in a script-disabled iframe with isolated styles and a
 restrictive resource policy. Evidence links resolve to verified retained copies;
 unavailable evidence stays explicit. The reader preserves HTML scroll position
 and continues to render existing Markdown publications. Its lower

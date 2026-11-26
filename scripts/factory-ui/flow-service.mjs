@@ -2647,7 +2647,7 @@ class IssueFlows {
       {
         ...input,
         automaticPublication: block.kind === 'publish' && publication === 'play',
-        prepareMerge: block.kind === 'merge' && this.overnight.owns(issue.id, overnightRunId),
+        overnightMerge: block.kind === 'merge' && this.overnight.owns(issue.id, overnightRunId),
       },
       definition
     );

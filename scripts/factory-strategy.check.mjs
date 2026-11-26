@@ -1674,6 +1674,28 @@ test('Full Stop retains its review bypass for handoff and requires independent C
   f.settings.ciBypass = 'always';
   await assert.rejects(() => f.ready(handoff), /administrators/);
 });
+
+test('overnight readiness requires passing GitHub checks and a review-only bypass', async () => {
+  const f = providerFixture();
+  Object.assign(f.view, { reviewDecision: 'REVIEW_REQUIRED', mergeStateStatus: 'BLOCKED' });
+  const overnight = { overnight: true, waitForChecks: true };
+  f.settings.checks = [];
+  await assert.rejects(() => f.ready(overnight), { code: 'STRATEGY_PENDING' });
+  f.settings.checks = [{ ...f.passingCheck, status: 'IN_PROGRESS' }];
+  await assert.rejects(() => f.ready(overnight), { code: 'STRATEGY_PENDING' });
+  f.settings.checks = [{ ...f.passingCheck, conclusion: 'FAILURE' }];
+  await assert.rejects(() => f.ready(overnight), { code: 'ci-failure' });
+  assert.ok(f.commands.every((args) => args.includes('graphql')));
+  f.settings.checks = [f.passingCheck, { name: 'optional', status: 'COMPLETED', conclusion: 'FAILURE' }];
+  assert.equal((await f.ready(overnight)).head, 'head');
+  f.settings.ciBypass = 'always';
+  await assert.rejects(() => f.ready(overnight), /prevent this credential from bypassing required checks/);
+  f.settings.ciBypass = 'never';
+  f.settings.reviewBypass = 'never';
+  await assert.rejects(() => f.ready(overnight), /cannot bypass GitHub review/);
+  f.view.reviewDecision = 'CHANGES_REQUESTED';
+  await assert.rejects(() => f.ready(overnight), { code: 'review-findings' });
+});
 test('Sol Loop is optional and unavailable Sol never silently substitutes a model', async () => {
   const service = { codex: { ready: async () => {}, call: async () => ({ data: [{ id: 'other' }] }) } };
   await assert.rejects(

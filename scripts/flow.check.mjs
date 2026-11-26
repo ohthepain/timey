@@ -455,7 +455,7 @@ async function waitForNightSignal(signal, label) {
   }
 }
 
-test('Work All Night keeps dependency failures separate and retains the exact handoff', async (t) => {
+test('Work All Night keeps dependency failures separate and reports independent merges', async (t) => {
   const { id, root, service } = fixture(t);
   const dependent = '20261113-dependent';
   const child = '20261113-dependent-child';
@@ -476,11 +476,12 @@ test('Work All Night keeps dependency failures separate and retains the exact ha
       if (issue.id === id) return { status: 'blocked', summary: 'Save regression check failed.' };
       if (block.kind === 'publish') assert.equal(input.automaticPublication, true);
       if (block.kind === 'merge') {
-        assert.equal(input.prepareMerge, true);
+        assert.equal(input.overnightMerge, true);
+        assert.equal(input.confirmed, undefined);
         return {
-          status: 'blocked',
-          summary: 'PR checks passed.',
-          result: { mergeConfirmation: { pr: 5 }, verification: { head: 'verified' } },
+          status: 'completed',
+          summary: 'GitHub confirms the protected merge.',
+          result: { pr: 5, revision: 'confirmed-merge', url: 'https://example.invalid/pr/5' },
         };
       }
       return { summary: 'Done' };
@@ -510,13 +511,14 @@ test('Work All Night keeps dependency failures separate and retains the exact ha
   assert.equal(report.status, 'finished');
   assert.deepEqual(
     report.issues.map(({ status }) => status),
-    ['paused', 'paused', 'ready'],
+    ['paused', 'paused', 'merged'],
     [JSON.stringify(report), report.issues.map(({ summary }) => summary).join('\n')].join('\n')
   );
   assert.equal(report.issues[0].failedCheck, 'Work');
   assert.match(report.issues[0].summary, /regression check failed/);
   assert.match(report.issues[1].summary, /Blocked by/);
   assert.equal(report.issues[2].pr, 5);
+  assert.equal(report.issues[2].url, 'https://example.invalid/pr/5');
   assert.deepEqual(started, [
     [id, 'work'],
     [independent, 'work'],

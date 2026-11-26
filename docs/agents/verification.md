@@ -12,6 +12,11 @@ missing evidence links, blocked scripts, and blocked external resources. It uses
 saved fixture content, not live model generation, so it does not establish that a
 model follows the report design prompt.
 
+`node scripts/flow-browser.mjs --investigation-flows` runs the inquiry and output
+blocks with a fixture provider. It creates two approval-needed issue records and
+checks the links in the published report. The next run links to matching work,
+so its own report has no created issues.
+
 `node --test scripts/discussion-evidence.check.mjs` checks temporary discussion
 protocol configuration, complete context/input references above the provider
 limit, small follow-up messages, and cleanup that preserves the project. It uses
@@ -1072,7 +1077,11 @@ Work All Night fixtures create the folders they assign, so execution reaches the
 injected worker through the same settings validation as a real issue. Start/stop
 checks have a 30-second test deadline and retain per-issue failure explanations.
 The dependency-failure scenario also checks that an independent issue adopts its
-clarified route and reaches the Merge confirmation within the owning run.
+clarified route and records a confirmed merge within the owning run. The focused
+overnight Merge and readiness tests simulate an unreviewed GitHub PR with missing,
+pending, failed, and passing checks. They verify that Factory waits for pending
+checks and submits the merge after they pass, and that a review bypass requires
+independently enforced CI protection.
 Shared-chat DOM fixtures load the production template. Browser discussion
 scenarios close the preceding provider before installing their own fixture.
 Pending publication joins all preceding unfinished lanes even when the standard

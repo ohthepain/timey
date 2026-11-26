@@ -9,8 +9,9 @@ import { folderName } from './flow-store.mjs';
 import { issueHasActiveWork } from './issue-cleanup.mjs';
 import { groupChildren } from './issue-group.mjs';
 import { listStoredIssues } from './issue-report-storage.mjs';
+import { confirmedMerge, mergedDelivery } from './merged-issue.mjs';
 
-const finishLine = 'Verified, merge-ready pull requests';
+const finishLine = 'Pull requests merged after required checks pass';
 const protectionOnly = new Set(['close', 'retro', 'cleanup', 'delete-worktree']);
 const inspectionActions = new Set([
   'open-block',
@@ -50,25 +51,11 @@ function recordFailure(row, block, attempt) {
   end(row, 'paused', attempt?.summary || `${block.label} needs attention.`, `Open ${block.label} to continue.`);
 }
 
-function mergePreparation(attempt) {
-  const result = attempt?.result;
-  return result?.verification && result.mergeConfirmation;
-}
-
 function recordMergeAttempt(row, block, attempt) {
-  const mergeConfirmation = mergePreparation(attempt);
-  if (mergeConfirmation) {
-    const { pr, url } = mergeConfirmation;
-    Object.assign(row, { pr, url });
-    end(row, 'ready', attempt.summary, 'Review the PR and merge when ready.');
-    return;
-  }
-  recordUnpreparedMerge(row, block, attempt);
-}
-
-function recordUnpreparedMerge(row, block, attempt) {
   if (attempt?.status !== 'completed') return recordFailure(row, block, attempt);
-  end(row, 'paused', attempt.summary, 'Review the current PR and issue status.');
+  if (!confirmedMerge(attempt)) return end(row, 'paused', attempt.summary, 'Review the current PR and issue status.');
+  const { pr, url } = attempt.result;
+  return end(Object.assign(row, { pr, url }), 'merged', attempt.summary);
 }
 
 function recordAttempt(row, block, attempt) {
@@ -78,7 +65,7 @@ function recordAttempt(row, block, attempt) {
 
 function blockNeedsAttention(row, block) {
   if (!block || protectionOnly.has(block.kind)) {
-    end(row, 'paused', 'The flow reached its end without a merge-ready PR.', 'Review the saved flow and PR.');
+    end(row, 'paused', 'The flow reached its end without a confirmed merge.', 'Review the saved flow and PR.');
     return true;
   }
   return attemptNeedsAttention(row, block);
@@ -90,10 +77,6 @@ function attemptNeedsAttention(row, block) {
   if (!previous.input && !unresolvedStatuses.has(previous.status)) return false;
   end(row, 'paused', previous.summary, `Open ${block.label} to continue.`);
   return true;
-}
-
-function verifiedMerge(attempt) {
-  return attempt?.status === 'completed' && attempt.result?.verification;
 }
 
 function dependencyLabel(issue) {
@@ -314,9 +297,7 @@ export class FlowOvernight {
 
   dependencyDelivered(issue) {
     if (issue.closed && ['fixed', 'fixed-by'].includes(issue.closure?.reason)) return true;
-    return this.flows
-      .read(issue)
-      .blocks.some((block) => block.kind === 'merge' && verifiedMerge(latestCurrentAttempt(block)));
+    return Boolean(mergedDelivery(this.flows.read(issue)));
   }
 
   async runRoute(run, row) {

@@ -182,8 +182,9 @@ async function mergeWhenReady(service, ctx, workspace, provider, pr, readiness, 
     'Shared issue reports require a separate queue PR.'
   );
   if (
-    state.prepareOnly ||
-    (state.workflow.policy === 'human-first' && previousApproval(ctx)?.token !== confirmation.token)
+    !state.overnight &&
+    state.workflow.policy === 'human-first' &&
+    previousApproval(ctx)?.token !== confirmation.token
   ) {
     return {
       status: 'blocked',
@@ -201,7 +202,7 @@ async function mergeWhenReady(service, ctx, workspace, provider, pr, readiness, 
       beforeMerge: async () => {
         const actual = await lookupFlowPR(provider, workspace.branch, pr.number);
         requireThat(actual, 'The existing PR is no longer available.');
-        const current = await provider.ready(actual, workspace.branch, head);
+        const current = await provider.ready(actual, workspace.branch, head, { overnight: state.overnight });
         if (current.target !== target) throw pending('The target advanced before merge. Preparing the PR again.');
         requireCleanCandidate(workspace, head);
         ctx.signal.throwIfAborted();
@@ -239,6 +240,7 @@ async function readMergeReadiness(ctx, workspace, provider, pr) {
     ctx.onProgress('Checking GitHub PR readiness.\n', true);
     const readiness = await provider.ready(pr, workspace.branch, pr.head.sha, {
       waitForChecks: true,
+      overnight: ctx.input?.overnightMerge === true,
     });
     return { readiness };
   } catch (readinessError) {
@@ -323,7 +325,7 @@ export async function mergeFlowPR(service, ctx, workspace, folder, options) {
     });
   const state = {
     workflow,
-    prepareOnly: ctx.input?.prepareMerge === true,
+    overnight: ctx.input?.overnightMerge === true,
     repairs: 0,
     blockers: new Map(),
     evidence: [],

@@ -109,8 +109,9 @@ folder moves, enable **Prevent moves into folders** on its Request block.
 
 **Group into one** previews a master issue with the selected requests. Creating
 it leaves the original issues linked and assigns their work to the master.
-**Work All Night** starts the reviewed list and prepares verified PRs for you to
-merge. The folder shows the run report and the next action for issues that paused.
+**Work All Night** starts the reviewed list and merges PRs after their required
+GitHub checks pass. Starting the run authorizes these merges. The folder shows
+the merged PRs and the next action for issues that paused.
 See the [folder design](../plans/issue-folder-strategies.md) for the master issue's
 acceptance and detachment rules.
 
