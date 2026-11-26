@@ -1,3 +1,5 @@
+import { writeBrowserEvidenceFixture } from './flow-browser-evidence-fixture.mjs';
+import { openArtifactStore } from './factory-ui/stores/artifacts.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, realpathSync, rmSync } from 'node:fs';
@@ -977,7 +979,20 @@ test('stop reaches explicit command execution and preserves its log', async (t) 
 
 function mergeFixture(
   t,
-  { merged = false, onWait, repair, onGit, onReady, onLookup, onMerge, onInspect, github, mergeNow, respond } = {}
+  {
+    merged = false,
+    onWait,
+    repair,
+    onGit,
+    onReady,
+    onLookup,
+    onMerge,
+    onInspect,
+    github,
+    mergeNow,
+    respond,
+    browser,
+  } = {}
 ) {
   const observations = [];
   let publishedHead;
@@ -1002,7 +1017,9 @@ function mergeFixture(
     async mergeDelay(interval) {
       await onWait?.(advanceTarget, interval);
     },
-    async execute({ cwd, args, log }) {
+    async execute(input) {
+      const { command, cwd, args, log } = input;
+      if (command === 'node') return browser(input);
       if (log) writeFileSync(log, '$ git ' + args.join(' ') + '\n', { flag: 'a' });
       onGit?.(args);
       const git = (...values) =>
@@ -1099,6 +1116,88 @@ test('Update Branch leaves publication of the updated candidate to Merge', async
   });
   await f.run('merge', { after: ['updated-branch'] });
   assert.ok(f.observations.some(({ operation }) => operation === 'push'));
+});
+
+test('Merge retains the final candidate observations and earlier Work proof through the Artifact store', async (t) => {
+  const observations = { batchOrder: ['large', 'small'], selection: ['small'], bytes: 42 };
+  const gitAt = (cwd, ...args) => f.git('-C', cwd, ...args);
+  const f = mergeFixture(t, {
+    browser(input) {
+      assert.deepEqual(input.args, ['scripts/flow-browser.mjs', '--asset-storage']);
+      writeBrowserEvidenceFixture(input, {
+        head: gitAt(input.cwd, 'rev-parse', 'HEAD'),
+        tree: gitAt(input.cwd, 'rev-parse', 'HEAD^{tree}'),
+        scenarios: [{ name: 'Asset Storage', passed: true }],
+        files: {
+          'asset-storage-observations.json': JSON.stringify(observations),
+          'asset-storage.png': 'fixture screenshot bytes',
+        },
+      });
+    },
+    onGit(args) {
+      if (args[0] === 'push')
+        assert.ok(
+          existsSync(
+            join(
+              f.root,
+              '.issues/factory-ui/flow-evidence',
+              'attempt-2',
+              'browser-' + args[2].split(':')[0],
+              'asset-storage-observations.json'
+            )
+          )
+        );
+    },
+  });
+  await f.run('understand');
+  const { checkout } = f.flow.workspace;
+  const registry = join(checkout, 'scripts', 'browser-scenario-policy.mjs');
+  mkdirSync(join(registry, '..'), { recursive: true });
+  writeFileSync(registry, "const flowBrowserScenarioNames = { '--asset-storage': 'Asset Storage' };");
+  writeFileSync(join(checkout, 'source.txt'), 'Work source.\n');
+  gitAt(checkout, 'add', 'source.txt');
+  gitAt(checkout, 'add', 'scripts');
+  gitAt(checkout, 'commit', '-qm', 'Commit Work candidate');
+  const work = {
+    head: gitAt(checkout, 'rev-parse', 'HEAD'),
+    tree: gitAt(checkout, 'rev-parse', 'HEAD^{tree}'),
+    focusedTests: [['node', 'scripts/flow-browser.mjs', '--asset-storage']],
+  };
+  const path = join(f.root, '.issues', 'original-work.json');
+  writeFileSync(path, '{"original":true}');
+  const proof = { path, sha256: digest(readFileSync(path)) };
+  f.flow.blocks.push({
+    id: 'work',
+    kind: 'work',
+    attempts: [{ id: 'work-1', status: 'completed', result: work, artifacts: { files: { proof } } }],
+  });
+  f.publishHead(work.head);
+  writeFileSync(join(f.root, 'source.txt'), 'Target source.\n');
+  f.git('commit', '-am', 'Advance target with conflicting source');
+  const repairTurn = f.connection.turn.bind(f.connection);
+  f.connection.turn = async (...args) => {
+    assert.match(gitAt(checkout, 'ls-files', '-u'), /source.txt/);
+    writeFileSync(join(checkout, 'source.txt'), 'Work and target source.\n');
+    gitAt(checkout, 'add', 'source.txt');
+    gitAt(checkout, 'commit', '--no-edit');
+    return repairTurn(...args);
+  };
+  const outcome = await f.run('merge');
+  const receipt = JSON.parse(readFileSync(outcome.result.deliveryReceipt.path));
+  assert.equal(receipt.candidate.commit, outcome.result.head);
+  assert.notEqual(receipt.candidate.tree, work.tree);
+  assert.equal(receipt.workProof.attempts[0].status, 'different-tree');
+  assert.deepEqual(receipt.workProof.attempts[0].file, proof);
+  assert.equal(receipt.browser.exit, 0);
+  assert.equal(receipt.jobs[0].jobId, '91');
+  const artifacts = await openArtifactStore({ id: 'proof', kind: 'files' }, { root: f.root, projectId: 'factory' });
+  const manifest = await collectEvidence({ root: f.root, flow: outcome, artifacts });
+  assert.deepEqual(manifest.gaps, []);
+  const observation = manifest.files.find(({ path }) => path.endsWith('asset-storage-observations.json'));
+  assert.equal(observation.ref.storeId, 'proof');
+  assert.deepEqual(JSON.parse(await artifacts.get(observation.ref)), observations);
+  const screenshot = receipt.browser.files.find(({ path }) => path.endsWith('.png'));
+  assert.equal(digest(readFileSync(screenshot.path)), screenshot.sha256);
 });
 
 test('Merge uses GitHub readiness for a master without starting another verification turn', async (t) => {
@@ -1285,6 +1384,112 @@ test('Retro retains historical final group proof and command logs for a second r
     evidence: [verification, proof, log],
   };
   await verifyFinalGroupRetrospective(t, producer, merge, checks);
+});
+
+test('Retro retains a failed Work verdict through a blocked Merge, retry, and Close', async (t) => {
+  const producer = mergeFixture(t);
+  await producer.run('understand');
+  const path = join(producer.root, '.issues', 'failed-sub-issue-proof.json');
+  const rows = [{ id: 'attached', status: 'failed', observation: 'Browser assertion failed.' }];
+  writeFileSync(path, JSON.stringify(rows));
+  const result = {
+    head: producer.git('rev-parse', 'HEAD'),
+    tree: producer.git('rev-parse', 'HEAD^{tree}'),
+    threadId: 'proof-thread',
+    turnId: 'proof-turn',
+  };
+  const work = {
+    id: 'work-proof',
+    status: 'blocked',
+    result,
+    artifacts: {
+      files: {
+        subIssueProof: { path, sha256: digest(readFileSync(path)) },
+      },
+    },
+  };
+  const response = 'One final candidate child failed.';
+  const groupFolder = join(producer.root, '.issues', 'group-proof-' + result.head);
+  mkdirSync(groupFolder);
+  const oldEvidence = (name, body) => {
+    const path = join(groupFolder, name);
+    writeFileSync(path, body);
+    return { path, sha256: digest(readFileSync(path)) };
+  };
+  const legacyEvidence = [
+    oldEvidence('output.txt', response),
+    oldEvidence('artifact-subIssueProof-verdicts.json', JSON.stringify(rows)),
+    oldEvidence('artifact-log-combined.log', 'Final browser run exited 1.'),
+  ];
+  const merge = [
+    { id: 'blocked-merge', status: 'blocked', evidence: legacyEvidence },
+    { id: 'retried-merge', status: 'completed' },
+  ];
+  const close = [{ id: 'closed', status: 'completed' }];
+  producer.service.store.directory = join(producer.root, '.issues');
+  producer.service.codex = {
+    async ready() {},
+    async call(_, { threadId }) {
+      if (threadId !== result.threadId) return { thread: { turns: [] } };
+      return {
+        thread: {
+          turns: [
+            {
+              id: result.turnId,
+              items: [
+                { type: 'agentMessage', text: response },
+                {
+                  type: 'commandExecution',
+                  command: 'node scripts/flow-browser.mjs --asset-storage',
+                  aggregatedOutput: 'Browser assertion failed.',
+                  exitCode: 1,
+                  status: 'failed',
+                },
+              ],
+            },
+          ],
+        },
+      };
+    },
+  };
+  const retro = await runRetro(
+    producer.service,
+    {
+      issue: producer.issue,
+      flow: {
+        blocks: [
+          { kind: 'work', label: 'Work', attempts: [work] },
+          { kind: 'merge', label: 'Merge', attempts: merge },
+          { kind: 'close', label: 'Close', attempts: close },
+        ],
+      },
+      signal: new AbortController().signal,
+      definition: { prompt: 'Review the fixture.' },
+    },
+    () => ({
+      async begin() {},
+      async ask() {
+        return JSON.stringify({ summary: 'Reviewed fixture evidence.', recommendations: [] });
+      },
+      close() {},
+    })
+  );
+  const { sections } = JSON.parse(readFileSync(retro.evidence[0].path));
+  const [record, legacy] = JSON.parse(readFileSync(sections.groupVerifications.path));
+  assert.equal(record.turnId, result.turnId);
+  assert.equal(record.tree, result.tree);
+  assert.deepEqual(JSON.parse(readFileSync(record.proof.path)), rows);
+  assert.deepEqual(
+    record.operations.map(({ id, status }) => [id, status]),
+    [...merge, ...close].map(({ id, status }) => [id, status])
+  );
+  assert.equal(record.logs[0].exitCode, 1);
+  assert.equal(readFileSync(record.logs[0].path, 'utf8'), 'Browser assertion failed.');
+  assert.equal(legacy.attemptId, 'blocked-merge');
+  assert.equal(legacy.turnId, result.turnId);
+  assert.equal(legacy.tree, result.tree);
+  assert.deepEqual(JSON.parse(readFileSync(legacy.proof.path)), rows);
+  assert.equal(readFileSync(legacy.logs[0].path, 'utf8'), 'Final browser run exited 1.');
 });
 
 async function verifyFinalGroupRetrospective(t, producer, merge, checks) {

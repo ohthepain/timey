@@ -1439,12 +1439,12 @@ function commandResult(service, ctx, result, summary, evidence = []) {
   };
 }
 
-export function executeCommand({ command, args, cwd, log, signal, onProgress }) {
+export function executeCommand({ command, args, cwd, log, signal, onProgress, environment }) {
   signal.throwIfAborted();
   return new Promise((resolveResult, reject) => {
     const child = spawn(command, args, {
       cwd,
-      env: cleanEnvironment(),
+      env: { ...cleanEnvironment(), ...environment },
       detached: true,
       stdio: ['ignore', 'pipe', 'pipe'],
     });

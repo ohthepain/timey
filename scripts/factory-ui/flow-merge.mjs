@@ -1,3 +1,4 @@
+import { browserFailure, runCandidateBrowser } from './flow-browser-evidence.mjs';
 import { mergeGitHubProvider, inspectMergeOutcome } from './flow-merge-github.mjs';
 import {
   mergeRepairHistory,
@@ -7,12 +8,18 @@ import {
 } from './flow-repair-evidence.mjs';
 import { githubCheckRuns, retainGitHubFailure } from './flow-ci-evidence.mjs';
 import { abortPendingMerge } from './flow-update-branch.mjs';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { deliveryTarget, missingMergePR } from './flow-block-data.mjs';
-import { digest, git, requireThat } from './common.mjs';
-import { assertPublicationIdle, assertFlowRemote, flowDeliveryProvider, lookupFlowPR } from './flow-delivery.mjs';
+import { digest, git, requireThat, writeJson } from './common.mjs';
+import {
+  assertPublicationIdle,
+  assertFlowRemote,
+  deliveryWorkProof,
+  flowDeliveryProvider,
+  lookupFlowPR,
+} from './flow-delivery.mjs';
 import { blockerKey, permissionFailure, repairableBlocker } from './strategy-repair.mjs';
 import { fetchIssueTarget, mergeIssueTarget } from './flow-update-branch.mjs';
 import { queueReportPaths } from './shared-issue-config.mjs';
@@ -286,6 +293,51 @@ function mayWaitForChecks(error, fetchedTarget, reportedTarget) {
   return error?.code === 'STRATEGY_PENDING' && !error.mergeabilityPending && fetchedTarget === reportedTarget;
 }
 
+async function prepareBrowserEvidence(ctx, workspace, head, options, state) {
+  if (state.browser.has(head)) return;
+  const candidate = { head, tree: treeOf(workspace) };
+  const directory = join(state.folder, 'browser-' + head);
+  mkdirSync(directory, { recursive: true });
+  const result = await runCandidateBrowser(ctx, workspace, directory, candidate, options.execute);
+  state.browser.set(head, result);
+  if (!result) return;
+  state.evidence.push(...[result.log, result.results, ...result.files].filter(Boolean));
+  if (result.exit) throw failedBrowserCandidate(head, result);
+}
+
+function failedBrowserCandidate(head, result) {
+  const { scenario, assertion } = browserFailure(result);
+  const diagnostic = [scenario, assertion].filter(Boolean).join('. ');
+  return repairableBlocker(
+    'ci-failure',
+    `Focused browser check failed on ${head.slice(0, 12)}. ${diagnostic}`,
+    [result.log, result.results].filter(Boolean)
+  );
+}
+
+function retainDeliveryReceipt(service, ctx, state, provider, workspace, result) {
+  const candidate = commitIdentity(workspace, result.head);
+  const browser = state.browser.get(candidate.commit);
+  const workProof = deliveryWorkProof({ ...ctx, evidenceRoot: service.root }, candidate);
+  const receipt = {
+    candidate,
+    checks: result.checks ?? [],
+    jobs: githubCheckRuns(provider.config.repository, result.checks ?? []),
+    workProof,
+    ...(browser && { browser, browserProofReason: 'Focused scenarios rerun on this candidate commit and tree.' }),
+  };
+  const path = join(state.folder, 'delivery-receipt.json');
+  writeJson(path, receipt);
+  const file = {
+    key: 'deliveryReceipt',
+    label: 'Candidate delivery receipt',
+    path,
+    sha256: digest(readFileSync(path)),
+  };
+  state.evidence.push(file);
+  return file;
+}
+
 async function advanceMerge(service, ctx, workspace, provider, pr, invoke, options, state) {
   const { readiness, readinessError } = await readMergeReadiness(ctx, workspace, provider, pr);
   if (mayWaitForChecks(readinessError, state.comparisonTarget, pr.base.sha) && headOf(workspace) === pr.head.sha)
@@ -295,6 +347,7 @@ async function advanceMerge(service, ctx, workspace, provider, pr, invoke, optio
   await synchronize(workspace, target, invoke);
   const head = headOf(workspace);
   requireCleanCandidate(workspace, head);
+  await prepareBrowserEvidence(ctx, workspace, head, options, state);
   if (head === pr.head.sha) await requireObservedChecks(service.root, ctx, provider, readinessError, head);
   if (pr.head.sha !== head) {
     if (state.pushed === head && state.previousHead === pr.head.sha)
@@ -350,9 +403,22 @@ async function finishMerge(state, provider, workspace, outcome, observed = outco
 
 async function observeMergedPR(state, provider, workspace, pr) {
   const ready = await provider.ready(pr, workspace.branch, headOf(workspace));
-  const result = { ...ready.merge, pr: pr.number, alreadyMerged: true };
+  const result = { ...ready.merge, pr: pr.number, head: pr.head.sha, checks: ready.checks, alreadyMerged: true };
   const outcome = { result, summary: 'GitHub confirms the PR was already merged. Acceptance remains separate.' };
   return finishMerge(state, provider, workspace, outcome, { ...ready, ...result });
+}
+
+function mergeEvidence(state, log) {
+  return [
+    ...state.evidence,
+    ...state.repairHistory.evidence(),
+    ...(existsSync(log) ? [{ key: 'log', path: log, label: 'Target fetch and merge output' }] : []),
+  ];
+}
+
+function completeMergeResult(service, ctx, state, provider, workspace, pr, outcome, log) {
+  outcome.result.deliveryReceipt = retainDeliveryReceipt(service, ctx, state, provider, workspace, outcome.result);
+  return { ...outcome, evidence: mergeEvidence(state, log), workspace: { ...workspace, pr: pr.number } };
 }
 
 export async function mergeFlowPR(service, ctx, workspace, folder, options) {
@@ -373,16 +439,16 @@ export async function mergeFlowPR(service, ctx, workspace, folder, options) {
     workflow,
     prepareOnly: ctx.input?.prepareMerge === true,
     comparisonTarget: null,
+    folder,
+    browser: new Map(),
     repairs: 0,
     blockers: new Map(),
     evidence: [],
     repairHistory: mergeRepairHistory(folder, ctx.attempt.id, log),
   };
-  const evidence = () => [
-    ...state.evidence,
-    ...state.repairHistory.evidence(),
-    ...(existsSync(log) ? [{ key: 'log', path: log, label: 'Target fetch and merge output' }] : []),
-  ];
+  const evidence = () => mergeEvidence(state, log);
+  const completed = (pr, outcome) => completeMergeResult(service, ctx, state, provider, workspace, pr, outcome, log);
+
   let pr;
   try {
     pr = await lookupFlowPR(provider, workspace.branch, ctx.flow.destination?.pr);
@@ -394,14 +460,7 @@ export async function mergeFlowPR(service, ctx, workspace, folder, options) {
         pr.base.ref === deliveryTarget(ctx.flow).branch,
         'GitHub changed the PR base to ' + pr.base.ref + '. Accept it in Destination before merging.'
       );
-      if (pr.merged_at) {
-        const outcome = await observeMergedPR(state, provider, workspace, pr);
-        return {
-          ...outcome,
-          evidence: evidence(),
-          workspace: { ...workspace, pr: pr.number },
-        };
-      }
+      if (pr.merged_at) return completed(pr, await observeMergedPR(state, provider, workspace, pr));
       requireThat(pr.state === 'open' && !pr.draft, 'Open the PR and mark it ready for review on GitHub.');
       assertFlowRemote(workspace, deliveryTarget(ctx.flow).remote, provider.config.repository, 'fetch');
       await assertPublicationIdle(provider, pr, workspace.branch);
@@ -411,7 +470,7 @@ export async function mergeFlowPR(service, ctx, workspace, folder, options) {
         const outcome = await advanceMerge(service, ctx, workspace, provider, pr, invoke, options, state);
         if (outcome) {
           await finishMerge(state, provider, workspace, outcome);
-          return { ...outcome, evidence: evidence(), workspace: { ...workspace, pr: pr.number } };
+          return completed(pr, outcome);
         }
       } catch (error) {
         if (error.code !== 'STRATEGY_PENDING') await repairCandidate(service, ctx, workspace, error, options, state);

@@ -431,6 +431,21 @@ test('issue route Start runs Update Branch without confirmation and Pause lets t
   assert.deepEqual((await view()).autoplay, { mode: 'paused', reason: 'Flow complete' });
 });
 
+test('Flow notifies sidebar watchers when an issue is paused', async (t) => {
+  const { id, service } = fixture(t);
+  const flows = createIssueFlows(service, { executor: executor(async () => ({ summary: 'Done' })) });
+  t.after(() => flows.close());
+  const notifications = [];
+  service.flowChanges = {
+    checkout() {},
+    notify(topic, issueId) {
+      if (flows.autoplay.get(id)?.userPaused) notifications.push({ topic, issueId });
+    },
+  };
+  await flows.action({ issueId: id, action: 'pause' });
+  assert.ok(notifications.some(({ topic, issueId }) => topic === 'flow' && issueId === id));
+});
+
 test('Flow notifies watchers when No new actions pauses a route after Work', async (t) => {
   const { id, service } = fixture(t);
   const work = Promise.withResolvers();

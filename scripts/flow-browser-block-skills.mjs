@@ -1,3 +1,4 @@
+import { fixtureRoute } from './flow-browser-routes.mjs';
 import { importBrowserIssue } from './flow-browser-fixture.mjs';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -42,7 +43,7 @@ export async function blockSkillsBrowserChecks({ page, service, project, poll })
     'Selected block skill was not saved'
   );
   let opened = false;
-  await page.route('**/api/flow-action', async (route) => {
+  const removeAction = await fixtureRoute(page, '**/api/flow-action', async (route) => {
     const input = route.request().postDataJSON();
     if (input.action !== 'open-block-extension') return route.continue();
     assert.equal(input.blockId, work.id);
@@ -54,5 +55,5 @@ export async function blockSkillsBrowserChecks({ page, service, project, poll })
   await picker.click();
   await select.selectOption('__add_skill__');
   await poll(() => opened, Boolean, 'Add skill did not open the block Markdown extension');
-  await page.unroute('**/api/flow-action');
+  await removeAction();
 }

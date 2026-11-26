@@ -1,3 +1,4 @@
+import { fixtureRoute } from './flow-browser-routes.mjs';
 import { importBrowserIssue } from './flow-browser-fixture.mjs';
 import assert from 'node:assert/strict';
 import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
@@ -71,7 +72,7 @@ export async function branchRepairBrowserChecks({ page, service, project, poll, 
     }
     await route.continue();
   };
-  await page.route('**/api/flow?**', holdRefresh);
+  const removeRefresh = await fixtureRoute(page, '**/api/flow?**', holdRefresh);
   try {
     await page.goto('/?issue=' + id);
     const button = page.locator('#fix-branch');
@@ -86,7 +87,7 @@ export async function branchRepairBrowserChecks({ page, service, project, poll, 
     assert.equal(await button.isEnabled(), true, 'Refreshing issue data must leave Fix Branch available');
     refresh.resolve();
     if (refreshPending) await refreshHandled.promise;
-    await page.unroute('**/api/flow?**', holdRefresh);
+    await removeRefresh();
     await button.click();
     const dialog = page.locator('#branch-repair-dialog');
     assert.match(await dialog.locator('[data-repair-status]').textContent(), /Fallow failed/);
@@ -175,7 +176,7 @@ export async function branchRepairBrowserChecks({ page, service, project, poll, 
   } finally {
     refresh.resolve();
     if (refreshPending) await refreshHandled.promise;
-    await page.unroute('**/api/flow?**', holdRefresh);
+    await removeRefresh();
     release();
     repairs.run = original;
     service.flows.executor = originalExecutor;

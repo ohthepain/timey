@@ -1724,8 +1724,10 @@ class IssueFlows {
     this.requireAvailableAction(issue, flow, input.action);
     if (input.action === 'pause' || input.action === 'cancel-confirmation') {
       const waiting = this.autoplay.get(issue.id);
-      if (input.action === 'pause' || (waiting?.mode === 'waiting' && waiting.blockId === input.blockId))
+      if (input.action === 'pause' || (waiting?.mode === 'waiting' && waiting.blockId === input.blockId)) {
         this.autoplay.set(issue.id, { mode: 'paused', userPaused: input.action === 'pause' });
+        this.service.flowChanges?.notify('flow', issue.id);
+      }
       return this.view(issue.id);
     }
     if (branchActions.has(input.action)) return this.branchOperation(issue, flow, input);
