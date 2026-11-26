@@ -146,7 +146,7 @@ async function checkOwnershipRecovery({ page, service, issueId, poll, screenshot
   });
   await stores.refresh();
   await page.goto('/?issue=' + issueId);
-  const banner = page.getByRole('region', { name: 'Last blocking error' });
+  const banner = page.getByRole('region', { name: 'Issue blocker', exact: true });
   const release = banner.getByRole('button', { name: 'Release claim', exact: true });
   await banner.getByRole('button', { name: 'Open block details' }).waitFor({ state: 'visible' });
   await release.click();

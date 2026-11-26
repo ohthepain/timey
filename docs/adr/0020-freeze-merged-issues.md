@@ -24,10 +24,11 @@ merged delivery, current required checks, evidence digests, group proof and huma
 observations still gate acceptance. Existing opt-in automatic closure retains its
 meaning.
 
-Restarting a merged issue will require closing and reopening it. Reopening merged
-issues is deferred; this change rejects that operation. Existing reopen behavior
-for issues that never merged is unchanged. This supersedes the unrestricted
-editing and reopening behavior described in [ADR 0013](0013-explicit-issue-flows.md).
+After closing the issue, select **Reopen** from its issue page. This also works
+from Archive. Factory retains the previous delivery and attempts, then prepares
+a new implementation cycle with its own branch and pull request. Issue Discuss
+opens for the follow-up. **Save feedback** appends the agreed wording to **Your
+words**. Select **Start** to authorize the new run.
 
 See the [implementation plan](../plans/merged-issue-freeze.md) and
 [verification commands](../agents/verification.md).

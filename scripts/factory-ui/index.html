@@ -655,6 +655,17 @@
         border-radius: 12px;
         padding: 26px;
       }
+      #archive-progress[open] {
+        display: grid;
+        grid-template-rows: auto 4rem minmax(0, 1fr) auto;
+        height: min(25rem, calc(100dvh - 5rem));
+        box-sizing: border-box;
+      }
+      #archive-progress-status,
+      #archive-progress-result {
+        overflow: auto;
+        overflow-wrap: anywhere;
+      }
       #create-issue-dialog {
         --capture-ink: #25243c;
         --capture-accent: #4039d4;

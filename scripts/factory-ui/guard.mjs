@@ -65,7 +65,7 @@ export function inspectHumanInput(root, action, operation, head, transition = {}
       };
     const path = join(temp, 'context.json');
     writeFileSync(path, JSON.stringify(context));
-    const project = reportLocation === 'closed' ? projectClosedReport(root, temp, action, operation) : root;
+    const project = reportLocation ? projectStoredReport(root, temp, action, operation, reportLocation) : root;
     const output = readHumanInput(helper, project, path, operation);
     return { helper, context, result: JSON.parse(output) };
   } finally {
@@ -75,10 +75,10 @@ export function inspectHumanInput(root, action, operation, head, transition = {}
 
 // The pinned helper's read command accepts only a flat queue. The exact
 // selected report and policy are projected privately for closed-issue reads.
-function projectClosedReport(root, temp, action, operation) {
+function projectStoredReport(root, temp, action, operation, location) {
   requireThat(['advance', 'view'].includes(operation) && action.issues.length === 1, 'Select one closed issue.');
   const id = action.issues[0];
-  const report = readSavedReport(root, id, 'closed');
+  const report = readSavedReport(root, id, location);
   const queue = join(temp, '.issues');
   mkdirSync(queue, { mode: 0o700 });
   for (const name of ['triage-labels.md', 'preferences.json']) {

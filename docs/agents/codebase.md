@@ -68,6 +68,15 @@ checks native thread project membership before reading content.
 `project-automate-provider.mjs` adapts the installed PStack skill to a read-only
 Codex interview. Apply owns filesystem writes and optional activation through
 project settings. See the [project home design](../plans/project-home.md).
+`project-app.mjs` owns the local app launch settings, readiness checks, and
+process lifecycle. The **App** button runs the saved command from the Factory
+project checkout. Settings detection proposes editable values. **Save** records
+them and **App** starts the process.
+
+Issue Discuss uses `project-discuss-ui.js`, `project-discuss.mjs`, and the same
+provider as Project Discuss. Its conversation owner is the issue ID. Each turn
+receives the configured Issue chat prompt and the selected issue's current
+request and flow status.
 
 Follow the pulse/note path through MIDI → timing/capture → feedback before changing
 timestamp semantics. Replay uses these same services; test their interaction, not
@@ -1188,7 +1197,7 @@ retained attempts, admission errors and closure failures. Admission errors live
 in the existing Flow record even when no attempt could start. Success resolves
 only the relevant step's errors; permitted removal or Retro skip hides its
 blockers while retaining history. Passive inspection writes no error. The issue
-heading shows Last blocking error, and `block-model-ui.js` renders model controls
+heading shows a blocker banner, and `block-model-ui.js` renders model controls
 in the existing Details panel. See the
 [block model design](../plans/block-models-and-blocking-errors.md).
 

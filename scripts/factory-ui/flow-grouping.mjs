@@ -1,3 +1,4 @@
+import { orderedMasterChildren, sequentialMaster } from './sequential-master.mjs';
 import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmdirSync, rmSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -191,12 +192,50 @@ export class FlowGrouping {
   }
 
   action(input, reasoning = []) {
-    if (['folder-detach-blocked', 'folder-reattach', 'folder-attach'].includes(input.action))
-      return this.changeScopeAction(input);
-    if (input.action === 'folder-detach') return this.manualDetach(input);
-    if (input.action === 'folder-group-create') return this.create(input);
-    requireThat(input.action === 'folder-group-preview', 'Choose a grouping action.');
-    return this.preview(input, reasoning);
+    const methods = {
+      'folder-detach-blocked': () => this.changeScopeAction(input),
+      'folder-reattach': () => this.changeScopeAction(input),
+      'folder-attach': () => this.changeScopeAction(input),
+      'folder-detach': () => this.manualDetach(input),
+      'folder-reorder': () => this.reorder(input),
+      'folder-group-create': () => this.create(input),
+      'folder-group-preview': () => this.preview(input, reasoning),
+    };
+    requireThat(Object.hasOwn(methods, input.action), 'Choose a grouping action.');
+    return methods[input.action]();
+  }
+
+  canReorder(issue, flow) {
+    if (!sequentialMaster(issue) || !this.canDetach(issue)) return false;
+    return this.idleSequence(issue.id, flow);
+  }
+
+  idleSequence(id, flow) {
+    return !mergedDelivery(flow) && !['playing', 'waiting'].includes(this.flows.autoplay.get(id)?.mode);
+  }
+
+  async reorder({ issueId, issueIds, revision }) {
+    const issue = this.flows.selected(issueId);
+    const flow = await this.flows.actionFlow(issue, { action: 'folder-reorder' });
+    this.requireScopeStable(issueId);
+    requireThat(this.canReorder(issue, flow), 'Wait for the Sequential master to be idle before reordering.');
+    requireThat(flow.revision === revision, 'The master changed. Refresh its order before reordering.');
+    const current = new Set(groupChildren(issue).map(({ id }) => id));
+    requireThat(
+      Array.isArray(issueIds) &&
+        issueIds.length === current.size &&
+        new Set(issueIds).size === current.size &&
+        issueIds.every((id) => current.has(id)),
+      'Order all currently attached sub-issues.'
+    );
+    flow.sequentialOrder = issueIds;
+    await this.flows.store.save(flow, revision);
+    return this.flows.view(issueId);
+  }
+
+  async requireSequentialChild(child) {
+    const blocker = (await issueAnnotations(this.service).list(child.id)).find(isActiveBlocker);
+    requireThat(!blocker, child.title + ': ' + (blocker?.note || 'This sub-issue is blocked.'));
   }
 
   manualDetach(input) {
@@ -207,24 +246,26 @@ export class FlowGrouping {
     return this.changeBlockedScope(input, { operation: input.action }).then(() => this.flows.view(input.issueId));
   }
 
-  preview({ folder, issueIds }, reasoning) {
+  preview({ folder, issueIds, strategy }, reasoning) {
     const stores = registeredProjectStores(this.service.root);
     return afterReportWrite(stores?.assertSameStorage(issueIds), () =>
-      this.previewCurrent(folder, issueIds, reasoning)
+      this.previewCurrent(folder, issueIds, reasoning, strategy)
     );
   }
 
-  previewCurrent(folder, issueIds, reasoning) {
+  previewCurrent(folder, issueIds, reasoning, strategy) {
     requireThat(typeof folder === 'string' && folder.trim(), 'Choose an issue folder.');
     const candidates = this.snapshot(folder, issueIds);
     const wording = [`# Group: ${folder}`, ...candidates.map(childRequestSection)].join('\n\n');
     requireThat(wording.length <= 24000, 'The combined request is too long. Select fewer issues.');
     const [first] = candidates;
     const type = candidates.every((item) => item.type === first.type) ? first.type : 'feature';
+    const sequential = this.sequentialStrategy(strategy, type);
     const id = randomUUID();
     const grouping = {
       folder,
       investigative: type === 'investigation',
+      ...sequential,
       children: candidates.map(childRecord),
       humanChecks: candidates.flatMap((candidate) => candidate.humanChecks.map(({ check }) => check)),
       reasoning,
@@ -239,6 +280,12 @@ export class FlowGrouping {
     }
     writeJson(join(this.previews, `${id}.json`), { grouping, type, expires: Date.now() + previewLifetime });
     return { id, wording };
+  }
+
+  sequentialStrategy(strategy, type) {
+    if (strategy !== 'sequential') return {};
+    requireThat(type !== 'investigation', 'Sequential masters require implementation issues.');
+    return { sequential: true };
   }
 
   async create({ previewId, wording, requestId }) {
@@ -751,7 +798,7 @@ export class FlowGrouping {
           (child) => child.id === issue.id && (!child.detachedAt || wasDetachedByMasterRun(child))
         )
     );
-    const children = groupChildren(issue);
+    const children = orderedMasterChildren(issue, flow);
     if (!masterId && !formerMasters.length && !children.length && !issue.issue_group) return undefined;
     const proofRows = groupProofRows(flow, undefined, {}, this.service.root);
     const canDetach = this.canDetach(issue);
@@ -774,6 +821,8 @@ export class FlowGrouping {
       canReattach: canEdit,
       canAttach: canEdit && this.openScope(issue, flow),
       investigative: this.investigative(issue, flow),
+      sequential: sequentialMaster(issue),
+      canReorder: this.canReorder(issue, flow),
     };
   }
 
