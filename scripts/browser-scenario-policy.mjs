@@ -73,6 +73,7 @@ export const flowBrowserScenarioNames = {
   '--flow-menu': 'The Flow menu saves and switches routes, and the wand rebuilds with results intact',
   '--add-parallel-block': 'Adding and saving a block retains the selected prompt mode and parallel lane',
   '--reorder-saved-blocks': 'Keyboard controls reorder saved blocks',
+  '--block-reveal': 'Block clicks preserve visible cards and minimally reveal clipped cards',
   '--assign-folder': 'Folders can be created and assigned without running work',
   '--save-block-comment': 'Block comments remain attached after reload',
   '--work-markdown': 'Work Markdown reloads headings and lists without changing layout, drafts or actions',

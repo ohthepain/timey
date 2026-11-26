@@ -219,6 +219,7 @@ const {
   '--flow-menu': flowMenuCheck,
   '--add-parallel-block': addParallelBlockCheck,
   '--reorder-saved-blocks': reorderSavedBlocksCheck,
+  '--block-reveal': blockRevealCheck,
   '--assign-folder': assignFolderCheck,
   '--save-block-comment': saveBlockCommentCheck,
   '--work-markdown': workMarkdownCheck,
@@ -1907,12 +1908,14 @@ try {
       assert.ok(numbers[1] < numbers.at(-1), 'A connection points upward.');
     }
   });
-  await check('Block clicks preserve visible cards and minimally reveal clipped cards', async () => {
+  await check(blockRevealCheck, async () => {
     await page.setViewportSize({ width: 1440, height: 600 });
     const target = page.locator('[data-block="' + workId + '"]');
     const visible = await target.evaluate((node) => {
       const scroll = document.getElementById('graph-scroll');
-      scroll.scrollTop += node.getBoundingClientRect().top - scroll.getBoundingClientRect().top - 80;
+      const card = node.getBoundingClientRect();
+      const viewport = scroll.getBoundingClientRect();
+      scroll.scrollTop += card.top - viewport.top - (viewport.height - card.height) / 2;
       return { scrollTop: scroll.scrollTop, box: node.getBoundingClientRect().toJSON() };
     });
     const before = visible.scrollTop;
@@ -1931,6 +1934,7 @@ try {
     const clipped = await selectedGeometry();
     const bounds = await target.evaluate((node) => node.getBoundingClientRect().toJSON());
     const viewport = await page.locator('#graph-scroll').boundingBox();
+    const historyLength = await page.evaluate(() => history.length);
     assert.ok(bounds.y < viewport.y - 20, 'The test card must be clipped before selection.');
     await page.mouse.click(bounds.x + bounds.width / 2, viewport.y + 20);
     const after = await poll(
@@ -1945,6 +1949,7 @@ try {
     assert.ok(after.top >= -1);
     assert.ok(after.bottom <= after.viewportHeight + 1);
     assert.ok(clipped.scrollTop - after.scrollTop <= 55, 'The card moved further than necessary.');
+    assert.equal(await page.evaluate(() => history.length), historyLength);
     await page.setViewportSize({ width: 1440, height: 960 });
   });
   await check(saveBlockCommentCheck, async () => {

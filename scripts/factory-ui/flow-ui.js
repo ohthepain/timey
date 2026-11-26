@@ -830,7 +830,8 @@ import { reorderedBlocks } from './flow-order.mjs';
   });
 
   function selectBlock(id, { armDeletion = false } = {}) {
-    navigateWorkspace({ issue: state.issueId, block: id }, { reveal: true });
+    if (state.requestedBlock === id) restoreWorkspace({ reveal: true });
+    else navigateWorkspace({ issue: state.issueId, block: id }, { reveal: true });
     if (armDeletion) state.deleteBlockId = state.blockId;
   }
 

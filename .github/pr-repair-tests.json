@@ -1,7 +1,31 @@
 {
   "version": 1,
-  "sourceRun": "https://github.com/ohthepain/timey/actions/runs/45757101791/job/139700847946",
+  "sourceRun": "https://github.com/ohthepain/timey/actions/runs/45759791677/job/139710760473",
   "tests": [
+    {
+      "name": "The shared Factory header keeps every project tab and relocated control usable",
+      "command": [
+        "node",
+        "scripts/flow-browser.mjs",
+        "--ci-part=1",
+        "--manual-close",
+        "--server-heap",
+        "--project-navigation",
+        "--sidebar-labels",
+        "--local-notes"
+      ]
+    },
+    {
+      "name": "Block clicks preserve visible cards and minimally reveal clipped cards",
+      "command": [
+        "node",
+        "scripts/flow-browser.mjs",
+        "--ci-part=2",
+        "--capture-folder-issue",
+        "--save-request-route",
+        "--block-reveal"
+      ]
+    },
     {
       "name": "Flow navigation loads another issue while an earlier block check is pending and rejects stale results",
       "command": [
@@ -70,19 +94,6 @@
         "--capture-folder-issue",
         "--folder-workspace-grouping",
         "--tab-source"
-      ]
-    },
-    {
-      "name": "Issues and Local notes use matching text styles and retain a clean console after Close and heap failure fixtures",
-      "command": [
-        "node",
-        "scripts/flow-browser.mjs",
-        "--ci-part=1",
-        "--manual-close",
-        "--server-heap",
-        "--project-navigation",
-        "--sidebar-labels",
-        "--local-notes"
       ]
     },
     {

@@ -253,6 +253,10 @@ async function checkNativeHistory({ page, poll, tablist, project, service, root,
   const fixtures = await navigationFixtures(project, service, root);
   const { first, second, investigation, request, work } = fixtures;
   await page.goto('/');
+  await page.evaluate(() => {
+    // Exercise history eviction even when this scenario runs on its own.
+    for (let index = 0; index < 50; index++) history.pushState(null, '', location.href);
+  });
   const { expect, observations } = observeNavigation(page, poll);
   const openIssue = (id) => page.locator(`#open-issues [data-issue="${id}"]`).click();
   const blockCard = (id) => page.locator(`#graph [data-block="${id}"]`);
@@ -306,7 +310,10 @@ async function checkNativeHistory({ page, poll, tablist, project, service, root,
       await entry.check();
     }
     const final = await history.send('Page.getNavigationHistory');
-    const recorded = final.entries.slice(initial.currentIndex, final.currentIndex + 1);
+    const homeEntryId = initial.entries[initial.currentIndex].id;
+    const start = final.entries.findIndex(({ id }) => id === homeEntryId);
+    assert.ok(start >= 0, 'The Project Home history entry was lost.');
+    const recorded = final.entries.slice(start, final.currentIndex + 1);
     assert.deepEqual(
       recorded.map(({ title }) => title),
       observations.map(({ title }) => title)
