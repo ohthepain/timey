@@ -1,7 +1,18 @@
 {
   "version": 1,
-  "sourceRun": "https://github.com/ohthepain/timey/actions/runs/45806301870/job/139867188328",
+  "sourceRun": "https://github.com/ohthepain/timey/actions/runs/45818424513/job/139907129555",
   "tests": [
+    {
+      "name": "Activity dots stay anchored and reflect actual work",
+      "command": [
+        "node",
+        "scripts/flow-browser.mjs",
+        "--ci-part=1b",
+        "--automate-activity",
+        "--activity-indicators",
+        "--chat-progress"
+      ]
+    },
     {
       "name": "Storage startup and recovery messages follow confirmed availability",
       "command": ["node", "scripts/flow-browser.mjs", "--ci-part=1b", "--stores", "--storage-status"]

@@ -9,16 +9,12 @@ import { resolveIssueStorage } from './factory-ui/stores/settings.mjs';
 export async function activityBrowserChecks({ page, project, service, poll, screenshot, output }) {
   initializeProjectLifecycle(service, { digest: readProjectSettings(project).lifecycle.digest });
   const previous = service.flows.executor;
+  const repairs = service.flows.branchRepairs;
+  const repairView = repairs.view;
   let id;
   let pending;
   let needsInput = false;
   let repairStatus;
-  const showRepair = async (route) => {
-    const response = await route.fetch();
-    const value = await response.json();
-    value.branchRepair = { ...value.branchRepair, status: repairStatus };
-    await route.fulfill({ response, json: value });
-  };
   service.flows.executor = {
     async run(context) {
       const completion = Promise.withResolvers();
@@ -105,8 +101,11 @@ export async function activityBrowserChecks({ page, project, service, poll, scre
       'Held work finishes'
     );
     await indicator.waitFor({ state: 'detached' });
-    await page.route('**/api/flow?**', showRepair);
     repairStatus = 'running';
+    repairs.view = (issue, ...args) => {
+      const current = repairView.call(repairs, issue, ...args);
+      return issue.id === id ? { ...current, status: repairStatus } : current;
+    };
     await page.locator('#refresh').click();
     await indicator.waitFor();
     repairStatus = 'ready';
@@ -114,7 +113,7 @@ export async function activityBrowserChecks({ page, project, service, poll, scre
     await indicator.waitFor({ state: 'detached' });
     writeFileSync(join(output, 'activity-indicator.json'), JSON.stringify({ before, after, mobile }, null, 2) + '\n');
   } finally {
-    await page.unroute('**/api/flow?**', showRepair);
+    repairs.view = repairView;
     needsInput = false;
     const task = service.flows.active.get(id)?.task;
     pending?.completion.resolve({ summary: 'Fixture cleanup.' });
