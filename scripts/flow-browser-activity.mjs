@@ -114,7 +114,7 @@ export async function activityBrowserChecks({ page, project, service, poll, scre
     await indicator.waitFor({ state: 'detached' });
     writeFileSync(join(output, 'activity-indicator.json'), JSON.stringify({ before, after, mobile }, null, 2) + '\n');
   } finally {
-    await page.unroute('**/api/flow?**', showRepair);
+    await page.unrouteAll({ behavior: 'wait' });
     needsInput = false;
     const task = service.flows.active.get(id)?.task;
     pending?.completion.resolve({ summary: 'Fixture cleanup.' });
