@@ -1,6 +1,16 @@
 {
   "version": 1,
+  "sourceRun": "https://github.com/ohthepain/timey/actions/runs/45891770368/job/140159002116",
   "tests": [
+    {
+      "name": "a revised request keeps the open PR and requires fresh Work for manual delivery",
+      "command": [
+        "node",
+        "--test",
+        "--test-name-pattern=^a revised request keeps the open PR and requires fresh Work for manual delivery$",
+        "scripts/flow.check.mjs"
+      ]
+    },
     {
       "name": "Merge repairs a target conflict before requesting GitHub readiness",
       "command": [
