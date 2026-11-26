@@ -129,16 +129,21 @@ function liveStatus(child, candidate, authorizations, attachments, reports, root
   const current = applicable.filter((record) => matchesCandidate(record.candidate, candidate));
   const saved = attachments.filter((item) => current.some(({ id }) => item.authorizationId === id));
   const usable = saved.findLast((record) => passingAttachment(root, record));
+  const latest = attachments.findLast(({ authorizationId }) => applicable.some(({ id }) => id === authorizationId));
   const description = check ?? history.at(-1).check;
-  return { child, check: description, usable, reason: liveGap(current, saved, applicable.at(-1), history) };
+  return { child, check: description, usable, latest, reason: liveGap(current, saved, applicable.at(-1), history) };
+}
+
+export function groupLiveProofStatuses(issue, flow, candidate, root) {
+  const { authorizations = [], attachments = [] } = flow.liveProof ?? {};
+  const reports = reportedChecks(flow);
+  return groupChildren(issue)
+    .map((child) => liveStatus(child, candidate, authorizations, attachments, reports, root))
+    .filter(Boolean);
 }
 
 export function groupLiveProof(issue, flow, candidate, root) {
-  const { authorizations = [], attachments = [] } = flow.liveProof ?? {};
-  const reports = reportedChecks(flow);
-  const statuses = groupChildren(issue)
-    .map((child) => liveStatus(child, candidate, authorizations, attachments, reports, root))
-    .filter(Boolean);
+  const statuses = groupLiveProofStatuses(issue, flow, candidate, root);
   const gaps = statuses.filter(({ usable }) => !usable);
   if (gaps.length) {
     const instructions = gaps.map(

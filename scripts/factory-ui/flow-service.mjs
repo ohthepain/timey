@@ -92,6 +92,7 @@ import {
 } from './investigation-execution.mjs';
 import { flowHumanInput } from './flow-human-input.mjs';
 import { liveProofSummary, saveLiveProof } from './flow-live-proof.mjs';
+import { groupClosureProof } from './flow-group-closure.mjs';
 import { FolderOperations } from './folder-operations.mjs';
 import {
   executionBlockSkill,
@@ -914,7 +915,7 @@ class IssueFlows {
       grouping: this.groupingView(issue, flow, issues, index, badgeIndex),
       annotations: annotations.filter(({ issueId }) => issueId === id),
       sharedQueue: this.service.sharedIssues?.view(id),
-      closurePreview: this.closurePreview(issue, requestOnly),
+      closurePreview: this.closurePreview(issue, savedFlow, proofWorkspace?.checkout, requestOnly),
       closureBusy: this.closureBusy(id),
       autoplay: this.autoplay.get(id) ?? { mode: 'paused' },
       destination: {
@@ -1153,9 +1154,11 @@ class IssueFlows {
   closureBusy(id) {
     return this.active.has(id) || this.closureTasks.has(id);
   }
-  closurePreview(issue, requestOnly) {
+  closurePreview(issue, flow, checkout, requestOnly) {
     if (requestOnly || issue.closed || !existsSync(join(this.service.root, '.issues/triage-labels.md'))) return;
-    return issueClosurePreview(this.service, issue);
+    const preview = issueClosurePreview(this.service, issue);
+    const groupProof = groupClosureProof(this.service.root, issue, flow, checkout);
+    return groupProof ? { ...preview, groupProof } : preview;
   }
   closurePending(id) {
     const path = this.store.path(id);
@@ -1193,6 +1196,9 @@ class IssueFlows {
           : (input.resolution ?? 'fixed') === 'fixed' && requestBlock(flow).data.runRetro === true,
       branches,
     };
+    const checkout = flowWorkspace(this.service, flow)?.checkout;
+    const groupProof = groupClosureProof(this.service.root, issue, flow, checkout, artifact?.revision);
+    if (groupProof) flow.closing.groupProof = groupProof;
     delete flow.autoClose;
     closureBlocks(flow, catalog);
     await this.store.save(flow, flow.revision);
@@ -1345,6 +1351,7 @@ class IssueFlows {
         endedAt: issue.closure?.at ?? new Date().toISOString(),
         summary: 'Closure saved.',
         evidence: [],
+        ...(closing.groupProof && { result: { groupProof: closing.groupProof } }),
       });
       await this.store.save(flow, flow.revision);
       return this.advanceClosure(id, retry, resourceId);

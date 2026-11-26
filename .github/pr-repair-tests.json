@@ -16,6 +16,22 @@
       "command": ["node", "scripts/flow-browser.mjs", "--project-issues", "--inbox-chat-reading", "--stores"]
     },
     {
+      "name": "Work Markdown reloads headings and lists without changing layout, drafts or actions",
+      "command": [
+        "node",
+        "scripts/flow-browser.mjs",
+        "--ci-part=2",
+        "--capture-folder-issue",
+        "--folder-workspace-grouping",
+        "--tab-source",
+        "--starting-point-top",
+        "--starting-point",
+        "--edit-destination",
+        "--save-request-route",
+        "--work-markdown"
+      ]
+    },
+    {
       "name": "a revised request keeps the open PR and requires fresh Work for manual delivery",
       "command": [
         "node",

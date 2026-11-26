@@ -410,6 +410,33 @@ test('a new flow closes through the actual decision writer with immutable verifi
   });
 });
 
+test('Close retains browser proof only for the delivered repair commit and tree', async (t) => {
+  const f = fixture(t);
+  const { head, tree } = f.ctx.flow.blocks[0].attempts[0].result;
+  const browser = join(f.folder, 'repair-browser.json');
+  writeFileSync(browser, JSON.stringify({ fixture: 'GitHub responses are simulated.' }));
+  const file = { path: browser, sha256: digest(readFileSync(browser)) };
+  const repairBrowserProof = { attemptId: 'merge-1', round: 2, sourceCommit: head, sourceTree: tree, file };
+  const receipt = join(f.folder, 'receipt.json');
+  const result = { pr: 17, head, revision: 'merge-revision' };
+  f.ctx.flow.blocks.push({ kind: 'merge', attempts: [{ status: 'completed', result }] });
+  for (const [proof, qualifies] of [
+    [{ ...repairBrowserProof, sourceCommit: f.workspace.base }, false],
+    [{ ...repairBrowserProof, sourceTree: 'earlier-tree' }, false],
+    [repairBrowserProof, true],
+  ]) {
+    writeFileSync(receipt, JSON.stringify({ repairBrowserProof: proof }));
+    result.deliveryReceipt = { path: receipt, sha256: digest(readFileSync(receipt)) };
+    const closure = await flowClosureArtifact(f.service, f.ctx, f.workspace, f.folder, f.options);
+    const manifest = JSON.parse(readFileSync(join(f.folder, 'merged-delivery.json')));
+    assert.deepEqual(manifest.repairBrowserProof, qualifies ? proof : undefined);
+    assert.equal(
+      closure.evidence.some(({ path }) => path === browser),
+      qualifies
+    );
+  }
+});
+
 function githubClosureFixture(f, checks) {
   const provider = new StrategyProvider(f.workspace.checkout, f.provider.config);
   const { head } = f.ctx.flow.blocks[0].attempts[0].result;
@@ -695,8 +722,15 @@ test('Publish links the earlier failed browser assertion and groups both folder 
   assert.match(first.summary, new RegExp(head.slice(0, 12)));
   assert.equal(first.result.assertion, assertion);
   const retry = await publish('retry');
+  assert.equal(retry.status, 'blocked');
   assert.equal(retry.result.priorAttemptId, 'first');
   assert.match(retry.summary, /same assertion/);
+  assert.ok(retry.summary.includes(head.slice(0, 12)));
+  assert.ok(retry.summary.includes('Capture. ' + assertion));
+  assert.ok(retry.summary.includes(retry.result.repairCommand.join(' ')));
+  assert.deepEqual(retry.result.browser.candidate, first.result.browser.candidate);
+  assert.equal(f.source.git('status', '--porcelain'), '');
+  assert.equal(f.calls.includes('push') || f.calls.includes('publish'), false);
   const prior = retry.evidence.find(({ label }) => label.includes('Earlier attempt'));
   assert.equal(prior.path, first.result.browser.log.path);
   assert.equal(digest(readFileSync(prior.path)), prior.sha256);

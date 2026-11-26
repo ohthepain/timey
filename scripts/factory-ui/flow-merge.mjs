@@ -2,6 +2,8 @@ import { browserFailure, runCandidateBrowser } from './flow-browser-evidence.mjs
 import { mergeGitHubProvider, inspectMergeOutcome } from './flow-merge-github.mjs';
 import {
   mergeRepairHistory,
+  priorRepairBrowserProof,
+  repairBrowserProof,
   retainMergeRepairEvidence,
   verificationFailureKey,
   verificationFailureMessage,
@@ -147,7 +149,7 @@ async function repairCandidate(service, ctx, workspace, error, options, state) {
 async function runRecordedRepair(service, ctx, workspace, error, { before, tree, record }, options, state) {
   const outcome = { status: 'failed' };
   try {
-    await attemptRepair(error, async () => {
+    const artifact = await attemptRepair(error, async () => {
       const failure = retainMergeRepairEvidence(
         service.root,
         workspace.checkout,
@@ -166,6 +168,7 @@ async function runRecordedRepair(service, ctx, workspace, error, { before, tree,
       outcome.evidence = repair.evidence;
       state.evidence.push(...(repair.evidence ?? []));
       requireThat(repair.status !== 'blocked', repair.summary);
+      return repair.artifacts?.files?.result;
     });
     const candidate = committedRepair(workspace, before);
     requireThat(
@@ -176,7 +179,12 @@ async function runRecordedRepair(service, ctx, workspace, error, { before, tree,
       error.code === 'target-conflict' || treeOf(workspace) !== tree,
       'The repair did not change the candidate tree. Review the retained work before retrying.'
     );
-    Object.assign(outcome, { status: 'committed', candidate, repairedRevision: commitIdentity(workspace, candidate) });
+    const repairedRevision = commitIdentity(workspace, candidate);
+    const browserProof = repairBrowserProof(artifact, repairedRevision, {
+      attemptId: ctx.attempt.id,
+      round: state.repairs,
+    });
+    Object.assign(outcome, { status: 'committed', candidate, repairedRevision, browserProof });
   } catch (failure) {
     outcome.message = failure.message;
     outcome.evidence ??= failure.evidence;
@@ -338,11 +346,15 @@ function retainDeliveryReceipt(service, ctx, state, provider, workspace, result)
   const candidate = commitIdentity(workspace, result.head);
   const browser = state.browser.get(candidate.commit);
   const workProof = deliveryWorkProof({ ...ctx, evidenceRoot: service.root }, candidate);
+  const repairProof =
+    state.repairHistory.browserProof(candidate) ?? priorRepairBrowserProof(service.root, ctx.block.attempts, candidate);
+  const checks = result.checks ?? [];
   const receipt = {
     candidate,
-    checks: result.checks ?? [],
-    jobs: githubCheckRuns(provider.config.repository, result.checks ?? []),
+    checks,
+    jobs: githubCheckRuns(provider.config.repository, checks),
     workProof,
+    repairBrowserProof: repairProof,
     ...(browser && { browser, browserProofReason: 'Focused scenarios rerun on this candidate commit and tree.' }),
   };
   const path = join(state.folder, 'delivery-receipt.json');

@@ -566,6 +566,14 @@ shared plan lives at `scripts/flow-integration-tests.json` so it travels with th
 installed Factory server and is also available to the CI runner.
 A named Flow browser check can include one `--ci-part` flag to use the same
 fixture setup as that GitHub job.
+`node scripts/flow-browser.mjs --ci-part=2 --edit-destination --issue-playback --issue-header-close`
+checks the graph-scoped Destination control, the hidden header action after
+playback, and Cleanup for a separate open issue. For a suite-wide locator
+migration, retain the affected full shards on the baseline and final trees
+alongside the focused replays.
+The `--work-markdown` scenario retains separate valid-reload and invalid-warning
+traces. Each includes the candidate, exact command, preceding scenarios, and the
+first missing event from the override write through the UI assertion.
 `node scripts/flow-browser.mjs --ci-part=1 --inbox-flow` checks Inbox dates,
 statuses, folder ordering and block drag in isolation. It scrolls the target
 block into the graph viewport before measuring the drag, then checks the
@@ -613,6 +621,11 @@ Merge uses GitHub readiness for the exact PR candidate on both individual and
 master issues. Close confirms the exact merged PR, target branch, and required
 GitHub checks.
 The delivery manifest records the merged candidate tree and retained Work proof.
+When a Merge repair returns a browser observation in `files.result`, its source
+commit and tree must match the delivered candidate. The Merge receipt, Close
+delivery manifest, and Retro delivery receipt export link that browser proof
+with its repair round, environment, and digest. The Work proof keeps its own
+candidate identity.
 
 The Notes browser scenario leaves a pending Discuss draft, unloads the preceding
 page, and closes its Discuss service before installing its own injected provider.
