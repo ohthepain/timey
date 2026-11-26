@@ -1,15 +1,16 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, realpathSync, rmdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, realpathSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { gitFixture } from './git-fixture.mjs';
 import { digest, git as checkoutGit } from './factory-ui/common.mjs';
 import { latestCurrentAttempt, requestBlock } from './factory-ui/flow-block-data.mjs';
 import { requireGroupProof } from './factory-ui/flow-group-proof.mjs';
+import { groupLiveProof } from './factory-ui/flow-live-proof.mjs';
 import { activeGroupRequest, sourceObservation } from './factory-ui/flow-group-scope.mjs';
 import { issueAnnotations } from './factory-ui/issue-annotations.mjs';
-import { closeProjectStores, ensureProjectStores } from './factory-ui/stores/runtime.mjs';
+import { closeProjectStores, ensureProjectStores, hydrateProjectEvidence } from './factory-ui/stores/runtime.mjs';
 import { createIssueFlows } from './factory-ui/flow-service.mjs';
 import { requireIndependentIssue } from './factory-ui/issue-group.mjs';
 import { moveStoredIssue, storedIssuePath, updateStoredIssueMetadata } from './factory-ui/issue-report-storage.mjs';
@@ -836,4 +837,58 @@ test('Grouped issue moves publish both master reports in one shared transaction'
   });
   assert.equal(flows.groups.masterId(child), null);
   assert.equal((await flows.view(child)).flow.folder, 'Moved independently');
+});
+
+test('The live proof attachment action persists hashed observations in the shared Artifact store', async (t) => {
+  const { root, git, newFlows, service } = fixture(t);
+  writeFileSync(join(root, '.gitignore'), '/.issues/\n');
+  git('add', '.gitignore');
+  git('commit', '-qm', 'Ignore Factory state');
+  writeFileSync(
+    join(root, '.issues/issue-delivery-config.json'),
+    JSON.stringify({ provider: 'github', repository: 'test/production', target: 'dev', remote: 'origin' })
+  );
+  const stores = await ensureProjectStores(service, { fresh: true });
+  t.after(() => closeProjectStores(service));
+  const flows = newFlows();
+  const { create, issueIds } = await group(flows);
+  const master = await flows.action(create);
+  const issueId = master.issue.id;
+  const issue = flows.selected(issueId);
+  const candidate = { head: git('rev-parse', 'HEAD'), tree: git('rev-parse', 'HEAD^{tree}') };
+  const flow = flows.read(issue);
+  const checkout = join(root, '.issues', 'issue-work', issueId);
+  const branch = 'test-proof-candidate';
+  git('worktree', 'add', '-b', branch, checkout, candidate.head);
+  flow.workspace = { checkout, branch, base: candidate.head };
+  const saved = await flows.store.save(flow, flow.revision);
+  const submit = (action, revision, proof) =>
+    flows.action({ action: 'live-proof-' + action, issueId, revision, proof: { ...proof, confirmed: true } });
+  const scope = { repository: 'test/disposable', branch: 'proof-source', target: 'proof-target' };
+  const childId = issueIds[0];
+  const check = 'Observe the save action in the disposable provider environment.';
+  const authorization = await submit('authorize', saved.revision, { childId, check, scope, candidate });
+  const bundle = {
+    authorizationId: authorization.record.id,
+    source: 'live-github',
+    status: 'passed',
+    pr: { ...scope, number: 42, head: candidate.head },
+    observations: [{ at: '2026-11-26T08:01:00Z', observed: 'Simulated test observation.' }],
+    logs: [{ name: 'provider', text: 'Fixture provider transcript.' }],
+  };
+  const failed = await submit('attach', authorization.revision, { ...bundle, status: 'failed' });
+  assert.throws(() => groupLiveProof(issue, flows.read(issue), candidate, root), /attached live check failed/);
+  const attached = await submit('attach', failed.revision, bundle);
+  const manifest = await stores.coordination.get('evidence/' + issueId);
+  for (const { path, sha256 } of attached.record.evidence) {
+    assert.ok(manifest.value.files.some((file) => file.path === path && file.sha256 === sha256));
+    unlinkSync(path);
+  }
+  await hydrateProjectEvidence(service, issueId);
+  const restarted = newFlows();
+  const restored = restarted.read(restarted.selected(issueId));
+  assert.deepEqual(groupLiveProof(issue, restored, candidate, root).evidence, attached.record.evidence);
+  const repeat = await submit('attach', attached.revision, bundle);
+  assert.equal(repeat.revision, attached.revision);
+  assert.deepEqual(repeat.record, attached.record);
 });
