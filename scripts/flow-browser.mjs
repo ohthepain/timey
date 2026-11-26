@@ -1,4 +1,5 @@
 import { fixtureRoute } from './flow-browser-routes.mjs';
+import { readyControl } from './browser-controls.mjs';
 import {
   masterDragBrowserChecks,
   masterIssueBrowserChecks,
@@ -243,7 +244,9 @@ const {
   '--storage-status': storageStatusCheck,
   '--polling': pollingCheck,
   '--capture-folder-issue': captureFolderIssueCheck,
+  '--starting-point-top': startingPointTopCheck,
   '--starting-point': startingPointCheck,
+  '--edit-destination': editDestinationCheck,
   '--closed-destination': closedDestinationCheck,
   '--folder-workspace-grouping': folderWorkspaceGroupingCheck,
   '--tab-source': tabSourceCheck,
@@ -1535,7 +1538,7 @@ try {
     await page.locator('#view-inspect').click();
     await draft.fill(description);
   });
-  await check('New issues open with Starting point flush with the viewport top', async () => {
+  await check(startingPointTopCheck, async () => {
     await poll(graphGeometry, (value) => Math.abs(value.start) < 2, 'Starting point was not aligned with the top.');
     assert.equal((await selectedGeometry()).blockId, 'request');
     assert.equal(await page.locator('.graph-note').count(), 0);
@@ -1586,7 +1589,7 @@ try {
     assert.equal(logs.execution.length, 0);
     await screenshot('starting-branch-selected');
   });
-  await check('Issue title and Destination edits update the saved flow through its controls', async () => {
+  await check(editDestinationCheck, async () => {
     const original = (await view()).issue.title;
     const rename = async (title) => {
       await page.locator('#rename-issue').click();
@@ -1601,16 +1604,26 @@ try {
       'The heading did not show the saved issue title.'
     );
     await rename(original);
-    const destination = page.locator('[data-destination-open]');
+    const destination = page.locator('#graph-scroll [data-node="__destination"]');
+    const openDestination = async () => {
+      await (
+        await readyControl(destination, {
+          selector: '[data-destination-open]',
+          action: 'Choose destination branch',
+          view: 'Flow graph Destination',
+          record: issueId,
+        })
+      ).click();
+    };
     const select = page.locator('#destination-branch');
-    await destination.click();
+    await openDestination();
     await select.waitFor();
     assert.equal(await select.locator('option').first().textContent(), 'Follow starting branch');
     await select.selectOption('older');
     await page.locator('#save-destination').click();
     await poll(view, (value) => value.destination.branch === 'older', 'The destination was not pinned.');
     assert.equal((await view()).flow.startingPoint.ref, 'refs/heads/recent');
-    await destination.click();
+    await openDestination();
     await select.selectOption('');
     await page.locator('#save-destination').click();
     await poll(

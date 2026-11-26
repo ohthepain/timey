@@ -95,6 +95,7 @@ test('Timey opens the matching local Factory and hides the link when it is unava
     assert.equal(discovery.port, Number(new URL(matchingOrigin).port));
 
     Object.assign(process.env, {
+      DATABASE_URL: 'postgresql://fixture:fixture@127.0.0.1:1/fixture',
       AUTH_DATABASE_URL: 'postgresql://fixture:fixture@127.0.0.1:1/fixture',
       BETTER_AUTH_SECRET: 'timey-factory-browser-check-secret-without-accounts',
       BETTER_AUTH_URL: 'http://127.0.0.1',
