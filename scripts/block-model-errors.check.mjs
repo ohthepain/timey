@@ -229,16 +229,36 @@ test('newest unresolved blocker survives reconciliation; success reveals older e
   assert.equal(flow.blockingErrors.length, 2);
 });
 
-test('fixed helpers and command blocks do not offer a configurable model', async (t) => {
-  const { flows, id, read, action } = fixture(t);
+test('Request accepts a Codex model while command blocks have no configurable model', async (t) => {
+  const { root, flows, id, read, action } = fixture(t);
+  configure(root, ['anthropic:sonnet']);
+  observeProvider(root, 'codex', { ready: true, models: [{ id: 'gpt-6-luna', name: 'Codex Luna' }] });
+  const config = readProviderConfig(root);
+  config.providers.codex.allowUnmonitored = true;
+  saveProviderSettings(root, config);
   const view = await flows.view(id);
   const request = read().blocks.find((b) => b.kind === 'request');
-  assert.equal(view.blockModels[request.id].kind, 'fixed');
+  assert.deepEqual(
+    view.blockModels[request.id].choices.map(({ id }) => id),
+    ['gpt-6-luna']
+  );
   assert.equal(view.blockModels[read().blocks.find((b) => b.kind === 'publish').id].kind, 'none');
   await assert.rejects(
     action('update', { blockId: request.id, changes: { model: 'google:pro' } }),
-    /no editable model/
+    /Choose an enabled, available model/
   );
+  await action('update', { blockId: request.id, changes: { model: 'gpt-6-luna' } });
+  assert.equal(read().blocks.find((b) => b.id === request.id).model, 'gpt-6-luna');
+  flows.clarify = async (_root, _definition, attempt) => {
+    assert.equal(attempt.modelSettings.model, 'gpt-6-luna');
+    return { artifacts: { values: request.data.fields }, summary: 'Clarified with Codex Luna' };
+  };
+  await action('request', { wording: 'Clarify the request with its selected model.' });
+  const attempts = read().blocks.find((b) => b.id === request.id).attempts;
+  assert.equal(attempts.at(-1).summary, 'Clarified with Codex Luna');
+  assert.equal(attempts[0].id, 'request-success');
+  await action('update', { blockId: request.id, changes: { model: '' } });
+  assert.equal((await flows.view(id)).blockModels[request.id].selected, '');
 });
 
 test('skipping Retro resolves its blockers and closure failures remain visible until closure completes', () => {

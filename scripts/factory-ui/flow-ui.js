@@ -642,7 +642,8 @@ import { reorderedBlocks } from './flow-order.mjs';
         field.disabled =
           busy ||
           frozen ||
-          (attached && Boolean(field.closest('#request-form, #block-form'))) ||
+          (attached && Boolean(field.closest('#request-form, #block-form, [data-block-model-row]'))) ||
+          (field.name === 'model' && Boolean(state.view?.blockModels?.[activeBlock()?.id]?.locked)) ||
           (closureSetting && state.view?.issue?.status === 'closed');
       });
     document.querySelectorAll('#inspector-body button[type="submit"]').forEach((button) => {
@@ -1408,7 +1409,7 @@ import { reorderedBlocks } from './flow-order.mjs';
       (children || [])
         .map(
           (child) =>
-            `<li>${issueLink(child)}<button class="small-button" type="button" data-detach-action="folder-detach" data-detach-sub-issue="${escape(child.id)}" aria-label="Remove ${escape(issueLabel(child))}"${child.canDetach ? '' : ' disabled'}>Remove</button></li>`
+            `<li>${issueLink(child)}<button class="icon-button" type="button" data-detach-action="folder-detach" data-detach-sub-issue="${escape(child.id)}" aria-label="Remove ${escape(issueLabel(child))}"${child.canDetach ? '' : ' disabled'}>×</button></li>`
         )
         .join('')
     );
@@ -2389,7 +2390,7 @@ import { reorderedBlocks } from './flow-order.mjs';
   function definitionActions(block) {
     const definition = state.index.catalog.find((entry) => entry.id === (block.definition ?? block.kind));
     const path = definition?.content;
-    return `<div class="block-actions definition-actions"><button class="small-button" type="button" data-action="refresh-definition" aria-label="Refresh block definition" title="Refresh block definition">🪄</button>${path?.bundled || path?.override ? `<details class="block-markdown-menu" data-preserve="block-markdown-menu"><summary class="small-button">Markdown</summary><div class="issue-flow-options"><button class="small-button" type="button" data-action="reveal-definition">Reveal Markdown in Finder</button><button class="small-button" type="button" data-action="open-block-extension">${path.extension ? 'Open extension' : 'Create extension'}</button></div></details>` : ''}</div>`;
+    return `<div class="block-actions definition-actions"><button class="small-button" type="button" data-action="refresh-definition" aria-label="Refresh block definition" title="Refresh block definition">🪄</button>${path?.bundled || path?.override ? `<details class="block-markdown-menu" data-preserve="block-markdown-menu"><summary class="small-button">.md</summary><div class="issue-flow-options"><button class="small-button" type="button" data-action="reveal-definition">Reveal Markdown in Finder</button><button class="small-button" type="button" data-action="open-block-extension">${path.extension ? 'Open extension' : 'Create extension'}</button></div></details>` : ''}</div>`;
   }
 
   function retiredHistory() {
@@ -2580,7 +2581,8 @@ import { reorderedBlocks } from './flow-order.mjs';
       return `<section class="detail-section"><p class="detail-copy">This operation started through the existing issue controls. Inspect or stop it there before starting a new flow block.</p><a href="/classic?issue=${encodeURIComponent(state.issueId)}">Open its original controls</a>${block.attempts.map((attempt, index) => attemptCard(attempt, index)).join('')}</section>`;
     if (block.kind === 'request')
       return (
-        window.factoryBlockModel(state.view.blockModels?.[block.id]) + definitionActions(block) + requestDetails(block)
+        window.factoryBlockModel(state.view.blockModels?.[block.id], block.model || '', definitionActions(block)) +
+        requestDetails(block)
       );
     const changes = draft();
     const values = { ...block, ...changes };
@@ -2602,14 +2604,13 @@ import { reorderedBlocks } from './flow-order.mjs';
       }</section>`;
     const locked = state.pending ? ' disabled' : '';
     const sections = {
-      settings: `<form id="block-form">${window.factoryBlockModel(state.view.blockModels?.[block.id], values.model || '')}${investigationSourcePicker(block)}${declaredDetails(block, true)}${outputsSection(block)}${systemPromptEditor(block, values, locked)}${editChecklist(block, changes)}<section class="detail-section"><div class="section-label">Block settings</div><label class="field">Name<input name="label" data-field="label" value="${escape(values.label || '')}" /></label><div class="field-row"><label class="field">Parallel lane<select name="lane" data-field="lane">${[0, 1, 2, 3].map((lane) => `<option value="${lane}"${Number(values.lane || 0) === lane ? ' selected' : ''}>${lane === 0 ? 'Main lane' : `Parallel lane ${lane + 1}`}</option>`).join('')}</select></label>${block.kind === 'sol' ? `<label class="field">Iterations<input type="number" name="iterations" data-field="iterations" min="1" max="20" value="${escape(values.iterations || 1)}" /></label>` : ''}</div></section>${saveRow()}</form>`,
+      settings: `<form id="block-form">${window.factoryBlockModel(state.view.blockModels?.[block.id], values.model || '', definitionActions(block))}${investigationSourcePicker(block)}${declaredDetails(block, true)}${outputsSection(block)}${systemPromptEditor(block, values, locked)}${editChecklist(block, changes)}<section class="detail-section"><div class="section-label">Block settings</div><label class="field">Name<input name="label" data-field="label" value="${escape(values.label || '')}" /></label><div class="field-row"><label class="field">Parallel lane<select name="lane" data-field="lane">${[0, 1, 2, 3].map((lane) => `<option value="${lane}"${Number(values.lane || 0) === lane ? ' selected' : ''}>${lane === 0 ? 'Main lane' : `Parallel lane ${lane + 1}`}</option>`).join('')}</select></label>${block.kind === 'sol' ? `<label class="field">Iterations<input type="number" name="iterations" data-field="iterations" min="1" max="20" value="${escape(values.iterations || 1)}" /></label>` : ''}</div></section>${saveRow()}</form>`,
       progress: `<section class="detail-section"><div class="section-label">${running ? 'Current progress' : 'Progress'}<span data-ui-value="Status comes from the saved block.">${escape(statusText(status(block), last))}</span></div>${progress}${previousAttempts.length ? `<details class="attempt-history" data-preserve="attempt-history"><summary>${previousAttempts.length} earlier ${previousAttempts.length === 1 ? 'attempt' : 'attempts'}</summary>${previousAttempts.map((attempt, index) => attemptCard(attempt, index, block.kind === 'merge')).join('')}</details>` : ''}</section>`,
       notes: comments(block),
     };
     return (
       permissions.map(agentApprovalCard).join('') +
       investigationActions(block) +
-      definitionActions(block) +
       mergeProofSummary(block, last) +
       workScopePicker(block) +
       Object.values(sections).join('')
@@ -2807,7 +2808,6 @@ import { reorderedBlocks } from './flow-order.mjs';
   function renderInspector() {
     const block = activeBlock();
     const style = blockStyle(block?.definition ?? block?.kind);
-    $('inspector-kind').textContent = block ? words(block.kind) : 'Block details';
     $('inspector-title').style.setProperty('--block-color', style.color);
     $('inspector-symbol').textContent = block ? style.icon : '◇';
     $('inspector-block-name').textContent = block?.label || 'Select a block';
@@ -2942,11 +2942,19 @@ import { reorderedBlocks } from './flow-order.mjs';
     document.title = title + ' · Factory';
   }
 
+  function renderIssueHeadingActions(issue) {
+    $('flow-heading').hidden = Boolean(issue);
+    const actions = $('flow-heading-actions');
+    const row = $(issue ? 'issue-flow-meta' : 'flow-heading');
+    if (actions.parentElement !== row) row.append(actions);
+  }
+
   function render() {
     renderSidebar();
     renderFolderWorkspace();
     const issue = state.view?.issue;
     $('issue-heading').hidden = !issue;
+    renderIssueHeadingActions(issue);
     $('issue-type-label').textContent = issue
       ? words(
           state.view.flow.blocks.find((block) => block.kind === 'request')?.data?.fields?.type ||
@@ -3019,7 +3027,6 @@ import { reorderedBlocks } from './flow-order.mjs';
     if (investigation) {
       $('issue-type-label').textContent = 'Investigation ·';
       $('issue-subtitle').textContent = state.view.issue.reusable ? 'Reusable' : 'One-time';
-      $('flow-view-title').textContent = 'Investigation';
     }
   }
 
@@ -3900,7 +3907,7 @@ import { reorderedBlocks } from './flow-order.mjs';
 
   document.addEventListener('input', (event) => {
     const field = event.target;
-    if (!field.dataset.field) return;
+    if (!field.dataset.field || field.dataset.field === 'model') return;
     setDraft(
       field.dataset.field,
       field.type === 'checkbox'
@@ -3962,6 +3969,13 @@ import { reorderedBlocks } from './flow-order.mjs';
     const field = event.target;
     if (['retro-setting', 'auto-close-setting'].includes(field.id)) {
       if (!(await action(field.id, { enabled: field.checked }))) field.checked = !field.checked;
+      return;
+    }
+    if (field.dataset.field === 'model' && activeBlock()?.kind === 'request') {
+      const block = activeBlock();
+      const model = state.view.blockModels[block.id];
+      const result = await action('update', { blockId: block.id, changes: { model: field.value } });
+      if (!result) field.value = model.selected;
       return;
     }
     if (field.dataset.field?.startsWith('mode-') || ['prompt-mode', 'model'].includes(field.dataset.field)) {

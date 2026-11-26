@@ -275,11 +275,11 @@
           <span data-provider-status-text></span>
           <button type="button" data-provider-settings-open>Factory settings</button>
         </aside>
-        <header class="flow-heading">
+        <header class="flow-heading" id="flow-heading">
           <div class="breadcrumb">
             <span>Workspace</span><span class="breadcrumb-divider">/</span><span id="flow-view-title">Issue flow</span>
           </div>
-          <div class="flow-heading-actions">
+          <div class="flow-heading-actions" id="flow-heading-actions">
             <button class="small-button view-inspect-toggle" id="view-inspect" type="button" aria-pressed="false">
               Inspect UI
             </button>
@@ -314,19 +314,6 @@
                 <button class="small-button" type="submit">Save</button>
                 <button class="small-button" id="cancel-rename" type="button">Cancel</button>
               </form>
-              <div class="issue-flow-meta">
-                <span id="issue-type-label"></span>
-                <span id="issue-subtitle"></span>
-                <details id="issue-flow-picker" class="issue-flow-picker">
-                  <summary id="issue-flow-menu" class="small-button" title="Choose a flow">
-                    Flow <span id="issue-flow-name"></span>
-                  </summary>
-                  <div id="issue-flow-options" class="issue-flow-options"></div>
-                </details>
-                <button id="rebuild-flow" class="small-button" type="button" data-action="rebuild-flow">
-                  <span aria-hidden="true">🪄</span> Rebuild flow
-                </button>
-              </div>
             </div>
             <div class="issue-playback">
               <button class="primary-button" id="issue-playback" type="button">Start</button>
@@ -343,6 +330,19 @@
               <button class="small-button" id="skip-retro" type="button" hidden>Continue to Cleanup</button>
               <span class="muted" id="playback-status" aria-live="polite"></span>
             </div>
+          </div>
+          <div class="issue-flow-meta" id="issue-flow-meta">
+            <span id="issue-type-label"></span>
+            <span id="issue-subtitle"></span>
+            <details id="issue-flow-picker" class="issue-flow-picker">
+              <summary id="issue-flow-menu" class="small-button" title="Choose a flow">
+                Flow <span id="issue-flow-name"></span>
+              </summary>
+              <div id="issue-flow-options" class="issue-flow-options"></div>
+            </details>
+            <button id="rebuild-flow" class="small-button" type="button" data-action="rebuild-flow">
+              <span aria-hidden="true">🪄</span> Rebuild flow
+            </button>
           </div>
           <div id="issue-master" class="folder-controls" role="group" aria-label="Master issue" hidden></div>
           <ul id="issue-sub-issues" class="folder-issues issue-sub-issues" aria-label="Sub-issues" hidden></ul>
@@ -893,10 +893,6 @@
           aria-controls="inspector-body"
           tabindex="0"
         ></div>
-        <header class="inspector-header">
-          <span class="eyebrow">INSPECTOR</span>
-          <span id="inspector-kind" class="muted">Block details</span>
-        </header>
         <div class="inspector-title" id="inspector-title">
           <span class="inspector-symbol" id="inspector-symbol" aria-hidden="true">◇</span>
           <h2 id="inspector-block-name">Select a block</h2>

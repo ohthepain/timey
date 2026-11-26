@@ -99,6 +99,10 @@ its left edge. Its left arrow widens it and its right arrow narrows it. Home and
 End choose the minimum and maximum width for either panel. The browser remembers
 both widths and keeps enough room for the graph. In the narrow stacked layout,
 the inspector follows the graph's width and its resize handle is hidden.
+**Inspect UI**, **View index**, and Refresh sit on the right of the issue's
+second header row. In Details, click the displayed model name to choose a model
+where selection is available. The **.md** menu and definition refresh wand appear
+on the same row.
 Opening an unattempted issue aligns Starting point with the graph viewport's top.
 Starting point includes a Git branch selector. It lists local and cached remote
 branches by latest commit date, newest first. Branches sharing a commit remain
@@ -120,7 +124,8 @@ folder moves, enable **Prevent moves into folders** on its Request block.
 it leaves the original issues linked and assigns their work to the master.
 Drag an issue from the sidebar, a folder view, or a master’s sub-issue list
 onto a master to attach or transfer it. Drop a sub-issue onto a sidebar folder
-to detach it and move it there. Transfers require both masters to be idle and
+to detach it and move it there. Use **×** beside a sub-issue to detach it from
+the master without moving it to another folder. Transfers require both masters to be idle and
 the Issue and Coordination stores to support the same transaction.
 **Work All Night** starts the reviewed list and prepares verified PRs for you to
 merge. The folder shows the run report and the next action for issues that paused.
