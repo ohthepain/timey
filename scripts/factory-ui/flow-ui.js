@@ -2776,21 +2776,32 @@ import { reorderedBlocks } from './flow-order.mjs';
     button.title = blockDeletionReason(block) || 'Delete block';
   }
 
+  let inspectorBottom = 0;
+  const inspectorSize = new ResizeObserver(() => followInspectorResize($('inspector-body')));
+
+  function followInspectorResize(body) {
+    if (Math.abs(body.scrollTop - inspectorBottom) < 2 && !view.captureSelection(body)) {
+      body.scrollTop = body.scrollHeight;
+    }
+    inspectorBottom = body.scrollHeight - body.clientHeight;
+  }
+
+  function observeInspectorHistory(body, conversation) {
+    inspectorSize.disconnect();
+    if (!conversation) return;
+    inspectorBottom = body.scrollHeight - body.clientHeight;
+    inspectorSize.observe(body);
+    for (const child of body.children) inspectorSize.observe(child);
+  }
+
   function renderInspectorContent(body, html, scope) {
     const conversation = state.tab === 'conversation';
     const follow =
       conversation && (inspectorRender?.scope !== scope || view.follows(body, view.captureSelection(body)));
     body.toggleAttribute('data-chat-scroll', conversation);
     view.render(body, html, scope);
-    if (follow && !view.dragging(body)) alignInspectorHistory(body, scope);
-  }
-
-  function alignInspectorHistory(body, scope) {
-    body.scrollTop = body.scrollHeight;
-    const top = body.scrollTop;
-    requestAnimationFrame(() => {
-      if (inspectorRender?.scope === scope && body.scrollTop >= top) body.scrollTop = body.scrollHeight;
-    });
+    if (follow && !view.dragging(body)) body.scrollTop = body.scrollHeight;
+    observeInspectorHistory(body, conversation);
   }
 
   function renderInspector() {
