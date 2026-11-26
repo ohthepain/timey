@@ -97,6 +97,12 @@ ahead of the older queue. Reading or refreshing never resumes failed work.
 Explicit Stop and uncertain interrupted turns retain their existing Resume/Retry
 requirements.
 
+If Codex refuses to reopen a saved conversation because it already has a writer,
+Discuss shows the lock and identifies the ChatGPT desktop app when Factory can
+verify that it holds the lock. Factory retries reopening the same conversation
+for about 90 seconds before asking for an explicit Retry. Stop cancels the wait.
+Only a successful reopen and an idle thread allow the saved message to start.
+
 ## Message editing and retries
 
 - Queued messages can be edited or removed before execution. An explicit save can

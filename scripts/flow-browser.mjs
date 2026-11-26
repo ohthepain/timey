@@ -4,6 +4,7 @@ import { issueAnnotationBrowserChecks } from './flow-browser-issue-annotations.m
 import { blockModelsBrowserChecks } from './flow-browser-block-models.mjs';
 import { providerSettingsBrowserChecks } from './flow-browser-provider-settings.mjs';
 import { activityBrowserChecks } from './flow-browser-activity.mjs';
+import { chatProgressBrowserChecks } from './flow-browser-chat-progress.mjs';
 import { inboxDiscussBrowserChecks, inboxFlowBrowserChecks } from './flow-browser-inbox.mjs';
 import { investigationReportsBrowserChecks } from './flow-browser-investigation-reports.mjs';
 import { issueStatusFoldersBrowserChecks } from './flow-browser-issue-status-folders.mjs';
@@ -56,7 +57,7 @@ import { flowFolderSettingsBrowserChecks } from './flow-browser-folder-settings.
 import { flowFollowupsBrowserChecks } from './flow-browser-followups.mjs';
 import { investigationProposals } from './investigation-followups-fixture.mjs';
 import { withQueueConfiguration } from './flow-browser-queue-configuration.mjs';
-import { projectNavigationBrowserChecks } from './flow-browser-project-navigation.mjs';
+import { projectNavigationBrowserChecks, unavailableNavigationIssue } from './flow-browser-project-navigation.mjs';
 import {
   projectHomeBrowserChecks,
   investigationFlowsBrowserChecks,
@@ -151,6 +152,7 @@ const assets = [
   'project-reports-ui.js',
   'project-reports.css',
   'project-discuss.css',
+  'chat-progress.css',
   'local-notes-ui.js',
   'local-notes.css',
   'issue-chat-ui.js',
@@ -217,6 +219,7 @@ const {
   '--flow-menu': flowMenuCheck,
   '--add-parallel-block': addParallelBlockCheck,
   '--reorder-saved-blocks': reorderSavedBlocksCheck,
+  '--block-reveal': blockRevealCheck,
   '--assign-folder': assignFolderCheck,
   '--save-block-comment': saveBlockCommentCheck,
   '--work-markdown': workMarkdownCheck,
@@ -350,16 +353,19 @@ function expectedReportConsoleError({ text, location }) {
   );
 }
 
+const expectedBadRequestSuffixes = [
+  '/api/ui-sources',
+  '/api/site-review-sources',
+  '/api/flow?issue=' + unavailableNavigationIssue,
+  '/api/issue-stores?issueId=' + unavailableNavigationIssue,
+];
+
 function unexpectedConsoleErrors(entries) {
   const errors = entries.filter((item) => item.type === 'error' && !expectedReportConsoleError(item));
   return errors.filter((item) => {
     const url = item.location?.url || '';
     if (!/Failed to load resource/.test(item.text) || !item.text.includes('400')) return true;
-    return !(
-      url.includes('/api/folder-settings') ||
-      url.endsWith('/api/ui-sources') ||
-      url.endsWith('/api/site-review-sources')
-    );
+    return !url.includes('/api/folder-settings') && !expectedBadRequestSuffixes.some((suffix) => url.endsWith(suffix));
   });
 }
 function consoleErrorsAfterExpectedResponses(expected) {
@@ -707,7 +713,7 @@ try {
   await check(issueAnnotationsCheck, () => issueAnnotationBrowserChecks({ page, project, root, output, poll }));
   await check(navigationCheck, () =>
     withQueueConfiguration({ page, project, root }, () =>
-      projectNavigationBrowserChecks({ page, poll, screenshot, output, candidate })
+      projectNavigationBrowserChecks({ page, poll, screenshot, output, candidate, project, service, root })
     )
   );
   await check(inboxFlowCheck, () => inboxFlowBrowserChecks({ page, service, project, poll, screenshot, output }));
@@ -781,6 +787,9 @@ try {
   );
   await check('Activity dots stay anchored and reflect actual work', () =>
     activityBrowserChecks({ page, project, service, poll, screenshot, output })
+  );
+  await check('Issue and project chats retain semantic progress', () =>
+    chatProgressBrowserChecks({ page, project, service, poll, screenshot, output })
   );
   await check('Issue flow scrollbar appears only while scrolling', async () => {
     const id = '20261122-issue-scrollbar-fixture';
@@ -1899,12 +1908,14 @@ try {
       assert.ok(numbers[1] < numbers.at(-1), 'A connection points upward.');
     }
   });
-  await check('Block clicks preserve visible cards and minimally reveal clipped cards', async () => {
+  await check(blockRevealCheck, async () => {
     await page.setViewportSize({ width: 1440, height: 600 });
     const target = page.locator('[data-block="' + workId + '"]');
     const visible = await target.evaluate((node) => {
       const scroll = document.getElementById('graph-scroll');
-      scroll.scrollTop += node.getBoundingClientRect().top - scroll.getBoundingClientRect().top - 80;
+      const card = node.getBoundingClientRect();
+      const viewport = scroll.getBoundingClientRect();
+      scroll.scrollTop += card.top - viewport.top - (viewport.height - card.height) / 2;
       return { scrollTop: scroll.scrollTop, box: node.getBoundingClientRect().toJSON() };
     });
     const before = visible.scrollTop;
@@ -1923,6 +1934,7 @@ try {
     const clipped = await selectedGeometry();
     const bounds = await target.evaluate((node) => node.getBoundingClientRect().toJSON());
     const viewport = await page.locator('#graph-scroll').boundingBox();
+    const historyLength = await page.evaluate(() => history.length);
     assert.ok(bounds.y < viewport.y - 20, 'The test card must be clipped before selection.');
     await page.mouse.click(bounds.x + bounds.width / 2, viewport.y + 20);
     const after = await poll(
@@ -1937,6 +1949,7 @@ try {
     assert.ok(after.top >= -1);
     assert.ok(after.bottom <= after.viewportHeight + 1);
     assert.ok(clipped.scrollTop - after.scrollTop <= 55, 'The card moved further than necessary.');
+    assert.equal(await page.evaluate(() => history.length), historyLength);
     await page.setViewportSize({ width: 1440, height: 960 });
   });
   await check(saveBlockCommentCheck, async () => {

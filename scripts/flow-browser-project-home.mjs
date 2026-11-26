@@ -284,7 +284,7 @@ export async function automateActivityBrowserChecks({ page, service, screenshot 
     await page.getByRole('tab', { name: 'Automate me', exact: true }).click();
     await page.getByRole('button', { name: 'Run Automate me', exact: true }).click();
     const dialog = page.locator('#home-automate-dialog');
-    const indicator = dialog.locator('#home-automate-messages > .activity-indicator');
+    const indicator = dialog.locator('#home-automate-messages > .chat-live .SparkleText');
     await dialog.getByRole('button', { name: 'Start conversation', exact: true }).click();
     await indicator.waitFor();
     await screenshot('automate-activity-running');

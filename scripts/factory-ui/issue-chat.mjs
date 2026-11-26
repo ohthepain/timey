@@ -1,3 +1,4 @@
+import { chatProgress, chatProgressInstructions } from './chat-progress.mjs';
 import { withDiagnosticContext } from './diagnostic-activity.mjs';
 import { classicOperation, bindClassicRun, recordClassicInput, classicFailure } from './stores/classic-operation.mjs';
 import { effectiveProjectPrompt } from './project-preferences.mjs';
@@ -407,7 +408,7 @@ class IssueChats {
     await this.runResponse(issueId, input, active, { root, state, cwd, connection, threadId, retain });
   }
   async runResponse(issueId, input, active, { root, cwd, connection, threadId, retain }) {
-    const prompt = responsePrompt(this.service, issueId, input);
+    const prompt = responsePrompt(this.service, issueId, input) + '\n\n' + chatProgressInstructions;
     recordClassicInput(this.service, active.run, prompt);
     const selected = await responseSkills(connection, root, input);
     const role = conversationRole(selected);
@@ -458,6 +459,8 @@ class IssueChats {
       role: 'Issue assistant',
       kind: 'reply',
       body: text,
+      source: { runId: active.run.id },
+      progress: savedReplyProgress(active.run),
     });
   }
   responseConnection(issueId, threadId) {
@@ -652,6 +655,9 @@ async function responseSkills(connection, root, input) {
 function conversationPromptKind(root, issueId, context) {
   if (!context?.report) return 'issue';
   return investigationReport(root, issueId, context.report) ? 'investigation' : 'issue';
+}
+function savedReplyProgress(run) {
+  return run.chatActivity && chatProgress(run.chatActivity);
 }
 function responsePrompt(service, issueId, input) {
   const context = conversationContext(service, issueId);

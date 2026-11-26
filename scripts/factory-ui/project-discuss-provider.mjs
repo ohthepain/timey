@@ -8,6 +8,12 @@ import { digest, requireThat } from './common.mjs';
 import { agentModel, sessionProvider } from './agent-models.mjs';
 import { NativeAgentConnection } from './native-agent.mjs';
 import { agentRecovery } from './agent-recovery.mjs';
+import { setTimeout as delay } from 'node:timers/promises';
+import { desktopThreadWriter, isCodexWriterConflict, threadLockedMessage } from './codex-thread-writer.mjs';
+import { chatProgressInstructions } from './chat-progress.mjs';
+
+const writerRechecks = 45;
+const waitForWriter = (signal) => delay(2000, undefined, { signal });
 
 function conversationPromptKind(message) {
   return message.reportContext ? 'report' : 'project';
@@ -74,6 +80,8 @@ class ProjectDiscussProvider {
     this.connection.toolHandler = (params) => this.invokeTool(params);
     this.connection.onEvent = (event) => this.event(event);
     this.active = null;
+    this.threadWriterOwner = options.threadWriterOwner ?? desktopThreadWriter;
+    this.threadWriterDelay = options.threadWriterDelay ?? waitForWriter;
   }
   async skills(model) {
     if (!model || agentModel(model).provider === 'codex')
@@ -230,6 +238,8 @@ class ProjectDiscussProvider {
       .map(({ name, description, path }) => ({ name, description, path }));
     return (
       effectiveProjectPrompt(this.service.root, kind) +
+      '\n\n' +
+      chatProgressInstructions +
       '\n\nWhen creating an issue from this conversation, write issue_create.description as the future work: the agreed problem or change, scope, product constraints, decisions, acceptance criteria and requested proof. Keep instructions about this creation operation, such as "create the issue only", "leave it idle" or "do not start implementation now", in this conversation and the creation receipt, outside the saved work description. The creation tool already leaves the issue idle. Preserve genuine prerequisites and required human approvals in the description. For example, "Create an idle issue to replace the gear menu with project Settings" becomes "Replace the gear menu with project Settings", followed by the agreed requirements and implementation proof. Report the creation result without starting work unless separately requested.' +
       (clarification
         ? '\nExplicitly chosen clarification skill (invoke only for unresolved ambiguity): ' +
@@ -257,7 +267,9 @@ class ProjectDiscussProvider {
       developerInstructions: instructions,
     };
     if (session.threadId) {
-      await connection.call('thread/resume', { ...params, threadId: session.threadId, excludeTurns: true });
+      const resume = () =>
+        connection.call('thread/resume', { ...params, threadId: session.threadId, excludeTurns: true });
+      await this.resumeThread(session.threadId, resume);
       const { thread } = await connection.call('thread/read', { threadId: session.threadId, includeTurns: false });
       requireThat(
         thread.status?.type === 'idle',
@@ -282,6 +294,33 @@ class ProjectDiscussProvider {
       this.retain({ threadId: thread.id, startup: { status: 'ready' } });
     }
     connection.approvalReviewers?.set(session.threadId, 'auto_review');
+  }
+
+  async resumeThread(threadId, resume) {
+    if (sessionProvider(threadId) !== 'codex') return resume();
+    const signal = this.active.signal;
+    let notice;
+    try {
+      for (let attempt = 0; ; attempt++) {
+        signal.throwIfAborted();
+        try {
+          return await resume();
+        } catch (error) {
+          if (!isCodexWriterConflict(error.message)) throw error;
+          if (attempt === writerRechecks) {
+            const current = threadLockedMessage(await this.threadWriterOwner(threadId));
+            throw Error(current + ' Retry after that session releases the conversation.');
+          }
+        }
+        if (!notice) {
+          notice = threadLockedMessage(await this.threadWriterOwner(threadId));
+          this.retain({ threadLock: notice + ' Factory will retry automatically. Use Stop to cancel the wait.' });
+        }
+        await this.threadWriterDelay(signal);
+      }
+    } finally {
+      if (notice) this.retain({ threadLock: null });
+    }
   }
   async invokeTool(params) {
     const active = this.active;

@@ -5,9 +5,18 @@ overlay, and authorized implementation. Verification results appear below.
 
 ## Agreed behavior
 
-All chats show three bouncing dots beneath the latest message throughout an
-active response, including streamed text and tool work. The dots disappear when
-the response completes, fails, or stops.
+Coding-agent conversations show one live progress line beneath the latest
+message. The line changes as work proceeds and clears when the response ends.
+SparkleText animates during active work. The line stays readable and still
+when reduced motion is enabled.
+
+The agent can supply a progress label and description. Recognizable commands
+provide fallback labels such as Exploring and Verifying. The default for an
+unrecognized command is Running commands. An explicit milestone records a
+finding, change, result, or resolved blocker. The commands leading up to that
+milestone appear in a collapsed disclosure. Commands are also available under
+the live line, then under the final reply if the agent did not record a milestone.
+Blocking failures and pending approvals or decisions are visible separately.
 
 The issue page also shows the indicator at the bottom while work is actively
 running. It stays anchored just above the bottom edge of the issue's scrolling
@@ -25,10 +34,8 @@ and do not represent a percentage or countdown.
 Use the steady default speed until a real estimate is available. Learning
 estimates from past runs is outside this change.
 
-The indicator has the same appearance across all chats and the issue overlay,
-beside existing status text where compatible with the anchored placement.
-Respect reduced-motion preferences with static dots. Screen readers receive a brief activity status when work
-starts, without repeated announcements for animation cycles.
+The issue overlay respects reduced-motion preferences with static dots.
+Screen readers receive status updates as the progress line changes.
 
 ## Existing behavior
 
@@ -53,10 +60,16 @@ Inspection found elapsed timers but no response-duration estimate.
 
 ## Implementation
 
+`scripts/factory-ui/chat-progress.mjs` projects provider events into a live
+progress group, retained milestones, and command details. The Flow attempt
+and Discuss response retain those events for reload and reopening.
+Project Discuss and investigation report discussions share the same renderer.
+
 `scripts/factory-ui/activity-indicator-ui.js` provides the shared markup and
-updates. `scripts/factory-ui/project-discuss.css` owns the staggered bounce and
-reduced-motion styles. Rendered histories retain the same indicator during
-streaming and polling, preserving its animation and activity announcement.
+updates. `scripts/factory-ui/chat-progress.css` owns the progress line and
+reduced-motion styles. Rendered histories retain the same progress line
+during streaming and polling. The issue overlay uses the dots in
+`scripts/factory-ui/project-discuss.css`.
 
 The issue overlay sits outside `graph-scroll`, inside the positioned
 `graph-region`. It stays centered 18 pixels above the scrolling region's bottom

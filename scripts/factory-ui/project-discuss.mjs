@@ -11,6 +11,14 @@ import { createProjectDiscussProvider } from './project-discuss-provider.mjs';
 import { LocalNotes } from './local-notes.mjs';
 import { agentRecovery, recoverAgentSession } from './agent-recovery.mjs';
 import { retainReportConversation } from './report-conversation.mjs';
+import { isCodexWriterConflict } from './codex-thread-writer.mjs';
+import {
+  chatProgress,
+  hasChatProgress,
+  isChatCommentary,
+  recordChatProgress,
+  stripChatProgress,
+} from './chat-progress.mjs';
 
 const idPattern = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/;
 const stamp = () => new Date().toISOString();
@@ -61,8 +69,42 @@ function reportMessageContext(input) {
   return input.reportContext ? { reportContext: copy(input.reportContext) } : {};
 }
 function publicEvent(event) {
-  if (event.method === 'item/agentMessage/delta' || event.method === 'ui/transportPhase') return null;
+  if (
+    ['item/agentMessage/delta', 'ui/transportPhase', 'ui/approval', 'serverRequest/resolved'].includes(event.method) ||
+    hasChatProgress(event)
+  )
+    return null;
   return event;
+}
+
+function exposeChatProgress(message) {
+  restoreChatActivity(message);
+  if (!message.chatActivity) return;
+  message.progress = chatProgress(message.chatActivity);
+  message.events = (message.events || []).filter((event) => !hasChatProgress(event));
+  delete message.chatActivity;
+}
+
+function restoreChatActivity(message) {
+  if (message.chatActivity) return;
+  for (const event of message.events || []) recordChatProgress(message, event);
+}
+
+function appendReplyDelta(response, { itemId, delta = '' }) {
+  const stream = response.stream || { id: itemId, text: '' };
+  response.stream = { id: itemId, text: (stream.id === itemId ? stream.text : '') + delta };
+  response.text = stripChatProgress(response.stream.text);
+}
+
+function updateReplyPreview(response, { method, params = {} }) {
+  if (method === 'item/agentMessage/delta') return appendReplyDelta(response, params);
+  if (method === 'item/completed') setCompletedPreview(response, params);
+}
+
+function setCompletedPreview(response, { item }) {
+  if (item?.type !== 'agentMessage') return;
+  delete response.stream;
+  response.text = isChatCommentary(item) ? '' : item.text;
 }
 
 export class ProjectDiscuss {
@@ -185,6 +227,10 @@ export class ProjectDiscuss {
     delete result.toolReceipts;
     const expose = (message) => {
       if (message.role === 'assistant') message.text = message.text.replace(/\n?```timey-suggestion[\s\S]*$/, '');
+      if (isCodexWriterConflict(message.error))
+        message.error =
+          'Another Codex session held the conversation lock. Retry to check whether it has been released.';
+      exposeChatProgress(message);
       message.attachments = (message.attachments || []).map((file) => this.publicAttachment(session.id, file));
       delete message.stream;
       return message;
@@ -196,6 +242,7 @@ export class ProjectDiscuss {
       result.status = 'interrupted';
       result.paused = true;
       result.recovery = 'The server stopped during a response. Retry explicitly to reconcile the saved conversation.';
+      delete result.threadLock;
     }
     return result;
   }
@@ -256,7 +303,7 @@ export class ProjectDiscuss {
           }),
           status: 'context',
         });
-        if (initial) session.draft.text = 'Help me think through this note and identify a useful next step.';
+        if (initial) session.draft.text = 'Ask me questions before creating the issue.';
       }
       if (note.issueId && !session.messages.some((message) => message.id === 'issue-' + note.issueId)) {
         session.messages.push({
@@ -495,7 +542,8 @@ export class ProjectDiscuss {
         event: (event) =>
           this.change(id, (s) => {
             const response = s.messages.find((m) => m.id === responseId);
-            if (event.method === 'item/agentMessage/delta') response.text += event.params.delta || '';
+            updateReplyPreview(response, event);
+            recordChatProgress(response, event);
             const activity = publicEvent(event);
             if (activity) response.events = [...response.events, activity].slice(-300);
             if (event.method === 'ui/approval') {
@@ -509,7 +557,8 @@ export class ProjectDiscuss {
       });
       this.change(id, (s) => {
         const response = s.messages.find((m) => m.id === responseId);
-        response.text = result.text;
+        response.text = stripChatProgress(result.text);
+        delete response.stream;
         response.suggestion = result.suggestion || '';
         response.status = controller.signal.aborted ? 'stopped' : 'completed';
       });
@@ -518,7 +567,8 @@ export class ProjectDiscuss {
         const response = s.messages.find((m) => m.id === responseId);
         response.status = controller.signal.aborted ? 'stopped' : 'failed';
         response.error = error.message;
-        if (error.partialText && !response.text) response.text = error.partialText;
+        if (error.partialText && !response.text) response.text = stripChatProgress(error.partialText);
+        delete response.stream;
         s.paused = true;
       });
     } finally {

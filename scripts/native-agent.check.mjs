@@ -6,6 +6,7 @@ import { mkdtempSync, writeFileSync, readFileSync, existsSync, rmSync } from 'no
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { NativeAgentConnection } from './factory-ui/native-agent.mjs';
+import { chatProgress, recordChatProgress } from './factory-ui/chat-progress.mjs';
 import { createIssueChatConnection, attachIssueChat } from './factory-ui/issue-chat-runtime.mjs';
 import { recoverAgentSession } from './factory-ui/agent-recovery.mjs';
 import { once } from 'node:events';
@@ -42,6 +43,20 @@ function finish(text, stopped=false) {
  }
  pending=null;
 }
+function progress() {
+ const text='[Milestone] Found the native command result.';
+ if (google) {
+  const update = value => send({jsonrpc:'2.0',method:'session/update',params:{sessionId:session,update:value}});
+  update({sessionUpdate:'agent_message_chunk',content:{type:'text',text:text.slice(0, 10)}});
+  update({sessionUpdate:'agent_message_chunk',content:{type:'text',text:text.slice(10)}});
+  update({sessionUpdate:'tool_call',toolCallId:'progress-tool',title:'Read fixture',rawInput:{command:'cat result.txt'}});
+  update({sessionUpdate:'tool_call_update',toolCallId:'progress-tool',status:'completed',rawOutput:'native command output'});
+ } else {
+  send({type:'assistant',message:{id:'comment',content:[{type:'text',text},{type:'tool_use',id:'progress-tool',name:'Bash',input:{command:'cat result.txt'}}]}});
+  send({type:'user',message:{content:[{type:'tool_result',tool_use_id:'progress-tool',content:'native command output'}]}});
+ }
+ return finish('Final native reply.');
+}
 createInterface({input:process.stdin}).on('line', async line => {
  const message=JSON.parse(line);
  const method=google?message.method:message.request?.subtype;
@@ -60,6 +75,7 @@ createInterface({input:process.stdin}).on('line', async line => {
  if (method==='session/prompt' || message.type==='user') {
   pending=message;
   const text=google?message.params.prompt[0].text:message.message.content;
+  if (text.includes('PROGRESS')) return progress();
   if (!google) send({type:'user',message:{role:'user',content:text}});
   useMcp=text.includes('MCP');
   useQuestions=!google && text.includes('QUESTIONS');
@@ -104,6 +120,22 @@ function setup(t, provider) {
 }
 
 for (const provider of ['anthropic', 'google']) {
+  test(`${provider} native tools retain semantic progress`, async (t) => {
+    const { root, connection, events } = setup(t, provider);
+    const id = await connection.start(root);
+    assert.equal(await connection.turn(id, root, 'PROGRESS'), 'Final native reply.');
+    const response = {};
+    for (const event of events) recordChatProgress(response, event);
+    const progress = chatProgress(response.chatActivity);
+    assert.deepEqual(
+      progress.milestones.map(({ text }) => text),
+      ['Found the native command result.']
+    );
+    assert.deepEqual(
+      progress.commands.map(({ command, output }) => ({ command, output })),
+      [{ command: 'cat result.txt', output: 'native command output' }]
+    );
+  });
   test(`${provider} Stop before dispatch cannot send a prompt afterward`, async (t) => {
     const { root, connection } = setup(t, provider);
     const id = await connection.start(root);

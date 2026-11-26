@@ -238,14 +238,16 @@ test('Flow navigation loads another issue while an earlier block check is pendin
     applyStoreAvailability() {},
     emptyFolderSelection: () => ({}),
     folderSettingsUI: { setLocation() {} },
+    projectHome: { selectTab() {} },
   };
   api = new Function(
     ...Object.keys(scope),
     'let folderSelection, folderConfig, strategyFolder;\n' +
-      section('  async function load(', '  async function loadRepoFiles(') +
+      section('  function readDestination(', '  const initialDestination') +
+      section('  async function readFlowSnapshot(', '  async function loadRepoFiles(') +
       section('  async function action(', '  function updateIssueDecisionControls(') +
-      section('  function selectWorkspace(', '  function renderSidebar(') +
-      '; return { load, action, setBusy, selectWorkspace };'
+      section('  function navigateWorkspace(', "  window.addEventListener('popstate'") +
+      '; return { action, setBusy, navigateWorkspace };'
   )(...Object.values(scope));
   render();
   action = api.action('open-block', { blockId: 'request' });
@@ -253,7 +255,7 @@ test('Flow navigation loads another issue while an earlier block check is pendin
   assert.equal($('run-block').disabled, true);
   const next = document.createElement('button');
   next.textContent = 'Issue two';
-  next.addEventListener('click', () => api.selectWorkspace({ issue: 'two' }));
+  next.addEventListener('click', () => api.navigateWorkspace({ issue: 'two' }));
   document.body.append(next);
   next.click();
   await new Promise((resolve) => setImmediate(resolve));

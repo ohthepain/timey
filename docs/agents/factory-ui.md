@@ -70,6 +70,14 @@ Opening or refreshing Project home starts neither operation. See the
 [project home design](../plans/project-home.md).
 
 Selecting an issue opens its [explicit flow workspace](../adr/0013-explicit-issue-flows.md).
+The browser's Back and Forward buttons and history menu traverse project pages,
+folders, issues, investigations, and blocks. A block URL opens the same block;
+if the block has been removed, Factory opens its issue. If a folder or issue is
+unavailable, use the browser controls to continue through history. Inspector
+tabs, sidebar filters, and refresh keep the current history entry. Block drafts
+stay in the current browser tab when you leave and return through either
+Factory or the browser controls.
+
 Understand uses a read-only checkout. Factory retains the final response as its
 Block response artifact; the agent does not need filesystem write access to save
 that response. Missing historical evidence remains a reported gap. Retro follow-ups

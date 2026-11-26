@@ -52,6 +52,7 @@ import {
 } from './issue-report-storage.mjs';
 import { queueIssueNumbers } from './issue-numbers.mjs';
 import { appendMessage, conversationMessages, conversationState } from './conversation-store.mjs';
+import { flowChatProgress, hasChatProgress, recordChatProgress } from './chat-progress.mjs';
 import { recoverAgentSession } from './agent-recovery.mjs';
 import { createDiscussionRuntime } from './discussion-codex.mjs';
 import { redactValue } from './activity.mjs';
@@ -793,6 +794,7 @@ class IssueFlows {
         selectedRow.status = 'ready';
     }
     this.populateBlockDetails(flow, issue, catalog);
+    const conversation = flowChatProgress(flow, conversationMessages(this.service.root, id).slice(-100));
     return {
       ...data,
       issue: {
@@ -849,7 +851,8 @@ class IssueFlows {
       environment,
       branchRepair: this.branchRepairs.view(issue, savedFlow, environment.merge),
       artifacts: this.artifacts(flow, { fresh: false }),
-      conversation: conversationMessages(this.service.root, id).slice(-100),
+      conversation: conversation.messages,
+      conversationProgress: conversation.live,
     };
   }
   addLegacyOperation(flow, id, catalog) {
@@ -2814,6 +2817,8 @@ class IssueFlows {
               onEvent: (event) => {
                 if (owner)
                   this.service.projectStores.recordProgress(owner, { kind: 'provider', event: redactValue(event) });
+                if (hasChatProgress(event))
+                  this.changeAttempt(issue, blockId, attemptId, (current) => recordChatProgress(current, event));
               },
               onProgress: (text) => {
                 if (owner)

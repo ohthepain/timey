@@ -74,10 +74,11 @@
       }
     }
     function url(id) {
+      if (!visible) return;
       const next = new URL(location.href);
       if (id) next.searchParams.set('report', id);
       else next.searchParams.delete('report');
-      history.replaceState(null, '', next);
+      history.replaceState(history.state, '', next);
     }
     function error(failure) {
       const node = root.querySelector('[data-report-error]');
@@ -338,12 +339,7 @@
       }
     });
     window.addEventListener('beforeunload', remember);
-    async function enter() {
-      if (selected) {
-        updateChat(state(selected.id).discuss);
-        return;
-      }
-      const id = new URL(location.href).searchParams.get('report');
+    async function loadReader(id) {
       try {
         if (id) await open(id);
         else await list();
@@ -351,6 +347,11 @@
         root.innerHTML = '<p data-report-error role="alert"></p>';
         error(failure);
       }
+    }
+    function enter() {
+      const id = new URL(location.href).searchParams.get('report');
+      if (id && selected?.id === id) updateChat(state(id).discuss);
+      else void loadReader(id);
     }
     return {
       setVisible(value) {
@@ -362,7 +363,7 @@
           if (chat) chat.setVisible(false);
           return;
         }
-        if (!was) void enter();
+        if (!was) enter();
       },
     };
   };

@@ -59,6 +59,9 @@ next action based on what failed.
 The original reports remain as sub-issues and cannot start independent work.
 Merge requires passing proof for every attached sub-issue on the final PR
 candidate. A detached sub-issue does not participate in the merge check.
+When a target update or CI repair changes the candidate and the saved proof no
+longer applies, Merge reruns the attached sub-issues' checks on the final
+candidate. It retains that proof for merge approval and closure.
 Before accepting the master as Fixed, require proof for each attached sub-issue.
 The Close dialog lists both attached and removed sub-issues.
 Required human checks follow their sub-issues to the master and still require

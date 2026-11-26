@@ -1,5 +1,7 @@
 import { issueHistoryEvents } from './conversation-events.mjs';
 import { activityForRun, redactValue } from './activity.mjs';
+import { chatProgress } from './chat-progress.mjs';
+import { isActiveRun } from './runs.mjs';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { conversationMessages, conversationState, conversationFiles } from './conversation-store.mjs';
@@ -20,6 +22,11 @@ function selectedRun(queue, issue, run) {
   if (run.issueId === issue.id) return true;
   return queue.actions.some((action) => action.id === run.actionId && action.issues.includes(issue.id));
 }
+function runSummary(result, questions, run) {
+  return [result.summary || run.summary, ...questions.map((question) => question.question), result.notes]
+    .filter(Boolean)
+    .join('\n\n');
+}
 function runMessage(queue, run) {
   const result = run.result || {},
     questions = result.questions || [],
@@ -32,9 +39,7 @@ function runMessage(queue, run) {
       })
       .filter(Boolean)
       .join('\n\n');
-  const summary = [result.summary || run.summary, ...questions.map((question) => question.question), result.notes]
-    .filter(Boolean)
-    .join('\n\n');
+  const summary = runSummary(result, questions, run);
   return {
     id: 'run:' + run.id,
     actor: 'agent',
@@ -85,6 +90,41 @@ function actualAnswer(value, id) {
     ['clarification', 'plan-approval', 'requested-plan-change', 'integration-approval'].includes(value.type)
   );
 }
+function retainedRunSummary(run) {
+  const result = run.result || {};
+  return redactValue(runSummary(result, result.questions || [], run).slice(0, 24000));
+}
+
+function runOngoing(store, run) {
+  return store.connected.has(run.id) && isActiveRun(run);
+}
+
+function displayRunMessage(message, store, run) {
+  const activity = run?.chatActivity;
+  if (!activity) return message;
+  const body = retainedRunSummary(run);
+  return { ...message, body, progress: runOngoing(store, run) ? undefined : chatProgress(activity) };
+}
+
+function displayMessages(store, messages) {
+  const runs = new Map(store.runs.map((run) => ['run:' + run.id, run]));
+  const replies = new Set(
+    messages.filter((message) => message.kind === 'reply').map((message) => 'run:' + message.source?.runId)
+  );
+  return messages
+    .filter((message) => !replies.has(message.id))
+    .map((message) => displayRunMessage(message, store, runs.get(message.id)));
+}
+
+function liveConversation(service, queue, issue) {
+  const store = service.store;
+  const running = store.runs.findLast((run) => runOngoing(store, run) && selectedRun(queue, issue, run));
+  return {
+    connected: Boolean(running) || chatConnected(service, issue.id),
+    progress: running && chatProgress(running.chatActivity),
+  };
+}
+
 export function conversationPage(service, queue, issue, before = '') {
   const timeline = conversationTimeline(service, queue, issue);
   const end = pageEnd(timeline, before),
@@ -92,14 +132,14 @@ export function conversationPage(service, queue, issue, before = '') {
   const state = conversationState(service.root, issue.id);
   return {
     issueId: issue.id,
-    messages,
+    messages: displayMessages(service.store, messages),
     hasMore: messages.length < end,
     hasSavedRetro: timeline.some((message) => message.kind === 'retro-result'),
     cursor: messages[0]?.id,
     status: state.status,
     sharedToolsUnavailable: state.sharedToolsUnavailable,
     responseId: service.issueChats?.active.get(issue.id)?.messageId || null,
-    connected: chatConnected(service, issue.id),
+    ...liveConversation(service, queue, issue),
     transcript: conversationFiles(service.root, issue.id).log,
   };
 }
