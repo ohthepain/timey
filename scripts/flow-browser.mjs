@@ -1464,6 +1464,8 @@ try {
     await members.getByRole('checkbox', { name: /Select.*Keep the save button visible/ }).check();
     assert.equal(await page.getByRole('button', { name: 'Remove from folder', exact: true }).count(), 0);
     await members.getByRole('link', { name: /Keep the save button visible/ }).waitFor();
+    await page.goto('/?issue=' + issueId);
+    await page.locator('#request-form').waitFor();
   });
   await check(tabSourceCheck, async () => {
     const holdSourceEvents = await page.addInitScript(() => {
@@ -2606,6 +2608,8 @@ try {
   });
   await check(issueHeaderCloseCheck, async () => {
     const closureIssueId = '20261116-header-close-fixture';
+    const labels = join(project, '.issues/triage-labels.md');
+    if (!existsSync(labels)) copyFileSync(join(root, '.issues/triage-labels.md'), labels);
     await writeBrowserIssue(project, {
       id: closureIssueId,
       title: 'Header closure fixture',
