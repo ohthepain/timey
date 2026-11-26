@@ -16,7 +16,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { cleanEnvironment, digest, git, requireThat, writeJson } from './common.mjs';
 import { StrategyProvider } from './strategy-provider.mjs';
 import { queueReportPaths } from './shared-issue-config.mjs';
-import { recheckedGroupProof, requireGroupProof } from './flow-group-proof.mjs';
+import { recheckedGroupProof, requireGroupProof, savedMergeGroupProof } from './flow-group-proof.mjs';
 import { evidencePath } from './stores/evidence.mjs';
 import { hydrateProjectEvidence } from './stores/runtime.mjs';
 import { groupChildren } from './issue-group.mjs';
@@ -507,7 +507,8 @@ function recordClosureDelivery(ctx, workspace, folder, delivered, verification, 
     ctx.block,
     ctx.evidenceRoot,
     ctx.issue.issue_group ? recheckedGroupProof(workspace.checkout, candidate, ctx.evidenceRoot) : undefined,
-    retained?.head === candidate.head && retained.tree === candidate.tree ? retained.file : undefined
+    savedMergeGroupProof([...ctx.flow.blocks, ...(ctx.flow.retiredBlocks || [])], candidate.head, candidate.tree)
+      ?.file ?? (retained?.head === candidate.head && retained.tree === candidate.tree ? retained.file : undefined)
   );
   ctx.signal.throwIfAborted();
   const path = join(folder, 'merged-delivery.json');

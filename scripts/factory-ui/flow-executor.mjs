@@ -7,7 +7,13 @@ import { groupChildren } from './issue-group.mjs';
 import { createWorkProgress } from './work-progress.mjs';
 import { executionPermissionInstructions } from './execution-permissions.mjs';
 import { BlockCatalog } from './block-catalog.mjs';
-import { blockDefinitionId, deliveryTarget, startingPoint, upstreamBlocks } from './flow-block-data.mjs';
+import {
+  blockDefinitionId,
+  deliveryTarget,
+  latestCurrentAttempt,
+  startingPoint,
+  upstreamBlocks,
+} from './flow-block-data.mjs';
 import { spawn, execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import {
@@ -180,6 +186,10 @@ export function createFlowExecutor(service, options = {}) {
                 options.repair ??
                 ((error, round, record) =>
                   runMergeRepair(scopedService, context, owned, runtime, error, round, record)),
+              refreshGroupProof:
+                options.refreshGroupProof ??
+                ((candidate) =>
+                  runMergeModel(scopedService, context, owned, { ...runtime, groupProofCandidate: candidate })),
               resolveBranchConflicts: (paths, target, recovery) =>
                 runBranchConflictRepair(scopedService, context, owned, runtime, paths, target, recovery),
             });
@@ -517,9 +527,7 @@ function trackModelTurns(ctx, options, retain, folder) {
       return turnId;
     },
     receipt(round) {
-      const clientId = options.repair
-        ? `${ctx.attempt.id}-repair-${options.repair.round}`
-        : `${ctx.attempt.id}-${round}`;
+      const clientId = ctx.attempt.id + (modelRunSuffix(options) || `-${round}`);
       return {
         clientId,
         accepted(receipt) {
@@ -594,22 +602,32 @@ function commandArtifacts(definition, result) {
   return { values, files };
 }
 
-async function runMergeRepair(service, ctx, owned, options, error, round, record) {
+function runMergeRepair(service, ctx, owned, options, error, round, record) {
+  return runMergeModel(service, { ...ctx, continuing: ctx.continuing || round > 1 }, owned, {
+    ...options,
+    repair: { ...record, error, round },
+  });
+}
+
+async function runMergeModel(service, ctx, owned, options) {
   try {
-    return await runModel(service, { ...ctx, continuing: ctx.continuing || round > 1 }, owned, {
-      ...options,
-      repair: { ...record, error, round },
-    });
+    return await runModel(service, ctx, owned, options);
   } finally {
     owned.connection?.close();
     owned.connection = null;
   }
 }
 
-function recordModelMessage(service, ctx, repair, threadId, kind, body) {
+function modelRunSuffix({ repair, groupProofCandidate }) {
+  if (repair) return `-repair-${repair.round}`;
+  return groupProofCandidate ? `-group-proof-${groupProofCandidate.head}` : '';
+}
+
+function recordModelMessage(service, ctx, options, threadId, kind, body) {
+  const { repair } = options;
   const request = kind === 'request';
   const message = appendMessage(service.root, ctx.issue.id, {
-    id: 'flow-' + kind + '-' + ctx.attempt.id + (repair ? '-repair-' + repair.round : ''),
+    id: 'flow-' + kind + '-' + ctx.attempt.id + modelRunSuffix(options),
     actor: request ? 'human' : 'agent',
     role: request ? 'You' : 'Issue assistant',
     kind: 'flow-block-' + kind,
@@ -626,8 +644,13 @@ function recordModelMessage(service, ctx, repair, threadId, kind, body) {
   }
 }
 
-function modelEvidenceDirectory(service, ctx, repair) {
-  return repair?.folder ?? evidenceDirectory(service, ctx);
+function modelEvidenceDirectory(service, ctx, { repair, groupProofCandidate }) {
+  if (repair) return repair.folder;
+  const folder = evidenceDirectory(service, ctx);
+  if (!groupProofCandidate) return folder;
+  const proofFolder = join(folder, 'group-proof-' + groupProofCandidate.head);
+  mkdirSync(proofFolder, { recursive: true });
+  return proofFolder;
 }
 
 async function runBranchConflictRepair(service, ctx, owned, options, paths, target, recovery) {
@@ -710,6 +733,14 @@ function modelCommandProgress(ctx) {
 
 function modelPrompt(ctx, options) {
   if (options.branchConflictTask) return options.branchConflictTask;
+  if (options.groupProofCandidate)
+    return blockInput(ctx, {
+      candidate: options.groupProofCandidate,
+      focusedTests: upstreamBlocks(ctx.block, ctx.flow.blocks)
+        .filter(({ kind }) => kind === 'work')
+        .flatMap((block) => latestCurrentAttempt(block)?.result?.focusedTests ?? []),
+      task: 'Verify every attached sub-issue on this exact committed PR candidate. Run the checks that demonstrate each requested behavior, including the Work block’s relevant focused checks. Preserve the candidate and write proof and supporting logs under .issues/evidence. Return the subIssueProof artifact with an observed result for every attached sub-issue and attach a combined command log as the log artifact. Report any failed or unavailable required check. Leave source, tests, commits, the PR, and issue membership as they are.',
+    });
   if (options.workBase)
     return blockInput(ctx, {
       workExecution: {
@@ -926,7 +957,7 @@ function modelToolRegistry(outputExecution, ctx) {
 }
 
 async function runModel(service, ctx, owned, options) {
-  ctx = withGroupProof(ctx);
+  ctx = withGroupProof(ctx, Boolean(options.groupProofCandidate));
   ctx = {
     ...ctx,
     block: { ...ctx.block, skill: executionBlockSkill(ctx.block, ctx.definition, ctx.flow.executionSettings) },
@@ -958,7 +989,7 @@ async function runModel(service, ctx, owned, options) {
   const basis = modelConversationBasis(ctx, tools);
   const { previous, recover, binding } = modelConversationBinding(service, ctx, state, savedBlock, basis);
   service.issueChats?.release(ctx.issue.id);
-  const folder = modelEvidenceDirectory(service, ctx, options.repair);
+  const folder = modelEvidenceDirectory(service, ctx, options);
   const source = retainSourceIssueEvidence(service.root, ctx.issue.source_issue, folder, ctx.issue.source_attempt);
   if (source) ctx = { ...ctx, sourceEvidence: source.promptValue };
   const outputPath = join(folder, 'output.txt');
@@ -1091,7 +1122,7 @@ async function runModel(service, ctx, owned, options) {
       messageId: ctx.attempt.id,
       skill: ctx.block.skill || null,
     });
-    recordModelMessage(service, ctx, options.repair, threadId, 'request', prompt);
+    recordModelMessage(service, ctx, options, threadId, 'request', prompt);
     for (let round = 1; round <= rounds; round++) {
       ctx.signal.throwIfAborted();
       progress.begin(
@@ -1140,7 +1171,7 @@ async function runModel(service, ctx, owned, options) {
       }
     }
     const output = outputs.join('\n\n');
-    recordModelMessage(service, ctx, options.repair, threadId, 'result', output);
+    recordModelMessage(service, ctx, options, threadId, 'result', output);
     retain({ status: 'idle' });
     const response = { path: outputPath, label: 'Block response', sha256: digest(readFileSync(outputPath)) };
     const retained = modelArtifacts(ctx.definition, outputs.at(-1), workspace, response);

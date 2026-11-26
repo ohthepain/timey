@@ -987,7 +987,19 @@ test('stop reaches explicit command execution and preserves its log', async (t) 
 
 function mergeFixture(
   t,
-  { merged = false, onWait, repair, onGit, onReady, onLookup, onMerge, onInspect, github, mergeNow } = {}
+  {
+    merged = false,
+    onWait,
+    repair,
+    onGit,
+    onReady,
+    onLookup,
+    onMerge,
+    onInspect,
+    github,
+    mergeNow,
+    refreshGroupProof,
+  } = {}
 ) {
   const observations = [];
   let publishedHead;
@@ -1007,6 +1019,7 @@ function mergeFixture(
   });
   const f = fixture(t, {
     repair,
+    refreshGroupProof,
     mergeNow,
     async mergeDelay(interval) {
       await onWait?.(advanceTarget, interval);
@@ -1120,6 +1133,31 @@ test('Merge requires passing proof on the candidate for attached sub-issues only
   work.attempts[0].result.tree = f.git('rev-parse', 'HEAD^{tree}');
   const result = await f.run('merge', { after: [work.id] });
   assert.equal(result.result.revision, 'actual-merge');
+});
+
+test('Merge refreshes stale group proof for the verified candidate and reuses it on approval', async (t) => {
+  const proof = JSON.stringify([{ id: 'attached', status: 'passed', observation: 'The final candidate passed.' }]);
+  let refreshes = 0;
+  const f = mergeFixture(t, {
+    async refreshGroupProof({ head, tree }) {
+      refreshes++;
+      assert.equal(head, f.git('rev-parse', 'HEAD'));
+      assert.equal(tree, f.git('rev-parse', 'HEAD^{tree}'));
+      const path = join(f.root, '.issues', 'refreshed-child-proof.json');
+      writeFileSync(path, proof);
+      return { artifacts: { files: { subIssueProof: { path, sha256: digest(proof) } } } };
+    },
+  });
+  await f.run('understand');
+  f.issue.issue_group = { children: [{ id: 'attached', title: 'Attached issue' }] };
+  const prepared = await f.run('merge', humanFirstMerge);
+  assert.equal(prepared.status, 'blocked');
+  assert.ok(prepared.result.mergeConfirmation);
+  assert.ok(!f.observations.some(({ operation }) => operation === 'merge'));
+  const merged = await approveMerge(f, prepared);
+  assert.equal(merged.result.revision, 'actual-merge');
+  assert.equal(merged.result.groupProof.file.sha256, digest(proof));
+  assert.equal(refreshes, 1);
 });
 
 function approvalAttempt(result) {

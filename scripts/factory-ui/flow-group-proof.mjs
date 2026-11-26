@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { digest, git, requireThat } from './common.mjs';
+import { digest, git } from './common.mjs';
 import { latestCurrentAttempt, upstreamBlocks } from './flow-block-data.mjs';
 import { issueNumberLabel, savedIssueNumbers } from './issue-numbers.mjs';
 import { groupChildren } from './issue-group.mjs';
@@ -8,8 +8,8 @@ import { evidencePath } from './stores/evidence.mjs';
 const supportedBlocks = new Set(['work', 'understand', 'advice', 'playbook']);
 const proofArtifact = { key: 'subIssueProof', kind: 'file', label: 'Sub-issue proof', type: 'file' };
 
-export function withGroupProof(ctx) {
-  if (!groupChildren(ctx.issue).length || !supportedBlocks.has(ctx.block.kind)) return ctx;
+export function withGroupProof(ctx, refresh = false) {
+  if (!groupChildren(ctx.issue).length || (!refresh && !supportedBlocks.has(ctx.block.kind))) return ctx;
   const artifacts = ctx.definition.artifacts.filter((artifact) => artifact.key !== proofArtifact.key);
   return { ...ctx, definition: { ...ctx.definition, artifacts: [...artifacts, proofArtifact] } };
 }
@@ -67,6 +67,14 @@ export function groupProofRows(flow, tree, block = {}, root, rechecked) {
   );
 }
 
+export function savedMergeGroupProof(blocks, head, tree) {
+  return blocks
+    .filter(({ kind }) => kind === 'merge')
+    .flatMap(({ attempts }) => attempts)
+    .map(({ result }) => result?.groupProof)
+    .findLast((proof) => proof?.head === head && proof.tree === tree);
+}
+
 export function requireGroupProof(issue, flow, candidateTree, block, root, rechecked, retainedProof) {
   const children = groupChildren(issue);
   if (!children.length) return [];
@@ -75,12 +83,15 @@ export function requireGroupProof(issue, flow, candidateTree, block, root, reche
     proofs.set(entry.id, { ...entry, file: retainedProof });
   }
   const missing = children.filter(({ id }) => proofs.get(id)?.status !== 'passed');
-  requireThat(
-    !missing.length,
-    'The current candidate needs passing proof for these sub-issues: ' +
-      missingProofLabels(root, missing) +
-      '. Continue on the master or detach the issues that remain open.'
-  );
+  if (missing.length)
+    throw Object.assign(
+      Error(
+        'The current candidate needs passing proof for these sub-issues: ' +
+          missingProofLabels(root, missing) +
+          '. Continue on the master or detach the issues that remain open.'
+      ),
+      { code: 'GROUP_PROOF_REQUIRED' }
+    );
   return [...new Set(children.map(({ id }) => proofs.get(id).file))];
 }
 
