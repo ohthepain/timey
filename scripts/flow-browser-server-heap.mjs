@@ -7,83 +7,137 @@ const heapPath = '/api/server-heap';
 const mib = 1024 ** 2;
 const gib = 1024 ** 3;
 
-function assertReadableSize(text, bytes) {
+function assertReadableSize(text, bytes, diagnostic) {
   const [amount, unit] = text.split(' ');
-  assert.equal(unit, bytes >= gib ? 'GiB' : 'MiB');
+  assert.equal(unit, bytes >= gib ? 'GiB' : 'MiB', diagnostic);
   const unitBytes = unit === 'GiB' ? gib : mib;
   const tolerance = unit === 'GiB' ? gib / 20 : mib / 2;
-  assert.ok(Math.abs(Number(amount) * unitBytes - bytes) <= tolerance);
+  assert.ok(Math.abs(Number(amount) * unitBytes - bytes) <= tolerance, diagnostic);
+}
+
+function observeHeapSamples(page) {
+  return page.addInitScript((path) => {
+    const originalFetch = window.fetch;
+    const samples = [];
+    window.heapBrowserSamples = samples;
+    window.stopHeapBrowserObserver = () => {
+      window.fetch = originalFetch;
+      delete window.heapBrowserSamples;
+      delete window.stopHeapBrowserObserver;
+    };
+    window.fetch = async function (...args) {
+      if (args[0] !== path) return originalFetch.apply(this, args);
+      const response = await originalFetch.apply(this, args);
+      const bytes = response.ok ? await response.clone().json() : {};
+      const reading = document.querySelector('header .server-heap');
+      const sample = { ...bytes, status: response.status, navigationTime: performance.timeOrigin, label: null };
+      samples.push(sample);
+      // The heap poll writes the header before scheduling its next request.
+      const observer = new MutationObserver(() => {
+        sample.label = reading.textContent;
+        observer.disconnect();
+      });
+      observer.observe(reading, { childList: true });
+      return response;
+    };
+  }, heapPath);
 }
 
 export async function serverHeapBrowserChecks({ page, output, poll, screenshot }) {
   const header = page.locator('header .server-heap');
-  const nextHeapResponse = (documentPath = '/') =>
-    page.waitForResponse(
-      (response) => response.url().endsWith(heapPath) && new URL(response.frame().url()).pathname === documentPath
-    );
   const expectedLimitBytes = getHeapStatistics().heap_size_limit;
-  const readSample = async (pendingResponse, precedingLabel) => {
-    const response = await pendingResponse;
-    assert.equal(response.status(), 200);
-    const { usedBytes, limitBytes } = await response.json();
-    assert.ok(usedBytes > 0);
-    assert.equal(limitBytes, expectedLimitBytes);
-    const label = await poll(
-      () => header.textContent(),
-      (value) => /^Heap [\d.]+ (MiB|GiB) \/ [\d.]+ (MiB|GiB)$/.test(value) && value !== precedingLabel,
-      'The shared header did not display the new heap sample.'
+  const sampleObserver = await observeHeapSamples(page);
+
+  const readSample = async (select, status = 200) => {
+    const { sample } = await poll(
+      async () => {
+        const samples = await page.evaluate(() => window.heapBrowserSamples);
+        return { sample: select(samples), renderedLabel: await header.textContent() };
+      },
+      ({ sample }) => sample?.label != null,
+      'The header did not render the selected heap response.'
     );
-    assert.equal(await header.isVisible(), true);
-    const [used, limit] = label.slice(5).split(' / ');
-    assertReadableSize(used, usedBytes);
-    assertReadableSize(limit, limitBytes);
-    return { label, usedBytes, limitBytes, navigationTime: await page.evaluate(() => performance.timeOrigin) };
+    const { label, usedBytes, limitBytes } = sample;
+    const diagnostic = JSON.stringify({ usedBytes, limitBytes, renderedLabel: label });
+    assert.equal(sample.status, status, diagnostic);
+    assert.ok(await header.isVisible(), diagnostic);
+    if (status === 503) {
+      assert.equal(label, 'Heap unavailable', diagnostic);
+    } else {
+      assert.ok(usedBytes > 0, diagnostic);
+      assert.equal(limitBytes, expectedLimitBytes, diagnostic);
+      assert.match(label, /^Heap [\d.]+ (MiB|GiB) \/ [\d.]+ (MiB|GiB)$/, diagnostic);
+      const [used, limit] = label.slice(5).split(' / ');
+      assertReadableSize(used, usedBytes, diagnostic);
+      assertReadableSize(limit, limitBytes, diagnostic);
+    }
+    return sample;
   };
 
-  const initialResponse = nextHeapResponse();
-  await page.goto('/');
-  const initial = await readSample(initialResponse);
-  const refreshResponse = nextHeapResponse();
-  const allocation = Array.from({ length: 4 * mib }, (_, index) => index);
-  const refreshed = await readSample(refreshResponse, initial.label);
-  assert.equal(allocation.at(-1), 4 * mib - 1);
-  assert.equal(refreshed.navigationTime, initial.navigationTime);
-  await screenshot('server-heap-live');
-
-  await page.route('**' + heapPath, (route) =>
-    route.fulfill({ status: 503, json: { error: 'The test made the heap reading unavailable.' } })
-  );
+  const heapRoute = '**' + heapPath;
+  const sameLabelBytes = [mib, mib + 1];
+  const fixtures = [
+    ...sameLabelBytes.map((usedBytes) => ({ status: 200, json: { usedBytes, limitBytes: expectedLimitBytes } })),
+    { status: 503, json: { error: 'The test made the heap reading unavailable.' } },
+  ];
+  const fulfillFixture = (route) => route.fulfill(fixtures.shift());
   try {
-    assert.equal((await nextHeapResponse()).status(), 503);
-    await page.locator('header').getByText('Heap unavailable', { exact: true }).waitFor();
-    assert.equal(await page.evaluate(() => performance.timeOrigin), initial.navigationTime);
-    await screenshot('server-heap-unavailable');
-  } finally {
-    await page.unroute('**' + heapPath);
-  }
-  const recovered = await readSample(nextHeapResponse());
-  assert.equal(recovered.navigationTime, initial.navigationTime);
+    await page.goto('/');
+    const initial = await readSample((samples) => samples[0]);
+    const refreshed = await readSample((samples) => samples[1]);
+    assert.equal(refreshed.navigationTime, initial.navigationTime);
+    await screenshot('server-heap-live');
 
-  const classicResponse = nextHeapResponse('/classic');
-  const classicQueue = page.waitForResponse((response) => new URL(response.url()).pathname === '/api/queue');
-  await page.goto('/classic');
-  const classic = await readSample(classicResponse);
-  const queue = await classicQueue;
-  assert.equal(queue.status(), 200, await queue.text());
-  writeFileSync(
-    join(output, 'server-heap.json'),
-    JSON.stringify(
-      {
-        serverPid: process.pid,
-        expectedLimitBytes,
-        initial,
-        refreshed,
-        unavailable: 'Heap unavailable',
-        recovered,
-        classic,
-      },
-      null,
-      2
-    ) + '\n'
-  );
+    await page.route(heapRoute, fulfillFixture, { times: fixtures.length });
+    const firstRounded = (samples) => samples.findIndex(({ usedBytes }) => usedBytes === sameLabelBytes[0]);
+    const sameLabel = [
+      await readSample((samples) => samples[firstRounded(samples)]),
+      await readSample((samples) => {
+        const index = firstRounded(samples);
+        return index >= 0 ? samples[index + 1] : undefined;
+      }),
+    ];
+    assert.deepEqual(
+      sameLabel.map(({ usedBytes }) => usedBytes),
+      sameLabelBytes
+    );
+    assert.equal(sameLabel[0].label, sameLabel[1].label);
+    for (const sample of sameLabel) assert.equal(sample.navigationTime, initial.navigationTime);
+
+    const unavailable = await readSample((samples) => samples.find(({ status }) => status === 503), 503);
+    assert.equal(unavailable.navigationTime, initial.navigationTime);
+    await screenshot('server-heap-unavailable');
+    const recovered = await readSample((samples) => {
+      const index = samples.findIndex(({ status }) => status === 503);
+      return index >= 0 ? samples[index + 1] : undefined;
+    });
+    assert.equal(recovered.navigationTime, initial.navigationTime);
+
+    const classicQueue = page.waitForResponse((response) => new URL(response.url()).pathname === '/api/queue');
+    await page.goto('/classic');
+    const classic = await readSample((samples) => samples[0]);
+    const queue = await classicQueue;
+    assert.equal(queue.status(), 200, await queue.text());
+    writeFileSync(
+      join(output, 'server-heap.json'),
+      JSON.stringify(
+        {
+          serverPid: process.pid,
+          expectedLimitBytes,
+          initial,
+          refreshed,
+          sameLabel,
+          unavailable: unavailable.label,
+          recovered,
+          classic,
+        },
+        null,
+        2
+      ) + '\n'
+    );
+  } finally {
+    await page.unroute(heapRoute, fulfillFixture);
+    await sampleObserver.dispose();
+    await page.evaluate(() => window.stopHeapBrowserObserver?.());
+  }
 }
