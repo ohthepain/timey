@@ -2000,7 +2000,7 @@ try {
     const id = await addExtraWork();
     extraWorkId = id;
     await block(id);
-    const prose = page.locator('.block-content');
+    const prose = page.locator('#inspector-body .block-content');
     assert.equal(await prose.count(), 0);
     await page.locator('.block-markdown-menu summary').waitFor();
     await page.locator('#block-form .system-prompt summary').click();

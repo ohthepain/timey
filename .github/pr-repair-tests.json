@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "sourceRun": "https://github.com/ohthepain/timey/actions/runs/45791686943/job/139815865470",
+  "sourceRun": "https://github.com/ohthepain/timey/actions/runs/45794151808/job/139822156078",
   "tests": [
     {
       "name": "Work Markdown reloads headings and lists without changing layout, drafts or actions",
@@ -18,6 +18,10 @@
     {
       "name": "Automate me dots follow each active response",
       "command": ["node", "scripts/flow-browser.mjs", "--ci-part=1b", "--ai-text", "--automate-activity"]
+    },
+    {
+      "name": "Inbox playback and block Details render the requested controls",
+      "command": ["node", "scripts/flow-browser.mjs", "--ci-part=1b", "--inbox-details"]
     },
     {
       "name": "focused test validation identifies the exact rejected argument and rule",
