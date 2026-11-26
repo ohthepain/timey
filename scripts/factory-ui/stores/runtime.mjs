@@ -27,12 +27,13 @@ const methods = {
   artifact: ['put', 'get', 'inspect', 'list', 'remove', 'open', 'probe'],
 };
 
-const snapshots = {
+const additionalMethods = {
   issue: { files: ['readSnapshot'], git: ['readSnapshot'], postgres: ['readSnapshot'] },
   records: { files: ['readSnapshot'], git: ['readSnapshot', 'transaction'], postgres: ['readSnapshot'] },
+  artifact: { files: ['localDirectory'] },
 };
 function providerMethods(kind, config) {
-  return [...methods[kind], ...(snapshots[kind]?.[config.kind] || [])];
+  return [...methods[kind], ...(additionalMethods[kind]?.[config.kind] || [])];
 }
 
 function lazyProvider(runtime, kind, config) {

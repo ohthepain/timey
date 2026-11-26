@@ -305,8 +305,8 @@
       return running(session()?.status) || pending;
     }
     function responseWorking() {
-      const { status, approvals = [] } = session() || {};
-      return approvals.length === 0 && (running(status) || pendingResponses > 0);
+      const { status, approvals = [], threadLock } = session() || {};
+      return [!threadLock, approvals.length === 0, running(status) || pendingResponses > 0].every(Boolean);
     }
     function messageEditAction(message, user) {
       if (user)
@@ -317,7 +317,22 @@
       return `<div class="discuss-attachments">${(message.attachments || []).map((file) => attachmentHtml(file)).join('')}</div>`;
     }
     function messageHtml(message) {
-      const user = message.role === 'user' || message.role === 'human';
+      const live = messageIsLive(message);
+      const activity = window.timeyChatProgress.milestones(message.progress, message.id) + replyErrorMarkup(message);
+      if (live && !messageText(message)) return activity;
+      return activity + replyMarkup(message, live);
+    }
+    function messageIsLive(message) {
+      return message.status === 'running' && running(session()?.status);
+    }
+    function replyErrorMarkup(message) {
+      return message.status === 'failed' && message.error
+        ? `<p data-chat-milestone class="chat-milestone" role="alert">${escape(message.error)}</p>`
+        : '';
+    }
+    function replyMarkup(message, live) {
+      const user = ['user', 'human'].includes(message.role);
+      const commands = live ? '' : window.timeyChatProgress.commands(message.progress?.commands, message.id + '-reply');
       return window.chatMessageMarkup({
         id: message.id,
         user,
@@ -325,8 +340,16 @@
         content: markdown(messageText(message)),
         aiSource: messageText(message),
         aiKey: 'discuss-' + selectedId + '-' + message.id,
-        tail: `${messageAttachments(message)}${eventsHtml(message.events)}<div class="discuss-message-actions"><button class="discuss-icon-button" type="button" data-discuss-copy="${escape(message.id)}" aria-label="Copy message" title="Copy message"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5" y="5" width="8" height="9" rx="1"/><path d="M3 11V3h8"/></svg></button>${messageEditAction(message, user)}</div>`,
+        tail: `${messageAttachments(message)}${commands}${eventsHtml(message.events)}<div class="discuss-message-actions"><button class="discuss-icon-button" type="button" data-discuss-copy="${escape(message.id)}" aria-label="Copy message" title="Copy message"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5" y="5" width="8" height="9" rx="1"/><path d="M3 11V3h8"/></svg></button>${messageEditAction(message, user)}</div>`,
       });
+    }
+    function liveResponseMarkup() {
+      const { status, messages } = session() || {};
+      if (!running(status) && !pendingResponses) return '';
+      return window.timeyChatProgress.live(replyProgress(messages), responseWorking());
+    }
+    function replyProgress(messages = []) {
+      return messages.findLast((message) => message.status === 'running')?.progress;
     }
     function conversationTab(entry) {
       const selected = entry.id === selectedId;
@@ -378,7 +401,7 @@
           )
           .join('') || emptyConversation();
       restoreOpeningScroll(scope);
-      view.render(log, html + window.timeyActivity.markup(responseWorking()), scope);
+      view.render(log, html + liveResponseMarkup(), scope);
       view.render(
         byId('discuss-queue'),
         (current?.queue || [])
@@ -436,16 +459,25 @@
       node.textContent = !draft.value && !editId ? suggestion : '';
       node.hidden = Boolean(draft.value || editId || !suggestion);
     }
+    function syncResponseLine(active) {
+      const line = log.querySelector(':scope > .chat-live');
+      if (line) removeIdleResponseLine(line, active);
+      else if (pendingResponses) log.insertAdjacentHTML('beforeend', liveResponseMarkup());
+    }
+    function removeIdleResponseLine(line, active) {
+      if (!active && !pendingResponses) line.remove();
+    }
     function updateControls() {
-      const active = running(session()?.status);
-      window.timeyActivity.sync(log, responseWorking());
+      const current = session() || {};
+      const active = running(current.status);
+      syncResponseLine(active);
       draft.disabled = creating;
       byId('discuss-files').disabled = creating;
       for (const id of ['discuss-model', 'discuss-effort', 'discuss-clarification']) byId(id).disabled = creating;
       byId('discuss-new').disabled = pending || creating;
       for (const tab of byId('discuss-conversation-tabs').querySelectorAll('button'))
         tab.disabled = pending || creating;
-      byId('discuss-resume').hidden = !['paused', 'interrupted', 'stopped'].includes(session()?.status);
+      byId('discuss-resume').hidden = !['paused', 'interrupted', 'stopped'].includes(current.status);
       byId('discuss-resume').disabled = pending;
       const send = byId('discuss-send');
       send.disabled = pending || creating;
@@ -459,7 +491,12 @@
       byId('discuss-editing').textContent = editId
         ? 'Editing a queued message. The current response keeps running.'
         : '';
-      byId('discuss-status').textContent = active ? 'Response running' : '';
+      updateStatus(active, current.threadLock);
+    }
+    function updateStatus(active, threadLock) {
+      const status = byId('discuss-status');
+      status.classList.toggle('visually-hidden', !threadLock);
+      status.textContent = threadLock || (active ? 'Response running' : '');
     }
     function renderApprovals(approvals) {
       const holder = byId('discuss-approvals');
@@ -510,11 +547,11 @@
       return value;
     }
     function updateUrl() {
-      if (fixedConversation) return;
+      if (fixedConversation || !visible) return;
       const url = new URL(location.href);
       if (selectedId) url.searchParams.set('conversation', selectedId);
       else url.searchParams.delete('conversation');
-      history.replaceState(null, '', url);
+      history.replaceState(history.state, '', url);
     }
     async function submit(event) {
       event?.preventDefault();
@@ -757,16 +794,18 @@
     const polling = setInterval(() => {
       if (visible && !document.hidden) void refresh();
     }, 1500);
+    async function showChat() {
+      root.hidden = false;
+      openingScroll = {};
+      if (!fixedConversation) selectedId = new URL(location.href).searchParams.get('conversation');
+      await refresh(true);
+      void discoverSkills().catch((failure) => error(failure.message));
+    }
     return {
       async setVisible(value) {
         const was = visible;
         visible = value;
-        if (value && !was) {
-          root.hidden = false;
-          openingScroll = {};
-          await refresh(true);
-          void discoverSkills().catch((failure) => error(failure.message));
-        }
+        if (value && !was) await showChat();
         if (!value && was) {
           openingScroll = null;
           remember();

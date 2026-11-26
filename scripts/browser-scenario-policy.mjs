@@ -15,6 +15,7 @@ const proposalsCheck = 'Pending proposals can be approved or deleted after confi
 
 export const flowBrowserScenarioNames = {
   '--activity-indicators': 'Activity dots stay anchored and reflect actual work',
+  '--chat-progress': 'Issue and project chats retain semantic progress',
   '--automate-activity': 'Automate me dots follow each active response',
   '--issue-scrollbar': 'Issue flow scrollbar appears only while scrolling',
   '--issue-status-folders': 'Status pseudo-folders track project issues without moving them',
@@ -72,6 +73,7 @@ export const flowBrowserScenarioNames = {
   '--flow-menu': 'The Flow menu saves and switches routes, and the wand rebuilds with results intact',
   '--add-parallel-block': 'Adding and saving a block retains the selected prompt mode and parallel lane',
   '--reorder-saved-blocks': 'Keyboard controls reorder saved blocks',
+  '--block-reveal': 'Block clicks preserve visible cards and minimally reveal clipped cards',
   '--assign-folder': 'Folders can be created and assigned without running work',
   '--save-block-comment': 'Block comments remain attached after reload',
   '--work-markdown': 'Work Markdown reloads headings and lists without changing layout, drafts or actions',

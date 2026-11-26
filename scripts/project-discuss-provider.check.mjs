@@ -4,9 +4,10 @@ import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CodexConnection } from './factory-ui/codex.mjs';
+import { desktopThreadWriter } from './factory-ui/codex-thread-writer.mjs';
 import { createProjectDiscussProvider } from './factory-ui/project-discuss-provider.mjs';
 
-function fixture(t, hook = async () => {}, { useProjectTools = false } = {}) {
+function fixture(t, hook = async () => {}, { useProjectTools = false, ...providerOptions } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'timey-discuss-provider-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const skill = (name, restricted = false) => {
@@ -65,7 +66,10 @@ function fixture(t, hook = async () => {}, { useProjectTools = false } = {}) {
       return { input };
     },
   };
-  const provider = createProjectDiscussProvider({ root }, { connection, ...(useProjectTools ? {} : { tools }) });
+  const provider = createProjectDiscussProvider(
+    { root },
+    { connection, ...providerOptions, ...(useProjectTools ? {} : { tools }) }
+  );
   const context = {
     signal: controller.signal,
     event: (event) => events.push(event),
@@ -74,7 +78,7 @@ function fixture(t, hook = async () => {}, { useProjectTools = false } = {}) {
       Object.assign(session, patch);
     },
   };
-  return { root, provider, connection, session, message, context, events, calls, sent, retained, tools };
+  return { root, provider, connection, session, message, context, controller, events, calls, sent, retained, tools };
 }
 
 void test('a new Discuss chat registers the server’s current issue tools on its first message', async (t) => {
@@ -174,6 +178,79 @@ test('project resume refuses uncertain startup or an active original native turn
   f.connection.status = 'active';
   await assert.rejects(() => f.provider.turn(f.session, f.message, f.context), /not confirmed idle/);
   assert.ok(!f.calls.some(({ method }) => method === 'provider/turn'));
+});
+
+test('Discuss waits for a desktop-held thread, then sends the saved prompt once on that thread', async (t) => {
+  const f = fixture(t, undefined, {
+    threadWriterOwner: async () => 'ChatGPT desktop app',
+    threadWriterDelay: async () => {},
+  });
+  f.session.threadId = '01a2146c-da41-7d21-a874-231f31fa5422';
+  const call = f.connection.call.bind(f.connection);
+  let blocked = true;
+  f.connection.call = async (method, params) => {
+    if (method === 'thread/resume' && blocked) {
+      blocked = false;
+      throw Error('thread already has an active writer');
+    }
+    return call(method, params);
+  };
+  assert.equal((await f.provider.turn(f.session, f.message, f.context)).text, 'Here is the answer.');
+  assert.ok(f.retained.some(({ threadLock }) => threadLock?.includes('ChatGPT desktop app')));
+  assert.equal(f.session.threadLock, null);
+  const turns = f.calls.filter(({ method }) => method === 'provider/turn');
+  assert.equal(turns.length, 1);
+  assert.equal(turns[0].params.threadId, f.session.threadId);
+});
+
+test('stopping a Discuss lock wait leaves the original thread and sends no prompt', async (t) => {
+  const f = fixture(t, undefined, {
+    threadWriterOwner: async () => undefined,
+    threadWriterDelay: async () => f.controller.abort(),
+  });
+  f.session.threadId = '01a2146c-da41-7d21-a874-231f31fa5422';
+  const call = f.connection.call.bind(f.connection);
+  f.connection.call = async (method, params) => {
+    if (method === 'thread/resume') throw Error('thread already has an active writer');
+    return call(method, params);
+  };
+  await assert.rejects(() => f.provider.turn(f.session, f.message, f.context), { name: 'AbortError' });
+  assert.ok(f.retained.some(({ threadLock }) => threadLock?.includes('another Codex session')));
+  assert.ok(!f.calls.some(({ method }) => ['thread/start', 'provider/turn'].includes(method)));
+});
+
+test('a persistent Discuss lock ends with a useful Retry message and no model turn', async (t) => {
+  const f = fixture(t, undefined, {
+    threadWriterOwner: async () => 'the ChatGPT desktop app',
+    threadWriterDelay: async () => {},
+  });
+  f.session.threadId = '01a2146c-da41-7d21-a874-231f31fa5422';
+  const call = f.connection.call.bind(f.connection);
+  f.connection.call = async (method, params) => {
+    if (method === 'thread/resume') throw Error('thread already has an active writer');
+    return call(method, params);
+  };
+  await assert.rejects(() => f.provider.turn(f.session, f.message, f.context), /ChatGPT desktop app.*Retry/);
+  assert.equal(f.session.threadLock, null);
+  assert.ok(!f.calls.some(({ method }) => ['thread/start', 'provider/turn'].includes(method)));
+});
+
+test('a single desktop lock holder is named and ambiguous holders are left unidentified', async () => {
+  const thread = '01a2146c-da41-7d21-a874-231f31fa5422';
+  const lookup = (holders) =>
+    desktopThreadWriter(thread, {
+      platform: 'darwin',
+      async execute(command, args) {
+        if (command === '/usr/sbin/lsof') {
+          assert.ok(args.at(-1).endsWith(`/thread-writer-locks/${thread}.lock`));
+          return { stdout: holders };
+        }
+        assert.deepEqual(args, ['-ww', '-p', '84565', '-o', 'comm=']);
+        return { stdout: '/Applications/ChatGPT.app/Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex\n' };
+      },
+    });
+  assert.equal(await lookup('p84565\nf82\n'), 'the ChatGPT desktop app');
+  assert.equal(await lookup('p84565\nf82\np94565\nf17\n'), undefined);
 });
 
 test('dynamic calls are bound to current thread and turn, retain receipts and never repeat a completed identity', async (t) => {

@@ -166,7 +166,7 @@ export async function projectDiscussBrowserChecks({ page, service, project, poll
   await page.locator('#discuss-messages').getByText('Hold response', { exact: true }).waitFor();
   await page.locator('#discuss-messages').getByText('Live partial response', { exact: true }).waitFor();
   await page.locator('#discuss-messages > .activity-indicator').waitFor();
-  assert.equal(await page.locator('#discuss-messages > .activity-indicator .activity-dots i').count(), 3);
+  assert.equal(await page.locator('#discuss-messages > .activity-indicator .SparkleText').count(), 1);
   await screenshot('chat-activity-streaming');
   await page.locator('#discuss-draft').fill('Queued question');
   await page.locator('#discuss-draft').press('Enter');

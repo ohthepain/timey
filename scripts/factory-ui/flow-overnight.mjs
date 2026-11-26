@@ -50,13 +50,8 @@ function recordFailure(row, block, attempt) {
   end(row, 'paused', attempt?.summary || `${block.label} needs attention.`, `Open ${block.label} to continue.`);
 }
 
-function mergePreparation(attempt) {
-  const result = attempt?.result;
-  return result?.verification && result.mergeConfirmation;
-}
-
 function recordMergeAttempt(row, block, attempt) {
-  const mergeConfirmation = mergePreparation(attempt);
+  const mergeConfirmation = attempt?.result?.mergeConfirmation;
   if (mergeConfirmation) {
     const { pr, url } = mergeConfirmation;
     Object.assign(row, { pr, url });

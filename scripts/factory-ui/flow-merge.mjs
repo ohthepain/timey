@@ -5,7 +5,7 @@ import {
   verificationFailureKey,
   verificationFailureMessage,
 } from './flow-repair-evidence.mjs';
-import { retainGitHubFailure } from './flow-ci-evidence.mjs';
+import { githubCheckRuns, retainGitHubFailure } from './flow-ci-evidence.mjs';
 import { abortPendingMerge } from './flow-update-branch.mjs';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -17,10 +17,36 @@ import { blockerKey, permissionFailure, repairableBlocker } from './strategy-rep
 import { fetchIssueTarget, mergeIssueTarget } from './flow-update-branch.mjs';
 import { queueReportPaths } from './shared-issue-config.mjs';
 import { observeMergeWait, startMergeWait } from './flow-merge-wait.mjs';
-import { requireGroupProof } from './flow-group-proof.mjs';
+import { requireGroupProof, savedMergeGroupProof } from './flow-group-proof.mjs';
+import { groupChildren } from './issue-group.mjs';
 
 const headOf = (workspace) => git(workspace.checkout, 'rev-parse', 'HEAD');
 const treeOf = (workspace) => git(workspace.checkout, 'rev-parse', 'HEAD^{tree}');
+
+function commitIdentity(workspace, commit) {
+  const [revision, tree, ...parents] = git(workspace.checkout, 'show', '-s', '--format=%H %T %P', commit).split(' ');
+  return { commit: revision, tree, parents };
+}
+
+async function deliveryIdentity(provider, workspace, result) {
+  const { repository } = provider.config;
+  const candidate = commitIdentity(workspace, result.head);
+  const target = commitIdentity(workspace, result.target);
+  const checks = githubCheckRuns(repository, result.checks ?? []);
+  if (!result.revision) return { repository, pr: result.pr, candidate, target, checks };
+  const merge = await mergedIdentity(provider, result.revision);
+  return { repository, pr: result.pr, candidate, target, checks, merge };
+}
+
+async function mergedIdentity(provider, revision) {
+  const merged = JSON.parse(await provider.gh(['api', `repos/${provider.config.repository}/git/commits/${revision}`]));
+  requireThat(merged.sha === revision && merged.tree?.sha, 'GitHub did not resolve the exact merge revision.');
+  return {
+    commit: merged.sha,
+    tree: merged.tree.sha,
+    parents: merged.parents.map(({ sha }) => sha),
+  };
+}
 
 function includesCommit(workspace, head, revision) {
   return git(workspace.checkout, 'merge-base', head, revision) === revision;
@@ -105,7 +131,11 @@ async function repairCandidate(service, ctx, workspace, error, options, state) {
   state.evidence.push(...(error.evidence ?? []));
   state.repairs += 1;
   ctx.onProgress('Repairing this Merge blocker (' + attempt + '/' + state.workflow.repairAttempts + ').\n', true);
-  const record = state.repairHistory.start(state.repairs, before, error.message);
+  const record = state.repairHistory.start(
+    state.repairs,
+    { ...commitIdentity(workspace, before), comparisonTarget: state.comparisonTarget },
+    error
+  );
   await runRecordedRepair(service, ctx, workspace, error, { before, tree, record }, options, state);
 }
 
@@ -122,6 +152,7 @@ async function runRecordedRepair(service, ctx, workspace, error, { before, tree,
         record.folder
       );
       outcome.failureEvidence = failure.copies;
+      outcome.failedChecks = failure.recordedChecks;
       const repair = await options.repair(error, state.repairs, {
         evidence: failure.evidence,
         failedChecks: failure.failedChecks,
@@ -136,7 +167,7 @@ async function runRecordedRepair(service, ctx, workspace, error, { before, tree,
       error.code === 'target-conflict' || treeOf(workspace) !== tree,
       'The repair did not change the candidate tree. Review the retained work before retrying.'
     );
-    Object.assign(outcome, { status: 'committed', candidate });
+    Object.assign(outcome, { status: 'committed', candidate, repairedRevision: commitIdentity(workspace, candidate) });
   } catch (failure) {
     outcome.message = failure.message;
     outcome.evidence ??= failure.evidence;
@@ -167,16 +198,33 @@ async function attemptRepair(error, operation) {
   }
 }
 
-function requireMergeGroupProof(ctx, workspace, root) {
-  if (ctx.issue.issue_group) {
-    requireGroupProof(ctx.issue, ctx.flow, treeOf(workspace), ctx.block, root);
+async function mergeGroupProof(ctx, workspace, root, head, options, state) {
+  if (!groupChildren(ctx.issue).length) return;
+  const tree = treeOf(workspace);
+  const check = (file) => requireGroupProof(ctx.issue, ctx.flow, tree, ctx.block, root, undefined, file);
+  const saved = state.groupProof?.head === head ? state.groupProof : savedMergeGroupProof([ctx.block], head, tree);
+  try {
+    check(saved?.file);
+    return saved;
+  } catch (error) {
+    if (error.code !== 'GROUP_PROOF_REQUIRED' || !options.refreshGroupProof) throw error;
   }
+  ctx.onProgress('Rechecking the attached sub-issues on the final PR candidate.\n', true);
+  const refreshed = await options.refreshGroupProof({ head, tree });
+  state.evidence.push(...(refreshed.evidence ?? []));
+  ctx.signal.throwIfAborted();
+  requireCleanCandidate(workspace, head);
+  requireThat(refreshed.status !== 'blocked', refreshed.summary);
+  const file = refreshed.artifacts?.files?.subIssueProof;
+  check(file);
+  state.groupProof = { head, tree, file };
+  return state.groupProof;
 }
 
-async function mergeWhenReady(service, ctx, workspace, provider, pr, readiness, state) {
+async function mergeWhenReady(service, ctx, workspace, provider, pr, readiness, options, state) {
   const { head, target } = readiness;
   const confirmation = mergeConfirmation(ctx, provider, pr, readiness);
-  requireMergeGroupProof(ctx, workspace, service.root);
+  const groupProof = await mergeGroupProof(ctx, workspace, service.root, head, options, state);
   requireThat(
     !service.sharedIssues || !git(workspace.checkout, 'diff', '--name-only', target, head, '--', ...queueReportPaths()),
     'Shared issue reports require a separate queue PR.'
@@ -188,9 +236,10 @@ async function mergeWhenReady(service, ctx, workspace, provider, pr, readiness, 
     return {
       status: 'blocked',
       summary: 'PR #' + pr.number + ' passed its checks. Approve merging it into ' + pr.base.ref + '.',
-      result: { pr: pr.number, head, target, checks: readiness.checks, mergeConfirmation: confirmation },
+      result: { pr: pr.number, head, target, checks: readiness.checks, mergeConfirmation: confirmation, groupProof },
     };
   }
+  state.repairHistory.validateAttachments();
   service.guard(service.root, { id: ctx.attempt.id, issues: [ctx.issue.id], worker_revision: head }, 'merge', target);
   ctx.signal.throwIfAborted();
   let merged;
@@ -223,15 +272,9 @@ async function mergeWhenReady(service, ctx, workspace, provider, pr, readiness, 
     mergeOrigin = 'observed-merged';
   }
   return {
-    result: { ...merged, pr: pr.number, head, target, checks: readiness.checks, mergeOrigin },
+    result: { ...merged, pr: pr.number, head, target, checks: readiness.checks, mergeOrigin, groupProof },
     summary: 'GitHub confirms the protected merge.',
   };
-}
-
-async function retainFailedChecks(provider, error, head, checkout, onProgress) {
-  if (error.code !== 'ci-failure') return;
-  onProgress('Reading the failed GitHub check output before repair.\n', true);
-  await retainGitHubFailure(provider, error, head, checkout);
 }
 
 async function readMergeReadiness(ctx, workspace, provider, pr) {
@@ -248,10 +291,13 @@ async function readMergeReadiness(ctx, workspace, provider, pr) {
   }
 }
 
-async function requireObservedChecks(ctx, workspace, provider, error, head) {
+async function requireObservedChecks(root, ctx, provider, error, head) {
   if (!error) return;
   if (['target-outdated', 'target-conflict'].includes(error.code)) throw pending(error.message);
-  await retainFailedChecks(provider, error, head, workspace.checkout, ctx.onProgress);
+  if (error.code === 'ci-failure') {
+    ctx.onProgress('Reading the failed GitHub check output before repair.\n', true);
+    await retainGitHubFailure(provider, error, head, root);
+  }
   throw error;
 }
 
@@ -259,10 +305,11 @@ async function advanceMerge(service, ctx, workspace, provider, pr, invoke, optio
   const { readiness, readinessError } = await readMergeReadiness(ctx, workspace, provider, pr);
   if (readinessError?.code === 'STRATEGY_PENDING' && headOf(workspace) === pr.head.sha) throw readinessError;
   const target = await fetchTarget(ctx, workspace, invoke);
+  state.comparisonTarget = target;
   await synchronize(workspace, target, invoke);
   const head = headOf(workspace);
   requireCleanCandidate(workspace, head);
-  if (head === pr.head.sha) await requireObservedChecks(ctx, workspace, provider, readinessError, head);
+  if (head === pr.head.sha) await requireObservedChecks(service.root, ctx, provider, readinessError, head);
   if (pr.head.sha !== head) {
     if (state.pushed === head && state.previousHead === pr.head.sha)
       throw pending('Waiting for GitHub to observe the updated PR commit.');
@@ -280,7 +327,7 @@ async function advanceMerge(service, ctx, workspace, provider, pr, invoke, optio
   }
   if (readiness.target !== target) throw pending('GitHub and the fetched target differ. Refreshing both revisions.');
   if ((await fetchTarget(ctx, workspace, invoke)) !== target) return undefined;
-  return mergeWhenReady(service, ctx, workspace, provider, pr, readiness, state);
+  return mergeWhenReady(service, ctx, workspace, provider, pr, readiness, options, state);
 }
 
 async function prepareMergeCheckout(state, workspace, invoke) {
@@ -305,6 +352,20 @@ async function waitForMergeChecks(ctx, state, error, head, options) {
 function retainMergeFailure(error, pr, evidence) {
   error.evidence = [...evidence, ...(error.evidence ?? [])];
   if (error.humanInput) error.humanInput = { ...error.humanInput, url: pr?.html_url };
+}
+
+async function finishMerge(state, provider, workspace, outcome, observed = outcome.result) {
+  if (state.repairHistory.hasRepairs) {
+    state.repairHistory.complete(await deliveryIdentity(provider, workspace, observed));
+  }
+  return outcome;
+}
+
+async function observeMergedPR(state, provider, workspace, pr) {
+  const ready = await provider.ready(pr, workspace.branch, headOf(workspace));
+  const result = { ...ready.merge, pr: pr.number, alreadyMerged: true };
+  const outcome = { result, summary: 'GitHub confirms the PR was already merged. Acceptance remains separate.' };
+  return finishMerge(state, provider, workspace, outcome, { ...ready, ...result });
 }
 
 export async function mergeFlowPR(service, ctx, workspace, folder, options) {
@@ -346,12 +407,11 @@ export async function mergeFlowPR(service, ctx, workspace, folder, options) {
         'GitHub changed the PR base to ' + pr.base.ref + '. Accept it in Destination before merging.'
       );
       if (pr.merged_at) {
-        const ready = await provider.ready(pr, workspace.branch, headOf(workspace));
+        const outcome = await observeMergedPR(state, provider, workspace, pr);
         return {
-          result: { ...ready.merge, pr: pr.number, alreadyMerged: true },
+          ...outcome,
           evidence: evidence(),
           workspace: { ...workspace, pr: pr.number },
-          summary: 'GitHub confirms the PR was already merged. Acceptance remains separate.',
         };
       }
       requireThat(pr.state === 'open' && !pr.draft, 'Open the PR and mark it ready for review on GitHub.');
@@ -361,7 +421,10 @@ export async function mergeFlowPR(service, ctx, workspace, folder, options) {
       await prepareMergeCheckout(state, workspace, invoke);
       try {
         const outcome = await advanceMerge(service, ctx, workspace, provider, pr, invoke, options, state);
-        if (outcome) return { ...outcome, evidence: evidence(), workspace: { ...workspace, pr: pr.number } };
+        if (outcome) {
+          await finishMerge(state, provider, workspace, outcome);
+          return { ...outcome, evidence: evidence(), workspace: { ...workspace, pr: pr.number } };
+        }
       } catch (error) {
         if (error.code !== 'STRATEGY_PENDING') await repairCandidate(service, ctx, workspace, error, options, state);
         else await waitForMergeChecks(ctx, state, error, pr.head.sha, options);

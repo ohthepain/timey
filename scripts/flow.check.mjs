@@ -480,7 +480,7 @@ test('Work All Night keeps dependency failures separate and retains the exact ha
         return {
           status: 'blocked',
           summary: 'PR checks passed.',
-          result: { mergeConfirmation: { pr: 5 }, verification: { head: 'verified' } },
+          result: { mergeConfirmation: { pr: 5, head: 'verified', target: 'target' } },
         };
       }
       return { summary: 'Done' };

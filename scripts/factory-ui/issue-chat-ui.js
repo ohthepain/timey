@@ -528,7 +528,14 @@ const issueChatUI = (() => {
   function updateActivity(conversation) {
     const { lifecycle = {} } = latest.issues.find((entry) => entry.id === current);
     const active = conversation.connected || sending.has(current);
-    window.timeyActivity.sync(activity, active && conversation.status !== 'attention' && !lifecycle.input);
+    const progress = conversation.progress;
+    const working = active && conversation.status !== 'attention' && !lifecycle.input;
+    const markup = window.timeyChatProgress;
+    window.timeyView.render(
+      activity,
+      markup.milestones(progress, 'issue-chat-live') + markup.live(progress, working),
+      'issue-chat-activity:' + current
+    );
   }
   function stopAvailable(conversation, queue) {
     return Boolean(conversation.responseId || queue.activeTurn?.canStop || cancellableOperation(queue.operation));
@@ -573,12 +580,16 @@ const issueChatUI = (() => {
     text.style.whiteSpace = 'pre-wrap';
     markGeneratedMessage(text, entry);
     const holder = node('div');
+    const progress = window.timeyChatProgress;
     holder.innerHTML = window.chatMessageMarkup({
       id: entry.id,
       user: entry.actor === 'human',
       label: entry.role || entry.actor,
       meta: date,
-      content: text.outerHTML,
+      content:
+        progress.milestones(entry.progress, entry.id) +
+        text.outerHTML +
+        progress.commands(entry.progress?.commands, entry.id + '-reply'),
     });
     const item = holder.firstElementChild;
     item.dataset.messageId = entry.id;
