@@ -164,7 +164,7 @@ export async function projectDiscussBrowserChecks({ page, service, project, poll
     'Attached response did not finish.'
   );
   await page.locator('#discuss-draft').fill('Hold response');
-  await page.locator('#discuss-send').click();
+  await page.locator('#discuss-send[data-discuss-action="send"]').click();
   await page.locator('#discuss-messages').getByText('Hold response', { exact: true }).waitFor();
   await page.locator('#discuss-messages').getByText('Live partial response', { exact: true }).waitFor();
   await page.locator('#discuss-messages > .activity-indicator').waitFor();
