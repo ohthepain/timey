@@ -441,10 +441,14 @@ async function assertCleanSidebarConsole() {
   );
 }
 
+function ensureFixtureLifecycle() {
+  const labels = join(project, '.issues/triage-labels.md');
+  if (!existsSync(labels)) copyFileSync(join(root, '.issues/triage-labels.md'), labels);
+}
+
 async function connectionRecoveryIssue() {
   const id = '20261120-connection-recovery-fixture';
-  if (!existsSync(join(project, '.issues/triage-labels.md')))
-    copyFileSync(join(root, '.issues/triage-labels.md'), join(project, '.issues/triage-labels.md'));
+  ensureFixtureLifecycle();
   await writeBrowserIssue(project, {
     id,
     title: 'Reconnect the selected issue',
@@ -2528,6 +2532,7 @@ try {
   });
   await check(issuePlaybackCheck, async () => {
     await ensureBrowserFolderIssue();
+    ensureFixtureLifecycle();
     service.flows.executor.close();
     service.flows.executor = executor;
     const previousIssueId = issueId;
@@ -2608,8 +2613,7 @@ try {
   });
   await check(issueHeaderCloseCheck, async () => {
     const closureIssueId = '20261116-header-close-fixture';
-    const labels = join(project, '.issues/triage-labels.md');
-    if (!existsSync(labels)) copyFileSync(join(root, '.issues/triage-labels.md'), labels);
+    ensureFixtureLifecycle();
     await writeBrowserIssue(project, {
       id: closureIssueId,
       title: 'Header closure fixture',
