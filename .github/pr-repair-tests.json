@@ -1,7 +1,29 @@
 {
   "version": 1,
-  "sourceRun": "https://github.com/ohthepain/timey/actions/runs/45759791677/job/139710760473",
+  "sourceRun": "https://github.com/ohthepain/timey/actions/runs/45775369660/job/139761063990",
   "tests": [
+    {
+      "name": "Discuss visibly reports a locked conversation while waiting and shows the reason after pausing",
+      "command": [
+        "node",
+        "--test",
+        "--test-name-pattern=^Discuss visibly reports a locked conversation while waiting and shows the reason after pausing$",
+        "scripts/interface-state.check.mjs"
+      ]
+    },
+    {
+      "name": "Discuss prepares context and a first prompt without running a model, then offers explicit deletion",
+      "command": [
+        "node",
+        "--test",
+        "--test-name-pattern=^Discuss prepares context and a first prompt without running a model, then offers explicit deletion$",
+        "scripts/local-notes.check.mjs"
+      ]
+    },
+    {
+      "name": "Issue flow dates, statuses, folder ordering and block drag",
+      "command": ["node", "scripts/flow-browser.mjs", "--ci-part=1", "--inbox-flow"]
+    },
     {
       "name": "The shared Factory header keeps every project tab and relocated control usable",
       "command": [

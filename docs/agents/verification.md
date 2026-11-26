@@ -512,6 +512,10 @@ shared plan lives at `scripts/flow-integration-tests.json` so it travels with th
 installed Factory server and is also available to the CI runner.
 A named Flow browser check can include one `--ci-part` flag to use the same
 fixture setup as that GitHub job.
+`node scripts/flow-browser.mjs --ci-part=1 --inbox-flow` checks Inbox dates,
+statuses, folder ordering and block drag in isolation. It scrolls the target
+block into the graph viewport before measuring the drag, then checks the
+projected order, saved revision and connections after reload.
 Include `--stores` when reproducing browser failures after storage activation;
 an isolated legacy-storage run does not establish that the store-backed case
 passed. `--proposals --delayed-delete` holds a proposal Delete request for 16

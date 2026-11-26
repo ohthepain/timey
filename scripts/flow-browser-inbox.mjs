@@ -76,6 +76,7 @@ async function checkDrag({ page, service, issue, flow, first, middle, last, poll
       edges: [...root.querySelectorAll('path[data-from]')].map((path) => [path.dataset.from, path.dataset.to]),
     }));
   const grip = card(first.id).locator('[data-block-grip]');
+  await card(last.id).scrollIntoViewIfNeeded();
   const source = await grip.boundingBox();
   const target = await card(last.id).boundingBox();
   await page.mouse.move(source.x + source.width / 2, source.y + source.height / 2);
