@@ -73,8 +73,17 @@
       ]
     },
     {
-      "name": "Issues and Local notes use matching text styles",
-      "command": ["node", "scripts/flow-browser.mjs", "--ci-part=1", "--project-navigation", "--sidebar-labels"]
+      "name": "Issues and Local notes use matching text styles and retain a clean console after Close and heap failure fixtures",
+      "command": [
+        "node",
+        "scripts/flow-browser.mjs",
+        "--ci-part=1",
+        "--manual-close",
+        "--server-heap",
+        "--project-navigation",
+        "--sidebar-labels",
+        "--local-notes"
+      ]
     },
     {
       "name": "Closed issues open with Destination flush with the bottom, including short flows",

@@ -1,6 +1,7 @@
 import { createFlowChanges } from './flow-changes.mjs';
 import { issueAnnotations } from './issue-annotations.mjs';
 import { userInfo } from 'node:os';
+import { getHeapStatistics } from 'node:v8';
 import { readProviderConfig } from './provider-config.mjs';
 import { providerSettings, saveProviderSettings } from './provider-runtime.mjs';
 import { refreshProvider, setupProvider, installProvider } from './provider-setup.mjs';
@@ -393,7 +394,7 @@ async function storeAction(service, value) {
   return result;
 }
 
-async function mutation(service, path, value, owner) {
+async function mutation(service, path, value, owner, onStorageProgress) {
   requireLiveMutation(service, path);
   await prepareStoreMutation(service, path, value);
   requireClassicIdle(service, path, value);
@@ -500,7 +501,7 @@ async function mutation(service, path, value, owner) {
       service.ownServer();
       return { moved: migrateClosedIssues(service.root).length };
     },
-    '/api/issue-storage-move': () => moveIssueStorage(service, value),
+    '/api/issue-storage-move': () => moveIssueStorage(service, value, onStorageProgress),
     '/api/issue-report-reveal': () => revealIssueReport(service, value.issueId),
     '/api/issue-storage-open-folder': async () => {
       requireThat(process.platform === 'darwin', 'Finder is available on macOS.');
@@ -661,15 +662,39 @@ async function respond(service, request, response, token, port, accountOrigin) {
     return service.flowChanges.subscribe(response, resolveIssueNumber(service, url.searchParams.get('issue')));
   response.setHeader('Content-Type', 'application/json');
   if (request.method === 'GET') return readResource(service, request, response, token);
-  if (request.method === 'POST') {
-    const result = await postedAction(service, request, token);
-    if (url.pathname === '/api/ui-sources') service.flowChanges.notify('sources');
-    else if (['/api/flow-action', '/api/issue-storage-move', '/api/issue-capture'].includes(url.pathname))
-      service.flowChanges.notify();
-    return response.end(JSON.stringify(result));
-  }
+  if (request.method === 'POST') return respondToAction(service, request, response, token, url.pathname);
   response.statusCode = 405;
   response.end(JSON.stringify({ error: 'Unsupported method' }));
+}
+
+async function streamingArchiveAction(service, request, response, token) {
+  response.setHeader('Content-Type', 'application/x-ndjson');
+  try {
+    const result = await postedAction(service, request, token, (progress) => {
+      if (!response.destroyed) response.write(JSON.stringify({ progress }) + '\n');
+    });
+    return JSON.stringify(result) + '\n';
+  } catch (error) {
+    if (!response.headersSent) throw error;
+    return JSON.stringify({ error: error.message }) + '\n';
+  }
+}
+
+const mutationNotifications = new Map([
+  ['/api/ui-sources', 'sources'],
+  ['/api/flow-action', 'flow'],
+  ['/api/issue-storage-move', 'flow'],
+  ['/api/issue-capture', 'flow'],
+]);
+
+async function respondToAction(service, request, response, token, path) {
+  const stream = path === '/api/issue-storage-move' && request.headers.accept === 'application/x-ndjson';
+  const content = stream
+    ? await streamingArchiveAction(service, request, response, token)
+    : JSON.stringify(await postedAction(service, request, token));
+  const topic = mutationNotifications.get(path);
+  if (topic) service.flowChanges.notify(topic);
+  return response.end(content);
 }
 function page(service, request, response, token, port, accountOrigin) {
   response.setHeader('Set-Cookie', `timey_factory_${port}=${token}; HttpOnly; SameSite=Strict; Path=/`);
@@ -807,6 +832,10 @@ async function read(service, request, response, owner) {
     '/api/native-chat': () => nativeChatStatus(service.root, issue(url.searchParams.get('issue'))),
     '/api/runtime': () => ({ ...runtimeInfo(service), server: service.serverControl.status() }),
     '/api/server-status': () => service.serverControl.status(),
+    '/api/server-heap': () => {
+      const { used_heap_size: usedBytes, heap_size_limit: limitBytes } = getHeapStatistics();
+      return { usedBytes, limitBytes };
+    },
     '/api/github-calls': readGitHubCalls,
     '/api/diagnostic-activity': readDiagnosticActivity,
     '/api/codex-quota': () => readCodexQuota({ force: url.searchParams.has('refresh') }),
@@ -1104,7 +1133,7 @@ const standaloneMutations = new Map([
   ],
 ]);
 
-async function postedAction(service, request, token) {
+async function postedAction(service, request, token, onStorageProgress) {
   if (request.url.startsWith('/api/deployment-')) return deploymentAction(service, request.url);
   requireThat(!service.deploymentDraining, 'The factory UI is restarting. Refresh when it is ready.');
   const value = await body(request);
@@ -1114,7 +1143,7 @@ async function postedAction(service, request, token) {
     return standalone(service, value);
   }
   if (typeof value.issueId === 'string') value.issueId = resolveIssueNumber(service, value.issueId);
-  return mutation(service, request.url, value, token);
+  return mutation(service, request.url, value, token, onStorageProgress);
 }
 
 function resolveIssueNumber(service, value) {
