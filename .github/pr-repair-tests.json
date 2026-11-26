@@ -1,7 +1,11 @@
 {
   "version": 1,
-  "sourceRun": "https://github.com/ohthepain/timey/actions/runs/45839202078/job/139981292501",
+  "sourceRun": "https://github.com/ohthepain/timey/actions/runs/45841698838/job/139991200027",
   "tests": [
+    {
+      "name": "Closed issue selections archive together and issue links open the normal view",
+      "command": ["node", "scripts/flow-browser.mjs", "--ci-part=1a", "--issue-reopen", "--project-issues"]
+    },
     {
       "name": "The Factory App button configures, recognizes and starts the project server",
       "command": ["node", "scripts/flow-browser.mjs", "--ci-part=1a", "--project-app"]

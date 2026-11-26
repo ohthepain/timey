@@ -119,7 +119,45 @@ async function reopenInBrowser(page, id, title) {
   assert.equal(await reopen.isVisible(), false);
 }
 
-export async function reopenWorkspaceChecks({ page, project, root, service, output, screenshot }) {
+async function verifyFollowUpStart({ page, service, issueId, poll }) {
+  const { flows } = service;
+  const executor = flows.executor;
+  flows.executor = {
+    ...executor,
+    async run(input) {
+      if (input.issue.id === issueId && input.block.kind === 'work')
+        return { status: 'stopped', summary: 'Fixture Work ended after explicit Start.' };
+      return executor.run(input);
+    },
+  };
+  try {
+    const start = page.getByRole('button', { name: 'Start issue', exact: true });
+    const [submitted] = await Promise.all([
+      page.waitForResponse(
+        (response) =>
+          response.url().endsWith('/api/flow-action') && response.request().postDataJSON()?.action === 'play'
+      ),
+      start.click(),
+    ]);
+    assert.equal(submitted.ok(), true);
+    return await poll(
+      async () => ({
+        active: flows.active.has(issueId),
+        claim: await service.projectStores.coordination.get('claims/' + issueId),
+        status: flows
+          .read(flows.selected(issueId))
+          .blocks.find(({ kind }) => kind === 'work')
+          ?.attempts.at(-1)?.status,
+      }),
+      ({ active, claim, status }) => !active && !claim && status === 'stopped',
+      'Follow-up Work did not finish and release ownership before the next scenario.'
+    );
+  } finally {
+    flows.executor = executor;
+  }
+}
+
+export async function reopenWorkspaceChecks({ page, project, root, service, output, screenshot, poll }) {
   initializeProjectLifecycle(service, { digest: readProjectSettings(project).lifecycle.digest });
   installBrowserHumanInput(project, root);
   const longTitle =
@@ -160,14 +198,7 @@ export async function reopenWorkspaceChecks({ page, project, root, service, outp
   assert.equal(history[0].result.pr, 91);
   assert.equal(selected.location, 'open');
   await screenshot('reopened-issue-chat');
-  const start = page.getByRole('button', { name: 'Start issue', exact: true });
-  const [submitted] = await Promise.all([
-    page.waitForResponse(
-      (response) => response.url().endsWith('/api/flow-action') && response.request().postDataJSON()?.action === 'play'
-    ),
-    start.click(),
-  ]);
-  assert.equal(submitted.ok(), true);
+  const followUpWork = await verifyFollowUpStart({ page, service, issueId: archived, poll });
   proof(output, 'reopen-workspace', {
     closed,
     archived,
@@ -175,7 +206,9 @@ export async function reopenWorkspaceChecks({ page, project, root, service, outp
     mergeHistory: history,
     attemptsBeforeStart: 0,
     explicitStartAccepted: true,
+    followUpWork,
   });
+  await page.goto('about:blank', { waitUntil: 'commit' });
 }
 
 async function ephemeralAppServer() {

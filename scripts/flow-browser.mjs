@@ -734,7 +734,7 @@ try {
     issueDiscussWorkspaceChecks({ page, project, service, poll, screenshot, output })
   );
   await check(flowBrowserScenarioNames['--issue-reopen'], () =>
-    reopenWorkspaceChecks({ page, project, root, service, screenshot, output })
+    reopenWorkspaceChecks({ page, project, root, service, screenshot, output, poll })
   );
   await check(flowBrowserScenarioNames['--project-app'], () =>
     projectAppWorkspaceChecks({ page, project, service, output, root, poll })
