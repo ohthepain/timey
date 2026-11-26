@@ -1,3 +1,4 @@
+import { runLiveProof } from './factory-live-proof.mjs';
 import { runIssueCreate } from './factory-issue-create.mjs';
 import { exportIssueReports } from './factory-ui/issue-storage-export.mjs';
 import { migrateClosedIssues } from './factory-ui/issue-report-storage.mjs';
@@ -16,6 +17,7 @@ export { factory };
 export async function runCommand(project, argv, delivery = new IssueDelivery(project)) {
   const [command, ...args] = argv[0] === '--' ? argv.slice(1) : argv;
   if (command === 'issue-create') return runIssueCreate(project, args);
+  if (command === 'live-proof') return runLiveProof(project, args);
   if (command === 'ui') return runViewCommand(project, args);
   if (command === 'issue-storage-export') return exportIssueReports(project, args[0]);
   if (command === 'issue-storage-migrate') return migrateClosedIssues(project);

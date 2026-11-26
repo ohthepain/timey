@@ -8,6 +8,9 @@ export default async function coordinatorBrowserChecks(page) {
     { id: 'old', messages: [{ role: 'Coordinator', text: 'Earlier retained conversation' }], output: [] },
     { id: 'current', messages: [], output: [{ text: 'Reading saved work <script>danger</script>' }] },
   ];
+  threads[0].messages.push(
+    ...Array.from({ length: 28 }, (_, index) => ({ role: 'Coordinator', text: 'Archived reply ' + index }))
+  );
   const state = () => ({ active, paused, threads });
   await page.route('**/api/queue', (route) => coordinatorQueueRoute(route, state()));
   await page.route('**/api/issue?issue=*', (route) => coordinatorIssueRoute(route, state()));
@@ -43,6 +46,7 @@ export default async function coordinatorBrowserChecks(page) {
   await page.getByLabel('Show archived conversations', { exact: true }).check();
   await page.getByLabel('Coordinator history').selectOption('old');
   await page.locator('#coordinator-messages').filter({ hasText: 'Earlier retained conversation' }).waitFor();
+  const scroll = await checkCoordinatorHistoryScroll(page, threads[0]);
   await page.getByRole('button', { name: 'Stop', exact: true }).click();
   await page.locator('#coordinator-status').filter({ hasText: 'Stopped' }).waitFor();
   if (!(await page.locator('#coordinator-workers').innerText()).includes('still running'))
@@ -55,21 +59,32 @@ export default async function coordinatorBrowserChecks(page) {
   await page.waitForFunction(() => document.getElementById('coordinator-strip').hidden);
   await page.unrouteAll({ behavior: 'wait' });
   if (errors.length) throw Error(errors.join('; '));
-  return {
-    passed: true,
-    assertions: [
-      'active issue strip',
-      'other issue hides strip',
-      'dedicated navigation',
-      'safe live output',
-      'exact-turn steering',
-      'send discussion',
-      'earlier history',
-      'stop and continue',
-      'workers survive stop',
-      'idle start fresh',
-      'strip disappears',
-      'no page errors',
-    ],
+  return { passed: true, scroll };
+}
+
+export async function checkCoordinatorHistoryScroll(page, archive) {
+  const messages = page.getByLabel('Coordinator conversation');
+  const metrics = () =>
+    messages.evaluate((node) => ({ top: node.scrollTop, end: node.scrollHeight - node.clientHeight }));
+  const atLatest = () => {
+    const node = document.getElementById('coordinator-messages');
+    return node.scrollTop > 100 && node.scrollHeight - node.clientHeight - node.scrollTop < 3;
   };
+  await page.waitForFunction(atLatest);
+  const opened = await metrics();
+  archive.messages.push({ role: 'Coordinator', text: 'Next archived update' });
+  await messages.getByText('Next archived update', { exact: true }).waitFor();
+  await page.waitForFunction(atLatest);
+  const followed = await metrics();
+  await messages.evaluate((node) => {
+    node.scrollTop = 90;
+  });
+  archive.messages.push({ role: 'Coordinator', text: 'Update while reading the archive' });
+  await messages.getByText('Update while reading the archive', { exact: true }).waitFor();
+  const reading = await metrics();
+  if (reading.top !== 90) throw Error('A Coordinator update moved the reader.');
+  await page.getByLabel('Coordinator history').selectOption('current');
+  await page.getByLabel('Coordinator history').selectOption('old');
+  await page.waitForFunction(atLatest);
+  return { opened, followed, reading, reopened: await metrics() };
 }

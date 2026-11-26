@@ -91,7 +91,7 @@
         .closest('label')
         .insertAdjacentHTML(
           'afterend',
-          '<label><input type="checkbox" id="run-closure-retro"> Run Retro before Cleanup</label>'
+          '<label data-closure-retro-choice><input type="checkbox" id="run-closure-retro"> Run Retro before Cleanup</label>'
         );
       const retro = panel.querySelector('#run-closure-retro');
       const updateRetro = () => {

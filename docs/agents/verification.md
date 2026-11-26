@@ -12,6 +12,11 @@ missing evidence links, blocked scripts, and blocked external resources. It uses
 saved fixture content, not live model generation, so it does not establish that a
 model follows the report design prompt.
 
+`node scripts/flow-browser.mjs --investigation-flows` runs the inquiry and output
+blocks with a fixture provider. It creates two approval-needed issue records and
+checks the links in the published report. The next run links to matching work,
+so its own report has no created issues.
+
 `node --test scripts/discussion-evidence.check.mjs` checks temporary discussion
 protocol configuration, complete context/input references above the provider
 limit, small follow-up messages, and cleanup that preserves the project. It uses
@@ -59,6 +64,16 @@ counts beyond retention, reset with a turn in flight, and quota
 windows for ChatGPT versus API key sessions. It starts no model turn.
 
 ## Commands and evidence
+
+The Verify workflow splits its first Flow browser part into `--ci-part=1a`
+and `--ci-part=1b`. `--ci-part=1` still selects both for local use. The former
+second non-browser job runs its Factory shard and the app tests and build
+in separate jobs. The aggregate `test` check requires all jobs and combines
+evidence for the same candidate.
+
+`node scripts/flow-browser.mjs --inbox-details --manual-close --local-notes`
+uses a disposable project to exercise playback, block Details, the Close menu,
+and contextual note recommendations.
 
 `node scripts/flow-browser.mjs --request-save` holds Request clarification after
 saving Your words on an existing issue. Rename, Close, Stop, and the editor remain
@@ -555,7 +570,9 @@ GitHub artifact downloads have a two-minute transfer deadline; ordinary GitHub
 CLI requests retain their 30-second deadline. This lets large failure evidence
 finish transferring before the repair worker is invoked.
 
-Close confirms the exact merged PR, target branch, and required GitHub checks.
+Merge uses GitHub readiness for the exact PR candidate on both individual and
+master issues. Close confirms the exact merged PR, target branch, and required
+GitHub checks.
 The delivery manifest records the merged candidate tree and retained Work proof.
 
 The Notes browser scenario leaves a pending Discuss draft, unloads the preceding
@@ -585,7 +602,10 @@ A standalone focused browser check can be recorded as `node scripts/<name>-brows
 without extra arguments. A focused Flow browser command requires a scenario
 flag registered in the candidate commit's `scripts/browser-scenario-policy.mjs`.
 Register flags as quoted keys in the `flowBrowserScenarioNames` object. Factory
-reads that declaration during Work result validation. You can add
+reads that declaration and the quoted flags in the candidate's
+`flowBrowserCiParts = new Set([...])` during Work and publication validation.
+Each focused command still requires a named scenario and accepts at most one
+CI-part flag. You can add
 `--reverse-fixture-scenarios` to change fixture order.
 The aggregate Factory browser runner belongs to full verification.
 Work accepts the Node `--test-name-pattern` value as a separate argument or

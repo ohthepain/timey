@@ -49,6 +49,23 @@ function issueProvider(records) {
       location: record.value.location,
     };
   }
+  function groupWrite({ issueId, report, location, expectedRevision }, operationId) {
+    const head = prefix(issueId) + 'head';
+    const guard = { key: head, revision: expectedRevision };
+    if (report === undefined) return { expected: [guard], writes: [] };
+    const history = prefix(issueId) + 'history/' + hash(operationId);
+    const value = { id: issueId, report: Buffer.from(report).toString('base64'), location };
+    return {
+      expected: [guard, { key: history, revision: null }],
+      writes: [
+        { key: head, value },
+        {
+          key: history,
+          value: { ...value, previousRevision: expectedRevision, headRevision: revisionFor(operationId, head) },
+        },
+      ],
+    };
+  }
   return {
     id: records.id,
     supportsCoordinatedCommit: true,
@@ -107,6 +124,16 @@ function issueProvider(records) {
         ],
       });
       return issue(result.records.find((item) => item.key === head));
+    },
+    commitGroup({ reports, operationId, coordination }) {
+      const expected = [...coordination.expected];
+      const writes = [...coordination.writes];
+      for (const report of reports) {
+        const change = groupWrite(report, operationId);
+        expected.push(...change.expected);
+        writes.push(...change.writes);
+      }
+      return records.commit({ operationId, expected, writes });
     },
     async history(issueId) {
       const entries = await records.list(prefix(issueId) + 'history/');

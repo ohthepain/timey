@@ -92,6 +92,13 @@ function validateFlowSave(record, flow, expectedRevision, purpose) {
   return unchanged;
 }
 
+function movedGroupFlow(current, flow) {
+  if (!flow) return [];
+  const record = current.flow ? { value: current.flow } : null;
+  validateFlowSave(record, flow, flow.revision, 'edit');
+  return [{ key: flowKey(flow.issueId), value: updatedFlow(record, flow, now()) }];
+}
+
 function confirmedFlowSave(coordination, operation, record, inputHash) {
   coordination.matchOperation(operation, inputHash);
   return operation.value.status === 'confirmed' ? { flow: record?.value ?? null } : null;
@@ -481,6 +488,65 @@ export function createProjectStores({
           writes.push({ key: flowKey(id), value: flow });
         }
         await this.coordination.commit(op.value.id + '/activate', expected, writes);
+      },
+      async groupMoveRecord(view, edit) {
+        const { issueId, expectedContent, report, flow } = edit;
+        const catalog = await view.catalog(issueId);
+        const current = await view.readCatalogIssue(catalog, view.issueStore(catalog.value.storeId));
+        const claim = await view.coordination.get('claims/' + issueId);
+        assertStoreState(!claim, 'STORE_CLAIMED', 'Another runner or attempt owns this issue.');
+        assertStoreState(current.location === 'open' && !merged(current.flow), 'STORE_MERGED', 'Choose an open issue.');
+        assertStoreState(
+          current.report === expectedContent,
+          'STORE_CONFLICT',
+          'An issue report changed. Refresh before moving.'
+        );
+        const expected = [
+          { key: catalog.key, revision: catalog.revision },
+          { key: flowKey(issueId), revision: current.flowRevision },
+          { key: 'claims/' + issueId, revision: null },
+        ];
+        const writes = movedGroupFlow(current, flow);
+        validateReport(issueId, report ?? expectedContent);
+        return {
+          storeId: current.storeId,
+          artifactStoreId: current.artifactStoreId,
+          expected,
+          writes,
+          report: { issueId, expectedRevision: current.revision, location: current.location, report },
+        };
+      },
+      async moveIssueGroup(edits, operationId) {
+        const state = await this.pinnedRead(async (view) => ({
+          gate: await view.coordination.get('project/migration'),
+          records: await Promise.all(edits.map((edit) => this.groupMoveRecord(view, edit))),
+        }));
+        this.coordination.requireGate(state.gate);
+        const locations = new Set(state.records.map((record) => storagePair(record)));
+        assertStoreState(
+          locations.size === 1,
+          'STORE_GROUP_MISMATCH',
+          'The issues must share their Issue and Artifact stores.'
+        );
+        const [{ storeId }] = state.records;
+        const provider = this.issueStore(storeId);
+        assertStoreState(
+          storeId === this.records.id && typeof provider.commitGroup === 'function',
+          'STORE_UNSUPPORTED',
+          'This Issue Store and Coordination Store cannot move a sub-issue in one transaction.'
+        );
+        await provider.commitGroup({
+          reports: state.records.map(({ report }) => report),
+          operationId,
+          coordination: {
+            expected: [
+              { key: 'project/migration', revision: state.gate?.revision ?? null },
+              ...state.records.flatMap(({ expected }) => expected),
+            ],
+            writes: state.records.flatMap(({ writes }) => writes),
+          },
+        });
+        await this.refresh({ issueIds: edits.map(({ issueId }) => issueId) });
       },
       async atomicIssueSave(request) {
         const { issueId, operationId, owner, flow, purpose } = request;

@@ -26,11 +26,15 @@ function retainedOutput(attempt) {
     : 'The retained result changed and cannot be verified.';
 }
 
-function runView(attempt, block, sessions, reports) {
-  const session = sessions.find((entry) => entry.attemptId === attempt.id);
-  const issues = reports
-    .filter((entry) => entry.source_attempt === attempt.id)
+export function investigationCreatedIssues(reports, { issueId, attemptId }) {
+  return reports
+    .filter((entry) => entry.source_issue === issueId && entry.source_attempt === attemptId)
     .map(({ id, title, state, location }) => ({ id, title, state, location, relation: 'created' }));
+}
+
+function runView(attempt, block, sessions, reports, issueId) {
+  const session = sessions.find((entry) => entry.attemptId === attempt.id);
+  const issues = investigationCreatedIssues(reports, { issueId, attemptId: attempt.id });
   const tracked = (session?.trackedIssues || []).flatMap((id) => {
     const entry = reports.find((entry) => entry.id === id);
     return entry ? [{ id, title: entry.title, state: entry.state, location: entry.location, relation: 'tracked' }] : [];
@@ -63,7 +67,7 @@ export function investigationIssueView(owner, issueId) {
   const reports = projectIssueRecords(owner.service.root);
   const runs = investigationAttempts(flow, inquiryKinds)
     .map(({ block, attempt }) => ({
-      ...runView(attempt, block, sessions, reports),
+      ...runView(attempt, block, sessions, reports, issue.id),
       outputAttempts: investigationAttempts(flow, investigationOutputKinds)
         .filter((entry) => entry.attempt.investigationSource?.attemptId === attempt.id)
         .map((entry) => ({ ...entry.attempt, blockId: entry.block.id, kind: entry.block.kind })),

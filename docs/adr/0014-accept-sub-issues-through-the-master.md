@@ -4,7 +4,10 @@ status: accepted
 
 # Accept sub-issues through the master issue
 
-A master issue owns implementation and retains proof for each attached sub-issue.
+A master issue owns the work for its attached sub-issues and retains their
+evidence. Code masters can be accepted using the merged PR and its required
+GitHub checks. Investigation masters use the retained inquiry and sub-issue
+evidence. Required human checks still apply.
 Accepting the master as Fixed closes each attached sub-issue with the **Fixed by**
 reason and a link to the master. An unmet sub-issue must be detached before
 acceptance, so one decision can cover the whole fix without closing unfinished work.

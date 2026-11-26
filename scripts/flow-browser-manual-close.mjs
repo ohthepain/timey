@@ -151,6 +151,7 @@ async function checkManualClose({ page, flows, id, close, screenshot }) {
     await page.unroute(contextRoute, unavailable);
   }
   assert.equal(flows.selected(id).closed, false);
+  const retroAlignment = await checkRetroAlignment(dialog);
   await screenshot('manual-close-confirmation');
   await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
   assert.equal(flows.selected(id).closed, false);
@@ -179,6 +180,7 @@ async function checkManualClose({ page, flows, id, close, screenshot }) {
     closed: false,
     confirmationOpened: true,
     cancellationKeptOpen: true,
+    retroAlignment,
     ...beforeClose,
   };
 }
@@ -187,4 +189,23 @@ function prepareClosureProject(service, project, root) {
   initializeProjectLifecycle(service, { digest: readProjectSettings(project).lifecycle.digest });
   const helper = '.agents/skills/issues/scripts';
   cpSync(join(root, helper), join(project, helper), { recursive: true });
+}
+
+async function checkRetroAlignment(dialog) {
+  const checkbox = dialog.getByRole('checkbox', { name: 'Run Retro before Cleanup' });
+  const before = await checkbox.isChecked();
+  const offset = await checkbox.evaluate((input) => {
+    const label = input.labels[0];
+    const range = document.createRange();
+    range.selectNode(label.lastChild);
+    const box = input.getBoundingClientRect();
+    const text = range.getBoundingClientRect();
+    return Math.abs(box.top + box.height / 2 - text.top - text.height / 2);
+  });
+  assert.ok(offset <= 2, 'The retro checkbox and its label have aligned vertical centers.');
+  await checkbox.click();
+  assert.equal(await checkbox.isChecked(), !before);
+  await checkbox.click();
+  assert.equal(await checkbox.isChecked(), before);
+  return { verticalOffset: offset, toggled: true };
 }

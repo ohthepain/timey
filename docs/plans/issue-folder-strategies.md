@@ -57,12 +57,10 @@ Offer **Continue on the master** and **Detach and fix separately**. Recommend th
 next action based on what failed.
 
 The original reports remain as sub-issues and cannot start independent work.
-Merge requires passing proof for every attached sub-issue on the final PR
-candidate. A detached sub-issue does not participate in the merge check.
-When a target update or CI repair changes the candidate and the saved proof no
-longer applies, Merge reruns the attached sub-issues' checks on the final
-candidate. It retains that proof for merge approval and closure.
-Before accepting the master as Fixed, require proof for each attached sub-issue.
+Merge uses the required GitHub checks and normal merge policy for the exact PR
+candidate. Close as Fixed for a code master checks the merged PR, target, and
+required GitHub checks. Work can record per-sub-issue proof for review.
+Investigation masters verify their retained investigation output and sub-issue proof.
 The Close dialog lists both attached and removed sub-issues.
 Required human checks follow their sub-issues to the master and still require
 the person's own observations or judgment.
@@ -107,8 +105,5 @@ report lists what finished and gives the failed check, where applicable, and
 the next action for each issue that needs attention. Merge and closure remain
 separate actions.
 
-After a target update, closure can reuse a retained passing Work report when
-the delivered candidate descends from the proved commit, preserves the implementation paths
-changed by Work, and its validated verification reran all recorded Work focused
-checks successfully. Required human checks still apply. Missing proof errors
-include the saved sub-issue numbers when available.
+Code closure can use the merged PR after target updates and CI repairs.
+Required human checks still apply.

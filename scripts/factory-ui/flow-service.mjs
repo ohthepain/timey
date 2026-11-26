@@ -83,6 +83,7 @@ import {
   reconcileInvestigationFindings,
 } from './investigation-execution.mjs';
 import { flowHumanInput } from './flow-human-input.mjs';
+import { liveProofSummary, saveLiveProof } from './flow-live-proof.mjs';
 import { FolderOperations } from './folder-operations.mjs';
 import {
   executionBlockSkill,
@@ -180,6 +181,7 @@ const folderGroupActions = new Set([
   'folder-detach-blocked',
   'folder-reattach',
   'folder-attach',
+  'move-grouped-issue',
 ]);
 const folderNightActions = new Set(['folder-night-plan', 'folder-night-start', 'folder-night-stop']);
 const folderOperationActions = new Set(['folder-ai-search', 'folder-bulk-preview', 'folder-bulk-run']);
@@ -197,6 +199,7 @@ const scopedFolderActions = new Set([
   'folder-group-preview',
   'folder-detach',
   'folder-detach-blocked',
+  'move-grouped-issue',
   'folder-move',
   'folder-remove',
   'folder-bulk-preview',
@@ -208,9 +211,9 @@ const scopedFolderActions = new Set([
 const cachedFlowActions = new Set(['agent-answer', 'cancel-confirmation', 'reveal-definition', 'open-block-extension']);
 
 export async function prepareFlowActionStores(service, input) {
-  const { action, issueId, subIssueId, masterId } = input;
+  const { action, issueId, subIssueId, masterId, destinationMaster } = input;
   const ids = Array.isArray(input.issueIds) ? input.issueIds : [];
-  const issueIds = [...new Set([issueId, subIssueId, masterId, ...ids])].filter(
+  const issueIds = [...new Set([issueId, subIssueId, masterId, destinationMaster, ...ids])].filter(
     (id) => typeof id === 'string' && /^[\w-]+$/.test(id)
   );
   const queueWide = folderActions.has(action) && !scopedFolderActions.has(action);
@@ -222,6 +225,25 @@ export async function prepareFlowActionStores(service, input) {
   });
   if (stores && fresh) for (const id of issueIds) await reconcileRecoveredProgress(service, stores, id);
   return stores;
+}
+
+function hydrateMergeLiveProof(service, issue, flow, block) {
+  if (block.kind === 'merge' && flow.liveProof?.attachments.length) return hydrateProjectEvidence(service, issue.id);
+}
+
+function retainExecutionFailure(current, error) {
+  const { humanInput, liveProofRequirements, input } = error;
+  if (humanInput || liveProofRequirements)
+    current.result = {
+      ...current.result,
+      ...conditionalField('humanInput', humanInput),
+      ...conditionalField('liveProofRequirements', liveProofRequirements),
+    };
+  if (input) current.input = input;
+}
+
+function conditionalField(key, value) {
+  return value ? { [key]: value } : {};
 }
 
 const unresolvedAttempt = (attempt) =>
@@ -634,7 +656,7 @@ class IssueFlows {
       updated: issue.updated,
       state: issue.state,
       type: requestData(flow).fields?.type ?? flow.routeType,
-      badges: issueBadges(issue, badgeIndex, { masterId, approvals, flow }),
+      badges: issueBadges(issue, badgeIndex, { masterId, approvals, flow, root: this.service.root }),
       masterId,
       isMaster: Boolean(issue.issue_group),
       folder: flow.folder,
@@ -697,11 +719,50 @@ class IssueFlows {
         const path = this.store.path(row.id);
         const flow = existsSync(path) ? this.store.read(issue, flowTarget(this.service.root)) : undefined;
         const approvals = this.agentApprovals(row.id);
-        return { ...row, badges: issueBadges(issue, index, { masterId: row.masterId, approvals, flow }) };
+        return {
+          ...row,
+          badges: issueBadges(issue, index, { masterId: row.masterId, approvals, flow, root: this.service.root }),
+        };
       }),
       ...(warning && { annotationsWarning: warning }),
     };
   }
+  observeSelectedRow({
+    requestOnly,
+    issue,
+    savedFlow,
+    issuesWithSelected,
+    resolveFolder,
+    badgeIndex,
+    data,
+    agentApprovals,
+    environment,
+    flow,
+  }) {
+    const id = issue.id;
+    const selectedRow =
+      requestOnly || issue.location === 'archive'
+        ? this.indexIssue(issue, savedFlow, issuesWithSelected, resolveFolder, badgeIndex)
+        : selectedFlowRow(data.issues, id);
+    selectedRow.badges = issueBadges(issue, badgeIndex, {
+      masterId: selectedRow.masterId,
+      approvals: agentApprovals,
+      flow: savedFlow,
+      root: this.service.root,
+    });
+    if (requestOnly) data.issues = [selectedRow];
+    if (!['closed', 'needs-approval'].includes(selectedRow.status) && !this.active.has(id)) {
+      if (environment.pr?.mergedAt) selectedRow.status = 'merged';
+      else if (environment.startingBranchBehind > 0) selectedRow.status = 'need-merge-from-dev';
+      else if (
+        selectedRow.status === 'ready-to-merge' &&
+        !flow.blocks.some((block) => flowVerificationHead(block) === environment.head)
+      )
+        selectedRow.status = 'ready';
+    }
+    return selectedRow;
+  }
+
   async view(id, { requestOnly = false, refresh = false } = {}) {
     const { ownership, ...storage } = await this.storageView(id, { refresh });
     const issues = this.issues();
@@ -779,21 +840,20 @@ class IssueFlows {
     this.addLegacyOperation(flow, id, catalog);
     this.suggestTargetUpdate(flow, environment, catalog);
     const issuesWithSelected = issues.some((entry) => entry.id === id) ? issues : [...issues, issue];
-    const selectedRow =
-      requestOnly || issue.location === 'archive'
-        ? this.indexIssue(issue, savedFlow, issuesWithSelected, resolveFolder, badgeIndex)
-        : selectedFlowRow(data.issues, id);
-    if (requestOnly) data.issues = [selectedRow];
-    if (!['closed', 'needs-approval'].includes(selectedRow.status) && !this.active.has(id)) {
-      if (environment.pr?.mergedAt) selectedRow.status = 'merged';
-      else if (environment.startingBranchBehind > 0) selectedRow.status = 'need-merge-from-dev';
-      else if (
-        selectedRow.status === 'ready-to-merge' &&
-        !flow.blocks.some((block) => flowVerificationHead(block) === environment.head)
-      )
-        selectedRow.status = 'ready';
-    }
+    const selectedRow = this.observeSelectedRow({
+      requestOnly,
+      issue,
+      savedFlow,
+      issuesWithSelected,
+      resolveFolder,
+      badgeIndex,
+      data,
+      agentApprovals,
+      environment,
+      flow,
+    });
     this.populateBlockDetails(flow, issue, catalog);
+    const proofWorkspace = flowWorkspace(this.service, flow);
     const conversation = flowChatProgress(flow, conversationMessages(this.service.root, id).slice(-100));
     return {
       ...data,
@@ -816,6 +876,9 @@ class IssueFlows {
         closure: issue.closure,
       },
       flow,
+      ...(issue.issue_group && {
+        liveProof: liveProofSummary(issue, flow, environment.worktreeExists && proofWorkspace),
+      }),
       blockModels: issueBlockModels(this.service, issue, savedFlow, issueSettings, resolveFolder),
       lastBlockingError: lastBlockingError(savedFlow),
       humanInput: availableHumanInput(issue, flow, agentApprovals[0]),
@@ -1115,8 +1178,8 @@ class IssueFlows {
     requireThat(flow.revision === input.flowRevision, 'The flow changed. Review Close again.');
     requireThat(!flowOwnsIssue(this.service, issue.id), 'Wait for the running block or stop it before closing.');
     if (groupChildren(issue).length && (input.resolution ?? 'fixed') === 'fixed') {
-      requireThat(!input.automatic, 'Review and accept the sub-issue proof before closing the master.');
-      requireThat(artifact?.groupProof === true, 'Check the current candidate and proof for each sub-issue.');
+      requireThat(!input.automatic, 'Accept the master issue explicitly before closing its attached sub-issues.');
+      requireThat(artifact?.revision, 'Verify the master’s recorded result before closing its attached sub-issues.');
     }
     const branches = (input.cleanup?.selectedResources || []).filter((item) =>
       ['local-branch', 'remote-branch'].includes(item.kind)
@@ -1392,7 +1455,12 @@ class IssueFlows {
   actionNeedsFreshStore(input) {
     const localControl = ['stop', 'pause'].includes(input.action) && this.active.has(input.issueId);
     return (
-      !localControl && Boolean(this.service.projectStores || existsSync(join(this.service.root, '.issues/stores.json')))
+      !localControl &&
+      Boolean(
+        input.action === 'move-grouped-issue' ||
+        this.service.projectStores ||
+        existsSync(join(this.service.root, '.issues/stores.json'))
+      )
     );
   }
   async action(input, { storesReady = false } = {}) {
@@ -1539,7 +1607,7 @@ class IssueFlows {
       requireThat(typeof input.enabled === 'boolean', 'Choose whether to close automatically.');
       requireThat(
         !input.enabled || !groupChildren(issue).length,
-        'Accept the master’s sub-issue proof before closing it.'
+        'Accept the master issue explicitly before closing its attached sub-issues.'
       );
       flow.autoClose = input.enabled;
       await this.store.save(flow, flow.revision);
@@ -1641,6 +1709,8 @@ class IssueFlows {
     }
     if (!['comment', 'open-block'].includes(input.action))
       requireThat(input.revision === flow.revision, 'This flow changed. Refresh before saving this edit.');
+    if (['live-proof-authorize', 'live-proof-attach'].includes(input.action))
+      return this.recordLiveProof(issue, flow, input);
     if (input.action === 'edit-request') return this.editRequest(issue, flow, input, catalog);
     if (input.action === 'folder' || input.action === 'folder-lock') return await this.editFolder(issue, flow, input);
     if (closureActions.has(input.action)) return await this.dispatchClosure(input, issue, flow, catalog);
@@ -1679,24 +1749,42 @@ class IssueFlows {
     if (input.action === 'destination' || input.action === 'accept-pr-base')
       return this.setDestination(issue, flow, input);
     if (input.action === 'issue-settings') return await this.editIssueSettings(issue, flow, input);
-    if (input.action === 'rename-issue') {
-      const title = typeof input.title === 'string' ? input.title.trim() : '';
-      requireThat(
-        title && title.length <= 256 && !/[\r\n\x00-\x1f]/.test(title),
-        'Enter an issue title of up to 256 characters on one line.'
-      );
-      requireThat(
-        !this.active.has(issue.id) || this.active.get(issue.id).blockId === requestBlock(flow).id,
-        'Wait for the running block before renaming the issue.'
-      );
-      requireThat(input.previousTitle === issue.title, 'The issue title changed. Refresh before renaming.');
-      if (title !== issue.title) {
-        if (!existsSync(this.store.path(issue.id))) await this.store.save(flow, flow.revision);
-        await renameStoredIssue(this.service.root, issue, title);
-      }
-      return this.view(issue.id);
-    }
+    if (input.action === 'rename-issue') return this.renameIssue(issue, flow, input);
     return this.dispatchBlockAction(issue, flow, input, catalog);
+  }
+  async recordLiveProof(issue, flow, input) {
+    requireThat(
+      !issue.closed && !issueHasActiveWork(this.service, issue.id),
+      'Choose an open issue with no running work.'
+    );
+    this.groups.requireChildren(issue);
+    await hydrateProjectEvidence(this.service, issue.id);
+    return saveLiveProof(
+      this.service,
+      issue,
+      flow,
+      flowWorkspace(this.service, flow),
+      input.action,
+      input.proof,
+      this.store
+    );
+  }
+  async renameIssue(issue, flow, input) {
+    const title = typeof input.title === 'string' ? input.title.trim() : '';
+    requireThat(
+      title && title.length <= 256 && !/[\r\n\x00-\x1f]/.test(title),
+      'Enter an issue title of up to 256 characters on one line.'
+    );
+    requireThat(
+      !this.active.has(issue.id) || this.active.get(issue.id).blockId === requestBlock(flow).id,
+      'Wait for the running block before renaming the issue.'
+    );
+    requireThat(input.previousTitle === issue.title, 'The issue title changed. Refresh before renaming.');
+    if (title !== issue.title) {
+      if (!existsSync(this.store.path(issue.id))) await this.store.save(flow, flow.revision);
+      await renameStoredIssue(this.service.root, issue, title);
+    }
+    return this.view(issue.id);
   }
   async abortMerge(issue, flow, input) {
     this.branchRepairs.requireIdle(issue);
@@ -1790,6 +1878,7 @@ class IssueFlows {
     if (folderSelectionActions.has(input.action)) return this.folderSelection.action(input);
     if (folderNightActions.has(input.action)) return this.overnight.action(input);
     if (folderOperationActions.has(input.action)) return this.folderOperations.action(input);
+    if (input.action === 'move-grouped-issue') return this.groups.moveGroupedIssue(input);
     if (folderGroupActions.has(input.action)) {
       const reasoning =
         input.action === 'folder-group-preview'
@@ -2765,6 +2854,7 @@ class IssueFlows {
             detach: (request) => this.groups.detachFromRun(issue.id, attempt.id, request),
           }
       );
+      await hydrateMergeLiveProof(this.service, issue, flow, block);
       const result =
         block.kind === 'request'
           ? await this.clarify(
@@ -2892,8 +2982,7 @@ class IssueFlows {
         current.endedAt = new Date().toISOString();
         if (error.partialText) current.output += error.partialText;
         current.evidence = error.evidence || current.evidence;
-        if (error.humanInput) current.result = { ...current.result, humanInput: error.humanInput };
-        if (error.input) current.input = error.input;
+        retainExecutionFailure(current, error);
         outcome = current;
       });
     } finally {

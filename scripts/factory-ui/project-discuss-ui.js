@@ -181,10 +181,14 @@
       clearTimeout(timer);
       timer = setTimeout(() => void saveDraft(), 450);
     }
+    function selectConversation(id) {
+      if (id !== selectedId) openingScroll = {};
+      selectedId = id;
+    }
     function apply(value, restore = false) {
       const oldId = selectedId;
       data = value;
-      selectedId = value.selected?.id || selectedId;
+      selectConversation(value.selected?.id || selectedId);
       if (desiredSettings && value.selected?.id === selectedId)
         desiredSettings = { ...value.selected.settings, ...desiredSettings };
       if (restore || oldId !== selectedId) {
@@ -197,6 +201,18 @@
       }
       render();
     }
+    function openNoteDiscussion(id) {
+      const url = new URL(location.href);
+      url.searchParams.set('conversation', id);
+      location.assign(url);
+    }
+    function applyRefresh(result, restore) {
+      const next = result.selected?.noteNavigation;
+      if (next && next.messageId === view.read('discuss-note-navigation:' + selectedId)) {
+        view.write('discuss-note-navigation:' + selectedId, null);
+        openNoteDiscussion(next.id);
+      } else apply(result, restore);
+    }
     async function refresh(restore = false) {
       if (loading || pending || !visible) return;
       loading = true;
@@ -205,7 +221,7 @@
         const query = selectedId ? '?conversation=' + encodeURIComponent(selectedId) : '';
         const result = await request('/api/project-discuss' + query);
         if (selectedId !== requested) return;
-        apply(result, restore);
+        applyRefresh(result, restore);
         error('');
       } catch (failure) {
         error(failure.message);
@@ -400,7 +416,6 @@
                 : '')
           )
           .join('') || emptyConversation();
-      restoreOpeningScroll(scope);
       view.render(log, html + liveResponseMarkup(), scope);
       view.render(
         byId('discuss-queue'),
@@ -416,11 +431,9 @@
       renderApprovals(current?.approvals || []);
       renderAttachments();
       renderSuggestion();
+      renderRecommendations();
       updateControls();
       scrollOpeningHistory();
-    }
-    function restoreOpeningScroll(scope) {
-      if (view.read(scope)?.root?.follow === false) openingScroll = null;
     }
     function scrollOpeningHistory() {
       if (!openingScroll || !visible || !session()) return;
@@ -452,6 +465,36 @@
         'discuss-attachments:' + selectedId
       );
     }
+    function renderRecommendations() {
+      const prompts = session()?.recommendations || [];
+      view.render(
+        byId('discuss-recommendations'),
+        prompts
+          .map(
+            ({ id, label }) =>
+              `<button type="button" class="small-button" data-prompt-id="${escape(id)}">${escape(label)}</button>`
+          )
+          .join(''),
+        'discuss-recommendations:' + selectedId
+      );
+    }
+    function chooseRecommendation(id) {
+      const recommendation = session()?.recommendations?.find((entry) => entry.id === id);
+      if (recommendation) void sendRecommendation(recommendation);
+    }
+    byId('discuss-recommendations').addEventListener('click', (event) => {
+      if (pending || creating) return;
+      chooseRecommendation(event.target.closest('[data-prompt-id]')?.dataset.promptId);
+    });
+    async function sendRecommendation({ id, prompt }) {
+      const conversationId = selectedId;
+      await Promise.all([draftSave.catch(() => {}), settingsSave.catch(() => {})]);
+      if (selectedId !== conversationId) return;
+      const clientId = crypto.randomUUID();
+      view.write('discuss-note-navigation:' + conversationId, clientId);
+      await action('send', { clientId, text: prompt, recommendationId: id, settings: settings() });
+      void saveDraft();
+    }
     function renderSuggestion() {
       const suggestion =
         [...(session()?.messages || [])].reverse().find((message) => message.suggestion)?.suggestion || '';
@@ -460,9 +503,11 @@
       node.hidden = Boolean(draft.value || editId || !suggestion);
     }
     function syncResponseLine(active) {
+      const follow = view.follows(log, view.captureSelection(log));
       const line = log.querySelector(':scope > .chat-live');
       if (line) removeIdleResponseLine(line, active);
       else if (pendingResponses) log.insertAdjacentHTML('beforeend', liveResponseMarkup());
+      if (follow) log.scrollTop = log.scrollHeight;
     }
     function removeIdleResponseLine(line, active) {
       if (!active && !pendingResponses) line.remove();
@@ -610,7 +655,7 @@
         remember();
         const result = await action('close', { conversationId: id, returnTo: selectedId });
         if (result) {
-          selectedId = result.selected?.id || null;
+          selectConversation(result.selected?.id || null);
           if (wasSelected) desiredSettings = null;
           editId = null;
           updateUrl();
@@ -622,7 +667,7 @@
       if (!tab || tab.dataset.discussConversation === selectedId || pending) return;
       remember();
       await saveDraft();
-      selectedId = tab.dataset.discussConversation || null;
+      selectConversation(tab.dataset.discussConversation || null);
       desiredSettings = null;
       editId = null;
       updateUrl();

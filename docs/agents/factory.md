@@ -188,3 +188,39 @@ Follow [issue delivery](issue-delivery.md) for contribution assembly, complete-i
 review, publication, recovery and server-enforced merge gates. Default delivery uses
 one draft PR per issue and ends at manual handoff, including failed checks and
 unfinished implementation. Explicit verified-delivery routes retain their gates. Historical records retain their original meaning.
+
+## Attach live proof for a sub-issue
+
+Work reports any requested check that requires a live external write. Before
+running that check, record explicit approval on the committed master candidate.
+Use a disposable source and target. The production PR and its branches are
+outside the proof scope. Factory records the approval and leaves GitHub actions
+to the operator or a separately authorized collector.
+
+1. Run `pnpm run factory -- live-proof status MASTER_ID --url SERVER_URL` to get
+   the flow revision, committed head and tree, and the reported checks.
+2. Save an authorization request and run
+   `pnpm run factory -- live-proof authorize REQUEST.json --url SERVER_URL`.
+   Include `issueId`, `revision`, `childId`, the reported `check`,
+   `candidate: { head, tree }`, `scope: { repository, branch, target }`, and
+   `confirmed: true`. For evidence collected separately under prior approval,
+   record the same approved scope and candidate before attaching it.
+3. Run the exact check under that scope and retain its observations and command
+   output. For a required-check transition, record the unreviewed PR while it
+   remains open with a pending or failed required check, followed by the same PR
+   with successful checks and its automatic merge receipt.
+4. Save an attachment request and run
+   `pnpm run factory -- live-proof attach REQUEST.json --url SERVER_URL`.
+   Include `issueId`, the returned `revision`, `authorizationId` from the receipt,
+   `source: "live-github"`, `status: "passed"` or `"failed"`, `pr: { number, repository, branch, target, head }`,
+   and `confirmed: true` to attest to actual observations. Include
+   `observations: [{ at, observed }]` with ISO UTC timestamps and
+   `logs: [{ name, path }]` with paths relative to the request file. Use excerpts
+   from the actual logs that cover the required observations and fit in a 64 KiB
+   request. Keep credentials out of the evidence. Report fixture runs as local
+   proof in Work.
+5. Retry Merge. Factory verifies the retained hashes, saved check, exact head
+   and tree, and test PR scope. The final verification turn can read those
+   observations under read-only permissions. When a candidate or requirement
+   changes, use the Merge message to identify the check to authorize and rerun.
+   `live-proof status` still lists the earlier attachments.

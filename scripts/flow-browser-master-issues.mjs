@@ -26,7 +26,7 @@ const removalGroup = {
   },
 };
 
-async function createGroup(project, { master, children, titles, detachable }) {
+async function createGroup(project, { master, children, titles, detachable, emptyMaster }) {
   const scope = children.map((child) => ({
     id: child,
     ...(detachable && {
@@ -36,8 +36,12 @@ async function createGroup(project, { master, children, titles, detachable }) {
       appended: true,
     }),
   }));
+  const groupScopes = new Map([
+    [master, scope],
+    [emptyMaster, []],
+  ]);
   for (const id of Object.keys(titles)) {
-    const group = id === master ? stringify({ issue_group: { children: scope } }) : '';
+    const group = groupScopes.has(id) ? stringify({ issue_group: { children: groupScopes.get(id) } }) : '';
     await importBrowserIssue(
       project,
       id,
@@ -213,4 +217,88 @@ export async function manualSubIssueRemovalBrowserChecks({ page, project, root, 
     const removal = await checkManualRemoval(page, output, removalGroup);
     writeFileSync(join(output, 'manual-sub-issue-removal.json'), JSON.stringify(removal, null, 2) + '\n');
   });
+}
+
+export async function masterDragBrowserChecks({ page, project, root, output, service, poll }) {
+  const values = {
+    from: '20261126-drag-master-one',
+    to: '20261126-drag-master-two',
+    child: '20261126-drag-child',
+    sidebar: '20261126-drag-sidebar',
+    folder: '20261126-drag-folder',
+  };
+  const names = Object.fromEntries(Object.values(values).map((id) => [id, id]));
+  const source = {
+    master: values.from,
+    emptyMaster: values.to,
+    children: [values.child],
+    titles: names,
+    detachable: true,
+  };
+  await withIssueGroup({ page, project, root }, source, async () => {
+    await service.flows.action({ action: 'create-folder', name: 'Drag destination' });
+    await exerciseMasterDrags({ page, service, values, output, poll });
+  });
+}
+
+async function exerciseMasterDrags({ page, service, values, output, poll }) {
+  const { from, to, child, sidebar, folder } = values;
+  const owner = (id) => service.flows.groups.masterId(id);
+  const waitOwner = (id, master) =>
+    poll(
+      () => owner(id),
+      (value) => value === master,
+      'Expected current master for ' + id
+    );
+  const destination = page.locator('#issue-list [data-issue-master-drop="' + to + '"]');
+  const selectFolder = async () => {
+    const { flow } = await service.flows.view(from);
+    await page.goto('/?folder=' + encodeURIComponent(flow.folder));
+  };
+  await page.goto('/?issue=' + from);
+  await page.locator('#issue-list [data-issue="' + sidebar + '"]').dragTo(destination);
+  await waitOwner(sidebar, to);
+  await page.getByText('Attached issue to ' + to + '.', { exact: true }).waitFor();
+  await page.goto('/?issue=' + from);
+  const childLink = page.locator('#issue-sub-issues [data-issue="' + child + '"]');
+  service.flows.autoplay.set(to, { mode: 'playing' });
+  await childLink.dragTo(destination);
+  await page.getByText('Wait for the master to be idle before moving a sub-issue.', { exact: true }).waitFor();
+  assert.equal(owner(child), from);
+  service.flows.pause(to);
+  await childLink.dragTo(destination);
+  await waitOwner(child, to);
+  await page.getByText('Attached issue to ' + to + '.', { exact: true }).waitFor();
+  await page.goto('/?issue=' + to);
+  await page
+    .locator('#issue-sub-issues [data-issue="' + child + '"]')
+    .dragTo(page.locator('#issue-list [data-issue-folder-drop="Drag destination"]'));
+  await waitOwner(child, null);
+  await page.getByText('Moved issue to Drag destination.', { exact: true }).waitFor();
+  const moved = await service.flows.view(child);
+  assert.equal(moved.flow.folder, 'Drag destination');
+  await selectFolder();
+  const folderLink = page.locator('#folder-member-list [data-issue="' + folder + '"]');
+  await folderLink.dragTo(destination);
+  await waitOwner(folder, to);
+  await page.getByText('Attached issue to ' + to + '.', { exact: true }).waitFor();
+  await page.goto('/?issue=' + from);
+  const center = page.locator('.flow-main[data-issue-master-drop="' + from + '"] #issue-title');
+  await page.locator('#issue-list [data-issue="' + folder + '"]').dragTo(center);
+  await waitOwner(folder, from);
+  writeFileSync(
+    join(output, 'inbox-group-drag.json'),
+    JSON.stringify(
+      {
+        sidebarAttached: sidebar,
+        folderViewAttached: folder,
+        centerMasterAccepted: from,
+        rejectedTransferKept: from,
+        directTransferDestination: to,
+        detachedFolder: moved.flow.folder,
+      },
+      null,
+      2
+    )
+  );
 }

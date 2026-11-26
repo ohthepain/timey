@@ -393,6 +393,7 @@ const issueChatUI = (() => {
     toggle.onclick = () => {
       body.hidden = !body.hidden;
       toggle.setAttribute('aria-expanded', String(!body.hidden));
+      if (!body.hidden) log.scrollTop = log.scrollHeight;
     };
     historyButton = node('button', 'Earlier messages');
     historyButton.type = 'button';
@@ -504,7 +505,7 @@ const issueChatUI = (() => {
   function update(conversation = {}, inputHtml) {
     const reading = viewBeforeRender?.reading || {
       top: log.scrollTop,
-      follow: log.scrollHeight - log.scrollTop - log.clientHeight < 40,
+      follow: log.scrollHeight - log.scrollTop - log.clientHeight < 2,
     };
     mergeMessages(conversation);
     renderHistory();
@@ -909,11 +910,17 @@ const issueChatUI = (() => {
   function restoreSelection(saved) {
     window.timeyView.restoreSelection(saved, log);
   }
+  function openLatest() {
+    if (log) log.scrollTop = log.scrollHeight;
+  }
   function beforeRender() {
     focusedBeforeRender = panel?.contains(document.activeElement) ? document.activeElement : null;
     viewBeforeRender = panel?.isConnected
       ? {
-          reading: { top: log.scrollTop, follow: log.scrollHeight - log.scrollTop - log.clientHeight < 40 },
+          reading: {
+            top: log.scrollTop,
+            follow: log.scrollHeight - log.scrollTop - log.clientHeight < 2,
+          },
           draftTop: draft.scrollTop,
           draftLeft: draft.scrollLeft,
           caret: [draft.selectionStart, draft.selectionEnd, draft.selectionDirection],
@@ -921,5 +928,5 @@ const issueChatUI = (() => {
         }
       : null;
   }
-  return { mount, beforeRender };
+  return { mount, beforeRender, openLatest };
 })();

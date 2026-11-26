@@ -60,12 +60,14 @@ import { initializeProjectLifecycle } from './project-settings.mjs';
 import { readProjectSettingsOverview, changeProjectSettings } from './project-settings-overview.mjs';
 import { readProjectPreferences, saveProjectPreferences } from './project-preferences.mjs';
 import { ProjectHome } from './project-home.mjs';
+import { projectIssueRecords } from './project-home-stats.mjs';
 import { ProjectWorktreeCleanup } from './project-worktree-cleanup.mjs';
 import { ProjectRemoteBranchCleanup } from './project-remote-branch-cleanup.mjs';
 import { ProjectLocalBranchCleanup } from './project-local-branch-cleanup.mjs';
 import { ProjectArchiveDeletion } from './project-archive-deletion.mjs';
 import { ProjectDiscuss, readClarificationSkills, projectDiscussionSkills } from './project-discuss.mjs';
 import { InvestigationReports } from './investigation-reports.mjs';
+import { investigationCreatedIssues } from './investigation-history.mjs';
 import { reportDiscussionView, reportDiscussionAction } from './report-discussion.mjs';
 import { LocalNotes } from './local-notes.mjs';
 import { localNoteAction } from './local-note-routes.mjs';
@@ -784,7 +786,11 @@ async function read(service, request, response, owner) {
       const id = url.searchParams.get('report');
       if (!id) return { reports: reports.list() };
       const report = reports.read(id);
-      return { report, reports: reports.list().filter((entry) => entry.source.issueId === report.source.issueId) };
+      return {
+        report,
+        createdIssues: investigationCreatedIssues(projectIssueRecords(service.root), report.source),
+        reports: reports.list().filter((entry) => entry.source.issueId === report.source.issueId),
+      };
     },
     '/api/report-discuss': () =>
       reportDiscussionView(

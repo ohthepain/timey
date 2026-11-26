@@ -57,6 +57,11 @@ async function browserIssues(service, ctx) {
         title: proposal.title + ' for ' + ctx.attempt.investigationSource.issueId,
         key: 'validation-boundary',
       },
+      {
+        ...proposal,
+        title: 'Explain validation failures for ' + ctx.attempt.investigationSource.issueId,
+        key: 'validation-feedback',
+      },
     ],
   });
   return {
@@ -85,7 +90,7 @@ function configureHome(service, calls) {
     const proof = { path, sha256: digest(findings), label: 'Block response' };
     return {
       output: findings,
-      summary: 'Found one validation improvement.',
+      summary: 'Found validation improvements.',
       evidence: [proof],
       artifacts: { values: {}, files: { response: proof } },
     };
@@ -190,7 +195,7 @@ async function investigate(page, service, calls, screenshot, poll) {
   assert.equal(reports.list().filter((entry) => entry.source.issueId === issueId).length, 2);
   assert.equal(
     service.flows.issues().filter(({ source_issue }) => source_issue === issueId).length,
-    1,
+    2,
     'Matching work remains linked without duplicate issue creation.'
   );
   await screenshot('investigation-run-history');
@@ -206,8 +211,28 @@ async function investigate(page, service, calls, screenshot, poll) {
     2,
     'Archival preserves retained reports.'
   );
+  const secondReport = reports
+    .list()
+    .find(({ source }) => source.issueId === issueId && source.attemptId !== inquiry.id);
+  const createdIssues = issueOutput.artifacts.values.issues.map(({ issueId }) => service.flows.selected(issueId));
+  assert.equal(createdIssues.length, 2);
+  await checkReportIssueLinks(page, reportOutput.artifacts.values.reportId, secondReport.id, createdIssues, screenshot);
   await page.goto('/');
   await page.locator('#project-home:not([hidden])').waitFor();
+}
+async function checkReportIssueLinks(page, firstReport, secondReport, createdIssues, screenshot) {
+  await page.goto('/?projectTab=reports&report=' + firstReport);
+  const section = page.getByRole('region', { name: 'Created issues' });
+  for (const { id, title } of createdIssues) {
+    const link = section.getByRole('link', { name: title, exact: true });
+    await link.waitFor();
+    assert.equal(await link.getAttribute('href'), '/?issue=' + id);
+  }
+  assert.equal(await section.getByRole('link').count(), createdIssues.length);
+  await screenshot('investigation-report-created-issues');
+  await page.locator('[data-report-run]').selectOption(secondReport);
+  await page.waitForURL((url) => url.searchParams.get('report') === secondReport);
+  await section.waitFor({ state: 'hidden' });
 }
 async function prepareHome(page, service) {
   const labels = join(service.root, '.issues/triage-labels.md');
@@ -251,7 +276,39 @@ export async function investigationFlowsBrowserChecks({ page, service, screensho
   await investigate(page, service, calls, screenshot, poll);
 }
 
-export async function automateActivityBrowserChecks({ page, service, screenshot }) {
+async function prepareLongAutomateChat({ page, service, poll, sessionId }) {
+  const automate = service.projectHome.automateMe;
+  const session = automate.selected(sessionId);
+  session.messages.push(
+    ...Array.from({ length: 32 }, (_, index) => ({ role: 'assistant', text: 'Working-style message ' + (index + 1) }))
+  );
+  automate.save(session);
+  const messages = page.locator('#home-automate-messages');
+  const metrics = () =>
+    messages.evaluate((node) => ({ top: node.scrollTop, end: node.scrollHeight - node.clientHeight }));
+  const atLatest = (position) => position.end > 100 && position.end - position.top < 3;
+  await messages.getByText('Working-style message 32', { exact: true }).waitFor();
+  await poll(metrics, atLatest, 'Automate me did not follow incoming history at the bottom.');
+  const followed = await metrics();
+  await messages.evaluate((node) => {
+    node.scrollTop = 90;
+  });
+  return { sessionId, metrics, atLatest, followed };
+}
+
+async function verifyAutomateChatReopening({ page, dialog, poll, output, chat }) {
+  const reading = await chat.metrics();
+  assert.equal(reading.top, 90, 'An Automate me reply preserves the older reading position.');
+  await dialog.getByRole('button', { name: 'Close Automate me', exact: true }).click();
+  await page.locator(`[data-home-session="automate"][data-session-id="${chat.sessionId}"]`).click();
+  await poll(chat.metrics, chat.atLatest, 'Reopened Automate me did not show the latest reply.');
+  writeFileSync(
+    join(output, 'automate-chat-scroll.json'),
+    JSON.stringify({ followed: chat.followed, reading, reopened: await chat.metrics() }, null, 2) + '\n'
+  );
+}
+
+export async function automateActivityBrowserChecks({ page, service, screenshot, poll, output }) {
   const calls = await prepareHome(page, service);
   let turn = Promise.withResolvers();
   calls.beforeTurn = () => turn.promise;
@@ -260,12 +317,19 @@ export async function automateActivityBrowserChecks({ page, service, screenshot 
     await page.getByRole('button', { name: 'Run Automate me', exact: true }).click();
     const dialog = page.locator('#home-automate-dialog');
     const indicator = dialog.locator('#home-automate-messages > .chat-live .SparkleText');
+    const started = page.waitForResponse(
+      (response) =>
+        response.url().endsWith('/api/project-home-action') &&
+        response.request().postDataJSON()?.action === 'automate-start'
+    );
     await dialog.getByRole('button', { name: 'Start conversation', exact: true }).click();
     await indicator.waitFor();
     await screenshot('automate-activity-running');
     turn.resolve();
     await dialog.getByText('Which working habit matters most?', { exact: true }).waitFor();
     await indicator.waitFor({ state: 'detached' });
+    const { session } = await (await started).json();
+    const chat = await prepareLongAutomateChat({ page, service, poll, sessionId: session.id });
     turn = Promise.withResolvers();
     await dialog.locator('#home-automate-message').fill('Make verification explicit.');
     await dialog.getByRole('button', { name: 'Send reply', exact: true }).click();
@@ -273,6 +337,7 @@ export async function automateActivityBrowserChecks({ page, service, screenshot 
     turn.resolve();
     await dialog.locator('#home-automate-review:not([hidden])').waitFor();
     await indicator.waitFor({ state: 'detached' });
+    await verifyAutomateChatReopening({ page, dialog, poll, output, chat });
     await dialog.getByRole('button', { name: 'Close Automate me', exact: true }).click();
   } finally {
     turn.resolve();

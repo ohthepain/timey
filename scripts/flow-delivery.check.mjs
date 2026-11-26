@@ -1,4 +1,5 @@
 import { test } from 'node:test';
+import { randomUUID } from 'node:crypto';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync, writeFileSync, mkdirSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
@@ -6,6 +7,7 @@ import YAML from 'yaml';
 import { deliveryFixture } from './factory-workflow-fixture.mjs';
 import { FactoryUI } from './factory-test-service.mjs';
 import { flowClosureArtifact, prepareFlowPublication, publishFlowPR } from './factory-ui/flow-delivery.mjs';
+import { createIssueFlows } from './factory-ui/flow-service.mjs';
 import { decideIssue } from './factory-ui/issue-decision.mjs';
 import { readQueue } from './factory-ui/data.mjs';
 import { decisionBasis } from './factory-ui/recorded-result.mjs';
@@ -492,6 +494,46 @@ function githubClosureFixture(f, checks) {
 }
 
 const failedCheck = { __typename: 'CheckRun', name: 'test', status: 'COMPLETED', conclusion: 'FAILURE' };
+
+test('Close accepts a merged master through Flow without a separate child proof file', async (t) => {
+  const f = fixture(t);
+  githubClosureFixture(f, [{ ...failedCheck, conclusion: 'SUCCESS', isRequired: true }]);
+  f.edit((metadata) => {
+    metadata.title = 'Deliver grouped changes';
+  });
+  f.queue.git('update-ref', 'refs/heads/dev', 'HEAD');
+  const flows = (f.service.flows = createIssueFlows(f.service));
+  const { issue: child } = await flows.action({
+    action: 'capture',
+    requestId: randomUUID(),
+    description: 'Deliver the attached code change.',
+  });
+  const id = f.ctx.issue.id;
+  f.edit((metadata) => {
+    metadata.issue_group = { children: [{ id: child.id, title: child.title }] };
+  });
+  const queue = readQueue(f.root, { issueId: id });
+  const issue = queue.issues[0];
+  const flow = flows.read(flows.selected(id));
+  const artifact = await flowClosureArtifact(f.service, { ...f.ctx, issue }, f.workspace, f.folder, f.options);
+
+  await flows.closeWithReason(
+    {
+      issueId: id,
+      flowRevision: flow.revision,
+      state: issue.state,
+      basis: decisionBasis(queue, issue),
+      resolution: 'fixed',
+    },
+    artifact
+  );
+  await flows.closureTasks.get(id);
+  await flows.active.get(id)?.task;
+
+  assert.equal(flows.selected(id).closed, true);
+  assert.equal(flows.selected(child.id).closure.fixed_by, id);
+  assert.equal(flows.selected(child.id).closure.reason, 'fixed-by');
+});
 
 for (const [label, checks] of [
   ['no observed checks', []],

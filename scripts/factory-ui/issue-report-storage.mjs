@@ -176,6 +176,24 @@ export function updateStoredIssueMetadata(root, issue, changes) {
   }
 }
 
+export function updateStoredGroup(root, updates) {
+  const stores = registeredProjectStores(root);
+  if (!stores)
+    return updateLocalReportGroup(
+      root,
+      updates.filter(({ changes }) => changes)
+    );
+  return stores.moveIssueGroup(
+    updates.map(({ issue, changes, flow }) => ({
+      issueId: issue.id,
+      expectedContent: issue.content,
+      flow,
+      report: changes ? changedMetadata(issue, changes) : undefined,
+    })),
+    'move-group-' + randomUUID()
+  );
+}
+
 export function deletePendingIssueReport(root, issue) {
   requireThat(issue.state === 'needs-approval', 'Only an issue awaiting approval can be deleted here.');
   if (registeredProjectStores(root)) return deleteRegisteredReport(root, issue, 'pending');

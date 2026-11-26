@@ -23,6 +23,10 @@ supporting evidence before deleting the disposable inquiry checkout. Evidence
 integrity is checked when read. Missing or changed evidence does not hide the
 report. Published report records are immutable.
 
+The report reader lists saved issues created by its exact investigation run.
+It reads the issue records when the report opens, so later issue creation for
+that run also appears. Matching existing issues keep their original provenance.
+
 Report discussion belongs to the investigation, separately from project-owned
 conversations. It shares ProjectDiscuss rendering, sending, tools, and skills.
 Each message snapshots its selected report context. Reading or discussing an
