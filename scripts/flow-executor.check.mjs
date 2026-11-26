@@ -329,9 +329,12 @@ test('Work retains passing Flow scenarios and Node test name filters', async (t)
   ]);
 });
 
-test('Work accepts a focused Flow scenario registered in the candidate checkout', async (t) => {
+test('Work accepts focused Flow scenarios and CI parts registered in the candidate checkout', async (t) => {
   const f = fixture(t);
-  const focusedTests = [['node', 'scripts/flow-browser.mjs', '--candidate-browser-check', '--issue-annotations']];
+  const focusedTests = [
+    ['node', 'scripts/flow-browser.mjs', '--ci-part=1a', '--candidate-browser-check', '--issue-annotations'],
+    ['node', 'scripts/flow-browser.mjs', '--ci-part=1b', '--candidate-browser-check'],
+  ];
   f.connection.turn = async (_threadId, checkout) => {
     const scripts = join(checkout, 'scripts');
     mkdirSync(scripts);
@@ -342,6 +345,7 @@ export const flowBrowserScenarioNames = {
   '--candidate-browser-check': 'Candidate browser check',
   '--issue-annotations': 'Issue annotations',
 };
+export const flowBrowserCiParts = new Set(['--ci-part=1a', '--ci-part=1b']);
 `
     );
     execFileSync('git', ['add', 'scripts'], { cwd: checkout });

@@ -53,7 +53,7 @@ import { readQueue } from './data.mjs';
 import { git, cleanEnvironment, requireThat, writeJson, digest } from './common.mjs';
 import { redactValue } from './activity.mjs';
 import { normalizeFocusedTests } from '../verify-merge-checks.mjs';
-import { candidateBrowserScenarioSelector } from './candidate-browser-scenarios.mjs';
+import { candidateBrowserTestPolicy } from './candidate-browser-scenarios.mjs';
 import { flowClosureArtifact, publishFlowPR } from './flow-delivery.mjs';
 import { mergeFlowPR } from './flow-merge.mjs';
 import {
@@ -558,7 +558,7 @@ function workFocusedResult(kind, output, checkout, head) {
   if (kind !== 'work') return {};
   const { focusedTests } = modelManifest(output) ?? {};
   if (focusedTests === undefined) return {};
-  return { focusedTests: normalizeFocusedTests(focusedTests, candidateBrowserScenarioSelector(checkout, head)) };
+  return { focusedTests: normalizeFocusedTests(focusedTests, candidateBrowserTestPolicy(checkout, head)) };
 }
 
 function modelArtifacts(definition, output, workspace, response) {

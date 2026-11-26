@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import plan from '../flow-integration-tests.json' with { type: 'json' };
 import { digest, git, writeJson } from './common.mjs';
 import { normalizeFocusedTests } from '../verify-merge-checks.mjs';
-import { candidateBrowserScenarioSelector } from './candidate-browser-scenarios.mjs';
+import { candidateBrowserTestPolicy } from './candidate-browser-scenarios.mjs';
 
 const affectedPaths = [
   /^scripts\/flow-integration-tests\.json$/,
@@ -27,8 +27,8 @@ export async function checkFlowPublication(ctx, checkout, candidate, folder, exe
     results.push(result);
     writeJson(path, { head: candidate.head, base: candidate.base, results });
   };
-  const selectScenario = candidateBrowserScenarioSelector(checkout, candidate.head);
-  const validate = (command) => normalizeFocusedTests([command], selectScenario);
+  const browserPolicy = candidateBrowserTestPolicy(checkout, candidate.head);
+  const validate = (command) => normalizeFocusedTests([command], browserPolicy);
   for (const test of plan.tests) {
     await runPublicationCheck({ ctx, checkout, folder, execute, validate }, test, results.length + 1).then(
       save,

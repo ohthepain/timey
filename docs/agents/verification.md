@@ -590,7 +590,10 @@ A standalone focused browser check can be recorded as `node scripts/<name>-brows
 without extra arguments. A focused Flow browser command requires a scenario
 flag registered in the candidate commit's `scripts/browser-scenario-policy.mjs`.
 Register flags as quoted keys in the `flowBrowserScenarioNames` object. Factory
-reads that declaration during Work result validation. You can add
+reads that declaration and the quoted flags in the candidate's
+`flowBrowserCiParts = new Set([...])` during Work and publication validation.
+Each focused command still requires a named scenario and accepts at most one
+CI-part flag. You can add
 `--reverse-fixture-scenarios` to change fixture order.
 The aggregate Factory browser runner belongs to full verification.
 Work accepts the Node `--test-name-pattern` value as a separate argument or
