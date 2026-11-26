@@ -10,8 +10,14 @@ import { readQueue } from './data.mjs';
 import { redactValue } from './activity.mjs';
 import { digest, git, requireThat } from './common.mjs';
 import { exportRetroThread, groupVerificationTurns, repairTurns } from './flow-retro-thread.mjs';
+import { receiptRepairBrowserProof } from './flow-repair-evidence.mjs';
 import { evidencePath } from './stores/evidence.mjs';
 import { readFileSync } from 'node:fs';
+import { groupClosureProof } from './flow-group-closure.mjs';
+
+function closureSnapshot(root, issue, flow) {
+  return flow.closing?.groupProof ?? groupClosureProof(root, issue, flow, flow.workspace?.checkout);
+}
 
 async function readThread(connection, id, signal, attempts) {
   try {
@@ -52,6 +58,7 @@ async function retroHistory(service, { issue, flow, signal }) {
     timeline,
     attempts,
     threads: threads.toSorted((a, b) => (a.createdAt ?? Infinity) - (b.createdAt ?? Infinity)),
+    groupClosure: closureSnapshot(service.root, issue, flow),
     coverage:
       'The report and histories available to this runner are included. Other runners may have local records this runner cannot see.',
   };
@@ -63,13 +70,21 @@ function retroEvidence(root, history) {
     ...history,
     repairs: exportRepairEvidence(root, directory, history.attempts),
     mergeRepairs: exportMergeRepairs(root, directory, history.attempts),
+    deliveryReceipts: exportDeliveryReceipts(root, directory, history.attempts),
     groupVerifications: exportGroupVerifications(root, directory, history),
   });
   const sections = Object.fromEntries(
-    ['report', 'timeline', 'attempts', 'threads', 'repairs', 'mergeRepairs', 'groupVerifications'].map((key) => [
-      key,
-      writeDiscussionEvidence(directory, key + '.json', JSON.stringify(safe[key], null, 2)),
-    ])
+    [
+      'report',
+      'timeline',
+      'attempts',
+      'threads',
+      'repairs',
+      'mergeRepairs',
+      'deliveryReceipts',
+      'groupVerifications',
+      'groupClosure',
+    ].map((key) => [key, writeDiscussionEvidence(directory, key + '.json', JSON.stringify(safe[key], null, 2))])
   );
   const index = { sections, coverage: safe.coverage };
   return { index, reference: writeDiscussionEvidence(directory, 'index.json', JSON.stringify(index, null, 2)) };
@@ -86,6 +101,30 @@ function readRepairEvidence(root, { path, sha256 }) {
   const bytes = readFileSync(evidencePath(root, path, sha256));
   requireThat(digest(bytes) === sha256, 'The retained repair evidence digest changed.');
   return bytes;
+}
+
+function exportDeliveryReceipts(root, directory, attempts) {
+  return attempts
+    .filter(({ kind, result }) => kind === 'merge' && result?.revision)
+    .filter(({ result }) => result.deliveryReceipt)
+    .map(({ id, result }, index) => exportDeliveryReceipt(root, directory, id, result.deliveryReceipt, index + 1));
+}
+
+function exportDeliveryReceipt(root, directory, attemptId, file, position) {
+  const prefix = 'delivery-' + position;
+  try {
+    const bytes = readRepairEvidence(root, file);
+    const { candidate } = JSON.parse(bytes);
+    const receipt = writeDiscussionEvidence(directory, prefix + '-receipt.json', bytes);
+    const proof = receiptRepairBrowserProof(root, file, candidate);
+    const repairBrowserProof = proof && {
+      ...proof,
+      file: exportRepairAttachment(root, directory, proof.file, prefix + '-repair-browser.json'),
+    };
+    return { attemptId, receipt, candidate, repairBrowserProof };
+  } catch (error) {
+    return { attemptId, receipt: { sha256: file.sha256, unavailable: error.message } };
+  }
 }
 
 function exportMergeRepairs(root, directory, attempts) {
@@ -139,7 +178,14 @@ function workGroupProof({ artifacts }) {
 function exportGroupVerifications(root, directory, { attempts, threads }) {
   const operations = attempts
     .filter(({ kind }) => ['merge', 'close'].includes(kind))
-    .map(({ id, kind, status, result }) => ({ id, kind, status, head: result?.head, revision: result?.revision }));
+    .map(({ id, kind, status, result }) => ({
+      id,
+      kind,
+      status,
+      head: result?.head,
+      revision: result?.revision,
+      candidate: result?.groupProof?.candidate,
+    }));
   return attempts.flatMap((attempt, index) => {
     const prefix = 'group-verification-' + (index + 1);
     const files = (attempt.evidence ?? []).filter(({ groupVerification }) => groupVerification);
@@ -243,6 +289,13 @@ function exportTurnLogs(directory, prefix, items = []) {
     }));
 }
 
+function workVerificationLogs(root, directory, attempt, turn, prefix) {
+  const logs = exportTurnLogs(directory, prefix, turn.items);
+  const savedLog = attempt.artifacts?.files?.log;
+  if (savedLog) logs.push(exportRepairAttachment(root, directory, savedLog, prefix + '-retained.log'));
+  return logs;
+}
+
 function exportWorkVerification(root, directory, attempt, prefix, threads, operations) {
   const { threadId, turnId, head, tree } = attempt.result ?? {};
   const turn = findProofTurn(threads, { threadId, turnId }) ?? {};
@@ -254,7 +307,7 @@ function exportWorkVerification(root, directory, attempt, prefix, threads, opera
     head,
     tree,
     proof,
-    logs: exportTurnLogs(directory, prefix, turn.items),
+    logs: workVerificationLogs(root, directory, attempt, turn, prefix),
     operations,
     ...(turn.id ? {} : { logsUnavailable: 'The original proof turn is unavailable.' }),
   };
@@ -314,7 +367,7 @@ export async function runRetro(service, ctx, create = createDiscussionRuntime) {
         [
           ctx.definition.prompt,
           'Use the issue report, timeline, attempts, and linked Codex turns as evidence. Preserve order within each thread. Use recorded repair attempt and turn IDs to link repairs before using timestamps for other events. State missing history and unclear ordering.',
-          'The evidence index links to the report, timeline, attempts, linked Codex turns, repair command logs, merge repair revisions, CI runs and failure attachments, and final group verification with its candidate and command logs. Search and read relevant ranges across the history, including earlier attempts. Inspect relevant project files and recent Git work when useful. Cite evidence paths/revisions, distinguish observations from claims, and state which evidence was unavailable or not inspected.',
+          'The evidence index links to the report, timeline, attempts, linked Codex turns, repair command logs, merge repair revisions, CI runs and failure attachments, delivery receipts with matching repair browser proof, group verification history, and the child proof snapshot from Close. Search and read relevant ranges across the history, including earlier attempts. Inspect relevant project files and recent Git work when useful. Cite evidence paths/revisions, distinguish observations from claims, and state which evidence was unavailable or not inspected.',
           'Return a concise summary and concrete follow-up issues. An empty recommendation list is valid. Do not claim model descriptions prove actual checks, merge or acceptance.',
         ].join('\n\n')
       );

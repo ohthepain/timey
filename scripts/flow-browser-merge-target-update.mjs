@@ -341,6 +341,9 @@ export async function mergeTargetUpdateBrowserChecks(harness) {
         JSON.stringify(
           {
             sourceCommit: git(root, 'rev-parse', 'HEAD'),
+            sourceTree: git(root, 'rev-parse', 'HEAD^{tree}'),
+            sourceClean: !git(root, 'status', '--porcelain', '--untracked-files=all'),
+            sourceEnvironment: { node: process.version, platform: process.platform, arch: process.arch },
             sourceDiff: git(
               root,
               'diff',

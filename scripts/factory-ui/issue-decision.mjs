@@ -41,6 +41,7 @@ function closureSubIssues(root, children) {
     children.map(({ id }) => id)
   );
   return children.map(({ id, title, detachedAt }) => ({
+    id,
     title,
     number: numbers[id],
     removed: Boolean(detachedAt),

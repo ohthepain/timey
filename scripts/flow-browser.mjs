@@ -285,7 +285,8 @@ const logs = {
 };
 const playbackIssueId = '20261116-playback-fixture';
 const playbackWork = Promise.withResolvers();
-const holdFirstWork = (number, block) => number === 1 && block.kind !== 'cleanup';
+const holdFirstWork = (number, block, issue) =>
+  number === 1 && block.kind !== 'cleanup' && issue.id !== playbackIssueId;
 let firstWorkProgress;
 const service = new FactoryUI(project);
 service.projectDiscussOptions = { skills: async () => [] };
@@ -306,7 +307,7 @@ const executor = {
     onStep('pnpm test');
     onProgress('Fixture output for explicit attempt ' + number + '.\n');
     if (issue.id === playbackIssueId && block.kind === 'work') await playbackWork.promise;
-    if (holdFirstWork(number, block)) {
+    if (holdFirstWork(number, block, issue)) {
       firstWorkProgress = { onProgress, onStep };
       await new Promise((_, reject) => {
         if (signal.aborted) return reject(Error('Stopped by the user.'));
@@ -371,6 +372,13 @@ service.flows = createIssueFlows(service, {
     return { artifacts: { values: fields }, summary: fields.goal };
   },
 });
+// Have the override directories in place when the recursive source watcher subscribes.
+const workOverride = join(project, 'user/flow/overrides/blocks/work.md');
+const workExtension = join(project, 'user/flow/extensions/blocks/work.md');
+if (selectedParts.includes('--ci-part=2') && flowBrowserScenarioSelected(flowBrowserScenarioNames['--work-markdown'])) {
+  mkdirSync(dirname(workOverride), { recursive: true });
+  mkdirSync(dirname(workExtension), { recursive: true });
+}
 const workOverrideWatcherEvents = [];
 const server = createFactoryServer(service, {
   onSourceFileChange(name) {
@@ -442,10 +450,14 @@ async function assertCleanSidebarConsole() {
   );
 }
 
+function ensureFixtureLifecycle() {
+  const labels = join(project, '.issues/triage-labels.md');
+  if (!existsSync(labels)) copyFileSync(join(root, '.issues/triage-labels.md'), labels);
+}
+
 async function connectionRecoveryIssue() {
   const id = '20261120-connection-recovery-fixture';
-  if (!existsSync(join(project, '.issues/triage-labels.md')))
-    copyFileSync(join(root, '.issues/triage-labels.md'), join(project, '.issues/triage-labels.md'));
+  ensureFixtureLifecycle();
   await writeBrowserIssue(project, {
     id,
     title: 'Reconnect the selected issue',
@@ -485,6 +497,12 @@ async function poll(read, predicate, message) {
     await new Promise((done) => setTimeout(done, 100));
   }
   assert.fail(message + '\n' + JSON.stringify(value));
+}
+
+function replaceSourceFile(path, content) {
+  const temporary = path + '.tmp';
+  writeFileSync(temporary, content);
+  renameSync(temporary, path);
 }
 async function observeAction(interact) {
   const [response] = await Promise.all([
@@ -1469,6 +1487,8 @@ try {
     await members.locator(`input[value="${second.issue.id}"]`).check();
     assert.equal(await page.getByRole('button', { name: 'Remove from folder', exact: true }).count(), 0);
     await members.locator(`[data-open-folder-issue="${second.issue.id}"]`).waitFor();
+    await page.goto('/?issue=' + issueId);
+    await page.locator('#request-form').waitFor();
   });
   await check(tabSourceCheck, async () => {
     const holdSourceEvents = await page.addInitScript(() => {
@@ -1529,7 +1549,7 @@ try {
       .waitFor();
     await page.evaluate(() => window.dispatchEvent(new Event('release-source-events')));
     await holdSourceEvents.dispose();
-    writeFileSync(path, '## missing-tab\n\nInvalid override\n');
+    replaceSourceFile(path, '## missing-tab\n\nInvalid override\n');
     await page.locator('#view-source-status').filter({ hasText: 'unknown section' }).waitFor();
     assert.equal(await tab.innerText(), 'External change');
     rmSync(path);
@@ -1592,7 +1612,9 @@ try {
     await screenshot('starting-branch-selected');
   });
   await check(editDestinationCheck, async () => {
-    const original = (await view()).issue.title;
+    await ensureBrowserFolderIssue();
+    const initial = await view();
+    const original = initial.issue.title;
     const rename = async (title) => {
       await page.locator('#rename-issue').click();
       await page.locator('#rename-issue-title').fill(title);
@@ -1607,6 +1629,7 @@ try {
     );
     await rename(original);
     const destination = page.locator('#graph-scroll [data-node="__destination"]');
+    await destination.waitFor();
     const openDestination = async () => {
       await (
         await readyControl(destination, {
@@ -1624,13 +1647,13 @@ try {
     await select.selectOption('older');
     await page.locator('#save-destination').click();
     await poll(view, (value) => value.destination.branch === 'older', 'The destination was not pinned.');
-    assert.equal((await view()).flow.startingPoint.ref, 'refs/heads/recent');
+    assert.equal((await view()).flow.startingPoint.ref, initial.flow.startingPoint.ref);
     await openDestination();
     await select.selectOption('');
     await page.locator('#save-destination').click();
     await poll(
       view,
-      (value) => value.destination.follows && value.destination.branch === 'recent',
+      (value) => value.destination.follows && value.destination.branch === initial.destination.branch,
       'Destination did not resume following Starting point.'
     );
   });
@@ -2057,7 +2080,6 @@ try {
     assert.equal((await view()).flow.blocks.find((item) => item.id === addedId).comments.length, 1);
     assert.equal(logs.execution.length, 0);
   });
-  const workOverride = join(project, 'user/flow/overrides/blocks/work.md');
   async function addExtraWork() {
     await page.locator('[data-open-palette]').click();
     const data = await clickAction(page.locator('[data-add-kind="work"]'));
@@ -2065,6 +2087,7 @@ try {
   }
   let extraWorkId;
   await check(workMarkdownCheck, async () => {
+    await ensureBrowserFolderIssue();
     const id = await addExtraWork();
     extraWorkId = id;
     await block(id);
@@ -2092,22 +2115,25 @@ try {
     const title = await card.locator('.block-label').innerText();
     const status = await card.locator('.block-status').innerText();
     await draft.fill('Unsaved Work draft');
-    mkdirSync(dirname(workOverride), { recursive: true });
-    const extension = join(project, 'user/flow/extensions/blocks/work.md');
-    mkdirSync(dirname(extension), { recursive: true });
-    writeFileSync(extension, '## Local evidence\n\nKeep the command output.\n');
+    writeFileSync(workExtension, '## Local evidence\n\nKeep the command output.\n');
     const description = card.locator('.block-description');
     const trace = (file, steps) =>
       traceWorkMarkdown(
         page,
         join(output, file),
-        { revision: candidate.revision, tree: candidate.tree, clean: candidate.clean },
+        {
+          revision: candidate.revision,
+          tree: candidate.tree,
+          clean: candidate.clean,
+          command: ['node', 'scripts/flow-browser.mjs', ...process.argv.slice(2)],
+          predecessors: results.map(({ name }) => name),
+        },
         workOverrideWatcherEvents,
         steps
       );
     await trace('work-markdown-valid-proof.json', {
       write: () =>
-        writeFileSync(
+        replaceSourceFile(
           workOverride,
           '# Project Work\n\nReady when you are.\n\n## Evidence to retain\n\n- Command output\n- Saved artifact\n\n# Skill list\n\n- arena\n- how\n'
         ),
@@ -2130,12 +2156,12 @@ try {
     assert.equal(logs.execution.length, 0);
     await trace('work-markdown-warning-proof.json', {
       invalid: true,
-      write: () => writeFileSync(workOverride, '# Empty override\n'),
+      write: () => replaceSourceFile(workOverride, '# Empty override\n'),
       assertRendered: () => page.locator('#view-source-status').filter({ hasText: 'needs a paragraph' }).waitFor(),
     });
     assert.equal(await prose.count(), 0);
     rmSync(workOverride);
-    rmSync(extension);
+    rmSync(workExtension);
     assert.equal(await prose.count(), 0);
     await page.locator('.block-markdown-menu summary').waitFor();
     await draft.fill(original);
@@ -2531,9 +2557,12 @@ try {
     await service.flows.store.save(saved, saved.revision);
   });
   await check(issuePlaybackCheck, async () => {
+    await ensureBrowserFolderIssue();
+    ensureFixtureLifecycle();
     service.flows.executor.close();
     service.flows.executor = executor;
     const previousIssueId = issueId;
+    const previousTitle = service.flows.selected(previousIssueId).title;
     await importBrowserIssue(
       project,
       playbackIssueId,
@@ -2561,7 +2590,7 @@ try {
       'Work did not start.'
     );
     await page.locator(`#open-issues [data-issue="${previousIssueId}"]`).click();
-    await page.locator('#issue-title').filter({ hasText: 'A renamed issue' }).waitFor();
+    await page.locator('#issue-title').filter({ hasText: previousTitle }).waitFor();
     assert.equal((await view()).autoplay.mode, 'playing');
     await page.locator(`#open-issues [data-issue="${issueId}"]`).click();
     await page.locator('#issue-playback[data-playback-mode="pause"]').click();
@@ -2610,12 +2639,14 @@ try {
   });
   await check(issueHeaderCloseCheck, async () => {
     const closureIssueId = '20261116-header-close-fixture';
+    ensureFixtureLifecycle();
     await writeBrowserIssue(project, {
       id: closureIssueId,
       title: 'Header closure fixture',
       body: 'Close this open issue with a reason.',
     });
     await page.goto('/?issue=' + closureIssueId);
+    await page.locator('#issue-title').filter({ hasText: 'Header closure fixture' }).waitFor();
     await page.locator('#issue-playback[data-playback-mode="start"]').waitFor();
     const close = await readyControl(page.locator('#environment'), {
       selector: '#worktree-hint + #close-with-reason',
@@ -2625,10 +2656,11 @@ try {
     });
     const dialog = page.getByRole('dialog', { name: 'Close this issue' });
     const executionCount = logs.execution.length;
+    const decisionCount = logs.requests.filter(({ path }) => path === '/api/issue-decision').length;
     await close.click();
     await dialog.locator('#closure-reason').locator('option[value="fixed"]').waitFor({ state: 'attached' });
     await dialog.locator('#cancel-issue-closure').click();
-    assert.equal(logs.requests.filter(({ path }) => path === '/api/issue-decision').length, 0);
+    assert.equal(logs.requests.filter(({ path }) => path === '/api/issue-decision').length, decisionCount);
     await close.click();
     await dialog.locator('#closure-reason').selectOption('duplicate');
     await dialog.locator('#reopen-reason').fill('Already covered by issue #44');
@@ -2639,8 +2671,8 @@ try {
     const saved = service.flows.selected(closureIssueId);
     const cleanup = service.flows.read(saved).blocks.find(({ kind }) => kind === 'cleanup');
     assert.deepEqual(
-      logs.execution.slice(executionCount).map(({ blockId }) => blockId),
-      [cleanup.id]
+      logs.execution.slice(executionCount).map(({ blockId, issueId }) => [issueId, blockId]),
+      [[closureIssueId, cleanup.id]]
     );
     assert.equal(saved.location, 'closed');
     assert.equal(saved.closure.reason, 'duplicate');

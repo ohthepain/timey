@@ -12,6 +12,14 @@ Accepting the master as Fixed closes each attached sub-issue with the **Fixed by
 reason and a link to the master. An unmet sub-issue must be detached before
 acceptance, so one decision can cover the whole fix without closing unfinished work.
 
+Close shows the current candidate tree, the latest retained verdict for each
+attached sub-issue, and any outstanding proof. Retro keeps the Close snapshot
+and the proof history from earlier attempts, including verdicts and command
+logs that remain available. A proof tied to an identical source tree can still
+apply after its commit changes. Close identifies a different proof tree and
+shows the check that remains outstanding. Live evidence requires the authorized
+candidate commit and tree.
+
 Closing the master for any other reason releases its attached sub-issues for
 independent work. Their reports stay open and link to any relevant master
 evidence. A person can also detach an individual sub-issue while the master is idle.

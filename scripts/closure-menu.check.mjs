@@ -8,6 +8,10 @@ import { startFactoryHttp } from './factory-http-fixture.mjs';
 import { ensureProjectStores } from './factory-ui/stores/runtime.mjs';
 import { readQueue } from './factory-ui/data.mjs';
 import { decisionBasis } from './factory-ui/recorded-result.mjs';
+import { createIssueFlows } from './factory-ui/flow-service.mjs';
+import { makeBlock } from './factory-ui/flow-store.mjs';
+import { reportedLiveProofRequirements } from './factory-ui/flow-live-proof.mjs';
+import { digest } from './factory-ui/common.mjs';
 
 test('Close and Reopen publish the decision and destination together once', async (t) => {
   const { service, root } = captureFixture(t);
@@ -210,6 +214,97 @@ test('Close shows attached and removed sub-issues from the saved master', async 
     ['Keep this issue attached · Attached', 'Remove <this> issue · Removed']
   );
   assert.equal(Object.hasOwn(ui.decision(), 'subIssues'), false);
+});
+
+test('Close shows prior verdicts, candidate trees, and outstanding child proof', async (t) => {
+  const { root, git, service } = captureFixture(t);
+  const id = '20261025-existing';
+  const flowService = (service.flows = createIssueFlows(service, {
+    observer: {
+      async observe() {
+        return {};
+      },
+    },
+    executor: {
+      async run() {
+        return { summary: 'Fixture cleanup finished.' };
+      },
+      close() {},
+    },
+  }));
+  const report = join(root, '.issues', id + '.md');
+  const children = [
+    { id: '20261025-failed', title: 'Browser proof', requestedProof: 'Rerun the browser check.' },
+    { id: '20261025-live', title: 'Live proof', requestedProof: 'Observe the live PR.' },
+  ];
+  writeFileSync(
+    report,
+    readFileSync(report, 'utf8').replace(
+      'autonomy: ask\n',
+      [
+        'autonomy: ask',
+        'issue_group:',
+        '  children:',
+        ...children.map(
+          (child) => `    - id: ${child.id}\n      title: ${child.title}\n      requestedProof: ${child.requestedProof}`
+        ),
+        '',
+      ].join('\n')
+    )
+  );
+  const issue = flowService.selected(id);
+  const flow = flowService.read(issue);
+  const oldHead = git('rev-parse', 'HEAD');
+  const oldTree = git('rev-parse', 'HEAD^{tree}');
+  writeFileSync(join(root, 'source.js'), 'export const value = 2;\n');
+  git('commit', '-am', 'Retried candidate');
+  const head = git('rev-parse', 'HEAD');
+  const tree = git('rev-parse', 'HEAD^{tree}');
+  const path = join(root, '.issues', 'child-proofs.json');
+  const proof = JSON.stringify([{ id: children[0].id, status: 'failed', observation: 'Browser assertion failed.' }]);
+  writeFileSync(path, proof);
+  const work = flow.blocks.find(({ kind }) => kind === 'work') ?? makeBlock('work');
+  const merge = flow.blocks.find(({ kind }) => kind === 'merge') ?? makeBlock('merge', [work.id]);
+  for (const block of [work, merge]) if (!flow.blocks.includes(block)) flow.blocks.push(block);
+  work.attempts = [
+    {
+      id: 'first-work',
+      status: 'blocked',
+      result: {
+        head: oldHead,
+        tree: oldTree,
+        liveProofRequirements: reportedLiveProofRequirements(
+          { issue, attempt: {} },
+          { liveProofRequirements: [{ id: children[1].id, check: children[1].requestedProof }] }
+        ),
+      },
+      artifacts: { files: { subIssueProof: { path, sha256: digest(proof) } } },
+    },
+  ];
+  merge.attempts = [
+    { id: 'blocked-merge', status: 'blocked' },
+    { id: 'retried-merge', status: 'completed', result: { pr: 9, head, revision: head } },
+  ];
+  await flowService.store.save(flow, flow.revision);
+  const view = await flowService.view(id);
+  const { panel, ui } = await closureDialogFixture(t);
+  await ui.open(() => ({ ...view.closurePreview, flowRevision: view.flow.revision, suggestedResolution: 'wont-do' }));
+  const [failed, pending] = panel.querySelectorAll('li');
+  assert.ok(panel.textContent.includes('Candidate tree ' + tree));
+  assert.ok(failed.textContent.includes('Latest verdict · Failed · Proof tree ' + oldTree));
+  assert.match(failed.textContent, /Outstanding proof · Rerun the browser check/);
+  assert.match(pending.textContent, /Latest verdict · Missing/);
+  assert.match(pending.textContent, /Outstanding proof · Observe the live PR/);
+  assert.equal(Object.hasOwn(ui.decision(), 'groupProof'), false);
+  await flowService.closeWithReason(ui.decision());
+  await flowService.closureTasks.get(id);
+  const closed = flowService.selected(id);
+  assert.equal(closed.closed, true);
+  const close = flowService
+    .read(closed)
+    .blocks.find(({ kind }) => kind === 'close')
+    .attempts.at(-1);
+  assert.deepEqual(close.result.groupProof, JSON.parse(JSON.stringify(view.closurePreview.groupProof)));
 });
 
 test('Close shows loading feedback until context is ready and keeps confirmation guarded on failure', async (t) => {
