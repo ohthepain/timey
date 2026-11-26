@@ -79,6 +79,7 @@ class ProjectDiscussProvider {
         reportContext: () => this.active?.message.reportContext,
         prepareIssueCreation: (input) => this.active?.prepareIssueCreation?.(input),
         issueCreated: (issueId) => this.active?.issueCreated?.(issueId),
+        beforeNoteChange: (input) => this.beforeNoteChange(input),
         annotationActor: () => ({ kind: 'chat', id: this.active?.session.id }),
       });
     this.connection = options.connection || new DiscussConnection({ experimentalApi: true, root: service.root });
@@ -87,6 +88,13 @@ class ProjectDiscussProvider {
     this.active = null;
     this.threadWriterOwner = options.threadWriterOwner ?? desktopThreadWriter;
     this.threadWriterDelay = options.threadWriterDelay ?? waitForWriter;
+  }
+  beforeNoteChange({ action }) {
+    if (action !== 'delete') return;
+    requireThat(
+      this.active?.message.recommendation?.id !== 'create-delete-next',
+      'Factory deletes the source note after confirming issue creation.'
+    );
   }
   async skills(model) {
     if (!model || agentModel(model).provider === 'codex')

@@ -109,7 +109,10 @@ export function createProjectDiscussTools(service, options = {}) {
       schema: localNoteActionSchema,
       path: '/api/local-notes-action',
       pauseSafe: true,
-      run: (input) => new LocalNotes(service.root).action(input),
+      run: (input) => {
+        options.beforeNoteChange?.(input);
+        return new LocalNotes(service.root).action(input);
+      },
     },
     project_home: {
       description:
