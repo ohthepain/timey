@@ -614,6 +614,7 @@ export function createFactoryServer(service, options = {}) {
     try {
       requireThat(request.headers.host === `127.0.0.1:${server.address().port}`, 'Use the local factory address.');
       if (request.method === 'GET' && request.url === '/api/health') {
+        response.setHeader('X-Factory-Instance', server.instanceId);
         response.statusCode = 204;
         return response.end();
       }
@@ -624,6 +625,7 @@ export function createFactoryServer(service, options = {}) {
       response.end(JSON.stringify({ error: error.message }));
     }
   });
+  server.instanceId = randomBytes(16).toString('hex');
   server.once('close', () => {
     service.flowChanges.close();
     service.serverControl.close();
