@@ -11,14 +11,19 @@ function storageFixture(t) {
     html.indexOf('      async function openSavedReport('),
     html.indexOf('      async function openPlan(')
   );
+  const archiveDialog = html.match(/<dialog id="archive-progress"[\s\S]+?<\/dialog>/)[0];
   const dom = new JSDOM(
-    '<div id="app"></div><div id="error"></div><dialog id="plan"><h2 id="plan-title"></h2><p id="plan-path"></p><pre id="plan-content"></pre></dialog>',
+    '<div id="app"></div><div id="error"></div><dialog id="plan"><h2 id="plan-title"></h2><p id="plan-path"></p><pre id="plan-content"></pre></dialog>' +
+      archiveDialog,
     { runScripts: 'outside-only', url: 'http://127.0.0.1/#/closed' }
   );
   t.after(() => dom.window.close());
   const win = dom.window;
   const { document } = win;
   document.getElementById('plan').showModal = function () {
+    this.open = true;
+  };
+  document.getElementById('archive-progress').showModal = function () {
     this.open = true;
   };
   win.eval(`
@@ -31,7 +36,7 @@ function storageFixture(t) {
     ];
     const archive = [];
     const requests = [];
-    const request = async (path, value) => {
+    const request = async (path, value, onProgress) => {
       requests.push({ path, value });
       if (path.startsWith('issue-storage?location=')) return { issues: (path.endsWith('closed') ? closed : archive).slice() };
       if (path.startsWith('issue-storage-report?')) return { path: '.issues/archive/alpha.md', content: '<b>Report text</b>' };
@@ -39,7 +44,8 @@ function storageFixture(t) {
       if (path === 'issue-storage-move') {
         const archiving = value.action === 'archive';
         const [from, to] = archiving ? [closed, archive] : [archive, closed];
-        return { results: value.issueIds.map((id) => {
+        return { results: value.issueIds.map((id, processed) => {
+          onProgress?.({ currentId: id, processed, total: value.issueIds.length });
           to.push(from.splice(from.findIndex((issue) => issue.id === id), 1)[0]);
           return { id, status: archiving ? 'archived' : 'restored' };
         }) };
@@ -101,7 +107,11 @@ test('Closed issues batches visible selections, skips pending rows, and can rest
   await setImmediate();
   const archiveRequest = fixture.requests.find((entry) => entry.value?.action === 'archive');
   assert.deepEqual(Array.from(archiveRequest.value.issueIds).sort(), ['alpha', 'beta']);
-  assert.match($('[role="status"]').textContent, /Archived 2 issues/);
+  assert.match($('#app [role="status"]').textContent, /Archived 2 issues/);
+  assert.equal($('#archive-progress').open, true);
+  assert.equal($('#archive-progress-status').textContent, '2 of 2 processed.');
+  assert.equal($('#archive-progress-result').textContent, 'Archived 2 issues.');
+  $('#archive-progress').open = false;
   assert.deepEqual(
     Array.from(document.querySelectorAll('[data-storage-select]'), (input) => input.dataset.storageSelect),
     ['pending']
@@ -126,7 +136,8 @@ test('Closed issues batches visible selections, skips pending rows, and can rest
   await setImmediate();
   const restoreRequest = fixture.requests.find((entry) => entry.value?.action === 'restore');
   assert.deepEqual(Array.from(restoreRequest.value.issueIds), ['alpha']);
-  assert.match($('[role="status"]').textContent, /Restored 1 issue/);
+  assert.match($('#app [role="status"]').textContent, /Restored 1 issue/);
+  assert.equal($('#archive-progress').open, false);
 });
 
 test('preview offers read-only access to closed reports', async (t) => {

@@ -32,6 +32,10 @@ For a shared closed report, the proposed flow saves the local archive copy first
 ## Agreed behavior
 
 - Offer an Archive action per report and an Archive selected action in the Closed issues view.
+- **Archive selected** opens a progress dialog when two or more closed issues
+  are selected. The dialog follows the current issue and processed count from
+  the server. It stays open until dismissed and reports how many issues were
+  archived, any awaiting review, and any individual failures.
 - Provide a local Archive view with Restore to closed. Reopening is a separate explicit action.
 - Admin can permanently delete reviewed local archive copies in one batch. A
   person can also select eligible local branches associated with those reports.

@@ -7,6 +7,10 @@ export function groupChildren(master) {
   return master.issue_group?.children?.filter((child) => !child.detachedAt) ?? [];
 }
 
+export function wasDetachedByMasterRun(child) {
+  return Boolean(child.detachedAt && child.detach?.actor?.kind === 'issue');
+}
+
 export function groupMaster(issues, id, closedState = 'closed') {
   const masters = issues.filter(
     (issue) =>

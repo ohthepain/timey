@@ -2111,6 +2111,7 @@
     <header>
       <a href="#/queue"><b>Factory</b></a
       ><a href="#/coordinator">Coordinator</a><small id="connection">Connecting…</small>
+      <small class="server-heap" title="Node.js heap usage and limit">Heap unavailable</small>
     </header>
     <div
       id="coordinator-strip"
@@ -2145,6 +2146,12 @@
       <div id="selection"></div>
       <p id="confirmation-error" role="alert"></p>
       <div class="actions"><button id="approve">Confirm</button><button id="cancel">Cancel</button></div>
+    </dialog>
+    <dialog id="archive-progress" aria-labelledby="archive-progress-title">
+      <h2 id="archive-progress-title">Archive selected issues</h2>
+      <p id="archive-progress-status" role="status"></p>
+      <div id="archive-progress-result"></div>
+      <form method="dialog" class="actions"><button id="archive-progress-dismiss">Dismiss</button></form>
     </dialog>
     <link rel="stylesheet" href="/ai-text.css" />
     <script src="/provider-settings-ui.js"></script>
@@ -2194,7 +2201,7 @@
         const issue = data.issues.find((entry) => entry.id === id);
         return `<a href="#/issue/${encodeURIComponent(id)}">${esc(issue ? `${issue.issueNumber == null ? '' : '#' + issue.issueNumber + ' · '}${issue.title || 'Untitled issue'}` : id)}</a>`;
       };
-      async function request(path, value) {
+      async function request(path, value, onProgress) {
         const options =
           value === undefined
             ? {}
@@ -2203,9 +2210,27 @@
                 headers: { 'Content-Type': 'application/json', 'X-Factory-Action': 'manual' },
                 body: JSON.stringify(value),
               };
+        if (onProgress) options.headers.Accept = 'application/x-ndjson';
         const response = await fetch('/api/' + path, options);
+        if (onProgress && response.ok) return readArchiveProgress(response, onProgress);
         const result = await response.json();
         if (!response.ok) throw Error(result.error);
+        return result;
+      }
+      async function readArchiveProgress(response, onProgress) {
+        let pending = '';
+        let result;
+        for await (const chunk of response.body.pipeThrough(new TextDecoderStream())) {
+          const lines = (pending + chunk).split('\n');
+          pending = lines.pop();
+          for (const line of lines) {
+            const item = JSON.parse(line);
+            if (item.error) throw Error(item.error);
+            if (item.results) result = item;
+            else onProgress(item.progress);
+          }
+        }
+        if (!result) throw Error('The server stopped reporting archive results. Refresh to see which issues moved.');
         return result;
       }
       function issueQueueEndpoint(issueId, embedded) {
@@ -2473,17 +2498,64 @@
           .join(' ');
       }
 
-      async function moveStoredIssues(storage, issueIds) {
+      function showArchiveResult(results, titles) {
+        const completed = ['archived', 'published'];
+        const alreadyArchived = results.filter((item) => item.alreadyArchived).length;
+        const archived = results.filter((item) => completed.includes(item.status)).length - alreadyArchived;
+        const pending = results.filter((item) => item.status === 'review').length;
+        const failed = results.filter((item) => !completed.includes(item.status) && item.status !== 'review');
+        $('archive-progress-result').innerHTML = `<p>Archived ${archived} ${archived === 1 ? 'issue' : 'issues'}.</p>${
+          alreadyArchived ? `<p>${alreadyArchived} already archived.</p>` : ''
+        }${pending ? `<p>${pending} awaiting review.</p>` : ''}${
+          failed.length
+            ? `<p>Could not archive</p><ul>${failed.map((item) => `<li>${esc(titles.get(item.id) || item.id)}: ${esc(item.error || 'The server did not confirm the archive.')}</li>`).join('')}</ul>`
+            : ''
+        }`;
+      }
+
+      async function archiveSelectedIssues(issueIds, entries) {
+        const dialog = $('archive-progress');
+        const status = $('archive-progress-status');
+        const dismiss = $('archive-progress-dismiss');
+        const titles = new Map(entries.map((issue) => [issue.id, issue.title || 'Untitled issue']));
+        status.textContent = `0 of ${issueIds.length} processed.`;
+        $('archive-progress-result').replaceChildren();
+        dismiss.disabled = true;
+        dialog.oncancel = (event) => {
+          if (dismiss.disabled) event.preventDefault();
+        };
+        dialog.showModal();
+        try {
+          const result = await request('issue-storage-move', { action: 'archive', issueIds }, (progress) => {
+            const title = titles.get(progress.currentId) || progress.currentId;
+            status.textContent = `${progress.processed} of ${progress.total} processed. Archiving ${title}`;
+          });
+          status.textContent = `${result.results.length} of ${issueIds.length} processed.`;
+          showArchiveResult(result.results, titles);
+          return result;
+        } catch (error) {
+          status.textContent = 'Archive results unavailable.';
+          $('archive-progress-result').textContent = error.message;
+          throw error;
+        } finally {
+          dismiss.disabled = false;
+          dismiss.focus();
+        }
+      }
+
+      async function moveStoredIssues(storage, issueIds, showProgress = false) {
         const view = issueStorage[storage];
         if (issueStorageReadOnly || view.saving || !issueIds.length) return;
         view.saving = true;
         renderStoredIssueRows(storage);
         await act(async () => {
           try {
-            const result = await request('issue-storage-move', {
-              action: storage === 'closed' ? 'archive' : 'restore',
-              issueIds,
-            });
+            const result = showProgress
+              ? await archiveSelectedIssues(issueIds, view.issues)
+              : await request('issue-storage-move', {
+                  action: storage === 'closed' ? 'archive' : 'restore',
+                  issueIds,
+                });
             view.feedback = storageFeedback(storage, result.results);
             for (const item of result.results) if (!item.error) view.selected.delete(item.id);
             await loadStoredIssues(storage);
@@ -2501,7 +2573,8 @@
           view.query = event.target.value;
           renderStoredIssueRows(storage);
         };
-        $('stored-issue-move').onclick = () => moveStoredIssues(storage, [...view.selected]);
+        $('stored-issue-move').onclick = () =>
+          moveStoredIssues(storage, [...view.selected], storage === 'closed' && view.selected.size > 1);
       }
 
       function setProgressRefreshButtons(refreshing) {
@@ -2977,12 +3050,16 @@
       }
       async function archiveSelectedProjectIssues() {
         if (projectIssueArchive.saving || !closedProjectIssueSelection()) return;
-        const issueIds = selectedProjectIssues().map((issue) => issue.id);
+        const issues = selectedProjectIssues();
+        const issueIds = issues.map((issue) => issue.id);
         projectIssueArchive.saving = true;
         projectIssueArchive.feedback = '';
         render();
         try {
-          const result = await request('issue-storage-move', { action: 'archive', issueIds });
+          const result =
+            issueIds.length > 1
+              ? await archiveSelectedIssues(issueIds, issues)
+              : await request('issue-storage-move', { action: 'archive', issueIds });
           applyProjectIssueArchive(result.results);
           await refresh();
         } catch (error) {

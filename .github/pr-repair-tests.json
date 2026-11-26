@@ -1,40 +1,19 @@
 {
   "version": 1,
-  "sourceRun": "https://github.com/ohthepain/timey/actions/runs/45665598819/job/139391277360",
+  "sourceRun": "https://github.com/ohthepain/timey/actions/runs/45751239970/job/139681580261",
   "tests": [
     {
-      "name": "typecheck (tsc --noEmit)",
-      "command": ["pnpm", "run", "typecheck"]
-    },
-    {
-      "name": "Inspector Run guards drafts and switches to Stop during a run",
+      "name": "Issues and Local notes use matching text styles and retain a clean console after Close and heap failure fixtures",
       "command": [
         "node",
         "scripts/flow-browser.mjs",
-        "--ci-part=2",
-        "--capture-folder-issue",
-        "--save-request-route",
-        "--stop-work"
+        "--ci-part=1",
+        "--manual-close",
+        "--server-heap",
+        "--project-navigation",
+        "--sidebar-labels",
+        "--local-notes"
       ]
-    },
-    {
-      "name": "Inspect and edit a tab source without starting work or losing an issue draft",
-      "command": [
-        "node",
-        "scripts/flow-browser.mjs",
-        "--ci-part=2",
-        "--capture-folder-issue",
-        "--folder-workspace-grouping",
-        "--tab-source"
-      ]
-    },
-    {
-      "name": "Issues and Local notes use matching text styles",
-      "command": ["node", "scripts/flow-browser.mjs", "--ci-part=1", "--project-navigation", "--sidebar-labels"]
-    },
-    {
-      "name": "Closed issues open with Destination flush with the bottom, including short flows",
-      "command": ["node", "scripts/flow-browser.mjs", "--ci-part=2", "--capture-folder-issue", "--closed-destination"]
     }
   ]
 }

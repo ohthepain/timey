@@ -13,7 +13,7 @@ import { sameOwner } from './stores/coordination.mjs';
 import { issueAnnotations } from './issue-annotations.mjs';
 import { groupProofRows } from './flow-group-proof.mjs';
 import { issueHasActiveWork } from './issue-cleanup.mjs';
-import { groupChildren, groupMaster, storedGroups } from './issue-group.mjs';
+import { groupChildren, groupMaster, storedGroups, wasDetachedByMasterRun } from './issue-group.mjs';
 import { issueStorageDirectory, moveStoredIssue, updateStoredIssueMetadata } from './issue-report-storage.mjs';
 import { afterReportWrite, registeredProjectStores } from './stores/report-access.mjs';
 import { resolveFolderSettings } from './issue-folder-settings.mjs';
@@ -660,7 +660,11 @@ export class FlowGrouping {
     const { closure } = issue;
     const masterId = closure?.fixed_by ?? this.masterId(issue.id, issues);
     const formerMasters = [...issues, ...this.archivedGroups()].filter(
-      (entry) => entry.id !== masterId && entry.issue_group?.children?.some((child) => child.id === issue.id)
+      (entry) =>
+        entry.id !== masterId &&
+        entry.issue_group?.children?.some(
+          (child) => child.id === issue.id && (!child.detachedAt || wasDetachedByMasterRun(child))
+        )
     );
     const children = groupChildren(issue);
     if (!masterId && !formerMasters.length && !children.length && !issue.issue_group) return undefined;
