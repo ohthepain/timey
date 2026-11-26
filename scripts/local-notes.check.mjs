@@ -129,7 +129,7 @@ test('Discuss prepares context and a first prompt without running a model, then 
   assert.equal(prepared.status, 'idle');
   assert.equal(prepared.messages.length, 1);
   assert.match(prepared.messages[0].text, /Remember the capture shortcut/);
-  assert.match(prepared.draft.text, /think through/);
+  assert.equal(prepared.draft.text, 'Ask me questions before creating the issue.');
   await discuss.action({ action: 'draft', conversationId: prepared.id, draft: { text: 'My own question' } });
   const linked = (await discuss.prepareNote({ ...note, issueId: '20261120-test' })).selected;
   assert.equal(linked.id, prepared.id);

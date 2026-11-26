@@ -24,6 +24,7 @@ export const flowBrowserScenarioNames = {
   '--manual-sub-issue-removal': 'Manual removal clears the sub-issue master links and badge',
   '--investigative-grouping': 'Master grouping keeps investigative and non-investigative issues separate',
   '--issue-annotations': 'Issue annotations retain history and drive badge filters and attention order',
+  '--inbox-flow': 'Issue flow dates, statuses, folder ordering and block drag',
   '--project-issues': 'Closed issue selections archive together and issue links open the normal view',
   '--actions-menu': 'Actions menu lists two running Flow blocks',
   '--merged-issue': 'Merged issues preserve history and expose only closure controls',
