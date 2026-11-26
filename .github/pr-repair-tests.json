@@ -1,7 +1,11 @@
 {
   "version": 1,
-  "sourceRun": "https://github.com/ohthepain/timey/actions/runs/45841698838/job/139991200027",
+  "sourceRun": "https://github.com/ohthepain/timey/actions/runs/45844694595/job/140000609917",
   "tests": [
+    {
+      "name": "Inbox drag and drop attaches, transfers and detaches sub-issues",
+      "command": ["node", "scripts/flow-browser.mjs", "--ci-part=1a", "--sidebar-scroll", "--inbox-group-drag"]
+    },
     {
       "name": "Closed issue selections archive together and issue links open the normal view",
       "command": ["node", "scripts/flow-browser.mjs", "--ci-part=1a", "--issue-reopen", "--project-issues"]

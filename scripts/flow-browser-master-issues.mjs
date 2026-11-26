@@ -237,7 +237,12 @@ export async function masterDragBrowserChecks({ page, project, root, output, ser
   };
   await withIssueGroup({ page, project, root }, source, async () => {
     await service.flows.action({ action: 'create-folder', name: 'Drag destination' });
-    await exerciseMasterDrags({ page, service, values, output, poll });
+    const viewport = page.viewportSize();
+    try {
+      await exerciseMasterDrags({ page, service, values, output, poll });
+    } finally {
+      await page.setViewportSize(viewport);
+    }
   });
 }
 
@@ -255,36 +260,40 @@ async function exerciseMasterDrags({ page, service, values, output, poll }) {
     const { flow } = await service.flows.view(from);
     await page.goto('/?folder=' + encodeURIComponent(flow.folder));
   };
+  await page.setViewportSize({ width: 760, height: 600 });
   await page.goto('/?issue=' + from);
-  await page.locator('#issue-list [data-issue="' + sidebar + '"]').dragTo(destination);
+  const sidebarRow = page.locator('#issue-list [data-issue="' + sidebar + '"]');
+  await dragIssue(sidebarRow, destination);
   await waitOwner(sidebar, to);
   await page.getByText('Attached issue to ' + to + '.', { exact: true }).waitFor();
+  await page.setViewportSize({ width: 1440, height: 960 });
   await page.goto('/?issue=' + from);
   const childLink = page.locator('#issue-sub-issues [data-issue="' + child + '"]');
   service.flows.autoplay.set(to, { mode: 'playing' });
-  await childLink.dragTo(destination);
+  await dragIssue(childLink, destination);
   await page.getByText('Wait for the master to be idle before moving a sub-issue.', { exact: true }).waitFor();
   assert.equal(owner(child), from);
   service.flows.pause(to);
-  await childLink.dragTo(destination);
+  await dragIssue(childLink, destination);
   await waitOwner(child, to);
   await page.getByText('Attached issue to ' + to + '.', { exact: true }).waitFor();
   await page.goto('/?issue=' + to);
-  await page
-    .locator('#issue-sub-issues [data-issue="' + child + '"]')
-    .dragTo(page.locator('#issue-list [data-issue-folder-drop="Drag destination"]'));
+  await dragIssue(
+    page.locator('#issue-sub-issues [data-issue="' + child + '"]'),
+    page.locator('#issue-list [data-issue-folder-drop="Drag destination"]')
+  );
   await waitOwner(child, null);
   await page.getByText('Moved issue to Drag destination.', { exact: true }).waitFor();
   const moved = await service.flows.view(child);
   assert.equal(moved.flow.folder, 'Drag destination');
   await selectFolder();
   const folderLink = page.locator('#folder-member-list [data-issue="' + folder + '"]');
-  await folderLink.dragTo(destination);
+  await dragIssue(folderLink, destination);
   await waitOwner(folder, to);
   await page.getByText('Attached issue to ' + to + '.', { exact: true }).waitFor();
   await page.goto('/?issue=' + from);
   const center = page.locator('.flow-main[data-issue-master-drop="' + from + '"] #issue-title');
-  await page.locator('#issue-list [data-issue="' + folder + '"]').dragTo(center);
+  await dragIssue(page.locator('#issue-list [data-issue="' + folder + '"]'), center);
   await waitOwner(folder, from);
   writeFileSync(
     join(output, 'inbox-group-drag.json'),
@@ -301,4 +310,10 @@ async function exerciseMasterDrags({ page, service, values, output, poll }) {
       2
     )
   );
+}
+
+async function dragIssue(source, destination) {
+  await source.scrollIntoViewIfNeeded();
+  await destination.scrollIntoViewIfNeeded();
+  await source.dragTo(destination);
 }
