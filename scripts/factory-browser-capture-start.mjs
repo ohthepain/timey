@@ -54,8 +54,8 @@ export default async function captureStartChecks(page) {
     if (new URL(page.url()).hash !== '#/queue') await page.goto(new URL('/#/queue', page.url()).href);
     await page.locator('#create-issue-dialog').waitFor({ state: 'hidden' });
     await page.waitForFunction(() => !refreshing);
-    await page.getByRole('button', { name: 'Create issue', exact: true }).click();
-    await page.getByLabel('Description', { exact: true }).fill(description);
+    await page.locator('#create-issue').click();
+    await page.locator('#capture-description').fill(description);
     await page.waitForFunction(() => {
       const select = document.querySelector('#capture-folder');
       return select && !select.disabled && select.options.length > 1;
@@ -70,7 +70,7 @@ export default async function captureStartChecks(page) {
 
   async function verifyDefaultCapture(page, captures, starts) {
     await openCapture(page, 'A colorful dialog');
-    await page.getByLabel('Your model', { exact: true }).selectOption('gpt-6-astra');
+    await page.locator('#capture-model').selectOption('gpt-6-astra');
     const options = ['#capture-grill', '#capture-go', '#capture-merge'];
     for (const selector of options)
       expect(!(await page.locator(selector).isChecked()), selector + ' must default off.');
@@ -84,7 +84,7 @@ export default async function captureStartChecks(page) {
       'Removed explanatory copy remains.'
     );
     await page.screenshot({ path: 'capture-desktop.png' });
-    await page.getByRole('button', { name: 'Create issues', exact: true }).click();
+    await page.locator('#capture-save').click();
     const dialog = page.locator('#create-issue-dialog');
     await dialog.waitFor({ state: 'hidden', timeout: 5000 }).catch(() => {});
     expect(
@@ -103,7 +103,7 @@ export default async function captureStartChecks(page) {
   async function verifyGoStarts(page, captures, starts) {
     await openCapture(page, 'Start this issue');
     await page.locator('#capture-go').check();
-    await page.getByRole('button', { name: 'Create issues', exact: true }).click();
+    await page.locator('#capture-save').click();
     expect(captures.length === 2, 'Expected one second capture, received ' + captures.length + '.');
     await page.waitForURL('**/#/issue/capture-2');
     expect(captures[1].go === true && captures[1].grill !== true, 'Go choice was not captured.');
@@ -130,7 +130,7 @@ export default async function captureStartChecks(page) {
     const bounds = await page.locator('#create-issue-dialog').boundingBox();
     expect(bounds.x >= 0, 'Dialog overflows left edge');
     expect(bounds.x + bounds.width <= 390, 'Dialog overflows right edge');
-    await page.getByRole('button', { name: 'Create issues', exact: true }).click();
+    await page.locator('#capture-save').click();
     await page.waitForURL('**/#/issue/capture-3');
     expect(captures[2].grill === true && captures[2].go === true, 'Combined intent was not captured.');
     expect(captures[2].strategy === 'full-send', 'Merge did not retain Full Send intent.');
@@ -142,7 +142,7 @@ export default async function captureStartChecks(page) {
     await openCapture(page, 'Merge the finished change');
     await page.locator('#capture-go').check();
     await page.locator('#capture-merge').check();
-    await page.getByRole('button', { name: 'Create issues', exact: true }).click();
+    await page.locator('#capture-save').click();
     await page
       .locator('#capture-toast')
       .getByText(/saved, but start could not be confirmed/)

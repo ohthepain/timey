@@ -266,8 +266,8 @@ async function checkSorts(page, dialog, matches) {
   const observed = [];
   for (const [field, value] of sortFields) {
     for (const direction of ['asc', 'desc']) {
-      await dialog.getByLabel('Sort by').selectOption(field);
-      await dialog.getByLabel('Sort direction').selectOption(direction);
+      await dialog.locator('select[name="sort"]').selectOption(field);
+      await dialog.locator('select[name="direction"]').selectOption(direction);
       const ordered = expectedOrder(matches, value, direction);
       const first = await observeRows(dialog, ordered.slice(0, 25));
       await scrollBatch(page, dialog);
@@ -281,8 +281,8 @@ async function checkSorts(page, dialog, matches) {
 }
 
 async function checkVisibleSelection(page, dialog, matches) {
-  await dialog.getByLabel('Sort by').selectOption('size');
-  await dialog.getByLabel('Sort direction').selectOption('asc');
+  await dialog.locator('select[name="sort"]').selectOption('size');
+  await dialog.locator('select[name="direction"]').selectOption('asc');
   const ordered = [...matches].sort((a, b) => a.bytes - b.bytes);
   const selected = ordered.slice(0, 50);
   await scrollBatch(page, dialog);
@@ -292,15 +292,15 @@ async function checkVisibleSelection(page, dialog, matches) {
     .first()
     .evaluate((row) => row.getBoundingClientRect().bottom < row.closest('[role="region"]').getBoundingClientRect().top);
   assert.equal(firstRowAboveViewport, true);
-  await dialog.getByRole('checkbox', { name: 'Select all (visible)', exact: true }).check();
+  await dialog.locator('[data-asset-select-visible]').check();
   const afterSelect = await observeTotals(dialog, matches, selected);
   await observeRows(dialog, selected, selected);
   await scrollBatch(page, dialog);
   const afterScroll = await observeRows(dialog, ordered, selected);
-  await dialog.getByLabel('Sort direction').selectOption('desc');
+  await dialog.locator('select[name="direction"]').selectOption('desc');
   const afterSort = await observeRows(dialog, [...ordered].reverse().slice(0, 25), selected);
   assert.equal(await observeTotals(dialog, matches, selected), afterSelect);
-  await dialog.getByLabel('Recorded references').selectOption('zero');
+  await dialog.locator('select[name="references"]').selectOption('zero');
   const zero = [...ordered].reverse().filter(({ references }) => !references);
   const afterFilter = await observeTotals(dialog, zero);
   await observeRows(dialog, zero.slice(0, 25));
@@ -308,27 +308,27 @@ async function checkVisibleSelection(page, dialog, matches) {
 }
 
 async function checkMatchSelection(page, dialog, matches) {
-  await dialog.getByLabel('Recorded references').selectOption('');
+  await dialog.locator('select[name="references"]').selectOption('');
   const ordered = [...matches].sort((a, b) => b.bytes - a.bytes);
   await observeRows(dialog, ordered.slice(0, 25));
-  await dialog.getByRole('checkbox', { name: 'Select all matches', exact: true }).check();
+  await dialog.locator('[data-asset-select-matches]').check();
   const immediately = await observeTotals(dialog, matches, matches);
   const firstBatch = await observeRows(dialog, ordered.slice(0, 25), matches);
   await scrollBatch(page, dialog);
   await observeRows(dialog, ordered.slice(0, 50), matches);
   await scrollBatch(page, dialog);
   const afterScroll = await observeRows(dialog, ordered, matches);
-  await dialog.getByLabel('Sort by').selectOption('name');
+  await dialog.locator('select[name="sort"]').selectOption('name');
   const afterSort = await observeRows(
     dialog,
     expectedOrder(matches, (asset) => asset.name, 'desc').slice(0, 25),
     matches
   );
   assert.equal(await observeTotals(dialog, matches, matches), immediately);
-  await dialog.getByLabel('Store', { exact: false }).selectOption('primary');
+  await dialog.locator('select[name="store"]').selectOption('primary');
   const afterStoreFilter = await observeTotals(dialog, matches);
-  await dialog.getByRole('checkbox', { name: 'Select all matches', exact: true }).check();
-  await dialog.getByLabel('Asset type').selectOption('image/png');
+  await dialog.locator('[data-asset-select-matches]').check();
+  await dialog.locator('select[name="type"]').selectOption('image/png');
   return { immediately, firstBatch, afterScroll, afterSort, afterStoreFilter };
 }
 
@@ -337,7 +337,7 @@ async function checkControls({ page, dialog, inventory }) {
   await observeTotals(dialog, inventory);
   await dialog.getByText('Stores unavailable: Unavailable S3.').waitFor();
   await dialog.getByText('Some retained records could not be read. Counts may be incomplete.').waitFor();
-  await dialog.getByLabel('Recorded references').selectOption('found');
+  await dialog.locator('select[name="references"]').selectOption('found');
   await observeTotals(dialog, [image, ...matches.filter(({ references }) => references)]);
   const imageRow = dialog.getByRole('row').filter({ hasText: image.name });
   await imageRow.getByText('5 recorded', { exact: true }).click();
@@ -346,8 +346,8 @@ async function checkControls({ page, dialog, inventory }) {
   assert.equal(await imageRow.getByText('Restricted reference', { exact: true }).count(), 3);
   assert.equal(await dialog.getByText('Confidential chat title').count(), 0);
   assert.equal(await dialog.getByRole('button', { name: 'Delete selected' }).count(), 0);
-  await dialog.getByLabel('Recorded references').selectOption('');
-  await dialog.getByLabel('Asset type').selectOption('text/plain');
+  await dialog.locator('select[name="references"]').selectOption('');
+  await dialog.locator('select[name="type"]').selectOption('text/plain');
   await observeTotals(dialog, matches);
   assert.equal(await dialog.getByRole('button', { name: /^(Previous|Next)$/ }).count(), 0);
   assert.equal(await dialog.getByText(/Page \d+ of \d+/).count(), 0);
@@ -393,7 +393,7 @@ async function copyPublishedEvidence(page, origin, report) {
   await page.goto(origin + '/?projectTab=reports&report=' + report);
   const url = new URL('/api/report-evidence?report=' + report + '&item=0', page.url());
   await page.context().grantPermissions(['clipboard-read', 'clipboard-write'], { origin: url.origin });
-  await page.getByRole('button', { name: 'Copy link', exact: true }).click();
+  await page.locator('[data-report-copy-evidence]').click();
   await page.getByText('Link copied.', { exact: true }).waitFor();
   assert.equal(await page.evaluate(() => navigator.clipboard.readText()), url.href);
   return url.pathname + url.search;
@@ -448,13 +448,13 @@ export async function assetStorageBrowserChecks({ page, screenshot, output }) {
     const releaseListing = mock.holdListing();
     await page.goto(origin + '/?settings=asset-storage');
     const dialog = page.locator('#project-settings-dialog');
-    await dialog.getByRole('link', { name: 'Asset Storage', exact: true }).waitFor();
+    await dialog.locator('[data-settings-page="asset-storage"]').waitFor();
     try {
       await dialog.getByText('Listing assets in S3…', { exact: true }).waitFor();
       const status = await page.request.get(origin + '/api/project-asset-storage?status');
       assert.deepEqual(await status.json(), { phase: 'listing' });
-      await dialog.getByRole('link', { name: 'Git', exact: true }).click();
-      await dialog.getByRole('link', { name: 'Asset Storage', exact: true }).click();
+      await dialog.locator('[data-settings-page="git"]').click();
+      await dialog.locator('[data-settings-page="asset-storage"]').click();
       const before = mock.calls.filter((name) => name === 'ListObjectsV2Command').length;
       const reused = await page.request.get(origin + '/api/project-asset-storage?status&refresh=true');
       assert.deepEqual(await reused.json(), { phase: 'listing' });
@@ -506,7 +506,7 @@ export async function assetStorageBrowserChecks({ page, screenshot, output }) {
     assert.ok(mock.reads.slice(readsBefore).includes('secondary-fixture'));
     assert.deepEqual(fixture.copy.get(fixture.first).body, fixture.image.body);
     await page.goto(origin + '/?settings=asset-storage');
-    await dialog.getByLabel('Store', { exact: false }).selectOption('secondary');
+    await dialog.locator('select[name="store"]').selectOption('secondary');
     await dialog.getByText('1 asset · 10 bytes | 0 selected · 0 bytes').waitFor();
     assert.equal(mock.calls.filter((name) => name === 'PutObjectCommand').length, 1);
     publication.unpublish();

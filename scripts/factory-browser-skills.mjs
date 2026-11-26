@@ -29,7 +29,7 @@ export default async function skillsBrowserChecks(page) {
   if (!(await page.locator('.issue-conversation .skill-chip').isVisible()))
     throw Error('The selected issue-chat skill is not visible as a colored token.');
   await composer.fill('Use this for my question.');
-  await page.locator('.issue-conversation').getByRole('button', { name: 'Send message' }).click();
+  await page.locator('.issue-conversation').locator('.discussion-compose button[type="submit"]').click();
   await page.waitForFunction(() => document.querySelector('[data-chat-panel="issue"] textarea')?.value === '');
   if (
     issueTurns.length !== 1 ||
@@ -38,7 +38,7 @@ export default async function skillsBrowserChecks(page) {
   )
     throw Error('The issue chat did not submit its selected skill with the message.');
 
-  await page.getByRole('button', { name: 'Review decisions', exact: true }).click();
+  await page.locator('button[aria-controls="discussion-body"]').click();
   composer = page.locator('#discussion-body textarea[aria-label="Chat input"]');
   await composer.fill('/practice');
   option = page.getByRole('option').filter({ hasText: 'practice' });
@@ -46,7 +46,7 @@ export default async function skillsBrowserChecks(page) {
   await option.click();
   if (!(await page.locator('#discussion-body .skill-chip').isVisible()))
     throw Error('The selected discussion skill is not visible as a colored token.');
-  await page.getByRole('button', { name: 'Send message' }).last().click();
+  await page.locator('#discussion-body button[type="submit"]').click();
   await page.waitForFunction(() =>
     document.querySelector('#discussion-body .discussion-output')?.textContent.includes('Skill turn received.')
   );

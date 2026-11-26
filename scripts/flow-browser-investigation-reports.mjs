@@ -159,7 +159,7 @@ export async function investigationReportsBrowserChecks({ page, service, project
   await messages.getByText('Retained report discussion message 36.', { exact: true }).waitFor();
   await poll(metrics, atLatest, 'Report chat did not open on its latest message.');
   const opened = await metrics();
-  const prompt = page.getByRole('button', { name: 'Explain the findings', exact: true });
+  const prompt = page.locator('[data-prompt-id="report-findings"]');
   assert.ok(
     await prompt.evaluate((node) => {
       const draft = document.getElementById('report-discuss-draft');

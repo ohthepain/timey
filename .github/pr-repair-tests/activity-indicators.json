@@ -1,0 +1,19 @@
+{
+  "version": 2,
+  "name": "Activity dots stay anchored and reflect actual work",
+  "command": [
+    "node",
+    "scripts/flow-browser.mjs",
+    "--ci-part=1b",
+    "--ai-text",
+    "--automate-activity",
+    "--activity-indicators",
+    "--chat-progress"
+  ],
+  "source": {
+    "runId": "45818424513",
+    "jobId": "139907129555",
+    "checkout": "734f8e13f81e921fa341f2c674e5a943557de8a6",
+    "tree": "fc95502b1e41fb7960bedd784e1327d8695b19e1"
+  }
+}

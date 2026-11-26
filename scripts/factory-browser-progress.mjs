@@ -38,7 +38,7 @@ export default async function progressBrowserChecks(page) {
   });
   await page.goto(new URL('/#/issue/b', page.url()).href);
   await page.getByRole('heading', { name: 'Answering scope questions', exact: true }).waitFor();
-  if ((await page.getByRole('tab', { name: 'Progress', exact: true }).getAttribute('aria-selected')) !== 'true')
+  if ((await page.locator('#issue-tab-progress').getAttribute('aria-selected')) !== 'true')
     throw Error('Progress is not the default tab.');
   const progressPanel = page.locator('[data-chat-panel="progress"]');
   const question = progressPanel.getByText('Should Save retain the draft?', { exact: true });
@@ -51,15 +51,15 @@ export default async function progressBrowserChecks(page) {
     await refresh();
   });
   if ((await answer.inputValue()) !== 'Yes, retain this draft.') throw Error('Focused answer draft was reset.');
-  await page.getByRole('tab', { name: 'Issue thread', exact: true }).click();
+  await page.locator('#issue-tab-issue').click();
   await page.evaluate(async () => {
     await refresh();
   });
-  if ((await page.getByRole('tab', { name: 'Issue thread', exact: true }).getAttribute('aria-selected')) !== 'true')
+  if ((await page.locator('#issue-tab-issue').getAttribute('aria-selected')) !== 'true')
     throw Error('Polling changed the selected tab.');
-  await page.getByRole('tab', { name: 'Progress', exact: true }).click();
+  await page.locator('#issue-tab-progress').click();
   if ((await answer.inputValue()) !== 'Yes, retain this draft.') throw Error('Tab switching lost the draft.');
-  await page.getByRole('button', { name: 'Send answer and continue', exact: true }).click();
+  await page.locator('[data-lifecycle-answer="b"][data-decision="answer"]').click();
   const operationStep = page.locator('[data-progress-step]').filter({ hasText: /^Running verification$/ });
   await operationStep.waitFor();
   if (
@@ -86,7 +86,7 @@ export default async function progressBrowserChecks(page) {
     await sent;
     await route.fulfill({ json: { accepted: true } });
   });
-  await page.getByRole('button', { name: 'Continue issue', exact: true }).click();
+  await page.locator('[data-strategy-start="b"]').click();
   await page.getByRole('heading', { name: 'Request sent; waiting for updated progress', exact: true }).waitFor();
   release();
   await page.waitForFunction(() => !busy);
@@ -98,7 +98,7 @@ export default async function progressBrowserChecks(page) {
     await refresh();
   });
   await operationStep.waitFor();
-  await page.getByRole('tab', { name: 'Issue output', exact: true }).click();
+  await page.locator('#issue-tab-output').click();
   await page.route('**/api/output-history?**', (route) =>
     route.fulfill({
       json: {
@@ -110,9 +110,9 @@ export default async function progressBrowserChecks(page) {
       },
     })
   );
-  await page.getByRole('button', { name: 'Load retained output history', exact: true }).click();
+  await page.locator('[data-output-history]').click();
   await page.getByLabel('Retained output events').filter({ hasText: 'Earlier retained output' }).waitFor();
-  await page.getByRole('tab', { name: 'Progress', exact: true }).click();
+  await page.locator('#issue-tab-progress').click();
   mode = 'grill';
   await page.evaluate(async () => {
     await refresh();
@@ -126,11 +126,11 @@ export default async function progressBrowserChecks(page) {
     });
   });
   await page.locator('#progress-grill-answer').fill('Yes, keep drafts.');
-  await page.getByRole('button', { name: 'Send grilling answer', exact: true }).click();
+  await page.locator('[data-progress-grill="b"]').click();
   await page.locator('#error').filter({ hasText: 'Disposable answer failure' }).waitFor();
   if ((await page.locator('#progress-grill-answer').inputValue()) !== 'Yes, keep drafts.')
     throw Error('Failed grilling reply lost its draft.');
-  await page.getByRole('button', { name: 'Send grilling answer', exact: true }).click();
+  await page.locator('[data-progress-grill="b"]').click();
   await page.waitForFunction(() => !busy);
   if (
     grillingTurns.length !== 2 ||

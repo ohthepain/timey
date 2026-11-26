@@ -273,6 +273,7 @@
         const item = document.createElement('li');
         const button = document.createElement('button');
         button.className = 'small-button';
+        button.dataset.viewSourceEntry = entry.id;
         button.textContent = entry.name + ' · ' + entry.label;
         button.addEventListener('click', () => {
           $('view-index').close();

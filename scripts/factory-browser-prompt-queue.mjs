@@ -1,3 +1,5 @@
+import { assertControlText } from './browser-controls.mjs';
+
 export default async function promptQueueChecks(page) {
   const calls = [];
   const queue = { paused: true, entries: [], operation: null, activeTurn: null, native: null };
@@ -40,50 +42,48 @@ export default async function promptQueueChecks(page) {
     if (!condition) throw Error(message);
   }
   await page.goto(new URL('/#/issue/b', page.url()).href);
-  await page.getByRole('tab', { name: 'Issue thread', exact: true }).click();
+  await page.locator('#issue-tab-issue').click();
   const composer = page.locator('.issue-conversation');
-  const input = composer.getByRole('textbox', { name: 'Chat input' });
+  const input = composer.locator('#issue-chat-input-b');
   await input.fill('/grilling');
   await composer.getByRole('option').filter({ hasText: 'grilling' }).click();
   await input.fill('First queued question');
-  await composer.getByRole('button', { name: 'Send message' }).click();
+  await composer.locator('.discussion-compose button[type="submit"]').click();
   await composer.locator('[data-prompt-id]').filter({ hasText: 'First queued question' }).waitFor();
   await input.fill('Second queued question');
-  await composer.getByRole('button', { name: 'Send message' }).click();
+  await composer.locator('.discussion-compose button[type="submit"]').click();
   await composer.locator('[data-prompt-id]').filter({ hasText: 'Second queued question' }).waitFor();
   const firstId = queue.entries[0].id;
   await page.reload();
-  await page.getByRole('tab', { name: 'Issue thread', exact: true }).click();
+  await page.locator('#issue-tab-issue').click();
   const first = composer.locator('[data-prompt-id]').filter({ hasText: 'First queued question' });
-  await first.getByRole('button', { name: 'Edit', exact: true }).click();
-  expect(
-    await composer.getByRole('button', { name: 'Remove grilling skill' }).isVisible(),
-    'Editing lost the selected skill'
-  );
+  await first.locator('[data-prompt-control="edit"]').click();
+  expect(await composer.locator('[data-skill="grilling"]').isVisible(), 'Editing lost the selected skill');
   await input.fill('Edited first question');
-  await composer.getByRole('button', { name: 'Save queued prompt' }).click();
+  await composer.locator('.discussion-compose button[type="submit"]').click();
   await composer.locator('[data-prompt-id]').filter({ hasText: 'Edited first question' }).waitFor();
   expect(queue.entries[0].id === firstId, 'Editing changed FIFO position or identity');
   expect(queue.entries[0].skills[0] === 'grilling', 'Editing lost skill identity');
   await composer
     .locator('[data-prompt-id]')
     .filter({ hasText: 'Second queued question' })
-    .getByRole('button', { name: 'Remove', exact: true })
+    .locator('[data-prompt-control="remove"]')
     .click();
-  await composer.getByRole('button', { name: 'Resume', exact: true }).click();
-  await composer.getByRole('button', { name: 'Pause', exact: true }).waitFor();
+  await composer.locator('button[data-operation="resume"]').click();
+  await composer.locator('button[data-operation="pause"]').waitFor();
   expect(queue.entries.length === 1, 'Removal lost or duplicated another prompt');
   queue.operation = { id: 'merge-1', kind: 'merge', cancellable: false };
   await page.reload();
-  await page.getByRole('tab', { name: 'Issue thread', exact: true }).click();
-  await composer.getByRole('button', { name: 'Pause after this operation', exact: true }).waitFor();
+  await page.locator('#issue-tab-issue').click();
+  await composer.locator('button[data-operation="pause"]').waitFor();
   await composer.getByText('Factory is running merge. New prompts will wait.', { exact: true }).first().waitFor();
-  expect(await composer.getByRole('button', { name: 'Stop response' }).isHidden(), 'Merge incorrectly offered Stop');
+  await assertControlText(composer.locator('button[data-operation="pause"]'), 'Pause after this operation');
+  expect(await composer.locator('[data-prompt-stop]').isHidden(), 'Merge incorrectly offered Stop');
   await input.fill('A question during merge');
-  await composer.getByRole('button', { name: 'Send message' }).click();
+  await composer.locator('.discussion-compose button[type="submit"]').click();
   await composer.locator('[data-prompt-id]').filter({ hasText: 'A question during merge' }).waitFor();
   expect(
-    await composer.getByRole('button', { name: 'Steer', exact: true }).first().isDisabled(),
+    await composer.locator('[data-prompt-control="steer"]').first().isDisabled(),
     'Unconfirmed turn offered steering'
   );
   await page.screenshot({ path: 'issue-prompt-queue.png', fullPage: false });

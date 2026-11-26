@@ -7,6 +7,7 @@ export const ciSuites = {
   'flow-browser-1': { name: 'Flow browser (1a/2)', checks: ['flow-browser'], flowPart: '1a' },
   'flow-browser-1b': { name: 'Flow browser (1b/2)', checks: ['flow-browser'], flowPart: '1b' },
   'flow-browser-2': { name: 'Flow browser (2/2)', checks: ['flow-browser'], flowPart: 2 },
+  'timey-browser': { name: 'Timey browser', checks: ['timey-browser'] },
 };
 
 export const ciSuiteNames = new Set([

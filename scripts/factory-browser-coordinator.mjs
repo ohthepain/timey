@@ -29,30 +29,30 @@ export default async function coordinatorBrowserChecks(page) {
   await page.locator('#coordinator-strip').filter({ hasText: 'Older urgent issue' }).waitFor();
   await page.goto(new URL('/#/issue/a', page.url()).href);
   await page.waitForFunction(() => document.getElementById('coordinator-strip').hidden);
-  await page.getByRole('link', { name: 'Coordinator', exact: true }).click();
+  await page.locator('a[href="#/coordinator"]').click();
   await page.getByRole('heading', { name: 'Coordinator', exact: true }).waitFor();
-  await page.getByLabel('Coordinator live output').filter({ hasText: 'Reading saved work' }).waitFor();
+  await page.locator('#coordinator-output').filter({ hasText: 'Reading saved work' }).waitFor();
   if (await page.locator('#coordinator-output script').count()) throw Error('Output was interpreted as HTML.');
   await page.screenshot({ path: 'coordinator-active.png', fullPage: true });
-  await page.getByLabel('Message', { exact: true }).fill('Explain what is waiting');
-  await page.getByRole('button', { name: 'Steer', exact: true }).click();
+  await page.locator('#coordinator-message').fill('Explain what is waiting');
+  await page.locator('#coordinator-steer').click();
   await page.waitForFunction(() => document.getElementById('coordinator-message').value === '');
   if (requests.at(-1).body.turnId !== 'turn-browser') throw Error('Steer omitted the displayed response identity.');
-  await page.getByLabel('Message', { exact: true }).fill('Next question');
-  await page.getByRole('button', { name: 'Send', exact: true }).click();
+  await page.locator('#coordinator-message').fill('Next question');
+  await page.locator('#coordinator-send').click();
   await page.waitForFunction(() => document.getElementById('coordinator-message').value === '');
   if ((await page.locator('#coordinator-history option').count()) !== 1)
     throw Error('Archived chats clutter the default view.');
-  await page.getByLabel('Show archived conversations', { exact: true }).check();
-  await page.getByLabel('Coordinator history').selectOption('old');
+  await page.locator('#coordinator-show-history').check();
+  await page.locator('#coordinator-history').selectOption('old');
   await page.locator('#coordinator-messages').filter({ hasText: 'Earlier retained conversation' }).waitFor();
   const scroll = await checkCoordinatorHistoryScroll(page, threads[0]);
-  await page.getByRole('button', { name: 'Stop', exact: true }).click();
+  await page.locator('#coordinator-stop').click();
   await page.locator('#coordinator-status').filter({ hasText: 'Stopped' }).waitFor();
   if (!(await page.locator('#coordinator-workers').innerText()).includes('still running'))
     throw Error('Workers were not explained.');
-  await page.getByRole('button', { name: 'Continue', exact: true }).click();
-  await page.getByRole('button', { name: 'Start fresh', exact: true }).click();
+  await page.locator('#coordinator-continue').click();
+  await page.locator('#coordinator-fresh').click();
   await page.waitForFunction(() => document.getElementById('coordinator-history').value === 'fresh');
   await page.screenshot({ path: 'coordinator.png', fullPage: true });
   await page.goto(new URL('/#/issue/b', page.url()).href);
@@ -63,7 +63,7 @@ export default async function coordinatorBrowserChecks(page) {
 }
 
 export async function checkCoordinatorHistoryScroll(page, archive) {
-  const messages = page.getByLabel('Coordinator conversation');
+  const messages = page.locator('#coordinator-messages');
   const metrics = () =>
     messages.evaluate((node) => ({ top: node.scrollTop, end: node.scrollHeight - node.clientHeight }));
   const atLatest = () => {
@@ -83,8 +83,8 @@ export async function checkCoordinatorHistoryScroll(page, archive) {
   await messages.getByText('Update while reading the archive', { exact: true }).waitFor();
   const reading = await metrics();
   if (reading.top !== 90) throw Error('A Coordinator update moved the reader.');
-  await page.getByLabel('Coordinator history').selectOption('current');
-  await page.getByLabel('Coordinator history').selectOption('old');
+  await page.locator('#coordinator-history').selectOption('current');
+  await page.locator('#coordinator-history').selectOption('old');
   await page.waitForFunction(atLatest);
   return { opened, followed, reading, reopened: await metrics() };
 }

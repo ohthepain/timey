@@ -19,6 +19,29 @@
     return { label, input };
   }
 
+  function previewOperation(field, updateSelection) {
+    const operation = { pending: false, run };
+
+    async function run(action) {
+      if (operation.pending) return;
+      operation.pending = true;
+      field('error').textContent = '';
+      for (const id of ['close', 'refresh', 'back', 'apply']) field(id).disabled = true;
+      try {
+        await action();
+      } catch (error) {
+        field('status').textContent = '';
+        field('error').textContent = error.message;
+      } finally {
+        operation.pending = false;
+        for (const id of ['close', 'refresh', 'back', 'apply']) field(id).disabled = false;
+        updateSelection();
+      }
+    }
+
+    return operation;
+  }
+
   function branchCleanupUI({ request, post }) {
     const field = (id) => document.getElementById(`admin-branches-${id}`);
     let mode;
@@ -26,7 +49,8 @@
     let preview;
     let choices = [];
     let reviewed = [];
-    let pending = false;
+    const operation = previewOperation(field, updateSelection);
+    const { run } = operation;
     let stage = null;
     const endpoint = () => `project-${mode}-branch-cleanup`;
 
@@ -39,7 +63,7 @@
       field('all').checked = count > 0 && count === choices.length;
       field('all').indeterminate = count > 0 && count < choices.length;
       field('all').disabled = !choices.length || preview?.readOnly === true;
-      field('review-button').disabled = !count || pending || preview?.readOnly === true;
+      field('review-button').disabled = !count || operation.pending || preview?.readOnly === true;
     }
 
     function setStage(value) {
@@ -52,26 +76,13 @@
       field('results').hidden = stage !== 'results';
     }
 
-    async function run(action) {
-      if (pending) return;
-      pending = true;
-      field('error').textContent = '';
-      for (const id of ['close', 'refresh', 'back', 'apply']) field(id).disabled = true;
-      try {
-        await action();
-      } catch (error) {
-        field('status').textContent = '';
-        field('error').textContent = error.message;
-      } finally {
-        pending = false;
-        for (const id of ['close', 'refresh', 'back', 'apply']) field(id).disabled = false;
-        updateSelection();
-      }
-    }
-
     function renderPreview(result) {
       const eligible = result.entries.filter(({ reason }) => !reason);
-      choices = eligible.map(({ name }) => ({ name, ...checkbox(name, false) }));
+      choices = eligible.map(({ name }) => {
+        const choice = checkbox(name, false);
+        choice.input.dataset.branch = name;
+        return { name, ...choice };
+      });
       for (const { input } of choices) input.disabled = result.readOnly;
       field('eligible').replaceChildren(...choices.map(({ label }) => label));
       const kept = result.entries.filter(({ reason }) => reason);
@@ -141,7 +152,7 @@
       });
     }
     field('dialog').addEventListener('cancel', (event) => {
-      if (pending) event.preventDefault();
+      if (operation.pending) event.preventDefault();
     });
     field('close').addEventListener('click', () => field('dialog').close());
     field('refresh').addEventListener('click', scan);
@@ -172,7 +183,8 @@
     let preview;
     let choices = [];
     let reviewed;
-    let pending = false;
+    const operation = previewOperation(field, updateSelection);
+    const { run } = operation;
 
     function setStage(stage) {
       field('preview').hidden = stage !== 'preview';
@@ -195,27 +207,10 @@
       const selected = selections().length;
       field('all').checked = choices.length > 0 && selected === choices.length;
       field('all').indeterminate = selected > 0 && selected < choices.length;
-      field('all').disabled = pending || !choices.length || preview?.readOnly || choices.length > 500;
-      field('review-button').disabled = pending || selected === 0 || preview?.readOnly || selected > 500;
+      field('all').disabled = operation.pending || !choices.length || preview?.readOnly || choices.length > 500;
+      field('review-button').disabled = operation.pending || selected === 0 || preview?.readOnly || selected > 500;
       for (const { issue, branches } of choices) {
         for (const { input } of branches) input.disabled = !issue.checked;
-      }
-    }
-
-    async function run(action) {
-      if (pending) return;
-      pending = true;
-      field('error').textContent = '';
-      for (const id of ['close', 'refresh', 'back', 'apply']) field(id).disabled = true;
-      try {
-        await action();
-      } catch (error) {
-        field('status').textContent = '';
-        field('error').textContent = error.message;
-      } finally {
-        pending = false;
-        for (const id of ['close', 'refresh', 'back', 'apply']) field(id).disabled = false;
-        updateSelection();
       }
     }
 
@@ -229,12 +224,14 @@
         return node;
       }
       const { label, input: issue } = checkbox(title, false);
+      issue.dataset.archivedIssue = id;
       node.append(label);
       const branches = [];
       for (const { name, reason: branchReason } of row.branches) {
         if (branchReason) node.append(element('p', `${name} · ${branchReason}`, 'muted'));
         else {
           const choice = checkbox(`Also delete local branch ${name}`, false);
+          choice.input.dataset.branch = name;
           node.append(choice.label);
           branches.push({ name, input: choice.input });
         }
@@ -301,7 +298,7 @@
     });
     field('close').addEventListener('click', () => field('dialog').close());
     field('dialog').addEventListener('cancel', (event) => {
-      if (pending) event.preventDefault();
+      if (operation.pending) event.preventDefault();
     });
     field('refresh').addEventListener('click', scan);
     field('all').addEventListener('change', () => {
@@ -370,6 +367,7 @@
       else {
         const detail = entry.merged ? '' : ' · commits not confirmed in comparison branch';
         branch = checkbox(`Delete local branch ${name}${detail}`, entry.merged);
+        branch.input.dataset.branch = name;
         node.append(branch.label);
       }
       rows.push({ id: entry.id, worktree: worktree.input, branch: branch?.input });

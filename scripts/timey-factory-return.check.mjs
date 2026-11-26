@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { basename, join } from 'node:path';
 import { test } from 'node:test';
@@ -76,9 +76,13 @@ function nextDiscovery(page) {
 }
 
 test('Timey opens the matching local Factory and hides the link when it is unavailable', async () => {
-  const evidence = join(root, '.issues/evidence');
+  const candidate = { revision: git(root, 'rev-parse', 'HEAD'), tree: git(root, 'write-tree') };
+  assert.equal(git(root, 'diff', '--name-only').trim(), '', 'The browser check requires a snapshot of the tested tree');
+  const evidence = process.env.TIMEY_RETURN_BROWSER_OUTPUT || join(root, '.issues/evidence');
   mkdirSync(evidence, { recursive: true });
-  const output = mkdtempSync(join(evidence, 'timey-factory-return-'));
+  const output = process.env.TIMEY_RETURN_BROWSER_OUTPUT
+    ? realpathSync(evidence)
+    : mkdtempSync(join(evidence, 'timey-factory-return-'));
   const project = projectFixture(output, 'matching-timey');
   const unrelatedProject = projectFixture(output, 'unrelated-project');
   const previousDirectory = process.cwd();
@@ -91,6 +95,7 @@ test('Timey opens the matching local Factory and hides the link when it is unava
     assert.equal(discovery.port, Number(new URL(matchingOrigin).port));
 
     Object.assign(process.env, {
+      DATABASE_URL: 'postgresql://fixture:fixture@127.0.0.1:1/fixture',
       AUTH_DATABASE_URL: 'postgresql://fixture:fixture@127.0.0.1:1/fixture',
       BETTER_AUTH_SECRET: 'timey-factory-browser-check-secret-without-accounts',
       BETTER_AUTH_URL: 'http://127.0.0.1',
@@ -103,20 +108,25 @@ test('Timey opens the matching local Factory and hides the link when it is unava
     delete process.env.SMTP_PASSWORD;
     timey = await createServer({
       root,
-      server: { host: '127.0.0.1', port: 0 },
+      server: {
+        host: '127.0.0.1',
+        port: 0,
+        fs: { allow: [root, realpathSync(join(root, 'node_modules'))] },
+      },
       css: {
         postcss: { plugins: [tailwindcss({ content: [join(root, 'src/**/*.{js,jsx,ts,tsx}')] }), autoprefixer()] },
       },
     });
     await timey.listen();
     const timeyOrigin = new URL(timey.resolvedUrls.local[0]).origin;
-    browser = await chromium.launch({ channel: 'chrome' });
+    browser = await chromium.launch({ channel: process.env.TIMEY_BROWSER_CHANNEL || 'chromium' });
     const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, permissions: ['midi-sysex'] });
     const page = await context.newPage();
     const observer = await context.newPage();
     const factory = page.getByRole('link', { name: 'Factory', exact: true });
     const observedFactory = observer.getByRole('link', { name: 'Factory', exact: true });
-    await page.goto(timeyOrigin);
+    const landing = await page.goto(timeyOrigin);
+    assert.equal(landing.status(), 200, 'Timey served its landing page');
     await observer.goto(timeyOrigin);
     await factory.waitFor();
     await observedFactory.waitFor();
@@ -157,7 +167,7 @@ test('Timey opens the matching local Factory and hides the link when it is unava
       proof,
       JSON.stringify(
         {
-          revision: git(root, 'rev-parse', 'HEAD'),
+          ...candidate,
           browser: browser.version(),
           timeyOrigin,
           matchingFactory: { launchedWithPort: 0, project, href, openedWorkspace, stoppedFactoryLinkCount },

@@ -36,7 +36,7 @@ export async function mergedIssueBrowserChecks({ page, project, service, screens
   await flows.store.save(flow, flow.revision);
   await page.clock.install();
   await page.goto('/?issue=' + id);
-  await page.getByRole('button', { name: 'Resume issue' }).waitFor();
+  await page.locator('#issue-playback[data-playback-mode="resume"]').waitFor();
   await page.locator('#issue-blocker').getByText(blocker, { exact: true }).waitFor();
   observedPR = { ...pr, mergedAt: '2026-11-21T00:02:00Z', revision: 'confirmed-merge' };
   await page.clock.fastForward(60_000);
@@ -54,7 +54,7 @@ export async function mergedIssueBrowserChecks({ page, project, service, screens
   assert.equal(await page.locator('#rename-issue').isDisabled(), true);
   assert.equal(await page.locator('#issue-playback').isVisible(), false);
   assert.equal(await page.locator('#rebuild-flow').isDisabled(), true);
-  assert.equal(await page.getByRole('button', { name: 'Add a step', exact: true }).isDisabled(), true);
+  assert.equal(await page.locator('[data-open-palette]').isDisabled(), true);
   assert.equal(await page.locator('#close-with-reason').isVisible(), true);
   assert.equal(await page.locator('#close-with-reason').isEnabled(), true);
   await page.locator('[data-block="request"]').click();
@@ -85,10 +85,10 @@ export async function mergedIssueBrowserChecks({ page, project, service, screens
   assert.equal(readFileSync(flows.store.path(id), 'utf8'), before);
   assert.match(readFileSync(report, 'utf8'), /state: backlog/);
   await screenshot('merged-issue-readonly');
-  await page.getByRole('button', { name: 'Close', exact: true }).click();
+  await page.locator('#close-with-reason').click();
   const dialog = page.getByRole('dialog', { name: 'Close this issue' });
-  await dialog.getByLabel('Reason', { exact: true }).selectOption('duplicate');
-  await dialog.getByRole('button', { name: 'Close issue', exact: true }).click();
+  await dialog.locator('#closure-reason').selectOption('duplicate');
+  await dialog.locator('#confirm-issue-closure').click();
   await dialog.waitFor({ state: 'hidden' });
   await poll(() => flows.selected(id).closed, Boolean, 'Merged issue did not close.');
   await poll(() => !flows.closureBusy(id), Boolean, 'Merged issue cleanup did not finish.');
@@ -100,7 +100,7 @@ export async function mergedIssueBrowserChecks({ page, project, service, screens
     after.blocks.find((block) => block.kind === 'merge').attempts,
     saved.blocks.find((block) => block.kind === 'merge').attempts
   );
-  assert.equal(await page.getByRole('button', { name: 'Reopen', exact: true }).isVisible(), true);
+  assert.equal(await page.locator('#reopen-issue').isVisible(), true);
   const reopen = await page.request.post('/api/issue-decision', {
     headers: { Origin: new URL(page.url()).origin, 'X-Factory-Action': 'manual' },
     data: { issueId: id, kind: 'reopen' },

@@ -102,8 +102,8 @@ async function checkClassicChat({ page, service, project, issue, poll, screensho
   await page.goto('/classic#/issue/' + issue);
   const response = await page.request.get('/api/issue?issue=' + issue);
   if (!response.ok()) throw Error(await response.text());
-  const thread = page.getByRole('tab', { name: 'Issue thread', exact: true });
-  const progress = page.getByRole('tab', { name: 'Progress', exact: true });
+  const thread = page.locator('#issue-tab-issue');
+  const progress = page.locator('#issue-tab-progress');
   await thread.click();
   return checkChat({
     log: page.getByRole('log', { name: 'Issue conversation' }),

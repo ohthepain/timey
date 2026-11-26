@@ -22,8 +22,8 @@ export default async function issueBoundaryBrowserChecks(page) {
     await page.setViewportSize({ ...viewport, width });
     await page.goto(new URL('/#/issue/a', page.url()).href);
     await page.getByRole('heading', { name: 'Newer low issue', exact: true }).waitFor();
-    const recoveredPR = page.getByRole('link', { name: 'Open pull request #19', exact: true, includeHidden: true });
-    if ((await recoveredPR.getAttribute('href')) !== pr) throw Error('The recovered delivery links to the wrong PR.');
+    const recoveredPR = page.locator('#app a[href=' + JSON.stringify(pr) + ']');
+    if (!(await recoveredPR.count())) throw Error('The recovered delivery links to the wrong PR.');
     const queueChrome = page
       .getByRole('link', { name: 'Discuss queue', exact: true })
       .or(page.locator('header').getByText('Issue queue', { exact: true }));

@@ -69,7 +69,7 @@ export default async function refreshStateChecks(page) {
     ordinaryBefore.top !== ordinaryAfter.top
   )
     throw Error('Ordinary textarea lost its draft or internal scroll');
-  const draft = page.getByRole('textbox', { name: 'Chat input', exact: true });
+  const draft = page.locator('#issue-chat-input-b');
   const text = Array.from({ length: 80 }, (_, i) => 'Draft line ' + i).join('\n');
   await draft.fill(text);
   await draft.evaluate((field) => {

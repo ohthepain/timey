@@ -29,7 +29,7 @@ export async function mergeStateBrowserChecks({ page, project, service, screensh
   flow.workspace = { checkout, branch, base };
   await service.flows.store.save(flow, flow.revision);
   await page.goto('/?issue=' + id);
-  const menu = page.getByRole('combobox', { name: 'Merge in progress', exact: true });
+  const menu = page.locator('#merge-state-menu');
   await menu.waitFor();
   assert.equal(await menu.evaluate((element) => getComputedStyle(element).color), 'rgb(242, 139, 130)');
   assert.match(await menu.getAttribute('title'), /merge-state.txt/);

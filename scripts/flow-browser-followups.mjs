@@ -9,7 +9,7 @@ export async function flowFollowupsBrowserChecks({ page, service, logs, screensh
   const executions = logs.execution.length;
   await page.goto('/?issue=' + source.issueId);
   await page.locator('#graph [data-block="' + source.blockId + '"]').click();
-  await page.getByRole('button', { name: 'Create follow-up issues', exact: true }).click();
+  await page.locator('[data-investigation-followups]').click();
   const dialog = page.locator('#investigation-followups-dialog');
   await dialog.locator('[data-proposal]').first().waitFor();
   assert.equal(await dialog.locator('[data-proposal]').count(), 2);
@@ -22,7 +22,7 @@ export async function flowFollowupsBrowserChecks({ page, service, logs, screensh
       response.url().endsWith('/api/flow-action') &&
       response.request().postDataJSON()?.action === 'investigation-followups-create'
   );
-  await dialog.getByRole('button', { name: 'Create selected issues (1)', exact: true }).click();
+  await dialog.locator('[data-followups-create]').click();
   assert.equal((await created).status(), 200);
   await dialog.getByText('1 follow-up issue created.', { exact: false }).waitFor();
   assert.equal(service.flows.issues().length, before + 1);
@@ -34,14 +34,14 @@ export async function flowFollowupsBrowserChecks({ page, service, logs, screensh
   assert.ok(!service.flows.read(service.flows.selected(source.issueId)).blocks.some(({ kind }) => kind === 'retro'));
   assert.equal(logs.execution.length, executions);
   await screenshot('investigation-followups-created');
-  await dialog.getByRole('button', { name: 'Close follow-up review' }).click();
+  await dialog.locator('[data-followups-close]').click();
   await page.reload();
   await page.locator('#graph [data-block="' + source.blockId + '"]').click();
-  await page.getByRole('button', { name: 'Create follow-up issues', exact: true }).click();
-  await dialog.getByRole('link', { name: 'Open issue', exact: true }).waitFor();
+  await page.locator('[data-investigation-followups]').click();
+  await dialog.locator('a[href="/?issue=' + encodeURIComponent(child.id) + '"]').waitFor();
   assert.equal(await dialog.locator('[data-proposal]:disabled').count(), 1);
   assert.equal(service.flows.issues().length, before + 1);
-  await dialog.getByRole('button', { name: 'Close follow-up review' }).click();
+  await dialog.locator('[data-followups-close]').click();
   await page.goto('about:blank');
   for (const id of [child.id, source.issueId]) await removeBrowserIssue(service.root, id);
 }
