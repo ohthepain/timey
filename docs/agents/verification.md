@@ -75,6 +75,13 @@ evidence for the same candidate.
 uses a disposable project to exercise playback, block Details, the Close menu,
 and contextual note recommendations.
 
+`node scripts/flow-browser.mjs --merge-target-update` runs the Merge control for
+two fixture PRs on a disposable Git remote. It records local conflict repair,
+publication before GitHub readiness, and a second target advance after readiness.
+The simulated GitHub endpoint rejects the stale candidate and merges the refreshed
+head after its checks pass. The scenario saves the observed commits, trees and
+operation order in `merge-target-update.json`.
+
 `node scripts/flow-browser.mjs --request-save` holds Request clarification after
 saving Your words on an existing issue. Rename, Close, Stop, and the editor remain
 usable while clarification runs, and the wording survives completion and reload.

@@ -55,7 +55,9 @@ function cleanCheckout(workspace) {
 
 function requireCleanCandidate(workspace, head) {
   requireThat(
-    cleanCheckout(workspace) && headOf(workspace) === head,
+    git(workspace.checkout, 'branch', '--show-current') === workspace.branch &&
+      cleanCheckout(workspace) &&
+      headOf(workspace) === head,
     'The issue checkout changed. Commit or preserve its changes before retrying Merge.'
   );
 }
@@ -161,6 +163,10 @@ async function runRecordedRepair(service, ctx, workspace, error, { before, tree,
     });
     const candidate = committedRepair(workspace, before);
     requireThat(
+      includesCommit(workspace, candidate, state.comparisonTarget),
+      'The repair did not retain the fetched target in the issue branch.'
+    );
+    requireThat(
       error.code === 'target-conflict' || treeOf(workspace) !== tree,
       'The repair did not change the candidate tree. Review the retained work before retrying.'
     );
@@ -195,7 +201,7 @@ async function attemptRepair(error, operation) {
   }
 }
 
-async function mergeWhenReady(service, ctx, workspace, provider, pr, readiness, state) {
+async function mergeWhenReady(service, ctx, workspace, provider, pr, readiness, state, refreshTarget) {
   const { head, target } = readiness;
   const confirmation = mergeConfirmation(ctx, provider, pr, readiness);
   requireThat(
@@ -215,45 +221,55 @@ async function mergeWhenReady(service, ctx, workspace, provider, pr, readiness, 
   state.repairHistory.validateAttachments();
   service.guard(service.root, { id: ctx.attempt.id, issues: [ctx.issue.id], worker_revision: head }, 'merge', target);
   ctx.signal.throwIfAborted();
-  let merged;
-  let mergeOrigin = 'factory-confirmed';
-  try {
-    ctx.onProgress('Merging the GitHub PR.\n', true);
-    merged = await provider.merge(pr.number, head, {
-      beforeMerge: async () => {
-        const actual = await lookupFlowPR(provider, workspace.branch, pr.number);
-        requireThat(actual, 'The existing PR is no longer available.');
-        const current = await provider.ready(actual, workspace.branch, head);
-        if (current.target !== target) throw pending('The target advanced before merge. Preparing the PR again.');
-        requireCleanCandidate(workspace, head);
-        ctx.signal.throwIfAborted();
-      },
-    });
-  } catch (error) {
-    const actual = await inspectMergeOutcome(provider, pr.number, error);
-    if (!actual.merged_at) {
-      if (
-        actual.base?.ref === pr.base.ref &&
-        actual.base?.sha &&
-        actual.base.sha !== target &&
-        !permissionFailure(error)
-      )
-        throw pending('The target advanced during the merge request. Preparing the PR again.');
-      throw error;
-    }
-    merged = (await provider.ready(actual, workspace.branch, head)).merge;
-    mergeOrigin = 'observed-merged';
-  }
+  ctx.onProgress('Merging the GitHub PR.\n', true);
+  const delivery = await requestVerifiedMerge(provider, workspace, pr, readiness, refreshTarget, ctx.signal);
   return {
-    result: { ...merged, pr: pr.number, head, target, checks: readiness.checks, mergeOrigin },
+    result: { ...delivery, pr: pr.number, head, target, checks: readiness.checks },
     summary: 'GitHub confirms the protected merge.',
   };
 }
 
-async function readMergeReadiness(ctx, workspace, provider, pr) {
+async function requestVerifiedMerge(provider, workspace, pr, { head, target }, refreshTarget, signal) {
+  const observePR = () => lookupFlowPR(provider, workspace.branch, pr.number, { metadataOnly: true });
+  try {
+    const merged = await provider.merge(pr.number, head, observePR, {
+      requireFreshTarget: true,
+      beforeMerge: async () => {
+        if ((await refreshTarget()) !== target)
+          throw pending('The target advanced before merge. Preparing the PR again.');
+        const actual = await lookupFlowPR(provider, workspace.branch, pr.number);
+        requireThat(actual, 'The existing PR is no longer available.');
+        const current = await provider.ready(actual, workspace.branch, head);
+        if (current.target !== target || (await refreshTarget()) !== target)
+          throw pending('The target advanced before merge. Preparing the PR again.');
+        requireCleanCandidate(workspace, head);
+        signal.throwIfAborted();
+      },
+    });
+    return { ...merged, mergeOrigin: 'factory-confirmed' };
+  } catch (error) {
+    if (['STRATEGY_PENDING', 'target-protection'].includes(error.code) || permissionFailure(error)) throw error;
+    return reconcileMergeRequest(provider, observePR, workspace.branch, { head, target }, refreshTarget, error);
+  }
+}
+
+async function reconcileMergeRequest(provider, observePR, branch, { head, target }, refreshTarget, error) {
+  const actual = await inspectMergeOutcome(observePR, error);
+  if (actual?.merged_at) {
+    const { merge } = await provider.ready(actual, branch, head);
+    return { ...merge, mergeOrigin: 'observed-merged' };
+  }
+  if ((await refreshTarget()) !== target)
+    throw pending('The target advanced during the merge request. Preparing the PR again.');
+  throw error;
+}
+
+async function readMergeReadiness(ctx, workspace, provider, pr, head) {
   try {
     ctx.onProgress('Checking GitHub PR readiness.\n', true);
-    const readiness = await provider.ready(pr, workspace.branch, pr.head.sha, {
+    const actual = await lookupFlowPR(provider, workspace.branch, pr.number);
+    requireThat(actual, 'The existing PR is no longer available.');
+    const readiness = await provider.ready(actual, workspace.branch, head, {
       waitForChecks: true,
     });
     return { readiness };
@@ -282,38 +298,40 @@ function observedMergeBlocker(error) {
   return error;
 }
 
-function mayWaitForChecks(error, fetchedTarget, reportedTarget) {
-  return error?.code === 'STRATEGY_PENDING' && !error.mergeabilityPending && fetchedTarget === reportedTarget;
+async function pushMergeCandidate(ctx, workspace, provider, pr, invoke, state, head) {
+  if (state.pushed === head && state.previousHead === pr.head.sha)
+    throw pending('Waiting for GitHub to observe the updated PR commit.');
+  const { remote } = deliveryTarget(ctx.flow);
+  assertFlowRemote(workspace, remote, provider.config.repository);
+  await invoke('git', ['push', remote, head + ':refs/heads/' + workspace.branch]);
+  state.previousHead = pr.head.sha;
+  state.pushed = head;
+  throw pending('Pushed the updated issue commit. Waiting for GitHub checks.');
 }
 
-async function advanceMerge(service, ctx, workspace, provider, pr, invoke, options, state) {
-  const { readiness, readinessError } = await readMergeReadiness(ctx, workspace, provider, pr);
-  if (mayWaitForChecks(readinessError, state.comparisonTarget, pr.base.sha) && headOf(workspace) === pr.head.sha)
-    throw readinessError;
+async function reconcileCandidate(ctx, workspace, pr, invoke, state) {
+  const current = headOf(workspace);
+  requireThat(
+    includesCommit(workspace, current, pr.head.sha),
+    'The PR branch changed independently. Reconcile it before merging.'
+  );
   const target = await fetchTarget(ctx, workspace, invoke);
   state.comparisonTarget = target;
   await synchronize(workspace, target, invoke);
-  const head = headOf(workspace);
+  return (state.candidate = { head: headOf(workspace), target });
+}
+
+async function advanceMerge(service, ctx, workspace, provider, pr, invoke, state) {
+  const { head, target } = await reconcileCandidate(ctx, workspace, pr, invoke, state);
   requireCleanCandidate(workspace, head);
-  if (head === pr.head.sha) await requireObservedChecks(service.root, ctx, provider, readinessError, head);
-  if (pr.head.sha !== head) {
-    if (state.pushed === head && state.previousHead === pr.head.sha)
-      throw pending('Waiting for GitHub to observe the updated PR commit.');
-    requireThat(
-      includesCommit(workspace, head, pr.head.sha),
-      'The PR branch changed independently. Reconcile it before merging.'
-    );
-    const { remote } = deliveryTarget(ctx.flow);
-    assertFlowRemote(workspace, remote, provider.config.repository);
-    await invoke('git', ['push', remote, head + ':refs/heads/' + workspace.branch]);
-    state.previousHead = pr.head.sha;
-    state.pushed = head;
-    state.wait = startMergeWait(head, state.workflow.checkTimeoutSeconds * 1000, options.mergeNow);
-    throw pending('Pushed the updated issue commit. Waiting for GitHub checks.');
-  }
+  if (pr.head.sha !== head) await pushMergeCandidate(ctx, workspace, provider, pr, invoke, state, head);
+  const refreshTarget = () => fetchTarget(ctx, workspace, invoke);
+  const { readiness, readinessError } = await readMergeReadiness(ctx, workspace, provider, pr, head);
+  if (readinessError?.code === 'STRATEGY_PENDING') throw readinessError;
+  if ((await refreshTarget()) !== target) return undefined;
+  await requireObservedChecks(service.root, ctx, provider, readinessError, head);
   if (readiness.target !== target) throw pending('GitHub and the fetched target differ. Refreshing both revisions.');
-  if ((await fetchTarget(ctx, workspace, invoke)) !== target) return undefined;
-  return mergeWhenReady(service, ctx, workspace, provider, pr, readiness, state);
+  return mergeWhenReady(service, ctx, workspace, provider, pr, readiness, state, refreshTarget);
 }
 
 async function prepareMergeCheckout(state, workspace, invoke) {
@@ -323,8 +341,7 @@ async function prepareMergeCheckout(state, workspace, invoke) {
 }
 
 async function waitForMergeChecks(ctx, state, error, head, options) {
-  state.wait ??= startMergeWait(head, state.workflow.checkTimeoutSeconds * 1000, options.mergeNow);
-  const next = observeMergeWait(state.wait, error.ciProgress);
+  const next = observeMergeWait(mergeWait(state, head, options.mergeNow), error.ciProgress);
   requireThat(next.kind !== 'timeout', 'GitHub checks did not finish in time. ' + error.message);
   if (next.kind === 'refresh') {
     ctx.onProgress('Checking GitHub once more before the CI wait times out.\n', true);
@@ -333,6 +350,11 @@ async function waitForMergeChecks(ctx, state, error, head, options) {
   ctx.onProgress(error.message + '\n', true);
   const interval = Math.min(state.workflow.pollSeconds * 1000, next.remaining);
   await (options.mergeDelay ?? delay)(interval, undefined, { signal: ctx.signal });
+}
+
+function mergeWait(state, head, now) {
+  if (state.wait?.head !== head) state.wait = startMergeWait(head, state.workflow.checkTimeoutSeconds * 1000, now);
+  return state.wait;
 }
 
 function retainMergeFailure(error, { html_url, number, head } = {}, repository, evidence) {
@@ -355,9 +377,31 @@ async function observeMergedPR(state, provider, workspace, pr) {
   return finishMerge(state, provider, workspace, outcome, { ...ready, ...result });
 }
 
+function requireMergeTarget(ctx, pr) {
+  requireThat(
+    pr.base.ref === deliveryTarget(ctx.flow).branch,
+    'GitHub changed the PR base to ' + pr.base.ref + '. Accept it in Destination before merging.'
+  );
+}
+
+function mergePRLookup(provider, workspace, destination) {
+  const lookup = (number) => lookupFlowPR(provider, workspace.branch, number, { metadataOnly: true });
+  return (number = destination?.pr ?? workspace.pr) => lookup(number);
+}
+
+async function continueMerge(service, ctx, workspace, provider, pr, invoke, options, state) {
+  try {
+    return await advanceMerge(service, ctx, workspace, provider, pr, invoke, state);
+  } catch (error) {
+    if (error.code === 'STRATEGY_PENDING') await waitForMergeChecks(ctx, state, error, state.candidate.head, options);
+    else await repairCandidate(service, ctx, workspace, error, options, state);
+  }
+}
+
 export async function mergeFlowPR(service, ctx, workspace, folder, options) {
   const workflow = ctx.definition?.mergeWorkflow;
   requireThat(workflow, 'The Merge block needs workflow settings in its Markdown definition.');
+  requireThat(workspace.branch !== deliveryTarget(ctx.flow).branch, 'Merge must use the saved issue branch.');
   const provider = mergeGitHubProvider(flowDeliveryProvider(service, ctx, workspace, options), ctx, options);
   const log = join(folder, 'merge.log');
   const invoke = (command, args) =>
@@ -385,15 +429,13 @@ export async function mergeFlowPR(service, ctx, workspace, folder, options) {
   ];
   let pr;
   try {
-    pr = await lookupFlowPR(provider, workspace.branch, ctx.flow.destination?.pr);
+    const lookup = mergePRLookup(provider, workspace, ctx.flow.destination);
+    pr = await lookup();
     requireThat(pr, missingMergePR(workspace.branch));
     const number = pr.number;
     for (;;) {
       ctx.signal.throwIfAborted();
-      requireThat(
-        pr.base.ref === deliveryTarget(ctx.flow).branch,
-        'GitHub changed the PR base to ' + pr.base.ref + '. Accept it in Destination before merging.'
-      );
+      requireMergeTarget(ctx, pr);
       if (pr.merged_at) {
         const outcome = await observeMergedPR(state, provider, workspace, pr);
         return {
@@ -407,17 +449,12 @@ export async function mergeFlowPR(service, ctx, workspace, folder, options) {
       await assertPublicationIdle(provider, pr, workspace.branch);
       service.guard(service.root, { id: ctx.attempt.id, issues: [ctx.issue.id] }, 'implement', workspace.base);
       await prepareMergeCheckout(state, workspace, invoke);
-      try {
-        const outcome = await advanceMerge(service, ctx, workspace, provider, pr, invoke, options, state);
-        if (outcome) {
-          await finishMerge(state, provider, workspace, outcome);
-          return { ...outcome, evidence: evidence(), workspace: { ...workspace, pr: pr.number } };
-        }
-      } catch (error) {
-        if (error.code !== 'STRATEGY_PENDING') await repairCandidate(service, ctx, workspace, error, options, state);
-        else await waitForMergeChecks(ctx, state, error, pr.head.sha, options);
+      const outcome = await continueMerge(service, ctx, workspace, provider, pr, invoke, options, state);
+      if (outcome) {
+        await finishMerge(state, provider, workspace, outcome);
+        return { ...outcome, evidence: evidence(), workspace: { ...workspace, pr: pr.number } };
       }
-      pr = await lookupFlowPR(provider, workspace.branch, number);
+      pr = await lookup(number);
       requireThat(pr, 'The existing PR is no longer available.');
     }
   } catch (error) {

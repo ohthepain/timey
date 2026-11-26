@@ -45,12 +45,15 @@ export function flowDeliveryProvider(service, ctx, workspace, options = {}) {
   );
 }
 
-export async function lookupFlowPR(provider, branch, number) {
+export async function lookupFlowPR(provider, branch, number, { metadataOnly = false } = {}) {
   if (!branch && !Number.isSafeInteger(number)) return null;
-  const pr = Number.isSafeInteger(number) ? await provider.inspect(number) : await provider.findIssueBranchPR(branch);
+  const saved = Number.isSafeInteger(number);
+  const pr =
+    saved && !(metadataOnly && branch) ? await provider.inspect(number) : await provider.findIssueBranchPR(branch);
   if (pr)
     requireThat(
-      (!branch || pr.head?.ref === branch) &&
+      (!saved || pr.number === number) &&
+        (!branch || pr.head?.ref === branch) &&
         pr.head?.repo?.full_name === provider.config.repository &&
         pr.base?.repo?.full_name === provider.config.repository &&
         typeof pr.base?.ref === 'string',
