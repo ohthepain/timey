@@ -33,7 +33,7 @@ const coordinatorUI = (() => {
     }
     if (document.getElementById('coordinator-output')) return;
     document.getElementById('app').innerHTML =
-      `<section data-view-id="coordinator"><div class="issue-navigation-row"><a href="#/queue">← Issue queue</a></div><h1>Coordinator</h1><p id="coordinator-status" role="status"></p><p id="coordinator-active"></p><p>Messages guide discussion. Use the issue’s existing controls for answers, approvals and acceptance.</p><div class="actions"><button id="coordinator-stop">Stop</button><button id="coordinator-continue">Continue</button><button id="coordinator-fresh">Start fresh</button></div><p id="coordinator-workers"></p><ul id="coordinator-waiting"></ul><label><input type="checkbox" id="coordinator-show-history"> Show archived conversations</label><label>Conversation <select id="coordinator-history" aria-label="Coordinator history"></select></label><div id="coordinator-messages"></div><pre id="coordinator-output" aria-label="Coordinator live output" style="max-height:45vh;overflow:auto;white-space:pre-wrap"></pre><div id="coordinator-activity"></div><div><button id="coordinator-follow">Follow latest</button></div><label>Message<textarea id="coordinator-message" data-draft-key="coordinator-message" maxlength="12000"></textarea></label><div class="actions"><button id="coordinator-send">Send</button><button id="coordinator-steer">Steer</button></div><p id="coordinator-feedback" role="status"></p></section>`;
+      `<section data-view-id="coordinator"><div class="issue-navigation-row"><a href="#/queue">← Issue queue</a></div><h1>Coordinator</h1><p id="coordinator-status" role="status"></p><p id="coordinator-active"></p><p>Messages guide discussion. Use the issue’s existing controls for answers, approvals and acceptance.</p><div class="actions"><button id="coordinator-stop">Stop</button><button id="coordinator-continue">Continue</button><button id="coordinator-fresh">Start fresh</button></div><p id="coordinator-workers"></p><ul id="coordinator-waiting"></ul><label><input type="checkbox" id="coordinator-show-history"> Show archived conversations</label><label>Conversation <select id="coordinator-history" aria-label="Coordinator history"></select></label><div id="coordinator-messages" role="log" aria-label="Coordinator conversation" style="max-height:45vh;overflow:auto"></div><pre id="coordinator-output" aria-label="Coordinator live output" style="max-height:45vh;overflow:auto;white-space:pre-wrap"></pre><div id="coordinator-activity"></div><div><button id="coordinator-follow">Follow latest</button></div><label>Message<textarea id="coordinator-message" data-draft-key="coordinator-message" maxlength="12000"></textarea></label><div class="actions"><button id="coordinator-send">Send</button><button id="coordinator-steer">Steer</button></div><p id="coordinator-feedback" role="status"></p></section>`;
     const input = document.getElementById('coordinator-message');
     input.value = draft;
     window.timeyView.track(input, 'coordinator-editor');
@@ -151,12 +151,17 @@ const coordinatorUI = (() => {
     return `<article>${chat.milestones(progress, runId)}<strong>${esc(role)}</strong>${related}<pre${generated}>${esc(text)}</pre>${chat.commands(progress?.commands, runId + '-reply')}</article>`;
   }
   function renderMessages(data, thread) {
+    const log = document.getElementById('coordinator-messages');
+    const opening = log.dataset.thread !== selected;
     window.timeyView.render(
-      document.getElementById('coordinator-messages'),
+      log,
       (thread?.messages || []).map((message) => coordinatorMessage(data, message)).join(''),
       'coordinator-messages:' + selected
     );
+    log.dataset.thread = selected;
+    if (opening) log.scrollTop = log.scrollHeight;
   }
+
   function selectedCurrentThread(threads) {
     return selected === threads.at(-1)?.id;
   }
@@ -190,8 +195,10 @@ const coordinatorUI = (() => {
   function updateOutput(thread) {
     const output = legacyOutput(thread);
     if (!output) return;
-    const follow = output.scrollHeight - output.scrollTop - output.clientHeight < 30;
+    const follow =
+      output.dataset.thread !== selected || output.scrollHeight - output.scrollTop - output.clientHeight < 2;
     window.timeyView.text(output, legacyText(thread));
+    output.dataset.thread = selected;
     if (follow) output.scrollTop = output.scrollHeight;
   }
   return { mount, update, onPage };

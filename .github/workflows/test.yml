@@ -46,7 +46,7 @@ jobs:
           base: ${{ needs.early.outputs.base }}
 
   non-browser-2:
-    name: Non-browser tests (2/2)
+    name: Non-browser tests (2a/2)
     needs: early
     runs-on: ubuntu-latest
     outputs:
@@ -59,6 +59,22 @@ jobs:
         id: verify
         with:
           suite: non-browser-2
+          base: ${{ needs.early.outputs.base }}
+
+  non-browser-app:
+    name: Non-browser tests (2b/2)
+    needs: early
+    runs-on: ubuntu-latest
+    outputs:
+      artifact-id: ${{ steps.verify.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/verify-suite
+        id: verify
+        with:
+          suite: non-browser-app
           base: ${{ needs.early.outputs.base }}
 
   classic-browser:
@@ -78,7 +94,7 @@ jobs:
           base: ${{ needs.early.outputs.base }}
 
   flow-browser-1:
-    name: Flow browser (1/2)
+    name: Flow browser (1a/2)
     needs: early
     runs-on: ubuntu-latest
     outputs:
@@ -91,6 +107,22 @@ jobs:
         id: verify
         with:
           suite: flow-browser-1
+          base: ${{ needs.early.outputs.base }}
+
+  flow-browser-1b:
+    name: Flow browser (1b/2)
+    needs: early
+    runs-on: ubuntu-latest
+    outputs:
+      artifact-id: ${{ steps.verify.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/verify-suite
+        id: verify
+        with:
+          suite: flow-browser-1b
           base: ${{ needs.early.outputs.base }}
 
   flow-browser-2:
@@ -110,7 +142,17 @@ jobs:
           base: ${{ needs.early.outputs.base }}
 
   test:
-    needs: [early, non-browser-1, non-browser-2, classic-browser, flow-browser-1, flow-browser-2]
+    needs:
+      [
+        early,
+        non-browser-1,
+        non-browser-2,
+        non-browser-app,
+        classic-browser,
+        flow-browser-1,
+        flow-browser-1b,
+        flow-browser-2,
+      ]
     if: always()
     runs-on: ubuntu-latest
     steps:

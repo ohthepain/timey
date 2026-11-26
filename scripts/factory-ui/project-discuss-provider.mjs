@@ -42,6 +42,9 @@ function discussionPrompt(session, message) {
         )
     );
   parts.push('Current request:\n' + message.text);
+  parts.push(
+    'When the next step depends on a concrete scope decision or an available skill, you may append a fenced timey-recommendations JSON object with recommendations (items with label and prompt). Use Refine scope only for a concrete open scope decision, or use the relevant available skill name as the label. For note discussion include grillingComplete: true only once the work of the selected grilling skill is finished.'
+  );
   return parts.join('\n\n');
 }
 
@@ -74,6 +77,9 @@ class ProjectDiscussProvider {
       createProjectDiscussTools(service, {
         ...options,
         reportContext: () => this.active?.message.reportContext,
+        prepareIssueCreation: (input) => this.active?.prepareIssueCreation?.(input),
+        issueCreated: (issueId) => this.active?.issueCreated?.(issueId),
+        beforeNoteChange: (input) => this.beforeNoteChange(input),
         annotationActor: () => ({ kind: 'chat', id: this.active?.session.id }),
       });
     this.connection = options.connection || new DiscussConnection({ experimentalApi: true, root: service.root });
@@ -82,6 +88,13 @@ class ProjectDiscussProvider {
     this.active = null;
     this.threadWriterOwner = options.threadWriterOwner ?? desktopThreadWriter;
     this.threadWriterDelay = options.threadWriterDelay ?? waitForWriter;
+  }
+  beforeNoteChange({ action }) {
+    if (action !== 'delete') return;
+    requireThat(
+      this.active?.message.recommendation?.id !== 'create-delete-next',
+      'Factory deletes the source note after confirming issue creation.'
+    );
   }
   async skills(model) {
     if (!model || agentModel(model).provider === 'codex')
@@ -438,10 +451,34 @@ class ProjectDiscussProvider {
   }
 }
 
+function parseRecommendations(body) {
+  const matched = body.match(/\n?```timey-recommendations\s*\n([\s\S]*?)\n```\s*$/);
+  if (!matched) return { body };
+  try {
+    const value = JSON.parse(matched[1]);
+    return {
+      body: body.slice(0, matched.index).trimEnd(),
+      recommendations: (value.recommendations || [])
+        .slice(0, 4)
+        .filter(({ label, prompt }) => typeof label === 'string' && typeof prompt === 'string')
+        .map(({ label, prompt }, index) => ({
+          id: 'context-' + index,
+          label: label.slice(0, 40),
+          prompt: prompt.slice(0, 2000),
+        })),
+      grillingComplete: value.grillingComplete === true,
+    };
+  } catch {
+    return { body: body.slice(0, matched.index).trimEnd() };
+  }
+}
+
 function parseResponse(output) {
-  const match = String(output).match(/\n?```timey-suggestion\s*\n([\s\S]*?)\n```\s*$/);
+  const { body, ...context } = parseRecommendations(String(output));
+  const match = body.match(/\n?```timey-suggestion\s*\n([\s\S]*?)\n```\s*$/);
   return {
-    text: match ? String(output).slice(0, match.index).trimEnd() : String(output),
+    ...context,
+    text: match ? body.slice(0, match.index).trimEnd() : body,
     suggestion: match ? match[1].trim().slice(0, 1000) : '',
   };
 }

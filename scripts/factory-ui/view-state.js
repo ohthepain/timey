@@ -81,9 +81,9 @@
 
   function follows(element, selected) {
     return (
-      element.getAttribute('role') === 'log' &&
+      element.matches('[role="log"], [data-chat-scroll]') &&
       !selected &&
-      element.scrollHeight - element.scrollTop - element.clientHeight < 40
+      element.scrollHeight - element.scrollTop - element.clientHeight < 2
     );
   }
 
@@ -438,5 +438,16 @@
   window.addEventListener('blur', finishPointer);
   for (const name of ['scroll', 'toggle', 'input', 'change']) document.addEventListener(name, saveViews, true);
   window.addEventListener('pagehide', () => saveViews());
-  window.timeyView = { render, text, read, write, remember, track, dragging, captureSelection, restoreSelection };
+  window.timeyView = {
+    render,
+    text,
+    read,
+    write,
+    remember,
+    track,
+    dragging,
+    follows,
+    captureSelection,
+    restoreSelection,
+  };
 })();

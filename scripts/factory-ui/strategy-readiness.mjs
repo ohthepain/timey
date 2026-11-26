@@ -1,6 +1,6 @@
 import { requireThat } from './common.mjs';
 import { repairableBlocker, strategyDelay } from './strategy-repair.mjs';
-import { requiredPRReview } from './flow-human-input.mjs';
+import { observePRReview, requiredPRReview } from './flow-human-input.mjs';
 import { ciSuiteNames } from '../verify-ci-suites.mjs';
 
 const readinessQuery = `
@@ -307,6 +307,7 @@ async function observeReadiness(provider, number, head) {
   );
   const live = observations.at(-1);
   requireThat(live, 'The GitHub PR readiness observation is missing.');
+  observePRReview(provider.reviewRoot, provider.config.repository, number, live.reviewDecision, live.headRefOid);
   return { live, checks: latestChecks(observations.flatMap(observedChecks)) };
 }
 

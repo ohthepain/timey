@@ -456,6 +456,18 @@ export async function projectDiscussBrowserChecks({ page, service, project, poll
   );
   await assertOpenedAtBottom('First opening after delayed history and image');
   await page.unroute(/\/api\/project-discuss(?:\?|$)/);
+  const following = service.projectDiscuss.read(history.id);
+  following.messages.push({
+    ...template,
+    id: 'scroll-incoming',
+    text: 'Incoming reply while following.',
+    attachments: [],
+    events: [],
+  });
+  service.projectDiscuss.save(following);
+  await page.locator('[data-discuss-message="scroll-incoming"]').waitFor();
+  await assertOpenedAtBottom('Incoming message while following');
+
   await page.locator('#discuss-messages').hover();
   await page.mouse.wheel(0, -1000);
   await poll(scrollMetrics, (metrics) => metrics.bottomDistance > 500, 'Could not scroll to older messages.');
@@ -470,12 +482,7 @@ export async function projectDiscussBrowserChecks({ page, service, project, poll
   assert.equal(refreshedPosition.latestVisible, false);
   await page.locator('#project-tab-home').click();
   await page.locator('#project-tab-discuss').click();
-  await poll(
-    scrollMetrics,
-    (metrics) => Math.abs(metrics.scrollTop - olderPosition.scrollTop) < 2,
-    'Returning to Discuss lost the reading position.'
-  );
-  await recordScroll('Returning to Discuss preserves reading position');
+  await assertOpenedAtBottom('Returning to Discuss after reading older messages');
   await page.unroute(historyImageUrl);
   const lateImage = Promise.withResolvers();
   await page.route(historyImageUrl, async (route) => {
@@ -487,13 +494,8 @@ export async function projectDiscussBrowserChecks({ page, service, project, poll
   });
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.locator('[data-discuss-message="scroll-history-39"]').waitFor();
-  await poll(
-    scrollMetrics,
-    (metrics) =>
-      Math.abs(metrics.scrollTop - Math.min(olderPosition.scrollTop, metrics.scrollHeight - metrics.clientHeight)) < 2,
-    'Reload while an image is pending lost the saved reading position.'
-  );
-  await recordScroll('Reload preserves reading position while image is pending');
+  await poll(scrollMetrics, (metrics) => metrics.bottomDistance < 2, 'Reload did not open at the bottom.');
+  await recordScroll('Reload opens at the bottom while an image is pending');
   await page.locator('#discuss-messages').hover();
   await page.mouse.wheel(0, -1000);
   await poll(scrollMetrics, (metrics) => metrics.bottomDistance > 500, 'Could not scroll during image loading.');

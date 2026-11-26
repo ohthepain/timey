@@ -1,4 +1,8 @@
-import { masterIssueBrowserChecks, manualSubIssueRemovalBrowserChecks } from './flow-browser-master-issues.mjs';
+import {
+  masterDragBrowserChecks,
+  masterIssueBrowserChecks,
+  manualSubIssueRemovalBrowserChecks,
+} from './flow-browser-master-issues.mjs';
 import { investigativeGroupingBrowserChecks } from './flow-browser-investigative-grouping.mjs';
 import { issueAnnotationBrowserChecks } from './flow-browser-issue-annotations.mjs';
 import { blockModelsBrowserChecks } from './flow-browser-block-models.mjs';
@@ -69,6 +73,8 @@ import { assetStorageBrowserChecks } from './flow-browser-asset-storage.mjs';
 import { projectSettingsBrowserChecks } from './flow-browser-project-settings.mjs';
 import { aiTextBrowserChecks } from './flow-browser-ai-text.mjs';
 import { interfaceStateBrowserChecks } from './flow-browser-interface-state.mjs';
+import { inboxChatBrowserChecks } from './flow-browser-inbox-chat.mjs';
+import { inboxDetailsBrowserChecks } from './flow-browser-inbox-details.mjs';
 import { localNotesBrowserChecks } from './flow-browser-local-notes.mjs';
 import { actionsMenuBrowserChecks } from './flow-browser-actions-menu.mjs';
 import { mergedIssueBrowserChecks } from './flow-browser-merged-issue.mjs';
@@ -79,8 +85,15 @@ import { issueStoresBrowserChecks } from './flow-browser-stores.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const ciPart = process.argv.find((argument) => argument.startsWith('--ci-part='));
-assert.ok(!ciPart || flowBrowserCiParts.has(ciPart), 'Choose Flow browser CI part 1 or 2.');
-let part = '--ci-part=1';
+assert.ok(!ciPart || flowBrowserCiParts.has(ciPart), 'Choose Flow browser CI part 1, 1a, 1b or 2.');
+const parts = {
+  '--ci-part=1': ['--ci-part=1a', '--ci-part=1b'],
+  '--ci-part=1a': ['--ci-part=1a'],
+  '--ci-part=1b': ['--ci-part=1b'],
+  '--ci-part=2': ['--ci-part=2'],
+};
+const selectedParts = parts[ciPart] ?? Object.keys(parts);
+let part = '--ci-part=1a';
 const outputPath = resolve(
   process.env.TIMEY_FLOW_BROWSER_OUTPUT ||
     (process.env.TIMEY_BROWSER_OUTPUT && join(process.env.TIMEY_BROWSER_OUTPUT, 'flow')) ||
@@ -410,7 +423,7 @@ async function connectionRecoveryIssue() {
   return id;
 }
 function checkSelected(name) {
-  return (!ciPart || ciPart === part) && flowBrowserScenarioSelected(name);
+  return selectedParts.includes(part) && flowBrowserScenarioSelected(name);
 }
 
 async function check(name, run) {
@@ -626,6 +639,7 @@ try {
     const ids = await seedSidebarOverflow();
     await page.goto('/');
     await page.locator('#sidebar-file-tree details').first().waitFor();
+    await page.getByRole('button', { name: 'Expand Local notes' }).click();
     await page.evaluate(() => {
       const notes = document.getElementById('local-note-list');
       const files = document.getElementById('sidebar-file-tree');
@@ -704,6 +718,9 @@ try {
   await check(serverHeapCheck, () =>
     withQueueConfiguration({ page, project, root }, () => serverHeapBrowserChecks({ page, output, poll, screenshot }))
   );
+  await check(flowBrowserScenarioNames['--inbox-group-drag'], () =>
+    masterDragBrowserChecks({ page, project, root, output, service, poll })
+  );
   await check(masterIssuesCheck, () => masterIssueBrowserChecks({ page, project, root, output }));
   await check(manualSubIssueRemovalCheck, () => manualSubIssueRemovalBrowserChecks({ page, project, root, output }));
   await check(investigativeGroupingCheck, () =>
@@ -729,6 +746,7 @@ try {
   );
   await check(discussCheck, () => projectDiscussBrowserChecks({ page, project, service, poll, screenshot }));
   await check(inboxDiscussCheck, () => inboxDiscussBrowserChecks({ page, service, screenshot, output }));
+  part = '--ci-part=1b';
   await check('Factory provider settings save enablement and quota warnings', () =>
     providerSettingsBrowserChecks({ page, project, screenshot })
   );
@@ -782,7 +800,7 @@ try {
     await assertCleanSidebarConsole();
   });
   await check('Automate me dots follow each active response', () =>
-    automateActivityBrowserChecks({ page, service, screenshot })
+    automateActivityBrowserChecks({ page, service, screenshot, poll, output })
   );
   await check('Activity dots stay anchored and reflect actual work', () =>
     activityBrowserChecks({ page, project, service, poll, screenshot, output })
@@ -849,6 +867,12 @@ try {
   );
   if (process.argv.includes(flowBrowserOrderModifier)) await noChangesCheck();
   await check(followupsCheck, () => flowFollowupsBrowserChecks({ page, service, logs, screenshot }));
+  await check(flowBrowserScenarioNames['--inbox-chat-reading'], () =>
+    inboxChatBrowserChecks({ page, service, project, root, poll, screenshot, output })
+  );
+  await check(flowBrowserScenarioNames['--inbox-details'], () =>
+    inboxDetailsBrowserChecks({ page, service, project, poll, screenshot, output })
+  );
   await check(mergeSettingsCheck, async () => {
     const id = '20261119-merge-settings-fixture';
     await importBrowserIssue(
@@ -1976,8 +2000,9 @@ try {
     const id = await addExtraWork();
     extraWorkId = id;
     await block(id);
-    const prose = page.locator('.block-content');
-    await prose.getByRole('heading', { name: 'Work block' }).waitFor();
+    const prose = page.locator('#inspector-body .block-content');
+    assert.equal(await prose.count(), 0);
+    await page.locator('.block-markdown-menu summary').waitFor();
     await page.locator('#block-form .system-prompt summary').click();
     const promptMode = page.locator('#block-form [name="prompt-mode"]');
     const originalPromptMode = await promptMode.inputValue();
@@ -2007,16 +2032,15 @@ try {
       workOverride,
       '# Project Work\n\nReady when you are.\n\n## Evidence to retain\n\n- Command output\n- Saved artifact\n\n# Skill list\n\n- arena\n- how\n'
     );
-    await prose.getByRole('heading', { name: 'Evidence to retain' }).waitFor();
-    await prose.getByRole('listitem').filter({ hasText: 'Command output' }).waitFor();
-    await prose.getByText('User extensions', { exact: true }).click();
-    await prose.getByRole('heading', { name: 'Local evidence' }).waitFor();
+    assert.equal(await prose.count(), 0);
     await poll(
       () => skillOptions.allTextContents(),
       (labels) => labels.includes('how') && !labels.includes('poteto-mode'),
       'Skill suggestions did not reload.'
     );
-    assert.equal(await card.locator('.block-description').innerText(), 'Ready when you are.');
+    const description = card.locator('.block-description');
+    await description.filter({ hasText: /^Ready when you are\.$/ }).waitFor();
+    assert.equal(await description.innerText(), 'Ready when you are.');
     assert.deepEqual(await layout(), originalLayout);
     assert.equal(await card.locator('.block-label').innerText(), title);
     assert.equal(await card.locator('.block-status').innerText(), status);
@@ -2025,10 +2049,11 @@ try {
     assert.equal(logs.execution.length, 0);
     writeFileSync(workOverride, '# Empty override\n');
     await page.locator('#view-source-status').filter({ hasText: 'needs a paragraph' }).waitFor();
-    await prose.getByRole('heading', { name: 'Evidence to retain' }).waitFor();
+    assert.equal(await prose.count(), 0);
     rmSync(workOverride);
     rmSync(extension);
-    await prose.getByRole('heading', { name: 'Work block' }).waitFor();
+    assert.equal(await prose.count(), 0);
+    await page.locator('.block-markdown-menu summary').waitFor();
     await draft.fill(original);
     await promptMode.selectOption(originalPromptMode);
     await clickAction(page.locator('#block-form button[type="submit"]'));
@@ -2503,7 +2528,7 @@ try {
     await closeDialog.getByRole('button', { name: 'Cancel', exact: true }).click();
     assert.equal(await page.locator('#issue-results').isVisible(), true);
     assert.equal(await page.locator('#issue-heading ~ #issue-results').count(), 1);
-    assert.equal(await page.locator('#playback-status').textContent(), 'Paused');
+    assert.equal(await page.locator('#playback-status').textContent(), '');
     assert.equal(await page.locator('[data-block="request"][aria-pressed="true"]').count(), 1);
     assert.equal(await page.locator('#waiting-block').isVisible(), false);
     await page.reload();
@@ -2792,7 +2817,7 @@ try {
     await page.reload();
     await page.locator('#issue-results-message').filter({ hasText: message }).waitFor();
     assert.equal(await page.locator('#issue-heading ~ #issue-results').count(), 1);
-    assert.equal(await page.locator('#playback-status').textContent(), 'Paused');
+    assert.equal(await page.locator('#playback-status').textContent(), '');
     const banner = await page.locator('#issue-heading').boundingBox();
     const results = await page.locator('#issue-results').boundingBox();
     assert.ok(results.y >= banner.y + banner.height);
@@ -2801,7 +2826,7 @@ try {
     await page.reload();
     await page.locator('#issue-title').filter({ hasText: 'Keep results and status visible' }).waitFor();
     assert.equal(await page.locator('#issue-results').isVisible(), false);
-    assert.equal(await page.locator('#playback-status').textContent(), 'Paused');
+    assert.equal(await page.locator('#playback-status').textContent(), '');
     if (issueId) await page.goto('/?issue=' + issueId);
   });
   await check(humanInputCheck, async () => {

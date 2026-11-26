@@ -22,9 +22,11 @@
       (messages || []).map((message, index) => homeMessage(message, index, id, sessionId)).join('') +
       window.timeyChatProgress.live(undefined, working);
     const scope = 'home-messages:' + id + ':' + sessionId;
-    const first = !window.timeyView.read(scope);
-    window.timeyView.render($(id), markup, scope);
-    if (first) $(id).scrollTop = $(id).scrollHeight;
+    const log = $(id);
+    const first = log.dataset.chatScope !== scope;
+    window.timeyView.render(log, markup, scope);
+    log.dataset.chatScope = scope;
+    if (first) log.scrollTop = log.scrollHeight;
   }
 
   function markAutomateContent(content, sessionId) {
@@ -267,6 +269,8 @@
       $('home-automate-error').textContent = '';
       renderAutomate(true);
       $('home-automate-dialog').showModal();
+      const log = $('home-automate-messages');
+      log.scrollTop = log.scrollHeight;
     }
 
     function automateReplyControls(session) {

@@ -1,3 +1,4 @@
+import { observePRReview } from './flow-human-input.mjs';
 import { pendingIssueMerge } from './flow-merge-state.mjs';
 import { deliveryTarget } from './flow-block-data.mjs';
 import { execFile } from 'node:child_process';
@@ -127,10 +128,7 @@ export function createFlowObserver(service, options = {}) {
           cache.value = { pr: null, remoteObservedAt: new Date().toISOString() };
           return;
         }
-        cache.value = {
-          pr: { ...flowPRLink(pr), title: pr.title, head: pr.head?.sha, revision: pr.merge_commit_sha },
-          remoteObservedAt: new Date().toISOString(),
-        };
+        cache.value = observedPRValue(service.root, config.repository, pr);
       })
       .catch((error) => {
         cache.value = { ...cache.value, remoteError: error.message };
@@ -145,6 +143,15 @@ export function createFlowObserver(service, options = {}) {
   }
   return { observe };
 }
+function observedPRValue(root, repository, pr) {
+  const head = pr.head?.sha;
+  observePRReview(root, repository, pr.number, pr.reviewDecision, head);
+  return {
+    pr: { ...flowPRLink(pr), title: pr.title, head, revision: pr.merge_commit_sha },
+    remoteObservedAt: new Date().toISOString(),
+  };
+}
+
 async function observeStartingBranch(root, flow, result) {
   if (!result.worktreeExists) return;
   const readGit = (...args) => flowGit(root, ...args);

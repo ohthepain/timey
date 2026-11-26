@@ -12,6 +12,11 @@ missing evidence links, blocked scripts, and blocked external resources. It uses
 saved fixture content, not live model generation, so it does not establish that a
 model follows the report design prompt.
 
+`node scripts/flow-browser.mjs --investigation-flows` runs the inquiry and output
+blocks with a fixture provider. It creates two approval-needed issue records and
+checks the links in the published report. The next run links to matching work,
+so its own report has no created issues.
+
 `node --test scripts/discussion-evidence.check.mjs` checks temporary discussion
 protocol configuration, complete context/input references above the provider
 limit, small follow-up messages, and cleanup that preserves the project. It uses
@@ -59,6 +64,16 @@ counts beyond retention, reset with a turn in flight, and quota
 windows for ChatGPT versus API key sessions. It starts no model turn.
 
 ## Commands and evidence
+
+The Verify workflow splits its first Flow browser part into `--ci-part=1a`
+and `--ci-part=1b`. `--ci-part=1` still selects both for local use. The former
+second non-browser job runs its Factory shard and the app tests and build
+in separate jobs. The aggregate `test` check requires all jobs and combines
+evidence for the same candidate.
+
+`node scripts/flow-browser.mjs --inbox-details --manual-close --local-notes`
+uses a disposable project to exercise playback, block Details, the Close menu,
+and contextual note recommendations.
 
 `node scripts/flow-browser.mjs --request-save` holds Request clarification after
 saving Your words on an existing issue. Rename, Close, Stop, and the editor remain
