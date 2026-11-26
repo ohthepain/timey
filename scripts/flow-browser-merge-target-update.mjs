@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
-import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, chmodSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { git } from './factory-ui/common.mjs';
-import { createFlowExecutor } from './factory-ui/flow-executor.mjs';
+import { createFlowExecutor, executeCommand } from './factory-ui/flow-executor.mjs';
 import { createFlowObserver } from './factory-ui/flow-observer.mjs';
 import { initializeProjectLifecycle, readProjectSettings } from './factory-ui/project-settings.mjs';
 import { StrategyProvider } from './factory-ui/strategy-provider.mjs';
@@ -116,10 +116,12 @@ function githubGraphQL(remote, prs, args) {
   return [readyObservation(remote, prs.get(number))];
 }
 
-function listPRs(remote, prs, query) {
+function listPRs(remote, prs, query, recordMetadata) {
   const branch = new URLSearchParams(query).get('head').split(':').at(-1);
   const pr = [...prs.values()].find((item) => item.branch === branch);
-  return pr ? [prMetadata(remote, pr)] : [];
+  if (!pr) return [];
+  if (recordMetadata) pr.events.push({ action: 'PR metadata read', head: prMetadata(remote, pr).head.sha });
+  return [prMetadata(remote, pr)];
 }
 
 function gitHubCommit(remote, commit) {
@@ -127,7 +129,7 @@ function gitHubCommit(remote, commit) {
   return { sha: commit, tree: { sha: tree }, parents: parents.map((sha) => ({ sha })) };
 }
 
-function githubFixture(project, remote, writer, prs) {
+function githubFixture(project, remote, writer, prs, recordMetadata = true) {
   const provider = new StrategyProvider(project, config);
   const ruleset = { id: 42, enforcement: 'active', current_user_can_bypass: 'never' };
   const strictChecks = {
@@ -140,7 +142,7 @@ function githubFixture(project, remote, writer, prs) {
     [/^\/rules\/branches\//, () => [[strictChecks]]],
     [/^\/rulesets\/42$/, () => ruleset],
     [/^graphql$/, (args) => githubGraphQL(remote, prs, args)],
-    [/^\/pulls\?(.*)$/, (_, query) => listPRs(remote, prs, query)],
+    [/^\/pulls\?(.*)$/, (_, query) => listPRs(remote, prs, query, recordMetadata)],
     [/^\/pulls\/(\d+)$/, (_, number) => observeTestMerge(remote, prs.get(Number(number)))],
     [/^\/pulls\/(\d+)\/merge$/, (args, number) => protectedMerge(remote, writer, prs.get(Number(number)), args)],
     [/^\/git\/commits\/(.*)$/, (_, commit) => gitHubCommit(remote, commit)],
@@ -187,7 +189,7 @@ async function savePRFlow(flows, project, remote, pr, base, title) {
 }
 
 async function preparePR(flows, project, remote, writer, scenario) {
-  const { number, title, issueFile, targetFile, advanceAtMerge } = scenario;
+  const { number, title, issueFile, targetFile, advanceAtMerge, rejectPush } = scenario;
   const branch = 'codex/merge-proof-' + number;
   const checkout = join(project, '.issues/issue-work', '20261126-merge-proof-' + number);
   const base = remoteHead(remote, targetRef);
@@ -196,22 +198,43 @@ async function preparePR(flows, project, remote, writer, scenario) {
   git(project, 'worktree', 'add', '-b', branch, checkout, base);
   const initialHead = commitFile(checkout, issueFile, issueLine);
   git(checkout, 'push', remote, 'HEAD:refs/heads/' + branch);
-  const pr = { number, branch, checkout, initialHead, events: [], advanceAtMerge };
+  const pr = { number, branch, checkout, initialHead, events: [], advanceAtMerge, rejectPush };
   pr.initialTarget = advanceTarget(remote, writer, targetFile, targetLine, pr.events);
   return savePRFlow(flows, project, remote, pr, base, title);
+}
+
+function executeFetch(input, remote, pr) {
+  const { cwd, args, log } = input;
+  if (log.endsWith('/command.log'))
+    return executeCommand({
+      ...input,
+      command: process.execPath,
+      args: ['-e', 'console.error("The quasar index returned QX-19."); process.exitCode = 17'],
+    });
+  const output = git(cwd, ...args.map((arg) => (arg === config.remote ? remote : arg)));
+  pr.events.push({ action: 'Target fetched', target: remoteHead(remote, targetRef) });
+  return output;
 }
 
 function mergeExecutor(service, provider, remote, currentPR) {
   let waits = 0;
   return createFlowExecutor(service, {
     provider,
-    async execute({ command, cwd, args, log }) {
+    async execute(input) {
+      const { command, cwd, args, log } = input;
       assert.equal(command, 'git');
       appendFileSync(log, '$ git ' + args.join(' ') + '\n');
-      if (args[0] === 'fetch') return git(cwd, ...args.map((arg) => (arg === config.remote ? remote : arg)));
+      if (args[0] === 'fetch') return executeFetch(input, remote, currentPR());
       if (args[0] !== 'push') return git(cwd, ...args);
-      const result = git(cwd, 'push', remote, ...args.slice(2));
       const [head] = args[2].split(':');
+      if (currentPR().rejectPush) {
+        const hook = join(remote, 'hooks', 'pre-receive');
+        writeFileSync(hook, '#!/bin/sh\necho "GH006: protected branch update failed" >&2\nexit 1\n');
+        chmodSync(hook, 0o755);
+        currentPR().events.push({ action: 'Issue push attempted', head });
+        return executeCommand({ ...input, args: ['push', remote, ...args.slice(2)] });
+      }
+      const result = git(cwd, 'push', remote, ...args.slice(2));
       currentPR().events.push({ action: 'Issue head pushed', head });
       return result;
     },
@@ -230,33 +253,46 @@ function mergeExecutor(service, provider, remote, currentPR) {
   });
 }
 
-async function runMergeControl({ page, service, id, merge, pr, poll, screenshot, selectBlock, clickAction }) {
-  const current = () => service.flows.read(service.flows.selected(id)).blocks.find(({ id }) => id === merge.id);
+async function runBlock({ page, service, id, block, poll, selectBlock, clickAction }) {
+  const current = () => service.flows.read(service.flows.selected(id)).blocks.find(({ id }) => id === block.id);
   await page.goto('/?issue=' + id);
-  await selectBlock(merge.id);
+  await selectBlock(block.id);
   await clickAction(page.locator('#run-block'));
-  const completed = await poll(
+  return poll(
     () => current().attempts.at(-1),
     (attempt) => attempt?.endedAt && !service.flows.active.has(id),
-    'Merge control did not finish.'
+    'The block did not finish.'
   );
+}
+
+async function runMergeControl(harness) {
+  const { page, merge, pr, screenshot, selectBlock } = harness;
+  const completed = await runBlock({ ...harness, block: merge });
   assert.equal(completed.status, 'completed', completed.summary);
   assert.equal(completed.result.revision, pr.merge);
   const landed = pr.events.at(-1);
   assert.equal(landed.action, 'GitHub merged');
   assert.equal(completed.result.head, landed.head);
-  const firstReadiness = pr.events.findIndex((event) => event.action === 'GitHub readiness verified');
-  const firstPush = pr.events.findIndex((event) => event.action === 'Issue head pushed');
-  assert.ok(firstPush > 0 && firstPush < firstReadiness);
+  assertPublicationOrder(pr.events);
   await page.reload();
   await selectBlock(merge.id);
   await screenshot('merge-target-update-' + pr.number);
   return completed.result;
 }
 
+function assertPublicationOrder(events) {
+  assert.equal(events[1].action, 'Target fetched');
+  const pushed = new Set();
+  for (const { action, head } of events) {
+    if (action === 'Issue head pushed') pushed.add(head);
+    if (['GitHub readiness verified', 'GitHub test merge requested'].includes(action)) assert.ok(pushed.has(head));
+  }
+}
+
 function assertConflictDelivery(remote, pr, result) {
   const repair = pr.events.find((event) => event.action === 'Owning issue repair committed');
   assert.equal(repair?.head, result.head);
+  assert.ok(pr.events.indexOf(repair) < pr.events.findIndex((event) => event.action === 'PR metadata read'));
   assert.deepEqual(git(remote, 'show', '-s', '--format=%P', repair.head).split(' '), [
     pr.initialHead,
     pr.initialTarget,
@@ -293,6 +329,17 @@ const proofScenarios = [
     contents: { 'source.txt': issueLine.trim() + '\n' + targetLine.trim() },
     assertDelivery: assertConflictDelivery,
   },
+  {
+    number: 73,
+    title: 'Update without conflicts or target drift',
+    issueFile: 'issue-73.txt',
+    targetFile: 'target-73.txt',
+    contents: { 'issue-73.txt': issueLine.trim(), 'target-73.txt': targetLine.trim() },
+    assertDelivery(_remote, pr, result) {
+      assert.equal(result.target, pr.initialTarget);
+      assert.equal(pr.events.filter(({ action }) => action === 'Issue head pushed').length, 1);
+    },
+  },
 ];
 
 function observeDelivery(remote, { number, title, contents, assertDelivery }, pr, result) {
@@ -310,6 +357,61 @@ function observeDelivery(remote, { number, title, contents, assertDelivery }, pr
   };
 }
 
+async function inspectFailure({ page, selectBlock, screenshot }, block, attempt, expected, explanation) {
+  assert.equal(attempt.status, 'blocked', attempt.summary);
+  await page.reload();
+  await selectBlock(block.id);
+  const card = page.locator(`[data-attempt-id="${attempt.id}"] .command-error`).filter({ hasText: expected }).first();
+  const original = await card.locator('pre').textContent();
+  if (explanation) await card.getByText(explanation, { exact: true }).waitFor();
+  else assert.equal(await card.locator('.detail-copy').count(), 0);
+  await screenshot('blocked-command-' + block.kind);
+  const open = page.waitForEvent('popup');
+  await card.getByRole('link', { name: 'Open full log' }).click();
+  const log = await open;
+  const full = await log.locator('pre').textContent();
+  assert.ok(full.includes(expected));
+  await log.close();
+  return { block: block.kind, explanation, original, full };
+}
+
+async function verifyFailedPush(harness, remote, writer, prs, setPR) {
+  const { service, project } = harness;
+  const { id, pr, merge } = await preparePR(service.flows, project, remote, writer, {
+    number: 74,
+    title: 'A failed push blocks Merge',
+    issueFile: 'issue-74.txt',
+    targetFile: 'target-74.txt',
+    rejectPush: true,
+  });
+  setPR(pr);
+  prs.set(pr.number, pr);
+  const mergeAttempt = await runBlock({ ...harness, id, block: merge });
+  const mergeLog = await inspectFailure(
+    harness,
+    merge,
+    mergeAttempt,
+    'GH006: protected branch update failed',
+    'GitHub rejected the change because a branch rule was not met. The log shows which rule blocked it.'
+  );
+  assert.equal(remoteHead(remote, 'refs/heads/' + pr.branch), pr.initialHead);
+  assert.equal(git(pr.checkout, 'merge-base', 'HEAD', pr.initialTarget), pr.initialTarget);
+  assert.ok(pr.events.some(({ action }) => action === 'Issue push attempted'));
+  assert.ok(pr.events.every(({ action }) => !action.startsWith('GitHub')));
+  const saved = service.flows.read(service.flows.selected(id));
+  const { flow } = await service.flows.action({
+    action: 'add',
+    issueId: id,
+    revision: saved.revision,
+    kind: 'update-branch',
+    afterId: 'work',
+  });
+  const update = flow.blocks.find(({ kind }) => kind === 'update-branch');
+  const updateAttempt = await runBlock({ ...harness, id, block: update });
+  const updateLog = await inspectFailure(harness, update, updateAttempt, 'The quasar index returned QX-19.');
+  return { events: pr.events, mergeLog, updateLog };
+}
+
 export async function mergeTargetUpdateBrowserChecks(harness) {
   const { project, service, root, output } = harness;
   const configPath = join(project, '.issues/issue-delivery-config.json');
@@ -324,8 +426,9 @@ export async function mergeTargetUpdateBrowserChecks(harness) {
       const provider = githubFixture(project, remote, writer, prs);
       writeFileSync(configPath, JSON.stringify(config));
       service.guard = () => [];
-      service.flows.deliveryOptions.provider = provider;
-      service.flows.observer = createFlowObserver(service, { provider });
+      service.flows.observer = createFlowObserver(service, {
+        provider: githubFixture(project, remote, writer, prs, false),
+      });
       let activePR;
       service.flows.executor = mergeExecutor(service, provider, remote, () => activePR);
       const scenarios = [];
@@ -336,6 +439,7 @@ export async function mergeTargetUpdateBrowserChecks(harness) {
         const result = await runMergeControl({ ...harness, id, merge, pr });
         scenarios.push(observeDelivery(remote, scenario, pr, result));
       }
+      const blocked = await verifyFailedPush(harness, remote, writer, prs, (pr) => (activePR = pr));
       writeFileSync(
         join(output, 'merge-target-update.json'),
         JSON.stringify(
@@ -354,6 +458,7 @@ export async function mergeTargetUpdateBrowserChecks(harness) {
             fixture:
               'Browser Merge control, Factory executor, and real Git with a disposable bare remote. GitHub responses are simulated.',
             scenarios,
+            blocked,
           },
           null,
           2

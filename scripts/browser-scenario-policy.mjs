@@ -1,12 +1,6 @@
-const dragAndDropScenarios = new Set([
-  'factory-browser-issue-folders.mjs',
-  'factory-browser-queue-drag.mjs',
-  'Issue folders retain every issue and accept drags between folders',
-]);
+const dragAndDropScenarios = new Set(['Issue folders retain every issue and accept drags between folders']);
 
-export function browserScenarioSelected(name, args = process.argv) {
-  const named = args.filter((arg) => arg.startsWith('--scenario='));
-  if (named.length) return named.length === 1 && named[0] === '--scenario=' + name;
+function browserScenarioSelected(name, args = process.argv) {
   const dragAndDrop = dragAndDropScenarios.has(name);
   return args.includes('--drag-and-drop') ? dragAndDrop : !dragAndDrop;
 }
@@ -36,8 +30,7 @@ export const flowBrowserScenarioNames = {
   '--manual-close': 'Manual Close remains discoverable after Merge and automatic closing needs no prompt',
   '--error-recovery': 'Successful refresh clears rejected branch update errors',
   '--no-changes': 'Publication with no changes offers Cannot Reproduce closure',
-  '--connection-recovery':
-    'Flow and Classic reload the selected issue after a lost connection without replaying the click',
+  '--connection-recovery': 'Flow reloads the selected issue after a lost connection without replaying the click',
   '--merge-recovery': 'Pending local merges are visible and can be aborted',
   '--drag-and-drop': 'Issue folders retain every issue and accept drags between folders',
   '--local-notes': 'Local notes capture and handoff preserve flow',

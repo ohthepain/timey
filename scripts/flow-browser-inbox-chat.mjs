@@ -1,9 +1,7 @@
 import assert from 'node:assert/strict';
-import { cpSync, writeFileSync } from 'node:fs';
+import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { appendMessage } from './factory-ui/conversation-store.mjs';
-import { initializeProjectLifecycle, readProjectSettings } from './factory-ui/project-settings.mjs';
-import { withQueueConfiguration } from './flow-browser-queue-configuration.mjs';
 import { writeBrowserIssue } from './flow-browser-fixture.mjs';
 
 function entry(project, issue, index) {
@@ -60,7 +58,7 @@ async function checkChat({ log, poll, addMessage, reloadHistory, reopen, screens
   return { opened, follow, reading, preserved, reopened };
 }
 
-export async function inboxChatBrowserChecks({ page, service, project, root, poll, screenshot, output }) {
+export async function inboxChatBrowserChecks({ page, service, project, poll, screenshot, output }) {
   const issue = '20261126-inbox-chat-reading';
   const other = '20261126-inbox-chat-second';
   for (const id of [issue, other]) {
@@ -89,32 +87,5 @@ export async function inboxChatBrowserChecks({ page, service, project, root, pol
   await page.locator('#issue-list [data-issue="' + other + '"]').click();
   await tab('Conversation').click();
   const switched = await bottom(page.locator('#inspector-body'), poll);
-  const helper = '.agents/skills/issues/scripts';
-  cpSync(join(root, helper), join(project, helper), { recursive: true });
-  const classic = await withQueueConfiguration({ page, project, root }, () =>
-    checkClassicChat({ page, service, project, issue, poll, screenshot, addMessage })
-  );
-  writeFileSync(join(output, 'inbox-chat-reading.json'), JSON.stringify({ block, switched, classic }, null, 2));
-}
-
-async function checkClassicChat({ page, service, project, issue, poll, screenshot, addMessage }) {
-  initializeProjectLifecycle(service, { digest: readProjectSettings(project).lifecycle.digest });
-  await page.goto('/classic#/issue/' + issue);
-  const response = await page.request.get('/api/issue?issue=' + issue);
-  if (!response.ok()) throw Error(await response.text());
-  const thread = page.locator('#issue-tab-issue');
-  const progress = page.locator('#issue-tab-progress');
-  await thread.click();
-  return checkChat({
-    log: page.getByRole('log', { name: 'Issue conversation' }),
-    poll,
-    addMessage: (index) => addMessage(index + 10),
-    screenshot,
-    name: 'inbox-issue-chat',
-    reloadHistory: () => service.flowChanges?.notify('flow', issue),
-    reopen: async () => {
-      await progress.click();
-      await thread.click();
-    },
-  });
+  writeFileSync(join(output, 'inbox-chat-reading.json'), JSON.stringify({ block, switched }, null, 2));
 }

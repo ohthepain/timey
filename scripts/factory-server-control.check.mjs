@@ -216,7 +216,7 @@ test('real restart changes the listener PID and preserves existing chat and prog
   installed.git('add', '.');
   installed.git('commit', '-qm', 'Installed factory');
   mkdirSync(join(root, 'scripts/factory-ui'), { recursive: true });
-  writeFileSync(join(root, 'scripts/factory-ui/index.html'), 'wrong-project-assets');
+  writeFileSync(join(root, 'scripts/factory-ui/flow.html'), 'wrong-project-assets');
   writeFileSync(join(root, 'scripts/factory-ui.mjs'), 'process.exit(42);');
   const child = spawn(
     process.execPath,
@@ -247,7 +247,7 @@ test('real restart changes the listener PID and preserves existing chat and prog
       fail(Error('Fixture server exited before readiness: ' + code + (stderr ? '\n' + stderr : '')))
     );
   });
-  assert.match(await (await fetch(url)).text(), /<div id="app"/);
+  assert.match(await (await fetch(url)).text(), /id="project-home"/);
   const headers = await session(url);
   const denied = await fetch(url + '/api/server-restart', {
     method: 'POST',
@@ -496,7 +496,9 @@ test('running-action status opens linked issue details and exposes guarded contr
     const dialog = dom.window.document.querySelector('#server-actions-dialog');
     assert.match(dialog.textContent, /Implement the issue/);
     assert.match(dialog.textContent, /Issue: Running example/);
-    assert.equal(dialog.querySelector('a[href*="run="]')?.textContent, 'Action output');
+    const output = dialog.querySelector('a[data-action-output]');
+    assert.equal(output?.textContent, 'Action output');
+    assert.equal(output.getAttribute('href'), '/api/run?id=' + encodeURIComponent(run.id));
     const steer = [...dialog.querySelectorAll('[data-steer-text]')].find((field) => !field.disabled);
     steer.value = 'Please retain the existing scope';
     [...dialog.querySelectorAll('button')].find((button) => button.textContent === 'Steer' && !button.disabled).click();
@@ -874,7 +876,13 @@ test('local pause and restart controls do not import or bootstrap legacy issue s
 });
 
 test('local pause and restart controls stay available during a required store outage without shared reads or writes', async (t) => {
-  const service = new FactoryUI(project(t));
+  const root = project(t);
+  const issueId = '20261122-store-outage';
+  writeFileSync(
+    join(root, '.issues', issueId + '.md'),
+    `---\nid: ${issueId}\ntitle: Retained issue\nstate: backlog\n---\n\nOriginal report.\n`
+  );
+  const service = new FactoryUI(root);
   const stores = await ensureProjectStores(service, { fresh: true });
   let reads = 0,
     writes = 0;
@@ -894,7 +902,7 @@ test('local pause and restart controls stay available during a required store ou
   await assertLocalControls(http);
   assert.equal(reads, 0);
   assert.equal(writes, 0);
-  const shared = await http.post('server-action', { operation: 'resume', runId: 'unconfirmed-worker' });
+  const shared = await http.post('flow-action', { action: 'play', issueId });
   assert.equal(shared.status, 400);
   assert.match(shared.value.error, /coordination store is unavailable/);
   assert.ok(reads > 0, 'Shared issue operations must still check their configured authority.');

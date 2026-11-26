@@ -31,7 +31,7 @@ test('focused test validation accepts supported commands and rejects aggregate o
   const joined = ['node', '--test', '--test-name-pattern=' + pattern, testFile];
   const separated = ['node', '--test', '--test-name-pattern', pattern, testFile];
   assert.deepEqual(normalizeFocusedTests([separated, joined]), [joined]);
-  const browser = ['node', 'scripts/capture-grilling-browser.mjs'];
+  const browser = ['node', 'scripts/factory-project-account-browser.mjs'];
   assert.deepEqual(normalizeFocusedTests([browser]), [browser]);
   const scenarios = [
     'node',
@@ -66,7 +66,7 @@ test('focused test validation preserves the recorded Node pattern and standalone
       '--test-name-pattern=capture retains the chosen grilling skill|capture saves independent Grill',
       'scripts/factory-capture.check.mjs',
     ],
-    ['node', 'scripts/capture-grilling-browser.mjs'],
+    ['node', 'scripts/factory-project-account-browser.mjs'],
     ['pnpm', 'run', 'test:pr-repair:control'],
     ['pnpm', 'exec', 'vp', 'test', 'run', 'src/example.test.ts'],
   ];
@@ -106,7 +106,7 @@ test('focused test validation identifies the exact rejected argument and rule', 
       'argument 4 is missing. Provide at least one Flow browser scenario flag.',
     ],
     [
-      ['node', 'scripts/capture-grilling-browser.mjs', '--all'],
+      ['node', 'scripts/factory-project-account-browser.mjs', '--all'],
       'argument 3 "--all". Standalone browser checks take no arguments.',
     ],
     [
@@ -220,7 +220,6 @@ function writeCISuite(folder, suite, candidate) {
   const checks = ciSuites[suite].checks.map((name) => {
     const log = suite + '-' + name + '.log';
     const outputs = {
-      browser: 'PASS browser scenario: classic',
       'flow-browser': 'PASS Flow fixture',
       'timey-browser': 'PASS Timey fixture',
     };
@@ -268,12 +267,9 @@ void test('CI assembles passing evidence across rerun jobs only for one exact sn
   assert.equal(summary.checkpoint, 'verification');
   assert.equal(summary.passed, true);
   const browser = summary.checks.find(({ name }) => name === 'browser');
-  assert.match(
-    readFileSync(browser.log, 'utf8'),
-    /PASS browser scenario: classic\nPASS Flow fixture\nPASS Flow fixture/
-  );
-  assert.equal(browser.artifacts.length, 8);
-  assert.deepEqual(browser.command, ['CI', 'classic-browser', 'flow-browser-1', 'flow-browser-1b', 'flow-browser-2']);
+  assert.match(readFileSync(browser.log, 'utf8'), /PASS Flow fixture\nPASS Flow fixture\nPASS Flow fixture/);
+  assert.equal(browser.artifacts.length, 6);
+  assert.deepEqual(browser.command, ['CI', 'flow-browser-1', 'flow-browser-1b', 'flow-browser-2']);
   assert.ok(browser.artifacts.every(({ path, sha256 }) => sha256 === digest(readFileSync(path))));
   const factory = summary.checks.find(({ name }) => name === 'factory');
   assert.equal(readFileSync(factory.log, 'utf8'), 'ℹ tests 1\nℹ tests 1');

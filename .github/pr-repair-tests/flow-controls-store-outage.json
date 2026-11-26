@@ -1,0 +1,16 @@
+{
+  "version": 2,
+  "name": "local pause and restart controls stay available during a required store outage without shared reads or writes",
+  "command": [
+    "node",
+    "--test",
+    "--test-name-pattern=^local pause and restart controls stay available during a required store outage without shared reads or writes$",
+    "scripts/factory-server-control.check.mjs"
+  ],
+  "source": {
+    "runId": "45905466629",
+    "checkout": "9dd1f7fe2db294d77771138a49209290f61999a0",
+    "tree": "3a9937debc50d402b0eee9c47bd7722386e5505c",
+    "jobId": "140201761433"
+  }
+}

@@ -1,0 +1,184 @@
+:root {
+  color-scheme: dark;
+  color: #dfdfdf;
+  background: #161616;
+  font:
+    13px/1.5 system-ui,
+    sans-serif;
+  --issue-border: #373737;
+  --issue-surface: #202020;
+}
+
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  padding: 14px;
+}
+a {
+  color: inherit;
+}
+button,
+input,
+select {
+  font: inherit;
+  color: inherit;
+  background: var(--issue-surface);
+  border: 1px solid var(--issue-border);
+  border-radius: 6px;
+  padding: 5px 8px;
+}
+button,
+summary {
+  cursor: pointer;
+}
+button:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+button[aria-pressed='true'],
+button.primary {
+  background: #254537;
+}
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+summary:focus-visible {
+  outline: 2px solid #76b78d;
+  outline-offset: 2px;
+}
+.issue-workspace {
+  display: grid;
+  min-height: calc(100dvh - 28px);
+  align-items: start;
+}
+.issue-workspace.has-project-issue-detail {
+  grid-template-columns: minmax(0, 1fr) 12px minmax(0, var(--project-issue-detail-width, 335px));
+}
+.issue-sidebar,
+.project-issue-bulk-selection {
+  padding: 12px;
+  border: 1px solid var(--issue-border);
+  border-radius: 8px;
+  background: #1d1d1d;
+}
+.issue-sidebar-heading,
+.toolbar,
+.rail {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.issue-sidebar-heading {
+  justify-content: space-between;
+}
+.issue-sidebar-heading h2,
+.project-issue-bulk-selection h2 {
+  margin: 0;
+  font-size: 15px;
+}
+.queue-refresh-button svg {
+  display: block;
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+.issue-sidebar-controls,
+.issue-sidebar nav,
+.project-issue-bulk-fields {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+}
+.queue-search input {
+  width: 100%;
+}
+.role-filter,
+.project-issue-select-all-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.issue-sidebar-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 6px;
+  border: 1px solid transparent;
+}
+.issue-sidebar-item[draggable='true'] {
+  cursor: grab;
+}
+.issue-sidebar-item.is-dragged {
+  opacity: 0.5;
+}
+.issue-sidebar-item.drop-before {
+  border-top-color: #76b78d;
+}
+.issue-sidebar-item.drop-after {
+  border-bottom-color: #76b78d;
+}
+.issue-sidebar-link {
+  display: grid;
+  padding: 5px 8px;
+  border-radius: 6px;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+.issue-sidebar-link:hover {
+  background: #2c2c2c;
+}
+.issue-sidebar-link small,
+.issue-sidebar-empty,
+.project-issue-bulk-field small {
+  color: #a4a4a4;
+}
+.issue-workspace-content {
+  min-width: 0;
+}
+.project-issue-resizer {
+  align-self: stretch;
+  cursor: col-resize;
+  touch-action: none;
+}
+.project-issue-resizer:hover,
+.project-issue-resizer:focus-visible {
+  background: #373737;
+}
+.project-issue-bulk-field {
+  display: grid;
+}
+.project-issue-bulk-fields {
+  margin-bottom: 12px;
+}
+.archive-progress {
+  width: min(650px, calc(100% - 32px));
+  border: 1px solid var(--issue-border);
+  border-radius: 12px;
+  padding: 20px;
+}
+.archive-progress[open] {
+  display: grid;
+  grid-template-rows: auto 4rem minmax(0, 1fr) auto;
+  height: min(25rem, calc(100dvh - 5rem));
+}
+.archive-progress-status,
+.archive-progress-result {
+  overflow: auto;
+  overflow-wrap: anywhere;
+}
+.archive-progress::backdrop {
+  background: rgb(0 0 0 / 55%);
+}
+.queue-error {
+  color: #ffb1a6;
+}
+.queue-error:empty {
+  display: none;
+}

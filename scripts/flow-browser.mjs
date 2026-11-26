@@ -152,7 +152,9 @@ const assets = [
   'view-state.js',
   'activity-indicator-ui.js',
   'flow.html',
-  'index.html',
+  'project-issues.html',
+  'project-issues.css',
+  'queue-sort-ui.js',
   'issue-group.css',
   'issue-group-ui.js',
   'flow.css',
@@ -824,42 +826,58 @@ try {
   await check(storesCheck, () => issueStoresBrowserChecks({ page, project, service, logs, poll, screenshot }));
   await check(aiTextCheck, () => aiTextBrowserChecks({ page, project, service, poll, screenshot }));
   await check(interfaceStateCheck, () => interfaceStateBrowserChecks({ page, project, service, poll, screenshot }));
-  await check('Issues and Local notes use matching text styles', () =>
-    withQueueConfiguration({ page, project, root }, async () => {
-      await page.goto('/');
-      const issues = page.locator('.sidebar-issues-link');
-      const notes = page.locator('#local-notes > header > h2');
-      await issues.waitFor();
-      await notes.waitFor();
-      const textStyle = (node) => {
-        const style = getComputedStyle(node);
-        return Object.fromEntries(
-          [
-            'fontFamily',
-            'fontSize',
-            'fontWeight',
-            'fontStyle',
-            'lineHeight',
-            'letterSpacing',
-            'textTransform',
-            'color',
-          ].map((property) => [property, style[property]])
+  await check('Issues and Local notes use matching text styles', async () => {
+    const id = '20261126-sidebar-labels-fixture';
+    await writeBrowserIssue(project, {
+      id,
+      title: 'Saved issue in Project Issues',
+      body: 'Open the Project Issues list from the sidebar.',
+    });
+    try {
+      await withQueueConfiguration({ page, project, root }, async () => {
+        installBrowserHumanInput(project, root);
+        await page.goto('/');
+        const issues = page.locator('.sidebar-issues-link');
+        const notes = page.locator('#local-notes > header > h2');
+        await issues.waitFor();
+        await notes.waitFor();
+        const textStyle = (node) => {
+          const style = getComputedStyle(node);
+          return Object.fromEntries(
+            [
+              'fontFamily',
+              'fontSize',
+              'fontWeight',
+              'fontStyle',
+              'lineHeight',
+              'letterSpacing',
+              'textTransform',
+              'color',
+            ].map((property) => [property, style[property]])
+          );
+        };
+        const styles = { issues: await issues.evaluate(textStyle), notes: await notes.evaluate(textStyle) };
+        await screenshot('sidebar-labels');
+        writeFileSync(
+          join(output, 'sidebar-labels-styles.json'),
+          JSON.stringify({ candidate, styles, screenshot: join(output, 'sidebar-labels.png') }, null, 2) + '\n'
         );
-      };
-      const styles = { issues: await issues.evaluate(textStyle), notes: await notes.evaluate(textStyle) };
-      await screenshot('sidebar-labels');
-      writeFileSync(
-        join(output, 'sidebar-labels-styles.json'),
-        JSON.stringify({ candidate, styles, screenshot: join(output, 'sidebar-labels.png') }, null, 2) + '\n'
-      );
-      assert.deepEqual(styles.issues, styles.notes, 'Issues text styling matches Local notes');
-      await issues.click();
-      await page.locator('#project-issues').waitFor();
-      const frame = page.frameLocator('#project-issues iframe');
-      await frame.locator('[data-project-issue-mode="open"]').waitFor();
-      await assertCleanSidebarConsole();
-    })
-  );
+        assert.deepEqual(styles.issues, styles.notes, 'Issues text styling matches Local notes');
+        const [queue] = await Promise.all([
+          page.waitForResponse((response) => new URL(response.url()).pathname === '/api/queue'),
+          issues.click(),
+        ]);
+        assert.equal(queue.status(), 200, await queue.text());
+        await page.locator('#project-issues').waitFor();
+        const frame = page.frameLocator('#project-issues iframe');
+        await frame.locator('[data-project-issue-mode="open"]').waitFor();
+        await frame.locator(`[data-issue-row="${id}"]`).waitFor();
+        await assertCleanSidebarConsole();
+      });
+    } finally {
+      await removeBrowserIssue(project, id);
+    }
+  });
   await check('Local notes capture and handoff preserve flow', async () => {
     await localNotesBrowserChecks({ page, project, service, poll, screenshot, output, candidate });
     await assertCleanSidebarConsole();
@@ -933,7 +951,7 @@ try {
   if (process.argv.includes(flowBrowserOrderModifier)) await noChangesCheck();
   await check(followupsCheck, () => flowFollowupsBrowserChecks({ page, service, logs, screenshot }));
   await check(flowBrowserScenarioNames['--inbox-chat-reading'], () =>
-    inboxChatBrowserChecks({ page, service, project, root, poll, screenshot, output })
+    inboxChatBrowserChecks({ page, service, project, poll, screenshot, output })
   );
   await check(flowBrowserScenarioNames['--inbox-details'], () =>
     inboxDetailsBrowserChecks({ page, service, project, poll, screenshot, output })
@@ -3148,75 +3166,68 @@ try {
     await page.reload();
     await badge.filter({ hasText: /^Disconnected after 00:09$/ }).waitFor();
   });
-  await check(
-    'Flow and Classic reload the selected issue after a lost connection without replaying the click',
-    async () => {
-      issueId = await connectionRecoveryIssue();
-      const helperDir = '.agents/skills/issues/scripts';
-      mkdirSync(join(project, helperDir), { recursive: true });
-      for (const file of ['human-input.mjs', 'human-input-version.json']) {
-        copyFileSync(join(root, helperDir, file), join(project, helperDir, file));
-      }
-      writeFileSync(join(project, '.issues/preferences.json'), '{"commit":true}');
-      const screens = [
-        { path: '/?issue=' + issueId, error: '#error-message', toggle: '#flow-actions-switch input' },
-        { path: '/classic#/issue/' + issueId, error: '#error', toggle: '#server-controls [data-server-toggle]' },
-      ];
-      for (const screen of screens) {
-        await page.goto(screen.path);
-        const toggle = page.locator(screen.toggle);
-        const waiting = page.getByText('Waiting for server…', { exact: true });
-        await toggle.waitFor();
-        const url = page.url();
-
-        await context.clearCookies();
-        if (!screen.path.startsWith('/classic')) await page.locator('#refresh').click();
-        const expired = page.locator(screen.error).filter({ hasText: /session expired.*Reload this page/ });
-        await expired.waitFor();
-        await page.waitForResponse((response) => response.url().endsWith('/api/health') && response.status() === 204);
-        assert.equal(await expired.isVisible(), true);
-        assert.equal(await waiting.isVisible(), false);
-        assert.equal(page.url(), url);
-        await page.reload();
-        await page.locator('#server-actions-dialog').waitFor({ state: 'attached' });
-        if (await toggle.isChecked()) await toggle.uncheck();
-        await page.locator(screen.toggle + ':not(:checked):not(:disabled)').waitFor();
-
-        const release = Promise.withResolvers();
-        const pauseReceived = Promise.withResolvers();
-        const removeHealth = await fixtureRoute(page, '**/api/health', async (route) => {
-          await pauseReceived.promise;
-          if (screen.path.startsWith('/classic')) await release.promise;
-          await route.abort().catch(() => {});
-        });
-        let clicks = 0;
-        const removePause = await fixtureRoute(page, '**/api/server-pause', async (route) => {
-          clicks++;
-          const response = await route.fetch();
-          assert.equal(response.status(), 200);
-          await route.abort();
-          pauseReceived.resolve();
-        });
-        const pauseRequest = page.waitForRequest('**/api/server-pause');
-        await toggle.click();
-        await pauseRequest;
-        await waiting.waitFor();
-        assert.equal(page.url(), url);
-        assert.equal(clicks, 1);
-
-        const reloaded = page.waitForEvent('load');
-        await removeHealth(release.resolve);
-        await reloaded;
-        assert.equal(page.url(), url);
-        await page.locator(screen.toggle + ':checked').waitFor();
-        assert.equal(await waiting.isVisible(), false);
-        assert.equal(clicks, 1);
-        await removePause();
-        await toggle.uncheck();
-        await page.locator(screen.toggle + ':not(:checked):not(:disabled)').waitFor();
-      }
+  await check('Flow reloads the selected issue after a lost connection without replaying the click', async () => {
+    issueId = await connectionRecoveryIssue();
+    const helperDir = '.agents/skills/issues/scripts';
+    mkdirSync(join(project, helperDir), { recursive: true });
+    for (const file of ['human-input.mjs', 'human-input-version.json']) {
+      copyFileSync(join(root, helperDir, file), join(project, helperDir, file));
     }
-  );
+    writeFileSync(join(project, '.issues/preferences.json'), '{"commit":true}');
+    const screens = [{ path: '/?issue=' + issueId, error: '#error-message', toggle: '#flow-actions-switch input' }];
+    for (const screen of screens) {
+      await page.goto(screen.path);
+      const toggle = page.locator(screen.toggle);
+      const waiting = page.getByText('Waiting for server…', { exact: true });
+      await toggle.waitFor();
+      const url = page.url();
+
+      await context.clearCookies();
+      await page.locator('#refresh').click();
+      const expired = page.locator(screen.error).filter({ hasText: /session expired.*Reload this page/ });
+      await expired.waitFor();
+      await page.waitForResponse((response) => response.url().endsWith('/api/health') && response.status() === 204);
+      assert.equal(await expired.isVisible(), true);
+      assert.equal(await waiting.isVisible(), false);
+      assert.equal(page.url(), url);
+      await page.reload();
+      await page.locator('#server-actions-dialog').waitFor({ state: 'attached' });
+      if (await toggle.isChecked()) await toggle.uncheck();
+      await page.locator(screen.toggle + ':not(:checked):not(:disabled)').waitFor();
+
+      const release = Promise.withResolvers();
+      const pauseReceived = Promise.withResolvers();
+      const removeHealth = await fixtureRoute(page, '**/api/health', async (route) => {
+        await pauseReceived.promise;
+        await route.abort().catch(() => {});
+      });
+      let clicks = 0;
+      const removePause = await fixtureRoute(page, '**/api/server-pause', async (route) => {
+        clicks++;
+        const response = await route.fetch();
+        assert.equal(response.status(), 200);
+        await route.abort();
+        pauseReceived.resolve();
+      });
+      const pauseRequest = page.waitForRequest('**/api/server-pause');
+      await toggle.click();
+      await pauseRequest;
+      await waiting.waitFor();
+      assert.equal(page.url(), url);
+      assert.equal(clicks, 1);
+
+      const reloaded = page.waitForEvent('load');
+      await removeHealth(release.resolve);
+      await reloaded;
+      assert.equal(page.url(), url);
+      await page.locator(screen.toggle + ':checked').waitFor();
+      assert.equal(await waiting.isVisible(), false);
+      assert.equal(clicks, 1);
+      await removePause();
+      await toggle.uncheck();
+      await page.locator(screen.toggle + ':not(:checked):not(:disabled)').waitFor();
+    }
+  });
   await check('Starting branch confirmation moves saved work through the real UI', async () => {
     issueId = '20261117-starting-branch-fixture';
     await importBrowserIssue(

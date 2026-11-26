@@ -9,7 +9,6 @@ test('an assembled issue continues to a coordinator completion review without as
   const f = await deliveryScenario(t),
     queue = readQueue(f.root);
   assert.equal(nextProgress(queue, queue.issues[0], []).kind, 'completion-review');
-  assert.doesNotMatch(readFileSync('scripts/factory-ui/index.html', 'utf8'), /data-delivery-manifest/);
 });
 
 async function fixture(t, response) {
@@ -196,70 +195,6 @@ test('an interrupted publication reuses actual approval and discovers its existi
   assert.equal(f.record.publicationApproval.receipt.path, receipt);
   await assert.rejects(publishIssue(f.service, f.record, { decision: 'approve' }), /no longer waiting/);
   assert.equal(f.provider.state().creates, 1);
-});
-
-test('the PR card has Continue instead of an upload, and publication retries do not request approval again', async () => {
-  const { JSDOM } = await import('jsdom');
-  const html = readFileSync('scripts/factory-ui/index.html', 'utf8');
-  const card = html.slice(
-    html.indexOf('      function issueDeliveryCard('),
-    html.indexOf('      async function issueDeliveryAction(')
-  );
-  const render = new Function('esc', 'busy', card + ';return issueDeliveryCard;')((s) => String(s), false);
-  const dom = new JSDOM(
-    render({
-      id: 'one',
-      lifecycle: { status: 'running' },
-      issueDelivery: {
-        state: 'collecting',
-        source: 'issue/one',
-        target: 'dev',
-        candidate: 'saved',
-        targetRevision: 'base',
-      },
-    })
-  );
-  assert.match(dom.window.document.body.textContent, /0 retained contribution\(s\)/);
-  assert.doesNotThrow(() =>
-    render({
-      id: 'one',
-      issueDelivery: {
-        state: 'collecting',
-        source: 'issue/one',
-        target: 'dev',
-        candidate: 'saved',
-        targetRevision: 'base',
-      },
-    })
-  );
-  assert.equal(dom.window.document.querySelector('input[type=file]'), null);
-  assert.match(dom.window.document.body.textContent, /You do not need to upload anything/);
-  assert.equal(dom.window.document.querySelector('button').disabled, true);
-  dom.window.close();
-  const inputCode = html.slice(
-    html.indexOf('      function lifecycleInput('),
-    html.indexOf('      function liveStepWork(')
-  );
-  const input = new Function('esc', 'lifecycleDrafts', inputCode + ';return lifecycleInput;')(
-    (s) => String(s),
-    new Map()
-  );
-  const record = {
-    updated: 'now',
-    input: {
-      type: 'publication',
-      identity: 'same',
-      repository: 'owner/repo',
-      source: 'issue/one',
-      target: 'dev',
-      candidate: 'saved',
-    },
-    publicationApproval: { identity: 'same' },
-  };
-  const retry = new JSDOM(input({ id: 'one' }, record));
-  assert.equal(retry.window.document.querySelector('button').textContent, 'Retry opening pull request');
-  assert.equal(retry.window.document.querySelector('button').dataset.decision, 'retry');
-  retry.window.close();
 });
 
 test('incomplete completion stops for manual attention without another planning review', async (t) => {

@@ -134,7 +134,7 @@ test('draining rejects new mutations until cancellation', async (t) => {
       .getSetCookie()
       .map((v) => v.split(';')[0])
       .join('; ');
-  const response = await fetch(f.url + '/api/evaluate', {
+  const response = await fetch(f.url + '/api/project-issues-bulk-edit', {
     method: 'POST',
     headers: { cookie, origin: f.url, 'content-type': 'application/json', 'x-factory-action': 'manual' },
     body: '{}',

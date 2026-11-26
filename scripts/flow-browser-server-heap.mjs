@@ -115,11 +115,6 @@ export async function serverHeapBrowserChecks({ page, output, poll, screenshot }
     });
     assert.equal(recovered.navigationTime, initial.navigationTime);
 
-    const classicQueue = page.waitForResponse((response) => new URL(response.url()).pathname === '/api/queue');
-    await page.goto('/classic');
-    const classic = await readSample((samples) => samples[0]);
-    const queue = await classicQueue;
-    assert.equal(queue.status(), 200, await queue.text());
     writeFileSync(
       join(output, 'server-heap.json'),
       JSON.stringify(
@@ -131,7 +126,6 @@ export async function serverHeapBrowserChecks({ page, output, poll, screenshot }
           sameLabel,
           unavailable: unavailable.label,
           recovered,
-          classic,
         },
         null,
         2

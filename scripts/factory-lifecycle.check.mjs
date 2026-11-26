@@ -218,7 +218,7 @@ lifecycle_history:
   assert.equal(roles()[6].action, 'input');
 });
 
-test('route HTTP mutation retains local session/origin/manual/preview guards and real persistence', async (t) => {
+test('retired lifecycle route rejects authenticated and unauthenticated changes', async (t) => {
   const { service, input } = lifecycleFixture(t);
   const { url, cookie } = await startFactoryHttp(t, service);
   const send = (headers) =>
@@ -227,8 +227,10 @@ test('route HTTP mutation retains local session/origin/manual/preview guards and
   assert.equal((await send({ ...headers, origin: 'https://elsewhere.invalid' })).status, 400);
   assert.equal((await send({ ...headers, cookie: '' })).status, 400);
   assert.equal((await send({ ...headers, 'x-factory-action': '' })).status, 400);
-  assert.equal((await send(headers)).status, 200);
+  const retired = await send(headers);
+  assert.equal(retired.status, 400);
+  assert.match((await retired.json()).error, /Unknown operation/);
   service.reviewMode = 'preview';
   assert.equal((await send(headers)).status, 400);
-  assert.equal(service.store.runs.length, 1);
+  assert.equal(service.store.runs.length, 0);
 });

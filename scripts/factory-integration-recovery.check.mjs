@@ -231,27 +231,6 @@ test('the ledger compatibility path still enforces the original human-first appr
   assert.equal(existsSync(f.lock), true);
 });
 
-test('the recovery panel explains the refusal and exposes a retry with immediate running feedback', async () => {
-  const { JSDOM } = await import('jsdom');
-  const html = readFileSync('scripts/factory-ui/index.html', 'utf8');
-  const source = html.slice(
-    html.indexOf('      function integrationRecoveryPanel('),
-    html.indexOf('      function lifecyclePanel(')
-  );
-  const render = new Function('esc', 'busy', source + ';return integrationRecoveryPanel;')((s) => String(s), false);
-  const record = {
-    status: 'blocked',
-    updated: 'now',
-    integrationRecovery: { reason: 'Saved verification report is missing.' },
-  };
-  const dom = new JSDOM(render({ id: 'one' }, record));
-  assert.match(dom.window.document.body.textContent, /report is missing/);
-  assert.match(dom.window.document.body.textContent, /will not restart implementation or merge again/);
-  assert.equal(dom.window.document.querySelector('button').disabled, false);
-  assert.match(render({ id: 'one' }, { ...record, status: 'running' }), /Checking existing result/);
-  dom.window.close();
-});
-
 test('explicit recovery rejects stale clicks, stays visibly running, and respects a maintenance pause', async (t) => {
   const f = fixture(t);
   const path = f.paths[0],

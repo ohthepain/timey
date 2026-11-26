@@ -68,18 +68,18 @@ function browserOutput(check, scenario) {
   return output;
 }
 
-const browserSuites = Object.keys(ciSuites).filter((id) => ciSuites[id].flowPart || id === 'classic-browser');
+const browserSuites = Object.keys(ciSuites).filter((id) => ciSuites[id].flowPart);
 
-function browserCheck(folder, [classic, ...flow]) {
-  const classicOutput = browserOutput(classic, /PASS browser scenario:/);
+function browserCheck(folder, flow) {
   const flowOutput = flow.map((check) => browserOutput(check, /^PASS /m));
   const log = join(folder, 'ci-browser.log');
-  writeFileSync(log, [classicOutput, ...flowOutput].join('\n'), { flag: 'wx' });
+  writeFileSync(log, flowOutput.join('\n'), { flag: 'wx' });
   return {
-    ...classic,
+    ...flow[0],
+    name: 'browser',
     log,
     command: ['CI', ...browserSuites],
-    artifacts: [classic, ...flow].flatMap((check) => [
+    artifacts: flow.flatMap((check) => [
       { path: check.log, sha256: digest(readFileSync(check.log)) },
       ...check.artifacts,
     ]),

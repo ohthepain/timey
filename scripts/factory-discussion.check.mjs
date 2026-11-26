@@ -417,32 +417,6 @@ async function httpBase(t, service) {
   return `http://127.0.0.1:${server.address().port}`;
 }
 
-test('HTTP discussion routes use actual guards, content-free failures and separate capabilities', async (t) => {
-  const f = fixture(t);
-  const base = await httpBase(t, f.service);
-  const page = await fetch(base),
-    cookie = page.headers.get('set-cookie').split(';')[0];
-  const post = async (route, value, extra = {}) =>
-    fetch(base + '/api/discussion-' + route, {
-      method: 'POST',
-      headers: { cookie, origin: base, 'content-type': 'application/json', 'x-factory-action': 'manual', ...extra },
-      body: JSON.stringify(value),
-    });
-  assert.equal((await post('open', { issueId: f.input.issueId }, { origin: 'https://example.invalid' })).status, 400);
-  const opened = await (await post('open', { issueId: f.input.issueId })).json();
-  const input = { issueId: f.input.issueId, session: opened.session };
-  const intent = await (await post('prepare', { ...input, kind: 'record', text: 'HTTP_SELECTED' })).json();
-  const unclicked = await post('commit', { ...input, token: intent.token, secret: 'DO_NOT_ECHO' });
-  assert.equal(unclicked.status, 400);
-  assert.ok(!(await unclicked.text()).includes('DO_NOT_ECHO'));
-  const success = await post('commit', { ...input, token: intent.token, clicked: true });
-  assert.equal(success.status, 200);
-  assert.equal((await success.json()).recorded, true);
-  assert.equal((await post('commit', { ...input, token: intent.token, clicked: true })).status, 400);
-  assert.ok(readFileSync(join(f.root, '.issues/20261025-a.md'), 'utf8').includes('HTTP_SELECTED'));
-  assert.equal(f.service.store.list(new Map()).length, 0);
-});
-
 test('unrelated issue work does not block discussion or recording, selected work does', async (t) => {
   const f = fixture(t);
   mkdirSync(join(f.root, '.issues/factory-progress.lock'));
@@ -480,101 +454,6 @@ test('ending a discussion while startup is pending closes it and rejects late ou
   await assert.rejects(turn, /ended/);
   assert.ok(runtime.closed);
   assert.equal(f.discussion.sessions.size, 0);
-});
-
-test('temporary panel survives redraw without storage, rejects scripted actions and clears on navigation', async (t) => {
-  const { JSDOM } = await import('jsdom');
-  const dom = new JSDOM('<div id="app"><div id="discussion-slot"></div></div>', {
-    url: 'http://127.0.0.1/#/issue/one',
-    runScripts: 'outside-only',
-  });
-  t.after(() => dom.window.close());
-  const calls = [];
-  dom.window.eval(
-    readFileSync(resolve('scripts/factory-ui/view-state.js'), 'utf8') +
-      readFileSync(resolve('scripts/factory-ui/activity-indicator-ui.js'), 'utf8') +
-      readFileSync(resolve('scripts/factory-ui/issue-chat-ui.js'), 'utf8') +
-      readFileSync(resolve('scripts/factory-ui/discussion-ui.js'), 'utf8') +
-      '\nwindow.chatTest = discussionUI;'
-  );
-  const api = async (...args) => {
-    calls.push(args);
-    throw Error('No model expected');
-  };
-  const ui = dom.window.chatTest,
-    document = dom.window.document;
-  ui.mount('one', api);
-  const panel = document.querySelector('[data-temporary]');
-  assert.equal(panel.querySelector('[aria-expanded]').getAttribute('aria-expanded'), 'false');
-  const draft = panel.querySelector('textarea');
-  draft.value = 'UNSAVED_DRAFT';
-  panel.querySelector('button').click();
-  panel.querySelector('form').dispatchEvent(new dom.window.Event('submit', { cancelable: true }));
-  assert.equal(calls.length, 0, 'scripted events must not start a model or action');
-  const range = document.createRange();
-  range.selectNodeContents(panel.querySelector('[role="log"] p'));
-  dom.window.getSelection().addRange(range);
-  document.dispatchEvent(new dom.window.Event('selectionchange'));
-  const record = [...panel.querySelectorAll('button')].find((b) => b.textContent === 'Record selected text…');
-  assert.equal(record.hidden, false);
-  record.click();
-  assert.equal(calls.length, 0, 'scripted confirmation cannot record');
-  document.getElementById('app').innerHTML = '<div id="discussion-slot"></div>';
-  ui.mount('one', api);
-  assert.equal(document.querySelector('[data-temporary]'), panel);
-  assert.equal(document.querySelector('textarea').value, 'UNSAVED_DRAFT');
-  assert.equal(dom.window.localStorage.length, 0);
-  assert.equal(dom.window.sessionStorage.length, 0);
-  ui.end();
-  ui.mount('two', api);
-  assert.equal(document.querySelector('textarea').value, '');
-  assert.ok(!document.body.textContent.includes('UNSAVED_DRAFT'));
-  ui.end();
-});
-
-test('issue detail retro opens the temporary panel and displays unchecked recommendation choices', async (t) => {
-  const { JSDOM } = await import('jsdom');
-  const dom = new JSDOM('<div id="discussion-slot"></div>', {
-    url: 'http://127.0.0.1/#/issue/one',
-    runScripts: 'outside-only',
-  });
-  t.after(() => dom.window.close());
-  dom.window.eval(
-    readFileSync(resolve('scripts/factory-ui/view-state.js'), 'utf8') +
-      readFileSync(resolve('scripts/factory-ui/activity-indicator-ui.js'), 'utf8') +
-      readFileSync(resolve('scripts/factory-ui/issue-chat-ui.js'), 'utf8') +
-      readFileSync(resolve('scripts/factory-ui/discussion-ui.js'), 'utf8') +
-      '\nwindow.chatTest = discussionUI;'
-  );
-  const calls = [];
-  const api = async (path, input) => {
-    calls.push({ path, input });
-    if (path === 'discussion-open') return { session: 'retro-session' };
-    if (path === 'discussion-retro' || path === 'discussion-retro-saved')
-      return {
-        summary: 'One improvement to consider.',
-        recommendations: [
-          {
-            title: 'Add a regression check',
-            description: 'Cover the failing path.',
-            reason: 'Catch recurrence.',
-            verification: 'Run the focused check.',
-          },
-        ],
-      };
-    return { ended: true };
-  };
-  const ui = dom.window.chatTest,
-    document = dom.window.document;
-  ui.mount('one', api, async () => {});
-  await ui.savedRetro();
-  assert.ok(calls.some((call) => call.path === 'discussion-retro-saved'));
-  assert.ok(!calls.some((call) => call.path === 'discussion-retro'));
-  const choices = document.querySelectorAll('.retro-recommendations input[type=checkbox]');
-  assert.equal(choices.length, 1);
-  assert.equal(choices[0].checked, false);
-  assert.match(document.querySelector('.retro-recommendations').textContent, /Add a regression check/);
-  ui.end();
 });
 
 async function siteFixture(t) {
@@ -693,29 +572,6 @@ test('site review URL validation and current candidate freshness fail closed', a
   );
 });
 
-test('site review HTTP routes project opening receipts and record feedback without a technical checklist', async (t) => {
-  const f = await siteFixture(t);
-  const base = await httpBase(t, f.service),
-    page = await fetch(base),
-    cookie = page.headers.get('set-cookie').split(';')[0];
-  const post = async (path, value) =>
-    fetch(base + '/api/site-review-' + path, {
-      method: 'POST',
-      headers: { cookie, origin: base, 'content-type': 'application/json', 'x-factory-action': 'manual' },
-      body: JSON.stringify(value),
-    });
-  const request = f.request();
-  assert.equal((await post('decide', { ...request, status: 'passed', result: 'not opened' })).status, 400);
-  const receipt = await (await post('open', { ...request, browser: 'current' })).json();
-  const snapshot = await (await fetch(base + '/api/queue', { headers: { cookie } })).json();
-  assert.equal(
-    snapshot.issues.find((issue) => issue.id === f.input.issueId).siteReview.checks[0].opened.token,
-    receipt.token
-  );
-  const decision = await post('decide', { ...request, token: receipt.token, status: 'failed', result: 'Fix spacing.' });
-  assert.equal(decision.status, 200, await decision.text());
-});
-
 test('a completed prototype remains completed when Verify offers the implementation site', async (t) => {
   const f = await siteFixture(t),
     path = join(f.root, '.issues/20261025-a.md');
@@ -730,73 +586,6 @@ test('a completed prototype remains completed when Verify offers the implementat
     issue.siteReview.checks.map((check) => check.id),
     ['site-ux']
   );
-});
-
-test('site review controls enable after opening; both buttons submit and opening failures stay disabled', async (t) => {
-  const { JSDOM } = await import('jsdom');
-  const dom = new JSDOM('<div data-site-review="issue"></div>', {
-    url: 'http://127.0.0.1/',
-    runScripts: 'outside-only',
-  });
-  t.after(() => dom.window.close());
-  dom.window.eval(
-    readFileSync(resolve('scripts/factory-ui/site-review-ui.js'), 'utf8') + '\nwindow.reviewTest = siteReviewUI;'
-  );
-  const check = {
-    id: 'ux',
-    kind: 'judgment',
-    instructions: 'Try the site',
-    url: 'http://127.0.0.1/',
-    basis: 'basis',
-    completed: false,
-    opened: null,
-  };
-  const data = {
-    issues: [{ id: 'issue', siteReview: { browsers: [{ id: 'current', label: 'This browser' }], checks: [check] } }],
-  };
-  const calls = [];
-  let refreshed = 0;
-  const api = async (path, value) => {
-    calls.push({ path, value });
-    return { token: 'opened-token', recorded: true };
-  };
-  const render = () => {
-    dom.window.document.body.innerHTML = '<div data-site-review="issue"></div>';
-    dom.window.reviewTest.mount(data, api, async () => {
-      refreshed++;
-    });
-  };
-  const button = (label) =>
-    [...dom.window.document.querySelectorAll('button')].find((node) => node.textContent === label);
-  dom.window.open = () => ({ opener: null });
-  render();
-  assert.equal(button('Approve result').disabled, true);
-  assert.equal(button('Needs changes').disabled, true);
-  button('Open site').click();
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(button('Approve result').disabled, false);
-  assert.equal(button('Needs changes').disabled, false);
-  button('Needs changes').click();
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(calls.length, 1, 'changes require actual feedback');
-  dom.window.document.querySelector('textarea').value = 'Fix the button';
-  button('Needs changes').click();
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(calls.at(-1).value.status, 'failed');
-  assert.equal(calls.at(-1).value.token, 'opened-token');
-  assert.equal(refreshed, 1);
-  render();
-  button('Open site').click();
-  await new Promise((resolve) => setImmediate(resolve));
-  button('Approve result').click();
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(calls.at(-1).value.status, 'passed');
-  dom.window.open = () => null;
-  render();
-  button('Open site').click();
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(button('Approve result').disabled, true);
-  assert.match(dom.window.document.body.textContent, /blocked/);
 });
 
 test('preview copies cannot record real site approvals', async (t) => {
@@ -917,46 +706,6 @@ test('save and continue dispatches only the normal workflow after recording; con
     if (fails) assert.match(result.continueError, /human decision/);
     assert.equal(f.discussion.sessions.size, 0);
   }
-});
-
-test('stage button opens the temporary chat with a bound stage and preserves it through redraw', async (t) => {
-  const { JSDOM } = await import('jsdom');
-  const dom = new JSDOM('<div id="app"><div id="discussion-slot"></div></div>', {
-    url: 'http://127.0.0.1/',
-    runScripts: 'outside-only',
-  });
-  t.after(() => dom.window.close());
-  dom.window.eval(
-    readFileSync(resolve('scripts/factory-ui/view-state.js'), 'utf8') +
-      readFileSync(resolve('scripts/factory-ui/activity-indicator-ui.js'), 'utf8') +
-      readFileSync(resolve('scripts/factory-ui/issue-chat-ui.js'), 'utf8') +
-      readFileSync(resolve('scripts/factory-ui/discussion-ui.js'), 'utf8') +
-      '\nwindow.chatTest = discussionUI;'
-  );
-  const calls = [],
-    stage = { name: 'Clarify', state: 'backlog' };
-  const api = async (path, input) => {
-    calls.push({ path, input });
-    if (path === 'discussion-open') return { session: 'temporary' };
-    if (path === 'discussion-prepare') return { token: 'intent' };
-    return { stage, text: 'Q1: What should change?' };
-  };
-  const ui = dom.window.chatTest;
-  ui.mount('one', api);
-  ui.grill(stage);
-  await new Promise((resolve) => setImmediate(resolve));
-  const panel = dom.window.document.querySelector('[data-temporary]');
-  assert.equal(panel.querySelector('[aria-expanded]').getAttribute('aria-expanded'), 'true');
-  assert.match(panel.textContent, /Grilling · Clarify/);
-  assert.equal(calls.find((call) => call.path === 'discussion-prepare').input.stageState, 'backlog');
-  dom.window.document.getElementById('app').innerHTML = '<div id="discussion-slot"></div>';
-  ui.mount('one', api);
-  assert.equal(dom.window.document.querySelector('[data-temporary]'), panel);
-  assert.equal(dom.window.localStorage.length, 0);
-  ui.grill({ state: 'in-review', name: 'Verify' });
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.equal(calls.filter((call) => call.path === 'discussion-prepare').at(-1).input.stageState, 'in-review');
-  assert.equal(calls.filter((call) => call.path === 'discussion-open').length, 1);
 });
 
 test('grilling skill is sent as native skill input, not a substitute interview prompt', async () => {

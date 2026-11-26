@@ -98,14 +98,13 @@ and keep distinct runner identities. A runner follows completed project-role
 migrations only after verifying their shared receipts and configured target.
 An unknown target blocks shared changes and keeps cached browsing available.
 
-Flow and the Classic queue index show the last confirmed local snapshot immediately
+Flow and its Issues tab show the last confirmed local snapshot immediately
 while one shared refresh runs in the background. Polling starts another refresh
 no sooner than 30 seconds after the previous refresh finishes. After a server
 restart, cached issues remain read-only until storage is confirmed. A failed
 refresh shows a warning and preserves cached browsing. Shared edits and execution
 still wait for fresh authoritative checks. Opening an issue refreshes its retained
 evidence in the background; opening a retained file waits for that file's evidence.
-Opening selected Classic details still waits for its authoritative snapshot.
 
 Rebuilding an idle flow saves its changed structure and confirmed operation in
 one Coordination transaction. The transaction checks the catalog, original flow,

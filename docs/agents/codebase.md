@@ -15,20 +15,20 @@ creation. `ProjectDiscuss.prepareNote` records quiet context and a draft;
 `scripts/local-note.mjs`, project chat tools and the bundled `local-note` skill
 share the store. See the [local notes design](../plans/local-notes.md).
 
-| Area                     | Start reading                                                                                                                                                                                                         | Responsibility                                                                                                                                                                                                      |
-| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| App shell and navigation | `src/routes/__root.tsx`, `src/router.tsx`, `vite.config.ts`, `src/start.ts`                                                                                                                                           | Shared UI, authentication context, route restoration, Vite+ and Start setup                                                                                                                                         |
-| Practice interaction     | `src/components/BeatViewer.tsx`, `Transport.tsx`, `TempoInput.tsx`                                                                                                                                                    | Display the beat and control practice                                                                                                                                                                               |
-| Timing and MIDI          | `src/lib/TempoService.ts`, `MidiService.ts`, `MetronomeService.ts`                                                                                                                                                    | Clock pulses, MIDI input/output, metronome                                                                                                                                                                          |
-| Capture and feedback     | `src/lib/BeatRecorder.ts`, `PerformanceFeedback.ts`                                                                                                                                                                   | Turn performed notes into timing/velocity feedback                                                                                                                                                                  |
-| Event replay             | `src/lib/EventRecorderService.ts`, `EventList.ts`                                                                                                                                                                     | Capture/replay clock and note events; CSV import/export                                                                                                                                                             |
-| Domain objects           | `src/types/Method.ts`, `Module.ts`, `Beat.ts`, `BeatNote.ts`, `Performance.ts`                                                                                                                                        | Practice hierarchy and recorded performance                                                                                                                                                                         |
-| Persistence              | `src/repositories/`, `src/services/`, `domain/schema.ts`                                                                                                                                                              | Repository calls, server operations, relational storage in the `domain` PostgreSQL schema                                                                                                                           |
-| Authentication           | `src/server/auth-runtime/client.ts`, `src/components/auth/UserMenu.tsx`, `LoginButton.tsx`, `src/utils/authenticatedServerFn.ts`                                                                                      | Better Auth browser client (`/api/auth`), header sign-in/menu, cookie-backed `withAuth` via `requireDomainUser`                                                                                                     |
-| Auth foundation          | `src/server/auth.ts`, `src/server/auth-runtime/`, `src/server/domain-session.ts`, `auth/`                                                                                                                             | Server-only Better Auth handler, validated session/profile boundary, separate auth migrations; private practice and method/module writes cut over; beat create/copy cut over; editing/moves cut over; admin pending |
-| Auth screens             | `src/routes/auth.$screen.tsx`, `src/components/auth/AuthScreen.tsx`, `AuthForm.tsx`, `AuthSession.tsx`                                                                                                                | Better Auth forms and session/cache control, including method/module create/edit and beat create/copy/edit                                                                                                          |
-| Verification checkpoints | `scripts/verify.mjs`, `scripts/audit-result.mjs`, `.githooks/pre-commit`                                                                                                                                              | Isolated staged/working snapshots, strict audit and step evidence                                                                                                                                                   |
-| Factory controls         | `scripts/factory.mjs`, `scripts/factory-ledger.mjs`, `scripts/factory-interface.mjs`, `scripts/factory-status.mjs`, `scripts/factory-ui/index.html`, [interface guide](factory.md), [factory UI guide](factory-ui.md) | Issue listing and responsive navigation, ledger CLI, saved progress, timers, manual decisions, explicit strategy verification retries and guarded worker dispatch                                                   |
+| Area                     | Start reading                                                                                                                                                                                                        | Responsibility                                                                                                                                                                                                      |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| App shell and navigation | `src/routes/__root.tsx`, `src/router.tsx`, `vite.config.ts`, `src/start.ts`                                                                                                                                          | Shared UI, authentication context, route restoration, Vite+ and Start setup                                                                                                                                         |
+| Practice interaction     | `src/components/BeatViewer.tsx`, `Transport.tsx`, `TempoInput.tsx`                                                                                                                                                   | Display the beat and control practice                                                                                                                                                                               |
+| Timing and MIDI          | `src/lib/TempoService.ts`, `MidiService.ts`, `MetronomeService.ts`                                                                                                                                                   | Clock pulses, MIDI input/output, metronome                                                                                                                                                                          |
+| Capture and feedback     | `src/lib/BeatRecorder.ts`, `PerformanceFeedback.ts`                                                                                                                                                                  | Turn performed notes into timing/velocity feedback                                                                                                                                                                  |
+| Event replay             | `src/lib/EventRecorderService.ts`, `EventList.ts`                                                                                                                                                                    | Capture/replay clock and note events; CSV import/export                                                                                                                                                             |
+| Domain objects           | `src/types/Method.ts`, `Module.ts`, `Beat.ts`, `BeatNote.ts`, `Performance.ts`                                                                                                                                       | Practice hierarchy and recorded performance                                                                                                                                                                         |
+| Persistence              | `src/repositories/`, `src/services/`, `domain/schema.ts`                                                                                                                                                             | Repository calls, server operations, relational storage in the `domain` PostgreSQL schema                                                                                                                           |
+| Authentication           | `src/server/auth-runtime/client.ts`, `src/components/auth/UserMenu.tsx`, `LoginButton.tsx`, `src/utils/authenticatedServerFn.ts`                                                                                     | Better Auth browser client (`/api/auth`), header sign-in/menu, cookie-backed `withAuth` via `requireDomainUser`                                                                                                     |
+| Auth foundation          | `src/server/auth.ts`, `src/server/auth-runtime/`, `src/server/domain-session.ts`, `auth/`                                                                                                                            | Server-only Better Auth handler, validated session/profile boundary, separate auth migrations; private practice and method/module writes cut over; beat create/copy cut over; editing/moves cut over; admin pending |
+| Auth screens             | `src/routes/auth.$screen.tsx`, `src/components/auth/AuthScreen.tsx`, `AuthForm.tsx`, `AuthSession.tsx`                                                                                                               | Better Auth forms and session/cache control, including method/module create/edit and beat create/copy/edit                                                                                                          |
+| Verification checkpoints | `scripts/verify.mjs`, `scripts/audit-result.mjs`, `.githooks/pre-commit`                                                                                                                                             | Isolated staged/working snapshots, strict audit and step evidence                                                                                                                                                   |
+| Factory controls         | `scripts/factory.mjs`, `scripts/factory-ledger.mjs`, `scripts/factory-interface.mjs`, `scripts/factory-status.mjs`, `scripts/factory-ui/flow.html`, [interface guide](factory.md), [factory UI guide](factory-ui.md) | Issue listing and responsive navigation, ledger CLI, saved progress, timers, manual decisions, explicit strategy verification retries and guarded worker dispatch                                                   |
 
 The Flow sidebar's In progress and Blocked pseudo-folders derive membership from
 its project index in `scripts/factory-ui/flow-ui.js`. In progress contains running
@@ -208,7 +208,7 @@ subprocess failures retain exit status or signal and bounded structured helper
 diagnostics while omitting raw process output. The guard remains fail-closed.
 The header's running-action list is served by `scripts/factory-ui/server-control.mjs`
 and `server-action.mjs`, rendered by `server-control-ui.js`, with focused output
-links routed by `scripts/factory-ui/index.html`. Active Flow entries come from
+links to the Flow issue and block. Active Flow entries come from
 `FlowService.active`, with saved block status and output links to the Flow issue.
 Flow controls remain on the issue page. Cards name the operation, its triggering
 block or issue control, and its purpose separately from the linked issue. Flow
@@ -315,15 +315,6 @@ existing chats for bounded corrections. The issue screen renders the complete
 “What happened” lifecycle event history with inline timestamps and role-transition
 labels. See the UI guide for consent boundaries.
 
-`factory-ui/issue-progress-ui.js` derives the default Progress tab from existing
-issue, run, input and conversation records, including a saved PR link independent
-of the PR's current status. `runs.mjs` persists phase timing for issue-work runs;
-the Progress view shows the current phase and accumulated run time without adding a
-separate workflow record. Its manual Refresh progress control requests the current
-queue snapshot and issue conversation through the shared refresh path, without a
-page reload or a new workflow operation. `index.html` renders that projection, reuses existing
-input handlers and overlays transient Continue acknowledgment until fresh evidence
-arrives.
 `factory-ui/output-history.mjs` reads earlier public JSONL events using stable byte
 cursors through the authenticated read-only output-history endpoint.
 `factory-ui/activity.mjs` projects and bounds the sanitized live output stream;
@@ -352,14 +343,13 @@ renders during pointer gestures. Disclosures whose open state is controlled by
 application state use `data-view-controlled-open`; other disclosures retain the
 person's choice independently of refreshed markup. Flow, Discuss, issue chat,
 investigation results, Automate me messages, and repair output use this boundary.
-Classic retains full replacement and event binding with shared view and selection
-restoration. Draft owners save their text separately and clear it after submission.
+The project Issues list uses shared view and selection restoration. Draft owners save their text separately and clear it after submission.
 See [the refresh-state plan](../plans/preserve-interface-state.md).
 Conversation state is captured before DOM replacement, including reading position,
 textarea scroll/caret and selected conversation text. Readers at the bottom keep
 following new output; readers above it keep their position. Other issue text panels
 restore internal scroll after focus and caret restoration. The rendered regression
-is `scripts/factory-browser-refresh.mjs`.
+runs through `node scripts/flow-browser.mjs --interface-state`.
 
 `scripts/factory-ledger.mjs` owns assignment inspection and guarded ledger
 transitions; `factory.mjs` is its command entry point. `factory-progress.mjs` owns
@@ -388,10 +378,8 @@ values to the folder settings owner and preserves legacy explicit issue preferen
 `issue-execution-settings.mjs` resolves issue overrides and saved execution snapshots;
 `codex.mjs` applies the chosen model at `thread/start` and accepts model and effort
 on each explicitly configured turn. Native sessions keep their owning agent;
-project discussion provider changes use an explicit handoff. The issues-page
-gear and per-issue selectors live in `factory-ui/index.html`. Focused behavior is
-covered by `factory-model-settings.check.mjs` and
-`factory-browser-model-settings.mjs`.
+project discussion provider changes use an explicit handoff. Folder settings and block selectors apply the effective model and effort.
+See `factory-model-settings.check.mjs` and `node scripts/flow-browser.mjs --block-models`.
 
 `factory-inputs.mjs` defines selected decision inputs shared by issue planning and
 ledger reservations. It follows report/action dependencies and linked plans while
@@ -403,7 +391,7 @@ sessions and clicked intents), `issue-discussion.mjs` (saved issue queue adapter
 `discussion-record.mjs` (guarded reviewed-output append), and `discussion-ui.js`
 (review panel within Issue thread). The native issue conversation retains their
 turns. `skills.mjs` validates enabled skills; the shared slash selector and chips
-live in `issue-chat-ui.js`. See [reviewing issue discussion](factory-ui.md#reviewing-issue-discussion).
+live in `issue-chat-ui.js`. See [persistent issue conversation](factory-ui.md#persistent-issue-conversation).
 
 `factory-ui/site-review.mjs` owns Verify review targets, available browser choices,
 open receipts and guarded human results. `site-review-ui.js` renders Open site,
@@ -440,7 +428,7 @@ Store timing records are batched. Flow supplies issue, block, and attempt labels
 through the execution context. `codex-quota.mjs` reads usage windows through a
 separate read-only app-server connection and retains the latest snapshot in memory.
 
-Flow, Classic, and project Home display reads use the last confirmed store
+Flow and Project Home display reads use the last confirmed store
 snapshot. `stores/runtime.mjs` performs initial synchronization when no snapshot
 exists, explicit refresh, and fresh mutation admission. Single-issue actions and selected bulk actions
 refresh their selected reports, flows, claims, and commands. Scoped snapshots
@@ -458,14 +446,14 @@ snapshot refresh for the affected issue; snapshot installation preserves other
 saved issues. Close and Reopen publish the decision and destination together
 through registered stores, avoiding a second publication just to move the report.
 Unregistered local reports retain their filesystem move after saving the decision.
-Flow and Classic creation initialize and validate the configured
+Flow creation initializes and validate the configured
 stores without reloading existing reports, then refresh only the newly created
 issues after confirmed publication. Cold startup still builds the initial snapshot.
 Completed Flow capture retries refresh their saved issue before checking whether
 another runner deleted or moved it. `FlowService.storageView` consumes that status
 without repeating the project refresh. Selected-issue evidence loads once and
 can reload on explicit Refresh. Explicit file reads await evidence hydration.
-Selected Classic views reuse hydration for each confirmed snapshot generation. Flow persists
+Flow persists
 observed PR changes in the background and shows merged issues read-only immediately.
 Flow actions reuse the fresh admission already performed by the authenticated
 HTTP handler; direct controller callers still perform their own admission.
@@ -691,10 +679,8 @@ actual listener capability before checks; `verify-process.mjs` owns cancellation
 of its child group. `factory-ui/input-change.mjs` compares captured input hashes
 and reports coordinator-owned recovery without changing approval policy.
 
-Browser verification uses `scripts/factory-browser.mjs` and its
-`browser-fixture.mjs` disposable data server. It discovers tracked
-`factory-browser-*.mjs` scenarios and the legacy sorting replay, reads actual
-candidate assets, and retains CLI logs and screenshots.
+Browser verification uses `scripts/flow-browser.mjs` to load actual candidate
+assets with disposable project data and retain screenshots and results.
 `browser-scenario-policy.mjs` keeps drag-and-drop scenarios opt-in through
 `pnpm run test:browser:drag-and-drop`; ordinary and full regression exclude them. `verify.mjs` invokes it
 before the other behavior/type/build checks and records artifact hashes in the
@@ -896,7 +882,7 @@ updates. New events within an existing message retain its activity expansion.
 Its settings and attachment
 controls share a row with Send. Discuss hides
 the shared Flow footer. The shared skill composer, message envelope, send icon, and dictation handler
-live in `issue-chat-ui.js`. Project, report, and Classic issue chats reuse these
+live in `issue-chat-ui.js`. Project, report, and issue chats reuse these
 controls. Flow conversation entries reuse the same message envelope.
 `chat-progress.mjs` groups provider activity into a live status, milestones,
 and collapsed command details. Flow saves the activity with its attempts,
@@ -1071,7 +1057,7 @@ revision-checked YAML edits, project-default migration, and parent inheritance.
 `factory/system/folder.md` reference. Root `folder.md` supplies tracked project
 defaults. `folder-settings-routes.mjs` binds settings operations to validated sidebar
 locations. `folder-settings-ui.js` renders the shared settings form and repair UI.
-Both Flow and Classic capture save the selected folder ID on each new report.
+Flow capture saves the selected folder ID on each new report.
 The issue read path projects older reports without membership into Inbox using
 a stable ID. It does not create tracked files. Flow startup and explicit setup
 initialize real folder settings; queue and model-selection snapshots only read
@@ -1165,8 +1151,10 @@ records the merged PR receipt and the candidate tree alongside Work proof.
 request from retained attempts, including legacy review blockers. Flow views and
 sidebar rows expose it separately from execution status; the UI offers explicit
 Continue through the existing guarded operation.
-The original factory page remains at `/classic`. See the
-[implementation plan](../plans/number-2/README.md) for current verification.
+The project Issues tab uses `factory-ui/project-issues.html` for the shared
+queue, bulk editing, and archival. `http.mjs` redirects legacy browser links
+to the selected Flow issue or Project Home. `flow-command-error.mjs` reads
+bounded text from retained command logs and explains known errors in Progress.
 
 `factory-ui/block-catalog.mjs` resolves and renders block Markdown from the
 bundled and project directories and fingerprints the effective definition. Each directory's `catalog.json` holds skill
@@ -1220,7 +1208,7 @@ to retained local files. It falls back to failed job output when artifacts are
 unavailable. `flow-repair-evidence.mjs` copies that evidence into the repair
 worker's checkout and derives blocker identities from failed checks and logs.
 
-`shared-chat-tools.mjs` supplies Classic and retained native conversations with the
+`shared-chat-tools.mjs` supplies retained native conversations with the
 project Discuss tool registry. `CodexConnection` starts an authenticated,
 connection-owned `chat-tool-mcp.mjs` adapter before launching app-server. Its CLI
 configuration overrides apply only to that process. They expose the guarded
@@ -1274,7 +1262,7 @@ is not account allowance. Both remain unknown unless supported allowance data
 exist; the explicit unmonitored-work option governs admission.
 
 `provider-settings-ui.js` renders the provider controls and persistent warning
-banner in Flow and Classic. `project-settings-ui.js` retains the shared Factory
+banner in Flow. `project-settings-ui.js` retains the shared Factory
 settings Save and unsaved-change handling. The execution adapters check policy
 before turns and interrupt affected work. Flow also checks each block, aborts
 cancellable work, and lets protected Git/publication operations retain an outcome

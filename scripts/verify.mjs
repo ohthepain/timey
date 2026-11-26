@@ -205,7 +205,7 @@ function flowVerificationCommand() {
 
 function verificationCommands() {
   const commands = {
-    browser: ciSuite ? [process.execPath, 'scripts/factory-browser.mjs'] : ['pnpm', 'run', 'test:browser'],
+    browser: ['pnpm', 'run', 'test:browser'],
     'flow-browser': flowVerificationCommand(),
     'timey-browser': [process.execPath, '--test', 'scripts/timey-factory-return.check.mjs'],
     factory: factoryVerificationCommand(),

@@ -3,6 +3,19 @@
   "sourceRun": "https://github.com/ohthepain/timey/actions/runs/45891770368/job/140159002116",
   "tests": [
     {
+      "name": "CI keeps Timey browser verification and assembles evidence for the exact candidate",
+      "command": [
+        "node",
+        "--test",
+        "--test-name-pattern=^CI gates the parallel suites on early checks and keeps test as their aggregate$|^CI assembles passing evidence across rerun jobs only for one exact snapshot$",
+        "scripts/verify.check.mjs"
+      ]
+    },
+    {
+      "name": "Legacy Classic links and existing Flow issue and storage workflows",
+      "command": ["node", "scripts/flow-browser.mjs", "--project-issues", "--inbox-chat-reading", "--stores"]
+    },
+    {
       "name": "Work Markdown reloads headings and lists without changing layout, drafts or actions",
       "command": [
         "node",

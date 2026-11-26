@@ -8,6 +8,7 @@ import {
   validateBlockModel,
   assertBlockModelAvailable,
 } from './block-models.mjs';
+import { commandLogError } from './flow-command-error.mjs';
 import { lastBlockingError, retainBlockingError, resolveBlockingErrors } from './block-errors.mjs';
 import { guardProviderWork } from './provider-runtime.mjs';
 import { withDiagnosticContext } from './diagnostic-activity.mjs';
@@ -250,6 +251,14 @@ function retainExecutionFailure(current, error) {
       ...conditionalField('liveProofRequirements', liveProofRequirements),
     };
   if (input) current.input = input;
+}
+
+function readCommandError(path) {
+  try {
+    return commandLogError(path);
+  } catch {
+    return {};
+  }
 }
 
 function conditionalField(key, value) {
@@ -949,7 +958,7 @@ class IssueFlows {
           startedAt: legacyRun?.created,
           summary:
             legacyRun?.summary ||
-            'This existing operation owns the issue conversation. Its original controls remain in Classic.',
+            'An earlier operation still owns the issue conversation. Review its status under Server actions.',
           output: '',
         },
       ];
@@ -3528,7 +3537,7 @@ class IssueFlows {
     return [...flow.blocks, ...(flow.retiredBlocks ?? [])].flatMap((block) => {
       const listed = new Set();
       return block.attempts.toReversed().flatMap((attempt) =>
-        (attempt.evidence || []).flatMap(({ path: originalPath, label, sha256 }) => {
+        (attempt.evidence || []).flatMap(({ path: originalPath, label, sha256, key: evidenceKey }) => {
           if (!originalPath || listed.has(originalPath)) return [];
           let path;
           const key = JSON.stringify([originalPath, sha256]);
@@ -3574,11 +3583,24 @@ class IssueFlows {
               path,
               originalPath,
               label: label || block.label + ' evidence',
+              ...conditionalField(
+                'commandError',
+                attempt.status === 'blocked' &&
+                  (evidenceKey === 'log' || /\.log$/i.test(originalPath) || /command (?:log|output)/i.test(label ?? ''))
+                  ? readCommandError(path)
+                  : undefined
+              ),
             },
           ];
         })
       );
     });
+  }
+  commandLog(issueId, artifactId) {
+    const flow = this.read(this.selected(issueId));
+    const artifact = this.artifacts(flow, { fresh: false }).find(({ id }) => id === artifactId);
+    requireThat(artifact?.commandError, 'Choose a retained command log from this issue.');
+    return artifact.path;
   }
   async restateArtifact(flow, input) {
     const artifact = this.artifacts(flow).find((item) => item.id === input.artifactId);

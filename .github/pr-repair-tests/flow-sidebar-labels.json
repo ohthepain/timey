@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "name": "Issues and Local notes use matching text styles",
+  "command": ["node", "scripts/flow-browser.mjs", "--ci-part=1b", "--sidebar-labels"],
+  "source": {
+    "runId": "45905466629",
+    "checkout": "9dd1f7fe2db294d77771138a49209290f61999a0",
+    "tree": "3a9937debc50d402b0eee9c47bd7722386e5505c",
+    "jobId": "140201761447"
+  }
+}

@@ -96,11 +96,15 @@ uses a disposable project to exercise playback, block Details, the Close menu,
 and contextual note recommendations.
 
 `node scripts/flow-browser.mjs --merge-target-update` runs the Merge control for
-two fixture PRs on a disposable Git remote. It records local conflict repair,
-publication before GitHub readiness, and a second target advance after readiness.
-The simulated GitHub endpoint rejects the stale candidate and merges the refreshed
-head after its checks pass. The scenario saves the observed commits, trees and
-operation order in `merge-target-update.json`.
+fixture PRs on a disposable Git remote. It records local conflict repair,
+a conflict-free update, and target drift after readiness. It checks that each
+candidate is pushed before readiness and that rejected pushes stop Merge.
+It also opens the full logs for a known Merge error and an unfamiliar Update
+Branch error. The scenario saves commit identities, command order, and log
+details in `merge-target-update.json`. GitHub responses are simulated.
+
+`node scripts/flow-browser.mjs --project-issues` exercises retired Classic
+links and operations, the Flow Issues queue, and archival of saved issues.
 
 `node scripts/flow-browser.mjs --request-save` holds Request clarification after
 saving Your words on an existing issue. Rename, Close, Stop, and the editor remain
@@ -373,6 +377,9 @@ The navigation fixture temporarily initializes queue configuration, waits for a
 successful Issues queue response, and unloads the page before restoring configuration.
 Run `--ci-part=1 --project-navigation --sidebar-labels` together to check sidebar
 label styling and verify that visiting Discuss leaves no browser console errors.
+The sidebar labels fixture seeds a saved Flow issue, installs the human-input
+helper, and verifies the queue response and issue row when opening Project Issues.
+Run `--ci-part=1b --interface-state --sidebar-labels` to check the original CI order.
 `--ci-part=2 --capture-folder-issue --closed-destination` checks that closed
 flows open and refresh with Destination aligned to the bottom at both tested heights.
 `--ci-part=2 --capture-folder-issue --save-request-route --stop-work` checks that
@@ -436,7 +443,7 @@ For an installed Chrome when the Playwright Chromium cache is unavailable, run
 `TIMEY_BROWSER_CHANNEL=chrome pnpm run test:browser`.
 
 `node scripts/flow-browser.mjs --connection-recovery` checks expired sessions and
-recovery after a lost action response in Flow and Classic with a disposable issue.
+recovery after a lost action response in Flow with a disposable issue.
 It waits for initialized controls and the pause request before dropping health
 responses, then checks the selected issue, saved pause state and single dispatch
 after recovery. The action uses a click because its deliberately lost response
@@ -523,7 +530,7 @@ and waits for the checks and reviews GitHub requires on the exact PR head.
 Work and explicit Verify remain the places for local verification.
 
 GitHub runs Early checks first. Five jobs then run in parallel: two Non-browser
-jobs, Classic Factory browser, and two Flow browser jobs. The Non-browser jobs
+jobs and the Flow browser parts. The Non-browser jobs
 split the Factory Node test files. The second also runs Vitest and the build.
 The Flow browser jobs split at the start of the shared issue fixture so dependent
 scenarios stay together. The required `test` job passes after all six jobs pass
@@ -590,7 +597,7 @@ with the smoke-test evidence.
 
 Drag-and-drop browser scenarios are excluded from ordinary verification and
 full regression and CI. They run only when explicitly requested
-with `pnpm run test:browser:drag-and-drop`. This covers legacy queue reordering,
+with `pnpm run test:browser:drag-and-drop`. This covers
 issue-folder assignment and Flow folder dragging. These fragile browser
 interactions must not gate unrelated delivery. Deterministic folder and ordering
 tests remain in their existing suites. `browser-scenario-policy.mjs` applies this
@@ -1070,13 +1077,9 @@ and listener. Install its browser with `pnpm exec playwright-cli install-browser
 (`--with-deps` in Linux CI). Missing tooling or failed interactions fail verification.
 No production issue writes, provider calls, publication or acceptance occur.
 
-Keep repeatable UI scenarios as `scripts/factory-browser-*.mjs`, exporting an async
-function that exercises the page and returns passing assertions. Implement adds
-the issue’s interactions; Verify executes them again on the combined source. The
-legacy sorting pilot’s existing `scripts/factory-queue.check.mjs` registers its
-retained browser replay in `scripts/browser-scenarios/queue-sorting.mjs`; missing
-sort controls fail that replay rather than skipping it. This migrates its original
-14 browser assertions without repeating implementation.
+Add repeatable interactions to `scripts/flow-browser.mjs` or its focused
+scenario modules. Register each scenario in `scripts/browser-scenario-policy.mjs`
+so Work and delivery can run it by name.
 
 Raw logs, replay sources and screenshots live beside each verification summary,
 with content hashes. Required browser proof is part of the exact-tree verification
@@ -1094,9 +1097,6 @@ preserved active investigations and custom stages, diagnostic authority before
 approval, pending answers across commits, retained plan approvals and explicit,
 idempotent capture grilling. These are disposable protocol tests, not evidence
 of live model availability. Full factory verification includes them.
-`factory-browser-clarify.mjs` exercises the candidate's rendered capture switch,
-its off default, retained retry choice and navigation to the saved issue through
-the standard browser verifier with a disposable API response.
 
 ## Verification ownership and output
 
@@ -1123,16 +1123,10 @@ summary and retained evidence logs remain available after the command exits.
 An already-running GitHub job keeps the verifier from its checked-out revision;
 new streaming behavior requires a run containing the updated verifier.
 
-`node scripts/capture-grilling-browser.mjs` opens the actual Create issue dialog in
-a disposable browser fixture and checks skill selection in the submitted request,
-failed-save retry and retained draft. It saves a screenshot and request JSON under
-`.issues/evidence/`. Provider execution is covered separately from this UI fixture.
-
-The aggregate verifier runs both browser runners in its disposable checkout.
-`verify-browser-evidence.mjs` lists the screenshot, result, log, and measurement
-outputs to copy into `.issues/evidence/`. It reads direct files in the Classic
-and Flow output directories and records their SHA-256 hashes in the verification
-summary. Fixture repositories and browser runner internals stay in the disposable
+The verifier runs the Flow browser scenarios in its disposable checkout.
+`verify-browser-evidence.mjs` retains screenshots, results, logs, and
+measurements in `.issues/evidence/` with SHA-256 hashes. Fixture repositories
+and browser runner internals stay in the disposable
 checkout. Standalone Flow runs can still set `TIMEY_FLOW_BROWSER_OUTPUT`.
 HTTP error records include the response body and originating request. Unexpected
 browser errors fail verification.
@@ -1240,13 +1234,13 @@ then the thumb hides after scrolling stops. The flow width and scroll position
 remain stable. It saves `issue-scrollbar.json` and screenshots of the idle,
 scrolling and stopped states in the reported evidence directory.
 
-`node scripts/flow-browser.mjs --server-heap` checks the Flow and Classic header
+`node scripts/flow-browser.mjs --server-heap` checks the Flow header
 readings against the running Factory process. It records the header write for each
 response, including two consecutive fixture responses that round to the same label.
 A comparison failure includes the response bytes and the rendered label. The check
 covers refresh and recovery without navigation and saves `server-heap.json` and
 screenshots of the live and unavailable readings. The scenario configures the
-fixture queue before opening Classic. Run `node scripts/flow-browser.mjs --ci-part=1 --manual-close --server-heap --project-navigation --sidebar-labels --local-notes`
+fixture queue. Run `node scripts/flow-browser.mjs --ci-part=1 --manual-close --server-heap --project-navigation --sidebar-labels --local-notes`
 to check the sidebar console after the intentional Close and heap errors. Each
 expected failed response accounts for one matching console entry.
 
@@ -1389,11 +1383,6 @@ it checks selected and unrelated issue values and never changes shared records.
 reproduces a successful push followed by a stale GitHub PR head. Publish briefly
 waits only for that exact previous head, while another head, a changed title and
 a persistently stale response remain blocking. Retries never repeat the push.
-
-`node scripts/factory-browser.mjs --scenario=factory-browser-capture-start.mjs`
-runs the capture-profile scenario on its own. PR repair accepts named Factory
-browser scenarios and rejects aggregate runs, duplicate selections, and path
-traversal. The ordinary and drag-only suites retain their existing selection rules.
 
 Closure recovery checks the merged PR comparison base from GitHub, its ancestry,
 and both the CI report and local step audit for that base and exact candidate

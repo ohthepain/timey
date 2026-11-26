@@ -24,6 +24,7 @@ const queueSortUI = (() => {
     const state = directionState(selection);
     button.textContent = state.glyph;
     button.disabled = state.disabled;
+    button.hidden = state.disabled;
     button.setAttribute('aria-label', state.label);
     button.title = state.title;
   }
@@ -48,7 +49,7 @@ const queueSortUI = (() => {
     const isFixed = fixed(selection);
     const label = isFixed ? directionState(selection).label : directionLabel(selection);
     const title = isFixed ? directionState(selection).title : directionTitle(selection);
-    return `<select id="queue-sort" aria-label="Sort issues">${options}</select><button type="button" id="queue-direction" class="direction-toggle" aria-label="${label}" title="${title}" ${isFixed ? 'disabled' : ''}>${directionGlyph(selection)}</button>`;
+    return `<select id="queue-sort" aria-label="Sort issues">${options}</select><button type="button" id="queue-direction" class="direction-toggle" aria-label="${label}" title="${title}" ${isFixed ? 'disabled hidden' : ''}>${directionGlyph(selection)}</button>`;
   }
   function directionLabel(selection) {
     return descending(selection) ? 'Direction, descending' : 'Direction, ascending';
@@ -110,10 +111,6 @@ const queueSortUI = (() => {
   function sort(issues, selection) {
     return issues.slice().sort((a, b) => compare(a, b, selection));
   }
-  function adjacent(issues, issueId, offset) {
-    const index = issues.findIndex((issue) => issue.id === issueId);
-    return index < 0 ? null : (issues[index + offset] ?? null);
-  }
   function bind(selection, changed) {
     document.getElementById('queue-sort').onchange = (event) => {
       selection.sort = event.target.value;
@@ -128,5 +125,5 @@ const queueSortUI = (() => {
       changed();
     };
   }
-  return { controls, sort, adjacent, bind };
+  return { controls, sort, bind };
 })();

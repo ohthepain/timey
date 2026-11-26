@@ -2619,13 +2619,20 @@ import { reorderedBlocks } from './flow-order.mjs';
     return `<details class="system-prompt" data-preserve="system-prompt"><summary>System prompt <span class="muted-inline">${mode === 'skill' ? 'Skill' : 'Text'}</span></summary>${skills.length ? `<label class="field"><span>Use</span><select name="prompt-mode" data-field="prompt-mode"${locked}><option value="text"${mode === 'text' ? ' selected' : ''}>Text</option><option value="skill"${mode === 'skill' ? ' selected' : ''}>Allowed skill</option></select></label>` : ''}${field}${block.effectiveSkill && block.effectiveSkill !== block.skill ? `<small>Uses inherited issue skill: ${escape(block.effectiveSkill)}</small>` : ''}${skills.length ? '<small>Only skills listed in this block type’s Markdown are available.</small>' : ''}</details>`;
   }
 
-  function evidenceLinks(attempt) {
+  function attemptEvidence(attempt, merge) {
     return (state.view?.artifacts || [])
-      .filter((artifact) => artifact.attemptId === attempt.id)
-      .map(
-        (artifact) =>
-          `<button class="evidence-link" data-open-file="${escape(artifact.path)}" data-artifact-id="${escape(artifact.id)}"><span aria-hidden="true">▤</span><span>${escape(artifact.label)}</span></button>`
-      )
+      .filter((artifact) => artifact.attemptId === attempt.id && (!merge || artifact.commandError))
+      .map((artifact) => {
+        const { commandError } = artifact;
+        if (!commandError)
+          return `<button class="evidence-link" data-open-file="${escape(artifact.path)}" data-artifact-id="${escape(artifact.id)}"><span aria-hidden="true">▤</span><span>${escape(artifact.label)}</span></button>`;
+        const url =
+          '/api/flow-command-log?issue=' +
+          encodeURIComponent(state.issueId) +
+          '&artifact=' +
+          encodeURIComponent(artifact.id);
+        return `<section class="command-error" aria-label="${escape(artifact.label)}">${commandError.explanation ? `<p class="detail-copy">${escape(commandError.explanation)}</p>` : ''}${commandError.original ? `<pre class="attempt-output">${escape(commandError.original)}</pre>` : ''}<a class="evidence-link" href="${escape(url)}" target="_blank" rel="noopener">Open full log</a></section>`;
+      })
       .join('');
   }
 
@@ -2638,7 +2645,7 @@ import { reorderedBlocks } from './flow-order.mjs';
     let result = '';
     if (attempt.result)
       result = typeof attempt.result === 'string' ? attempt.result : JSON.stringify(attempt.result, null, 2);
-    return `<div class="block-progress" data-attempt-id="${escape(attempt.id)}"><div class="progress-heading"><span>${statusIcon(attempt.status)} ${escape(statusText(attempt.status, attempt))}${attempt.invalidatedAt ? ' · Invalidated' : ''}</span><span class="progress-meta">Attempt ${index + 1}</span></div><p class="detail-copy" data-ai-text data-ai-key="summary-${escape(attempt.id)}" data-ai-source="${escape(summary)}">${escape(summary)}</p>${attempt.result?.pr ? prLink({ number: attempt.result.pr, url: attempt.result.url }) : ''}<p class="progress-meta" style="margin-top:9px">${escape(date(attempt.startedAt))}${attempt.modelSettings?.model ? ` · ${attempt.modelSettings.conditional ? 'Repair model (if needed)' : 'Model'}: ${escape(attempt.modelSettings.model)}` : ''}${attempt.endedAt ? ` · ended ${escape(date(attempt.endedAt))}` : ''}</p>${attempt.output ? `<pre class="attempt-output" data-ai-text data-ai-key="live-${escape(attempt.id)}" data-ai-source="${escape(attempt.output)}">${escape(attempt.output)}</pre>` : ''}${result && result !== summary ? `<pre class="attempt-output" data-ai-text data-ai-key="result-${escape(attempt.id)}" data-ai-source="${escape(result)}">${escape(result)}</pre>` : ''}${!merge && attempt.details?.length ? `<details data-preserve="details-${escape(attempt.id)}"><summary>Details used</summary><pre class="attempt-output">${escape(JSON.stringify(attempt.details, null, 2))}</pre></details>` : ''}${attempt.systemPrompt ? `<details data-preserve="prompt-${escape(attempt.id)}"><summary>System prompt used</summary><pre class="attempt-output">${escape(attempt.systemPrompt)}</pre></details>` : ''}${merge ? '' : evidenceLinks(attempt)}</div>`;
+    return `<div class="block-progress" data-attempt-id="${escape(attempt.id)}"><div class="progress-heading"><span>${statusIcon(attempt.status)} ${escape(statusText(attempt.status, attempt))}${attempt.invalidatedAt ? ' · Invalidated' : ''}</span><span class="progress-meta">Attempt ${index + 1}</span></div><p class="detail-copy" data-ai-text data-ai-key="summary-${escape(attempt.id)}" data-ai-source="${escape(summary)}">${escape(summary)}</p>${attempt.result?.pr ? prLink({ number: attempt.result.pr, url: attempt.result.url }) : ''}<p class="progress-meta" style="margin-top:9px">${escape(date(attempt.startedAt))}${attempt.modelSettings?.model ? ` · ${attempt.modelSettings.conditional ? 'Repair model (if needed)' : 'Model'}: ${escape(attempt.modelSettings.model)}` : ''}${attempt.endedAt ? ` · ended ${escape(date(attempt.endedAt))}` : ''}</p>${attempt.output ? `<pre class="attempt-output" data-ai-text data-ai-key="live-${escape(attempt.id)}" data-ai-source="${escape(attempt.output)}">${escape(attempt.output)}</pre>` : ''}${result && result !== summary ? `<pre class="attempt-output" data-ai-text data-ai-key="result-${escape(attempt.id)}" data-ai-source="${escape(result)}">${escape(result)}</pre>` : ''}${!merge && attempt.details?.length ? `<details data-preserve="details-${escape(attempt.id)}"><summary>Details used</summary><pre class="attempt-output">${escape(JSON.stringify(attempt.details, null, 2))}</pre></details>` : ''}${attempt.systemPrompt ? `<details data-preserve="prompt-${escape(attempt.id)}"><summary>System prompt used</summary><pre class="attempt-output">${escape(attempt.systemPrompt)}</pre></details>` : ''}${attemptEvidence(attempt, merge)}</div>`;
   }
 
   function comments(block) {
@@ -2736,7 +2743,7 @@ import { reorderedBlocks } from './flow-order.mjs';
     if (state.view.flow.request)
       return '<section class="detail-section"><p class="detail-copy">Restart the Factory server to edit this flow. Your saved issue is available.</p></section>';
     if (block.readOnly)
-      return `<section class="detail-section"><p class="detail-copy">This operation started through the existing issue controls. Inspect or stop it there before starting a new flow block.</p><a href="/classic?issue=${encodeURIComponent(state.issueId)}">Open its original controls</a>${block.attempts.map((attempt, index) => attemptCard(attempt, index)).join('')}</section>`;
+      return `<section class="detail-section"><p class="detail-copy">This operation started through the existing issue controls. Check Server actions before starting a new Flow block.</p>${block.attempts.map((attempt, index) => attemptCard(attempt, index)).join('')}</section>`;
     if (block.kind === 'request')
       return (
         window.factoryBlockModel(state.view.blockModels?.[block.id], block.model || '', definitionActions(block)) +
