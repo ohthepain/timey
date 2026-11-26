@@ -110,7 +110,7 @@ export async function localNotesBrowserChecks({ page, service, project, poll, sc
   await page.locator('#discuss-draft').waitFor();
   await poll(
     () => page.locator('#discuss-draft').inputValue(),
-    (value) => value.includes('think through'),
+    (value) => value === 'Ask me questions before creating the issue.',
     'Suggested first prompt'
   );
   assert.equal(turns.length, 0);

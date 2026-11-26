@@ -1,7 +1,29 @@
 {
   "version": 1,
-  "sourceRun": "https://github.com/ohthepain/timey/actions/runs/45759791677/job/139710760473",
+  "sourceRun": "https://github.com/ohthepain/timey/actions/runs/45769105138/job/139737849938",
   "tests": [
+    {
+      "name": "Discuss prepares context and a first prompt without running a model, then offers explicit deletion",
+      "command": [
+        "node",
+        "--test",
+        "--test-name-pattern=^Discuss prepares context and a first prompt without running a model, then offers explicit deletion$",
+        "scripts/local-notes.check.mjs"
+      ]
+    },
+    {
+      "name": "Local notes capture and handoff preserve flow (after shared header and sidebar scenarios)",
+      "command": [
+        "node",
+        "scripts/flow-browser.mjs",
+        "--ci-part=1",
+        "--manual-close",
+        "--server-heap",
+        "--project-navigation",
+        "--sidebar-labels",
+        "--local-notes"
+      ]
+    },
     {
       "name": "Work All Night keeps dependency failures separate and reports independent merges",
       "command": [
@@ -27,19 +49,6 @@
         "--test",
         "--test-name-pattern=^Work All Night polls required checks on an unreviewed PR and merges without confirmation$",
         "scripts/flow-executor.check.mjs"
-      ]
-    },
-    {
-      "name": "The shared Factory header keeps every project tab and relocated control usable",
-      "command": [
-        "node",
-        "scripts/flow-browser.mjs",
-        "--ci-part=1",
-        "--manual-close",
-        "--server-heap",
-        "--project-navigation",
-        "--sidebar-labels",
-        "--local-notes"
       ]
     },
     {
