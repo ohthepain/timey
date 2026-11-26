@@ -54,12 +54,7 @@ import { normalizeFocusedTests } from '../verify-merge-checks.mjs';
 import { candidateBrowserTestPolicy } from './candidate-browser-scenarios.mjs';
 import { flowClosureArtifact, publishFlowPR } from './flow-delivery.mjs';
 import { mergeFlowPR } from './flow-merge.mjs';
-import {
-  runFlowVerification,
-  runWorkVerification,
-  resumeWorkDependencies,
-  workVerificationScript,
-} from './flow-verification.mjs';
+import { runWorkVerification, resumeWorkDependencies, workVerificationScript } from './flow-verification.mjs';
 import { moveIssueBase, startingBranchUpstream, updateIssueBranch } from './flow-update-branch.mjs';
 import { runRetro } from './flow-retro.mjs';
 import { groupProofRequest, withGroupProof } from './flow-group-proof.mjs';
@@ -73,16 +68,7 @@ import { inquiryKinds, investigationOutputKinds } from './investigation-flow.mjs
 import { investigationOutputExecution } from './investigation-output-execution.mjs';
 
 const readOnlyBlocks = new Set(['request', 'refine', 'sharpen', 'understand', 'retro', 'advice', 'playbook', 'sol']);
-const commandBlocks = new Set([
-  'verify',
-  'update-branch',
-  'publish',
-  'merge',
-  'retro',
-  'close',
-  'cleanup',
-  'delete-worktree',
-]);
+const commandBlocks = new Set(['update-branch', 'publish', 'merge', 'retro', 'close', 'cleanup', 'delete-worktree']);
 
 export function createFlowExecutor(service, options = {}) {
   const active = new Map();
@@ -103,6 +89,7 @@ export function createFlowExecutor(service, options = {}) {
       assertIdle(scopedService, ctx.issue.id);
       const definition =
         ctx.definition ?? catalog.read().entries.find((entry) => entry.id === blockDefinitionId(ctx.block));
+      requireThat(ctx.block.kind !== 'verify', 'Run tests in Work or Merge.');
       const command = commandBlocks.has(ctx.block.kind);
       requireThat(
         !isInvestigation(ctx.issue, ctx.flow) ||
@@ -138,8 +125,6 @@ export function createFlowExecutor(service, options = {}) {
         context.onStep(input.label ?? [input.command, ...input.args].join(' '));
         return executeCommandImpl(input);
       };
-      const verifyCandidate =
-        options.verifyCandidate || ((ctx, workspace, folder) => runFlowVerification(ctx, workspace, folder, execute));
       const verifyWork =
         options.verifyWork || ((ctx, workspace, folder) => runWorkVerification(ctx, workspace, folder, execute));
       const prepareWorkDependencies = (ctx, workspace, folder) =>
@@ -153,7 +138,6 @@ export function createFlowExecutor(service, options = {}) {
           attach,
           ...runtimeOptions,
           execute,
-          verifyCandidate,
           verifyWork,
           prepareWorkDependencies,
         };
@@ -1470,8 +1454,7 @@ async function runCommand(service, ctx, options) {
   const workspace = await workspaceFor(service, ctx);
   const folder = evidenceDirectory(service, ctx);
   const log = join(folder, 'command.log');
-  const operation = kind === 'verify' ? 'verify' : 'implement';
-  guardBlock(service, ctx, operation, workspace.base);
+  guardBlock(service, ctx, 'implement', workspace.base);
   const invoke = (command, args) =>
     options.execute({
       command,
@@ -1481,13 +1464,6 @@ async function runCommand(service, ctx, options) {
       signal: ctx.signal,
       onProgress: ctx.onProgress,
     });
-  if (kind === 'verify') {
-    const { result, evidence } = await options.verifyCandidate(ctx, workspace, folder);
-    const summary = result.uncommitted
-      ? 'Verification passed for the uncommitted source snapshot.'
-      : 'Explicit verification passed.';
-    return { ...commandResult(service, ctx, result, summary, evidence), workspace };
-  }
   await reconcileMergeRepair(service, ctx, workspace, options);
   const upstream = await startingBranchUpstream(ctx.flow, (...args) => git(workspace.checkout, ...args));
   const update = await updateIssueBranch(workspace, upstream, invoke, options.resolveBranchConflicts, ctx.signal);

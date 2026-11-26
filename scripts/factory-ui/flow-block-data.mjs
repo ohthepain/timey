@@ -23,12 +23,12 @@ export function deliveryTarget(flow) {
 export const startingPoint = (flow) => flow.startingPoint;
 export const missingMergePR = (branch) => 'No PR exists for ' + branch + '. Publish the issue PR first.';
 
-export function withoutTarget(blocks, target) {
+export function withoutBlock(blocks, removed) {
   return blocks
-    .filter((block) => block.id !== target.id)
+    .filter((block) => block.id !== removed.id)
     .map((block) =>
-      block.after.includes(target.id)
-        ? { ...block, after: [...new Set(block.after.flatMap((id) => (id === target.id ? target.after : id)))] }
+      block.after.includes(removed.id)
+        ? { ...block, after: [...new Set(block.after.flatMap((id) => (id === removed.id ? removed.after : id)))] }
         : block
     );
 }

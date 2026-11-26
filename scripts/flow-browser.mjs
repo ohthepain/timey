@@ -2463,25 +2463,15 @@ try {
     const flow = service.flows.read(issue);
     flow.blocks = flow.blocks.filter(({ kind }) => ['request', 'work'].includes(kind));
     flow.blocks[0].data.fields = { type: 'feature', goal: 'Test autoplay' };
-    let saved = await service.flows.store.save(flow, flow.revision);
-    await service.flows.action({
-      action: 'add',
-      issueId,
-      revision: saved.revision,
-      kind: 'verify',
-      afterId: 'work',
-    });
-    saved = service.flows.read(issue);
-    const verify = saved.blocks.find(({ kind }) => kind === 'verify');
-    await service.flows.action({
+    const saved = await service.flows.store.save(flow, flow.revision);
+    const withUpdate = await service.flows.action({
       action: 'add',
       issueId,
       revision: saved.revision,
       kind: 'update-branch',
-      afterId: verify.id,
+      afterId: 'work',
     });
-    saved = service.flows.read(issue);
-    const sync = saved.blocks.find(({ kind }) => kind === 'update-branch');
+    const sync = withUpdate.flow.blocks.find(({ kind }) => kind === 'update-branch');
     await page.goto(new URL('/?issue=' + issueId, page.url()).href);
     await page.getByRole('button', { name: 'Start issue' }).click();
     await poll(
@@ -2513,12 +2503,12 @@ try {
         data.autoplay.mode === 'paused',
       'Work did not finish and pause the route.'
     );
-    assert.equal(paused.flow.blocks.find(({ id }) => id === verify.id).attempts.length, 0);
+    assert.equal(paused.flow.blocks.find(({ id }) => id === sync.id).attempts.length, 0);
     assert.equal(paused.autoplay.mode, 'paused');
     await page.waitForFunction(() => document.getElementById('issue-playback').disabled);
     await noNewActions.uncheck();
     assert.equal((await view()).autoplay.mode, 'paused');
-    assert.equal((await view()).flow.blocks.find(({ id }) => id === verify.id).attempts.length, 0);
+    assert.equal((await view()).flow.blocks.find(({ id }) => id === sync.id).attempts.length, 0);
     await clickAction(page.getByRole('button', { name: 'Resume issue' }));
     await block('request');
     await page.locator('#issue-results-message').filter({ hasText: 'Flow complete' }).waitFor();

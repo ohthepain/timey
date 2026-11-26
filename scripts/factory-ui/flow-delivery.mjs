@@ -19,7 +19,6 @@ import { queueReportPaths } from './shared-issue-config.mjs';
 import { requireGroupProof } from './flow-group-proof.mjs';
 import { evidencePath } from './stores/evidence.mjs';
 import { fetchIssueTarget } from './flow-update-branch.mjs';
-import { checkFlowPublication } from './flow-publication-checks.mjs';
 
 const execute = promisify(execFile);
 
@@ -311,8 +310,6 @@ export async function publishFlowPR(service, ctx, workspace, folder, options) {
     requirePreviewHead();
     if (preview.status === 'confirm') {
       service.guard(service.root, { id: ctx.attempt.id, issues: [ctx.issue.id] }, 'implement', workspace.base);
-      evidence.push(...(await checkFlowPublication(ctx, workspace.checkout, candidate, folder, options.execute)));
-      requirePreviewHead();
     }
     if (preview.push) {
       ctx.signal.throwIfAborted();
