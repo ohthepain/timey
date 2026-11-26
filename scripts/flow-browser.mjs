@@ -808,42 +808,58 @@ try {
   await check(storesCheck, () => issueStoresBrowserChecks({ page, project, service, logs, poll, screenshot }));
   await check(aiTextCheck, () => aiTextBrowserChecks({ page, project, service, poll, screenshot }));
   await check(interfaceStateCheck, () => interfaceStateBrowserChecks({ page, project, service, poll, screenshot }));
-  await check('Issues and Local notes use matching text styles', () =>
-    withQueueConfiguration({ page, project, root }, async () => {
-      await page.goto('/');
-      const issues = page.locator('.sidebar-issues-link');
-      const notes = page.locator('#local-notes > header > h2');
-      await issues.waitFor();
-      await notes.waitFor();
-      const textStyle = (node) => {
-        const style = getComputedStyle(node);
-        return Object.fromEntries(
-          [
-            'fontFamily',
-            'fontSize',
-            'fontWeight',
-            'fontStyle',
-            'lineHeight',
-            'letterSpacing',
-            'textTransform',
-            'color',
-          ].map((property) => [property, style[property]])
+  await check('Issues and Local notes use matching text styles', async () => {
+    const id = '20261126-sidebar-labels-fixture';
+    await writeBrowserIssue(project, {
+      id,
+      title: 'Saved issue in Project Issues',
+      body: 'Open the Project Issues list from the sidebar.',
+    });
+    try {
+      await withQueueConfiguration({ page, project, root }, async () => {
+        installBrowserHumanInput(project, root);
+        await page.goto('/');
+        const issues = page.locator('.sidebar-issues-link');
+        const notes = page.locator('#local-notes > header > h2');
+        await issues.waitFor();
+        await notes.waitFor();
+        const textStyle = (node) => {
+          const style = getComputedStyle(node);
+          return Object.fromEntries(
+            [
+              'fontFamily',
+              'fontSize',
+              'fontWeight',
+              'fontStyle',
+              'lineHeight',
+              'letterSpacing',
+              'textTransform',
+              'color',
+            ].map((property) => [property, style[property]])
+          );
+        };
+        const styles = { issues: await issues.evaluate(textStyle), notes: await notes.evaluate(textStyle) };
+        await screenshot('sidebar-labels');
+        writeFileSync(
+          join(output, 'sidebar-labels-styles.json'),
+          JSON.stringify({ candidate, styles, screenshot: join(output, 'sidebar-labels.png') }, null, 2) + '\n'
         );
-      };
-      const styles = { issues: await issues.evaluate(textStyle), notes: await notes.evaluate(textStyle) };
-      await screenshot('sidebar-labels');
-      writeFileSync(
-        join(output, 'sidebar-labels-styles.json'),
-        JSON.stringify({ candidate, styles, screenshot: join(output, 'sidebar-labels.png') }, null, 2) + '\n'
-      );
-      assert.deepEqual(styles.issues, styles.notes, 'Issues text styling matches Local notes');
-      await issues.click();
-      await page.locator('#project-issues').waitFor();
-      const frame = page.frameLocator('#project-issues iframe');
-      await frame.locator('[data-project-issue-mode="open"]').waitFor();
-      await assertCleanSidebarConsole();
-    })
-  );
+        assert.deepEqual(styles.issues, styles.notes, 'Issues text styling matches Local notes');
+        const [queue] = await Promise.all([
+          page.waitForResponse((response) => new URL(response.url()).pathname === '/api/queue'),
+          issues.click(),
+        ]);
+        assert.equal(queue.status(), 200, await queue.text());
+        await page.locator('#project-issues').waitFor();
+        const frame = page.frameLocator('#project-issues iframe');
+        await frame.locator('[data-project-issue-mode="open"]').waitFor();
+        await frame.locator(`[data-issue-row="${id}"]`).waitFor();
+        await assertCleanSidebarConsole();
+      });
+    } finally {
+      await removeBrowserIssue(project, id);
+    }
+  });
   await check('Local notes capture and handoff preserve flow', async () => {
     await localNotesBrowserChecks({ page, project, service, poll, screenshot, output, candidate });
     await assertCleanSidebarConsole();

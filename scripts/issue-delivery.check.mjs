@@ -201,7 +201,7 @@ test('production adapter refuses head-only merge regardless of claimed checks', 
   );
 });
 
-test('actual HTTP mutation guards share issue delivery operations and reject forged requests', async (t) => {
+test('HTTP retires Classic delivery operations while shared delivery rejects token replay and forgery', async (t) => {
   const { FactoryUI } = await import('./factory-ui/service.mjs');
   const { createFactoryServer } = await import('./factory-ui/http.mjs');
   const f = await deliveryScenario(t);
@@ -223,25 +223,30 @@ test('actual HTTP mutation guards share issue delivery operations and reject for
       headers: { cookie, origin, 'content-type': 'application/json', 'x-factory-action': 'manual' },
       body: JSON.stringify(value),
     });
-  assert.equal(
-    (
-      await send(
-        'issue-delivery-preflight',
-        { kind: 'open', input: { issueId: f.issueId } },
-        'https://unrelated.invalid'
-      )
-    ).status,
-    400
+  const foreign = await send(
+    'issue-delivery-preflight',
+    { kind: 'open', input: { issueId: f.issueId } },
+    'https://unrelated.invalid'
   );
-  const preview = await (
-    await send('issue-delivery-preflight', { kind: 'open', input: { issueId: f.issueId } })
-  ).json();
-  assert.equal((await send('issue-delivery-start', { token: preview.token })).status, 200);
-  assert.equal((await send('issue-delivery-start', { token: preview.token })).status, 400);
+  assert.equal(foreign.status, 400);
+  assert.match((await foreign.json()).error, /must come from the local factory page/);
+  const preview = prepareIssueDelivery(service, 'open', { issueId: f.issueId });
+  for (const [path, input] of [
+    ['issue-delivery-preflight', { kind: 'open', input: { issueId: f.issueId } }],
+    ['issue-delivery-start', { token: preview.token }],
+  ]) {
+    const response = await send(path, input);
+    assert.equal(response.status, 400);
+    assert.match((await response.json()).error, /Unknown operation/);
+  }
+  assert.equal(f.provider.state().creates, 0);
+  await startIssueDelivery(service, preview.token);
+  await assert.rejects(startIssueDelivery(service, preview.token), /Review the current issue delivery again/);
   assert.equal(
     (await send('issue-delivery-start', { token: 'forged', humanApproved: true, checks_passed: true })).status,
     400
   );
+  await assert.rejects(startIssueDelivery(service, 'forged', true), /Review the current issue delivery again/);
   assert.equal(f.provider.state().creates, 1);
 });
 

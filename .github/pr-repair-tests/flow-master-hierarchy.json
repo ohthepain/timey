@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "name": "Master issue hierarchy and badges across the workspace",
+  "command": ["node", "scripts/flow-browser.mjs", "--ci-part=1a", "--master-issues"],
+  "source": {
+    "runId": "45905466629",
+    "checkout": "9dd1f7fe2db294d77771138a49209290f61999a0",
+    "tree": "3a9937debc50d402b0eee9c47bd7722386e5505c",
+    "jobId": "140201761436"
+  }
+}

@@ -377,6 +377,9 @@ The navigation fixture temporarily initializes queue configuration, waits for a
 successful Issues queue response, and unloads the page before restoring configuration.
 Run `--ci-part=1 --project-navigation --sidebar-labels` together to check sidebar
 label styling and verify that visiting Discuss leaves no browser console errors.
+The sidebar labels fixture seeds a saved Flow issue, installs the human-input
+helper, and verifies the queue response and issue row when opening Project Issues.
+Run `--ci-part=1b --interface-state --sidebar-labels` to check the original CI order.
 `--ci-part=2 --capture-folder-issue --closed-destination` checks that closed
 flows open and refresh with Destination aligned to the bottom at both tested heights.
 `--ci-part=2 --capture-folder-issue --save-request-route --stop-work` checks that

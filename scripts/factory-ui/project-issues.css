@@ -112,9 +112,6 @@ summary:focus-visible {
   gap: 6px;
   border: 1px solid transparent;
 }
-.issue-sidebar-item[data-sub-issue] {
-  margin-inline-start: 18px;
-}
 .issue-sidebar-item[draggable='true'] {
   cursor: grab;
 }
