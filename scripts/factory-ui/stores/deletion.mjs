@@ -5,7 +5,7 @@ import { realpath } from 'node:fs/promises';
 import { join, sep } from 'node:path';
 import { assertStoreState, inputDigest, sealCoordination, storeFailure } from './coordination.mjs';
 import { planRetirement, redactDeletedMove } from './deletion-retention.mjs';
-import { planDeletedFiles, removeDeletedFiles } from './deletion-files.mjs';
+import { deletedFilePlanner, removeDeletedFiles } from './deletion-files.mjs';
 import { retainedContentReferences } from '../project-asset-retained-content.mjs';
 
 const chunks = (values) =>
@@ -16,19 +16,19 @@ async function usedStores(project) {
   const ids = new Set([project.records.id]);
   const catalogs = await project.coordination.list('catalog/');
   for (const record of catalogs) if (record.value.state !== 'deleted') ids.add(record.value.storeId);
-  for (const record of await project.coordination.list('operations/')) {
-    const value = record.value;
-    for (const source of value.sources || []) ids.add(source.storeId);
+  const recordedHomes = await project.coordination.list('operations/', ({ value }) => {
+    const homes = (value.sources || []).map((source) => source.storeId);
     if (value.kind === 'move-project-store' && value.input.role === 'coordination') {
       assertStoreState(
         value.sourceStoreId,
         'STORE_RETENTION_UNKNOWN',
         'The prior Coordination home must be recorded before deleting evidence.'
       );
-      ids.add(value.sourceStoreId);
-      ids.add(value.input.storeId);
+      homes.push(value.sourceStoreId, value.input.storeId);
     }
-  }
+    return homes.length ? homes : undefined;
+  });
+  for (const homes of recordedHomes) for (const id of homes) ids.add(id);
   const stores = new Map([[project.records.id, project.records]]);
   for (const id of ids) {
     const store = stores.get(id) || project.recordStores.get(id) || project.issueStores.get(id);
@@ -42,21 +42,44 @@ async function usedStores(project) {
   return stores;
 }
 
-async function inventories(stores) {
-  return Promise.all(
-    [...stores].map(async ([id, store]) => ({
-      id,
-      store,
-      snapshot: await store.retainedPayloads({ excludeArtifactInventory: true }),
-    }))
-  );
-}
-
-function cleanupReferences(scopes, projectId) {
-  const surviving = new Set(scopes.flatMap((scope) => scope.survivingRefs.map((ref) => ref.sha256)));
-  return scopes
-    .flatMap((scope) => scope.refs)
-    .filter((ref) => ref.key === projectId + '/sha256/' + ref.sha256 && !surviving.has(ref.sha256));
+async function retirementScopes(project, operation, files) {
+  const { issueId } = operation.value.input;
+  const options = { operationKey: operation.key };
+  const scopes = [];
+  const refs = new Map();
+  const surviving = new Set();
+  for (const [id, store] of await usedStores(project)) {
+    const scope = { id, records: [], receipts: [], replacements: [] };
+    const retainPlan = (plan) => {
+      scope.records.push(...plan.records);
+      scope.receipts.push(...plan.receipts);
+      for (const { key, revision } of plan.replacements) scope.replacements.push({ key, revision });
+      for (const value of plan.values) files.own(value);
+      for (const ref of plan.refs) {
+        if (ref.key === project.projectId + '/sha256/' + ref.sha256)
+          refs.set(JSON.stringify([ref.storeId, ref.key, ref.sha256, ref.bytes]), ref);
+      }
+      for (const ref of plan.survivingRefs) surviving.add(ref.sha256);
+    };
+    await store.retainedPayloads({
+      excludeArtifactInventory: true,
+      onRecord(record) {
+        const plan = planRetirement({ records: [record], receipts: [] }, issueId, options);
+        retainPlan(plan);
+        if (!plan.records.length) files.retain(plan.replacements[0]?.value || record.value);
+      },
+      onReceipt(receipt) {
+        const plan = planRetirement({ records: [], receipts: [receipt] }, issueId, options);
+        retainPlan(plan);
+        if (!plan.receipts.length) for (const record of receipt.records) files.retain(record.value);
+      },
+    });
+    scopes.push(scope);
+  }
+  return {
+    scopes,
+    refs: [...refs.values()].filter((ref) => !surviving.has(ref.sha256)),
+  };
 }
 
 function candidates(refs) {
@@ -88,43 +111,21 @@ async function prepare(project, operation, seal) {
     'STORE_MERGED',
     'Archive the merged issue before permanently deleting it.'
   );
-  const snapshots = await inventories(await usedStores(project));
-  const scopes = snapshots.map(({ id, snapshot }) => ({
-    id,
-    ...planRetirement(snapshot, issueId, { operationKey: operation.key }),
-  }));
-  const ownedValues = scopes.flatMap((scope) => scope.values);
+  const files = deletedFilePlanner(project.root, issueId);
+  const { scopes, refs } = await retirementScopes(project, operation, files);
   const flowPath = join(project.root, '.issues/flows', issueId, 'flow.json');
   try {
     const bytes = readFileSync(flowPath);
     if (inputDigest(JSON.parse(bytes.toString())) === inputDigest(current.flow))
-      ownedValues.push({ path: flowPath, sha256: createHash('sha256').update(bytes).digest('hex') });
+      files.own({ path: flowPath, sha256: createHash('sha256').update(bytes).digest('hex') });
   } catch (error) {
     if (error.code !== 'ENOENT' && !(error instanceof SyntaxError)) throw error;
   }
-  const retainedValues = snapshots.flatMap(({ snapshot }, index) => {
-    const removed = new Set(scopes[index].records.map((record) => record.key));
-    const retired = new Set(scopes[index].receipts.map((receipt) => receipt.id));
-    const replaced = new Map(scopes[index].replacements.map((record) => [record.key, record.value]));
-    return [
-      ...snapshot.records
-        .filter((record) => !removed.has(record.key))
-        .map((record) => replaced.get(record.key) || record.value),
-      ...snapshot.receipts
-        .filter((receipt) => !retired.has(receipt.id))
-        .flatMap((receipt) => receipt.records.map((record) => record.value)),
-    ];
-  });
   const cleanup = {
     phase: 'prepared',
-    scopes: scopes.map(({ id, records, receipts, replacements }) => ({
-      id,
-      records,
-      receipts,
-      replacements: replacements.map(({ key, revision }) => ({ key, revision })),
-    })),
-    candidates: candidates(cleanupReferences(scopes, project.projectId)),
-    localFiles: planDeletedFiles(project.root, ownedValues, retainedValues, { issueId }),
+    scopes,
+    candidates: candidates(refs),
+    localFiles: files.finish(),
     removed: 0,
     retained: 0,
   };
@@ -187,34 +188,37 @@ async function eraseRecords(project, operation, stores) {
   }
 }
 
-function retainedArtifactRefs({ snapshot }) {
-  return [
-    ...snapshot.records.filter((record) => !record.key.startsWith('artifact-locations/')),
-    ...snapshot.receipts.filter(
-      (receipt) =>
-        !receipt.records.length || !receipt.records.every((record) => record.key.startsWith('artifact-locations/'))
-    ),
-  ].flatMap((record) => record.refs);
+async function scanRetainedArtifacts(stores, retain) {
+  for (const store of stores.values()) {
+    await store.retainedPayloads({
+      excludeArtifactInventory: true,
+      onRecord(record) {
+        if (!record.key.startsWith('artifact-locations/')) retain(record.refs);
+      },
+      onReceipt(receipt) {
+        if (!receipt.records.length || !receipt.records.every((record) => record.key.startsWith('artifact-locations/')))
+          retain(receipt.refs);
+      },
+    });
+  }
 }
 
-async function retainedArtifacts(project, stores) {
+async function retainedArtifacts(project, stores, candidates) {
   const supplemental = new Map([...project.issueStores, ...project.recordStores]);
   for (const id of stores.keys()) supplemental.delete(id);
-  const [authoritative, additional, content] = await Promise.all([
-    inventories(stores),
-    inventories(supplemental).catch(() => null),
-    retainedContentReferences(project.root),
-  ]);
-  return {
-    hashes: new Set(
-      [
-        ...authoritative.flatMap(retainedArtifactRefs),
-        ...(additional ?? []).flatMap(retainedArtifactRefs),
-        ...content.refs,
-      ].map((ref) => ref.sha256)
-    ),
-    incomplete: !additional || content.unavailable,
+  const candidateHashes = new Set(candidates.map(([sha256]) => sha256));
+  const hashes = new Set();
+  const retain = (refs) => {
+    for (const { sha256 } of refs) if (candidateHashes.has(sha256)) hashes.add(sha256);
   };
+  await scanRetainedArtifacts(stores, retain);
+  const readable = await scanRetainedArtifacts(supplemental, retain).then(
+    () => true,
+    () => false
+  );
+  const content = await retainedContentReferences(project.root);
+  retain(content.refs);
+  return { hashes, incomplete: !readable || content.unavailable };
 }
 
 function artifactHomes(project) {
@@ -251,9 +255,14 @@ async function artifactRemoval(project, root, physical, migratedHomes, [sha256, 
 async function planArtifactRemovals(project, candidates, retained) {
   const root = await realpath(project.root);
   const physical = artifactHomes(project);
-  const migratedHomes = (await project.coordination.list('operations/'))
-    .filter((entry) => entry.value.kind === 'move-project-store' && entry.value.input.role === 'artifacts')
-    .flatMap((entry) => [entry.value.sourceStoreId, entry.value.input.storeId])
+  const migratedHomes = (
+    await project.coordination.list('operations/', ({ value }) =>
+      value.kind === 'move-project-store' && value.input.role === 'artifacts'
+        ? [value.sourceStoreId, value.input.storeId]
+        : undefined
+    )
+  )
+    .flat()
     .filter(Boolean);
   const removals = [];
   for (const candidate of candidates) {
@@ -279,7 +288,7 @@ async function removeArtifactCopies(project, operationId, removals, token) {
 
 async function eraseArtifacts(project, operation, stores, seal) {
   const { cleanup } = operation.value;
-  const retained = await retainedArtifacts(project, stores);
+  const retained = await retainedArtifacts(project, stores, cleanup.candidates);
   assertStoreState(
     cleanup.phase !== 'pending' || !retained.incomplete,
     'STORE_RETENTION_UNKNOWN',
@@ -392,11 +401,13 @@ async function requireIdleProject(coordination) {
     'STORE_BUSY',
     'Finish or explicitly reconcile project work before permanently deleting evidence.'
   );
-  const pending = (await coordination.list('operations/')).find(({ value }) => value.status === 'pending');
+  const [pending] = await coordination.list('operations/', ({ value }) =>
+    value.status === 'pending' ? { kind: value.kind, id: value.id } : undefined
+  );
   if (pending)
     throw storeFailure(
       'STORE_PENDING',
-      `Reconcile the pending ${pending.value.kind} operation (${pending.value.id}) before permanently deleting evidence.`
+      `Reconcile the pending ${pending.kind} operation (${pending.id}) before permanently deleting evidence.`
     );
 }
 

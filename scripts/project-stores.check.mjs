@@ -566,8 +566,8 @@ test('a pending operation opened just before a project seal prevents cutover and
   const f = await fixture(t);
   const list = f.records.list.bind(f.records);
   let raced = false;
-  f.records.list = async (prefix) => {
-    const records = await list(prefix);
+  f.records.list = async (prefix, select) => {
+    const records = await list(prefix, select);
     if (prefix === 'operations/' && !raced) {
       raced = true;
       await f.project.coordination.operation('racing-editor', 'save-request', {

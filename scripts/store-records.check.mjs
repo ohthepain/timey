@@ -2,7 +2,7 @@ import { runMetadataOperation } from './factory-ui/stores/metadata-operation.mjs
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { randomUUID, createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
@@ -628,6 +628,119 @@ test('read-only Postgres reference scans visit all pages within one snapshot', a
   );
   assert.deepEqual(receipts[0].records[0].refs, [ref]);
   assert.deepEqual(transactions, ['BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY', 'COMMIT']);
+});
+
+test('a projected operation scan fits a bounded heap with large retained payloads', () => {
+  const module = new URL('./factory-ui/stores/providers/records.mjs', import.meta.url);
+  const result = spawnSync(
+    process.execPath,
+    [
+      '--max-old-space-size=64',
+      '--input-type=module',
+      '-e',
+      `
+      import { recordStore } from ${JSON.stringify(module.href)};
+      const operations = Array.from({ length: 220 }, (_, index) => ({
+        key: 'operations/' + index,
+        revision: 'v1',
+        value: { encoding: 'artifact', ref: { key: String(index) } },
+      }));
+      const records = recordStore(
+        { readSnapshot: async (read) => read({ list: async () => operations }) },
+        { get: async ({ key }) => Buffer.from(JSON.stringify({
+          issueId: key,
+          status: key === '210' ? 'pending' : 'confirmed',
+          payload: 'x'.repeat(512 * 1024) + key,
+        })) }
+      );
+      const pending = await records.list('operations/', ({ value }) =>
+        value.status === 'pending' ? value.issueId : undefined
+      );
+      console.log(JSON.stringify(pending));
+      `,
+    ],
+    { encoding: 'utf8', timeout: 15_000 }
+  );
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), ['210']);
+});
+
+test('a retained receipt scan can plan deletion within a bounded heap', () => {
+  const module = new URL('./factory-ui/stores/providers/records.mjs', import.meta.url);
+  const result = spawnSync(
+    process.execPath,
+    [
+      '--max-old-space-size=64',
+      '--input-type=module',
+      '-e',
+      `
+      import { recordStore } from ${JSON.stringify(module.href)};
+      const receipts = Array.from({ length: 220 }, (_, index) => ({
+        id: String(index),
+        receipt: {
+          inputDigest: 'digest',
+          result: { encoding: 'artifact', ref: { key: String(index) } },
+        },
+      }));
+      const records = recordStore({
+        async retainedPayloads(visitors) {
+          if (!visitors) return { records: [], receipts };
+          for (const receipt of receipts) await visitors.visitReceipt(receipt);
+          return { records: [], receipts: [] };
+        }
+      }, {
+        async get({ key }) {
+          return Buffer.from(JSON.stringify({ records: [{
+            key: key === '210' ? 'flows/deleted-issue' : 'flows/retained-issue',
+            revision: 'v1',
+            value: { encoding: 'json', value: { body: 'x'.repeat(512 * 1024) + key } },
+          }] }));
+        },
+      });
+      const owned = [];
+      await records.retainedPayloads({
+        onReceipt(receipt) {
+          if (receipt.records.some((entry) => entry.key === 'flows/deleted-issue')) owned.push(receipt.id);
+        },
+      });
+      console.log(JSON.stringify(owned));
+      `,
+    ],
+    { encoding: 'utf8', timeout: 15_000 }
+  );
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout), ['210']);
+});
+
+test('a projected Postgres scan returns matching operations across snapshot pages', async (t) => {
+  const operations = ['confirmed', 'pending', 'pending'].map((status, index) => {
+    const key = 'operations/' + index;
+    return {
+      id: key,
+      key,
+      revision: 'v1',
+      value: { encoding: 'json', value: { id: String(index), status } },
+    };
+  });
+  const statements = [];
+  const query = async (statement, args) => {
+    if (!args) {
+      statements.push(statement);
+      return { rows: [] };
+    }
+    return {
+      rows: operations.filter(({ key }) => key.startsWith(args[3]) && key > args[2]).slice(0, 1),
+    };
+  };
+  t.mock.method(pg.Pool.prototype, 'connect', async () => ({ query, release() {} }));
+  const store = await openRecordStore(
+    { kind: 'postgres', id: 'readonly', connectionString: 'postgresql://fixture@localhost/factory_readonly_fixture' },
+    { root: process.cwd(), projectId: 'readonly-fixture', readOnly: true }
+  );
+  t.after(() => store.close());
+  const pending = await store.list('operations/', ({ value }) => (value.status === 'pending' ? value.id : undefined));
+  assert.deepEqual(pending, ['1', '2']);
+  assert.deepEqual(statements, ['BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY', 'COMMIT']);
 });
 
 test('Postgres rejects the installed application database without a connection or exposed credentials', async () => {
