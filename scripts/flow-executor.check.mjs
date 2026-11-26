@@ -993,7 +993,7 @@ function mergeFixture(
     state: merged ? 'closed' : 'open',
     merged_at: merged ? '2026-11-16T00:00:00Z' : null,
     head: { sha: publishedHead || f.flow.workspace.base, ref: branch, repo: { full_name: 'test/fixture' } },
-    base: { ref: 'dev', repo: { full_name: 'test/fixture' } },
+    base: { ref: 'dev', sha: f.git('rev-parse', 'dev'), repo: { full_name: 'test/fixture' } },
   });
   const f = fixture(t, {
     repair,
@@ -1075,7 +1075,14 @@ function mergeFixture(
     join(f.root, '.issues/issue-delivery-config.json'),
     JSON.stringify({ provider: 'github', repository: 'test/fixture', remote: 'origin', target: 'dev' })
   );
-  return { ...f, observations, advanceTarget };
+  return {
+    ...f,
+    observations,
+    advanceTarget,
+    publishHead(head) {
+      publishedHead = head;
+    },
+  };
 }
 
 test('Update Branch leaves publication of the updated candidate to Merge', async (t) => {
@@ -1558,6 +1565,65 @@ test('Merge repairs a target conflict even when GitHub only reports blocked read
   );
   assert.equal(issueGit('merge-base', 'HEAD', 'dev'), f.git('rev-parse', 'dev'));
   assert.equal(readFileSync(join(checkout, 'source.txt'), 'utf8'), 'Issue and target changes.\n');
+});
+
+test('Merge repairs a target conflict before waiting for pending GitHub readiness', async (t) => {
+  const { inspectReadiness } = await import('./factory-ui/strategy-readiness.mjs');
+  let repaired = false;
+  const f = mergeFixture(t, {
+    async onReady(pr, branch, head, { waitForChecks } = {}) {
+      if (repaired) return;
+      assert.equal(head, issueGit('rev-parse', 'HEAD'));
+      const provider = { config: { repository: 'test/fixture', target: 'dev' } };
+      await inspectReadiness(provider, { ...pr, mergeable: null }, branch, head, undefined, waitForChecks);
+    },
+    onWait() {
+      assert.ok(repaired, 'A target conflict must reach repair before GitHub polling waits.');
+    },
+  });
+  await f.run('understand');
+  const { checkout } = f.flow.workspace;
+  const issueGit = (...args) => execFileSync('git', ['-C', checkout, ...args], { encoding: 'utf8' }).trim();
+  writeFileSync(join(checkout, 'source.txt'), 'Issue changes.\n');
+  issueGit('commit', '-am', 'Issue changes');
+  const publishedHead = issueGit('rev-parse', 'HEAD');
+  f.publishHead(publishedHead);
+  writeFileSync(join(f.root, 'source.txt'), 'Target changes.\n');
+  f.git('commit', '-am', 'Target changes');
+  const target = f.git('rev-parse', 'dev');
+  const turn = f.connection.turn.bind(f.connection);
+  f.connection.turn = async (...args) => {
+    assert.match(issueGit('ls-files', '-u'), /source\.txt/);
+    writeFileSync(join(checkout, 'source.txt'), 'Issue and target changes.\n');
+    issueGit('add', 'source.txt');
+    issueGit('commit', '--no-edit');
+    repaired = true;
+    return turn(...args);
+  };
+
+  const result = await f.run('merge');
+
+  assert.equal(result.result.revision, 'actual-merge');
+  assert.equal(issueGit('merge-base', 'HEAD', target), target);
+  assert.equal(issueGit('merge-base', 'HEAD', publishedHead), publishedHead);
+  assert.equal(readFileSync(join(checkout, 'source.txt'), 'utf8'), 'Issue and target changes.\n');
+});
+
+test('Merge reports a GitHub conflict immediately when the issue already contains the target', async (t) => {
+  const { inspectReadiness } = await import('./factory-ui/strategy-readiness.mjs');
+  const f = mergeFixture(t, {
+    async onReady(pr, branch, head, { waitForChecks } = {}) {
+      const provider = { config: { repository: 'test/fixture', target: 'dev' } };
+      await inspectReadiness(provider, { ...pr, mergeable: false }, branch, head, undefined, waitForChecks);
+    },
+    onWait() {
+      assert.fail('A reported conflict must not enter the GitHub checks wait.');
+    },
+  });
+  await f.run('understand');
+  f.connection.turn = async () => assert.fail('There are no local conflicts to repair.');
+
+  await assert.rejects(f.run('merge'), /GitHub reports a merge conflict, but the issue branch already contains/);
 });
 
 test('Merge preserves each GitHub browser failure and pushes all three repair candidates in order', async (t) => {
@@ -2793,7 +2859,7 @@ void test('Merge waits for CI without refetching source and still incorporates a
     },
     onWait(advance) {
       if (!pending) return;
-      assert.equal(fetches, 0, 'Do not refetch an unchanged issue candidate while CI is still pending.');
+      assert.equal(fetches, 1, 'Fetch the target once before waiting, then skip refetching while CI is pending.');
       assert.equal(
         f.observations.some(({ operation }) => operation === 'verify'),
         false

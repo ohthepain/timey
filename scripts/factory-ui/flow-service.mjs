@@ -2300,7 +2300,10 @@ class IssueFlows {
   validateBlockFields(issue, flow, input, catalog) {
     if (input.action !== 'update') return;
     const block = flow.blocks.find((item) => item.id === input.blockId);
-    requireThat(block && block.kind !== 'request', 'Edit Request in its own Details.');
+    requireThat(
+      block && (block.kind !== 'request' || Object.keys(input.changes || {}).every((key) => key === 'model')),
+      'Edit Request in its own Details.'
+    );
     const details = blockDetails(flow, issue, block, definitionMap(catalog));
     for (const [field, validate] of [
       [

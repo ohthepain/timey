@@ -73,7 +73,8 @@ An idle model-driven block can override the issue model in Details. This changes
 only the next attempt and pauses autoplay without invalidating prior results.
 Use issue default resolves through the frozen issue execution snapshot after
 work has started. Each attempt retains its actual model. Running or uncertain
-work must stop or reconcile before a model change. Fixed native helpers show
+work must stop or reconcile before a model change. Request offers enabled Codex
+models and defaults to the native Codex configuration. Fixed native helpers show
 their required model read-only; command blocks identify conditional AI repair
 separately. Cross-provider changes require confirmation, a fresh conversation,
 and a retained handoff. See the [block model design](../plans/block-models-and-blocking-errors.md).

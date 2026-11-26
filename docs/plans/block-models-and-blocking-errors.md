@@ -19,10 +19,14 @@ and authorized implementation. The implementation is being verified against thes
 
 ## Confirmed decisions
 
-Model-driven blocks get a Model selector in their right-hand Details panel. Its
-initial choice is Use issue default, including the resolved model name. A block
-can save its own explicit model override. An unavailable selection retains its
-identity and displays its blocking reason.
+The current model name opens the selector in the block's Details panel. The
+default choice uses the resolved issue model. A block can save its own model
+override. An unavailable selection retains its identity and displays its
+blocking reason.
+
+Request defaults to the native Codex configuration and offers enabled,
+available Codex models. Selecting a model saves it for the next Request
+attempt.
 
 The issue page shows the current blocker in a red banner. It covers errors that prevent
 progress, including model availability, authentication, quota, verification and
@@ -65,8 +69,9 @@ their history; other blocks' unresolved errors remain.
   saved selection with its reason instead of selecting a replacement.
 - Apply availability checks to the model actually required by the block or helper,
   including a block override. Keep quota observations live despite frozen settings.
-- Reuse existing explicit Save behavior. A provider change on a retained
-  conversation follows the existing explicit handoff policy and preserves history.
+- Save ordinary block changes with **Save changes**. Request saves its model
+  selection immediately. A provider change on a retained conversation follows
+  the existing explicit handoff policy and preserves history.
 - Identify each error's affected operation and block where applicable, preserve
   its reason and recorded time, and keep resolution separate from deleting history.
 - Dismissing the global banner does not resolve the retained blocking error.

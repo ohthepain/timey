@@ -60,7 +60,7 @@ const mergeStateErrors = new Map([
     'DIRTY',
     () => repairableBlocker('target-conflict', 'The PR conflicts with the target. Resolve the merge conflicts.'),
   ],
-  ['UNKNOWN', () => pendingReadiness('GitHub is still calculating PR merge readiness.')],
+  ['UNKNOWN', () => pendingMergeability('GitHub is still calculating PR merge readiness.')],
 ]);
 
 function repositoryMatches(pr, repository) {
@@ -83,8 +83,7 @@ function assertMergeability(pr) {
       'target-conflict',
       'The issue PR conflicts with the target. Fetch and merge the target, resolving conflicts.'
     );
-  if (pr.mergeable === null)
-    throw Object.assign(Error('GitHub is still calculating PR mergeability.'), { code: 'STRATEGY_PENDING' });
+  if (pr.mergeable === null) throw pendingMergeability('GitHub is still calculating PR mergeability.');
 }
 
 function assertState(pr) {
@@ -236,6 +235,10 @@ function assertRequiredChecks(checks) {
 
 function pendingReadiness(message) {
   return Object.assign(Error(message), { code: 'STRATEGY_PENDING' });
+}
+
+function pendingMergeability(message) {
+  return Object.assign(pendingReadiness(message), { mergeabilityPending: true });
 }
 
 function observedMergeState(view) {

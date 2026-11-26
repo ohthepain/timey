@@ -360,17 +360,30 @@ async function readMergeReadiness(ctx, workspace, provider, pr) {
 
 async function requireObservedChecks(root, ctx, provider, error, head) {
   if (!error) return;
-  if (['target-outdated', 'target-conflict'].includes(error.code)) throw pending(error.message);
   if (error.code === 'ci-failure') {
     ctx.onProgress('Reading the failed GitHub check output before repair.\n', true);
     await retainGitHubFailure(provider, error, head, root);
   }
-  throw error;
+  throw observedMergeBlocker(error);
+}
+
+function observedMergeBlocker(error) {
+  if (error.code === 'target-outdated') return pending(error.message);
+  if (error.code === 'target-conflict')
+    return Error(
+      'GitHub reports a merge conflict, but the issue branch already contains the fetched target. Check the PR on GitHub and retry Merge when its merge status updates.'
+    );
+  return error;
+}
+
+function mayWaitForChecks(error, fetchedTarget, reportedTarget) {
+  return error?.code === 'STRATEGY_PENDING' && !error.mergeabilityPending && fetchedTarget === reportedTarget;
 }
 
 async function advanceMerge(service, ctx, workspace, provider, pr, invoke, options, state) {
   const { readiness, readinessError } = await readMergeReadiness(ctx, workspace, provider, pr);
-  if (readinessError?.code === 'STRATEGY_PENDING' && headOf(workspace) === pr.head.sha) throw readinessError;
+  if (mayWaitForChecks(readinessError, state.comparisonTarget, pr.base.sha) && headOf(workspace) === pr.head.sha)
+    throw readinessError;
   const target = await fetchTarget(ctx, workspace, invoke);
   state.comparisonTarget = target;
   await synchronize(workspace, target, invoke);
@@ -453,6 +466,7 @@ export async function mergeFlowPR(service, ctx, workspace, folder, options) {
   const state = {
     workflow,
     prepareOnly: ctx.input?.prepareMerge === true,
+    comparisonTarget: null,
     repairs: 0,
     blockers: new Map(),
     evidence: [],

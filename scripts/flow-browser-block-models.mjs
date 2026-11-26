@@ -5,6 +5,56 @@ import { writeBrowserIssue } from './flow-browser-fixture.mjs';
 import { initializeProviderConfig, readProviderConfig } from './factory-ui/provider-config.mjs';
 import { observeProvider, saveProviderSettings } from './factory-ui/provider-runtime.mjs';
 
+async function chooseModel(page, current, next) {
+  const picker = page.getByRole('combobox', { name: 'Choose model' });
+  const control = picker.locator('..');
+  assert.equal(await control.locator('span').textContent(), current);
+  await picker.click();
+  await page.waitForFunction(() => document.querySelector('select[name="model"]:open'));
+  await picker.press('Escape');
+  await picker.selectOption(next);
+  return picker;
+}
+
+async function checkRequestControls(page, block, request, screenshot, poll) {
+  await block(request.id);
+  const title = page.getByRole('heading', { name: 'Choose the next block model', exact: true });
+  const flow = page.locator('#issue-flow-menu');
+  const index = page.getByRole('button', { name: 'View index', exact: true });
+  const identify = page.getByRole('button', { name: 'Inspect UI', exact: true });
+  const refresh = page.getByRole('button', { name: '↻ Refresh', exact: true });
+  const [titleBox, flowBox, indexBox] = await Promise.all([
+    title.boundingBox(),
+    flow.boundingBox(),
+    index.boundingBox(),
+  ]);
+  assert.ok(indexBox.y >= titleBox.y + titleBox.height);
+  assert.ok(Math.abs(indexBox.y - flowBox.y) < 3);
+  assert.ok(indexBox.x > flowBox.x);
+  assert.equal(await identify.isVisible(), true);
+  assert.equal(await refresh.isVisible(), true);
+  assert.equal(await page.getByText('Workspace', { exact: true }).filter({ visible: true }).count(), 0);
+  assert.equal(await page.getByText('INSPECTOR', { exact: true }).count(), 0);
+  const picker = await chooseModel(page, 'Codex Luna', 'gpt-6.1-sol');
+  await poll(
+    () => picker.locator('..').locator('span').textContent(),
+    (value) => value === 'Codex Sol',
+    'Request did not display the chosen model.'
+  );
+  await page.getByText('Saved locally', { exact: true }).waitFor();
+  await screenshot('compact-request-controls');
+  await index.click();
+  await page.getByRole('dialog', { name: 'View index' }).waitFor();
+  await page.keyboard.press('Escape');
+  await identify.click();
+  assert.equal(await identify.getAttribute('aria-pressed'), 'true');
+  await identify.click();
+  await refresh.click();
+  await page.reload();
+  await block(request.id);
+  assert.equal(await picker.inputValue(), 'gpt-6.1-sol');
+}
+
 export async function blockModelsBrowserChecks({ page, project, service, poll, screenshot, block }) {
   const id = '20261123-block-models-browser';
   const configPath = join(project, 'user/ai-providers.json');
@@ -24,6 +74,7 @@ export async function blockModelsBrowserChecks({ page, project, service, poll, s
     flow.executionSettings = service.flows.issueSettings(issue, flow);
     const work = flow.blocks.find((b) => b.kind === 'work');
     const request = flow.blocks.find((b) => b.kind === 'request');
+    request.model = 'gpt-6-luna';
     request.data.fields = { type: 'feature', goal: 'Choose the next block model' };
     request.attempts = [{ id: 'request-done', status: 'completed', startedAt: new Date().toISOString() }];
     work.attempts = [
@@ -37,30 +88,57 @@ export async function blockModelsBrowserChecks({ page, project, service, poll, s
     ];
     await service.flows.store.save(flow, flow.revision);
     initializeProviderConfig(project);
+    observeProvider(project, 'codex', {
+      ready: true,
+      models: [
+        { id: 'gpt-6-luna', name: 'Codex Luna' },
+        { id: 'gpt-6.1-sol', name: 'Codex Sol' },
+      ],
+    });
     observeProvider(project, 'anthropic', {
       ready: true,
-      models: ['sonnet', 'opus'].map((name) => ({ id: 'anthropic:' + name, name })),
+      models: [
+        { id: 'anthropic:sonnet', name: 'Claude Sonnet' },
+        { id: 'anthropic:opus', name: 'Claude Opus' },
+      ],
     });
     function enable(models) {
       const config = readProviderConfig(project);
+      config.providers.codex.enabled = ['gpt-6-luna', 'gpt-6.1-sol'];
+      config.providers.codex.allowUnmonitored = true;
       config.providers.anthropic.enabled = models;
       config.providers.anthropic.allowUnmonitored = true;
       saveProviderSettings(project, config);
     }
     enable(['anthropic:sonnet', 'anthropic:opus']);
     await page.goto('/?issue=' + id);
+    await checkRequestControls(page, block, request, screenshot, poll);
+    const saveModel = async (model) => {
+      await page.locator('#block-form [type="submit"]').click();
+      await poll(
+        () => service.flows.read(issue).blocks.find((b) => b.id === work.id).model,
+        (value) => value === model,
+        'Work model did not save.'
+      );
+      await page.locator('#draft-note.saved-note').waitFor();
+    };
     await block(work.id);
-    const select = page.locator('#block-form [name="model"]');
-    await select.waitFor();
+    const select = await chooseModel(page, 'anthropic:sonnet', 'anthropic:opus');
     assert.match(await select.locator('option[value=""]').textContent(), /Use issue default.*anthropic:sonnet/);
-    await select.selectOption('anthropic:opus');
-    await page.locator('#block-form [type="submit"]').click();
-    await poll(
-      () => service.flows.read(issue).blocks.find((b) => b.id === work.id).model,
-      (value) => value === 'anthropic:opus',
-      'Block model did not save.'
-    );
-    await page.locator('#draft-note.saved-note').waitFor();
+    const wand = page.getByRole('button', { name: 'Refresh block definition' });
+    const markdown = page.getByText('.md', { exact: true });
+    const [pickerBox, wandBox, markdownBox] = await Promise.all([
+      select.boundingBox(),
+      wand.boundingBox(),
+      markdown.boundingBox(),
+    ]);
+    for (const control of [wandBox, markdownBox])
+      assert.ok(Math.abs(control.y + control.height / 2 - (pickerBox.y + pickerBox.height / 2)) < 3);
+    await markdown.click();
+    await page.getByRole('button', { name: 'Reveal Markdown in Finder' }).waitFor();
+    await screenshot('compact-work-controls');
+    await markdown.click();
+    await saveModel('anthropic:opus');
     assert.equal(service.flows.read(issue).blocks.find((b) => b.id === work.id).attempts[0].invalidatedAt, undefined);
     assert.equal(service.flows.active.has(id), false);
     enable(['anthropic:sonnet']);
@@ -83,13 +161,7 @@ export async function blockModelsBrowserChecks({ page, project, service, poll, s
     await page.locator('[data-block-model-error]').scrollIntoViewIfNeeded();
     await screenshot('block-model-unavailable');
     await select.selectOption('anthropic:sonnet');
-    await page.locator('#block-form [type="submit"]').click();
-    await poll(
-      () => service.flows.read(issue).blocks.find((b) => b.id === work.id).model,
-      (value) => value === 'anthropic:sonnet',
-      'Replacement model did not save.'
-    );
-    await page.locator('#draft-note.saved-note').waitFor();
+    await saveModel('anthropic:sonnet');
     assert.equal(await page.locator('#issue-blocker').isVisible(), true);
     await page.locator('#run-block').click();
     await poll(
