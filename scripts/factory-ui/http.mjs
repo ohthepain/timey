@@ -1,3 +1,4 @@
+import { createProjectApp } from './project-app.mjs';
 import { createFlowChanges } from './flow-changes.mjs';
 import { issueAnnotations } from './issue-annotations.mjs';
 import { userInfo } from 'node:os';
@@ -90,7 +91,9 @@ import {
   startIssueCleanupRetry,
 } from './issue-cleanup.mjs';
 async function body(request) {
-  const limit = ['/api/project-discuss-action', '/api/report-discuss-action'].includes(request.url)
+  const limit = ['/api/project-discuss-action', '/api/report-discuss-action', '/api/issue-discuss-action'].includes(
+    request.url
+  )
     ? 12000000
     : request.url === '/api/sidebar-files-action'
       ? 800000
@@ -107,14 +110,23 @@ function authenticated(request, token, port) {
   return (request.headers.cookie || '').split(';').some((value) => value.trim() === `timey_factory_${port}=${token}`);
 }
 
+function isFlowDecision(value, kind) {
+  return value.flowRevision !== undefined && value.kind === kind;
+}
+
 export async function decideIssueAndCleanup(service, value) {
-  const artifact = isFixedAcceptance(value) ? await fixedAcceptanceArtifact(service, value) : null;
-  const useFlowClosure = value.flowRevision !== undefined && value.kind === 'close';
   if (value.flowRevision !== undefined) {
     requireThat(!flowOwnsIssue(service, value.issueId), 'Wait for the running block or stop it before closing.');
     service.serverControl?.allow('/api/issue-decision', value);
   }
-  if (useFlowClosure) return flows(service).closeWithReason(value, artifact);
+  const artifact = isFixedAcceptance(value) ? await fixedAcceptanceArtifact(service, value) : null;
+  if (isFlowDecision(value, 'close')) return flows(service).closeWithReason(value, artifact);
+  return decideWithoutFlowClosure(service, value, artifact);
+}
+
+async function decideWithoutFlowClosure(service, value, artifact) {
+  const flowReopen = isFlowDecision(value, 'reopen');
+  if (flowReopen) flows(service).requireReopen(value);
   const decision = await service.decideIssue(
     value.issueId,
     value.state,
@@ -123,10 +135,11 @@ export async function decideIssueAndCleanup(service, value) {
     value.reason,
     value.resolution,
     value.cleanup,
-    artifact
+    artifact,
+    { flowReopen }
   );
   if (value.kind === 'close') service.flows?.pauseAutoplay(value.issueId, 'Issue closed');
-  if (value.kind === 'reopen' && service.flows) service.flows.reopened(value.issueId);
+  else if (value.kind === 'reopen') await service.flows?.reopened(value.issueId, flowReopen);
   return decision;
 }
 
@@ -194,8 +207,10 @@ function existingLocalControl(service, path, value) {
 }
 
 const pauseSafeActions = {
+  '/api/project-app': ['stop', 'save'],
   '/api/local-notes-action': ['create', 'edit', 'complete', 'delete', 'move', 'discuss', 'link'],
   '/api/project-discuss-action': ['stop', 'answer', 'draft', 'settings', 'edit-queued', 'remove-queued', 'delete-note'],
+  '/api/issue-discuss-action': ['create', 'stop', 'answer', 'draft', 'settings', 'edit-queued', 'remove-queued'],
   '/api/report-discuss-action': ['stop', 'answer', 'draft', 'settings', 'edit-queued', 'remove-queued'],
   '/api/flow-action': [
     'stop',
@@ -222,9 +237,12 @@ const cachedIssueActions = new Set([
 
 const mergedReadRoutes = new Set([
   ...cachedIssueActions,
+  '/api/issue-store-action',
+  '/api/issue-store-recovery',
   '/api/flow-action',
   '/api/issue-storage-open-folder',
   '/api/issue-chat-stop',
+  '/api/issue-discuss-action',
   '/api/issue-strategy-stop',
   '/api/lifecycle-pause',
   '/api/shared-queue-retry',
@@ -232,12 +250,8 @@ const mergedReadRoutes = new Set([
   '/api/shared-queue-recover',
 ]);
 function preservesMergedIssue(path, value) {
-  return (
-    mergedReadRoutes.has(path) ||
-    (path === '/api/issue-decision' && value.kind === 'close') ||
-    path === '/api/issue-store-action' ||
-    path === '/api/issue-store-recovery'
-  );
+  if (path === '/api/issue-decision') return value.kind === 'close' || isFlowDecision(value, 'reopen');
+  return mergedReadRoutes.has(path);
 }
 function savedMutationIssueIds(root, value) {
   return [...new Set([value.issueId, value.input?.issueId, ...(value.issueIds || [])].filter(Boolean))].filter(
@@ -265,6 +279,20 @@ async function requireEditableMutation(service, path, value) {
 function reportChatAction(service, value) {
   const report = new InvestigationReports(service.root).read(value.reportId);
   return reportDiscussionAction(projectDiscuss(service), projectHome(service).investigations, report, value);
+}
+
+function issueDiscussOwner(service, issueId) {
+  return { kind: 'issue', issueId: flows(service).selected(issueId).id };
+}
+
+function issueDiscussAction(service, value) {
+  const { action, issueId } = value;
+  const ownership = issueDiscussOwner(service, issueId);
+  requireThat(!['close', 'delete-note'].includes(action), 'Issue discussion remains attached to its issue.');
+  return projectDiscuss(service).action(
+    { ...value, ...(action === 'create' && { requestId: 'issue-' + ownership.issueId }) },
+    { ownership }
+  );
 }
 
 const queueMutations = new Set([
@@ -428,6 +456,7 @@ async function mutation(service, path, value, owner, onStorageProgress) {
     '/api/local-notes-action': () => localNoteAction(service, value, () => projectDiscuss(service)),
     '/api/project-discuss-action': () => projectDiscuss(service).action(value),
     '/api/report-discuss-action': () => reportChatAction(service, value),
+    '/api/issue-discuss-action': () => issueDiscussAction(service, value),
     '/api/investigation-report-delete': () => new InvestigationReports(service.root).deleteReports(value.ids),
     '/api/project-home-action': () => projectHome(service).action(value),
     '/api/project-worktree-cleanup': () => worktreeCleanup(service).apply(value),
@@ -454,6 +483,7 @@ async function mutation(service, path, value, owner, onStorageProgress) {
         : refreshProvider(service.root, value.provider);
     },
     '/api/project-settings': () => changeProjectSettings(service, value),
+    '/api/project-app': () => (service.projectApp ||= createProjectApp(service)).action(value),
     '/api/project-preferences': () => saveProjectPreferences(service, value),
     '/api/project-settings-initialize': () => initializeProjectLifecycle(service, value),
     '/api/ui-sources': () => {
@@ -776,6 +806,7 @@ async function read(service, request, response, owner) {
       readProviderConfig(service.root) ? providerSettings(service.root) : { providers: [] },
     '/api/ai-providers': () => providerSettings(service.root, { initialize: service.reviewMode !== 'preview' }),
     '/api/project-settings': () => readProjectSettingsOverview(service),
+    '/api/project-app': () => (service.projectApp ||= createProjectApp(service)).view(),
     '/api/project-asset-storage': () => projectAssetStorage(service),
     '/api/project-preferences': () => readProjectPreferences(service.root),
     '/api/project-home': () => projectHome(service).view(),
@@ -800,6 +831,8 @@ async function read(service, request, response, owner) {
     '/api/project-remote-branch-cleanup': () => remoteBranchCleanup(service).preview(),
     '/api/project-local-branch-cleanup': () => localBranchCleanup(service).preview(url.searchParams.get('ref')),
     '/api/project-archive-deletion': () => archiveDeletion(service).preview(),
+    '/api/issue-discuss': () =>
+      projectDiscuss(service).view(undefined, issueDiscussOwner(service, issue(selectedIssue))),
     '/api/project-discuss': () => projectDiscuss(service).view(url.searchParams.get('conversation')),
     '/api/project-discuss-skills': async () => {
       const skills = await projectDiscussionSkills(projectDiscuss(service), url.searchParams.get('model') || undefined);
@@ -898,7 +931,8 @@ async function revealIssueReport(service, issueId) {
 }
 
 function closureReportLocation(root, issueId, reopen) {
-  return reopen && !existsSync(storedIssuePath(root, issueId)) ? 'closed' : 'open';
+  if (!reopen || existsSync(storedIssuePath(root, issueId))) return 'open';
+  return existsSync(storedIssuePath(root, issueId, 'closed')) ? 'closed' : 'archive';
 }
 
 function issueClosureContext(service, issueId, reopen) {

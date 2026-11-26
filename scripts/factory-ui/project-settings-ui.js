@@ -2,6 +2,7 @@
   'use strict';
   const pages = [
     ['issues', 'Issues'],
+    ['app', 'App'],
     ['lifecycle', 'Issue Lifecycle'],
     ['git', 'Git'],
     ['storage', 'Issue Storage'],
@@ -479,9 +480,49 @@
           ''
         )}<button class="small-button" type="button" data-restore-hotkeys>Restore defaults</button>${saveButton}</form>`;
     }
+    function renderApp() {
+      const settings = data.settings;
+      const field = (key, label) =>
+        `<label class="field">${label}<input name="${key}" value="${esc(settings[key])}" maxlength="4000" /></label>`;
+      return `<form data-settings-form>
+        ${field('command', 'Start command')}
+        ${field('url', 'App URL')}
+        ${field('directory', 'Working directory')}
+        <details><summary>Recognize a running app</summary>
+          ${field('expected', 'Expected response text')}
+          ${field('checkUrl', 'Check URL')}
+        </details>
+        <button class="small-button" data-detect-app type="button">🪄 Detect setup</button>
+        <p data-app-detection role="status"></p>${saveButton}
+      </form>`;
+    }
+    async function detectApp(button) {
+      button.disabled = true;
+      const output = content.querySelector('[data-app-detection]');
+      output.textContent = 'Detecting setup…';
+      try {
+        const result = await post('/api/project-app', { action: 'detect' });
+        if (output.isConnected) showDetection(result, output);
+      } catch (failure) {
+        output.textContent = failure.message;
+      } finally {
+        button.disabled = false;
+      }
+    }
+    function showDetection(result, output) {
+      for (const [key, value] of Object.entries(result.settings)) form().elements[key].value = value;
+      output.textContent = [result.sources, result.undetermined && 'Undetermined: ' + result.undetermined]
+        .filter(Boolean)
+        .join(' · ');
+    }
+    content.addEventListener('click', (event) => {
+      const button = event.target.closest('[data-detect-app]');
+      if (button) void detectApp(button);
+    });
     const renderers = {
       providers: () => window.factoryProviderSettings.render(data, esc, saveButton),
       issues: renderIssues,
+      app: renderApp,
       lifecycle: renderLifecycle,
       git: renderGit,
       storage: renderStorage,
@@ -511,6 +552,7 @@
       navigation();
       const endpoints = {
         providers: '/api/ai-providers',
+        app: '/api/project-app',
         'asset-storage': '/api/project-asset-storage',
         issues: '/api/folder-settings?project=true',
         prompts: '/api/project-preferences',
@@ -568,6 +610,7 @@
         const fields = values();
         const saves = {
           providers: () => post('/api/ai-providers', window.factoryProviderSettings.input(data, fields)),
+          app: () => post('/api/project-app', { action: 'save', revision: data.revision, settings: fields }),
           issues: () =>
             post('/api/folder-settings', { project: true, action: 'save', revision: data.revision, changes: fields }),
           prompts: () =>

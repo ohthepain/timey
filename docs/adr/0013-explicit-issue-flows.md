@@ -78,7 +78,7 @@ their required model read-only; command blocks identify conditional AI repair
 separately. Cross-provider changes require confirmation, a fresh conversation,
 and a retained handoff. See the [block model design](../plans/block-models-and-blocking-errors.md).
 
-The issue heading shows Last blocking error from retained failures, including
+The issue page shows a red blocker banner for unresolved retained failures, including
 admission failures before an attempt exists. It survives reload and block
 navigation. Successful retry resolves that step's errors, revealing any older
 unresolved blocker elsewhere. Permitted skip or removal resolves its blockers;

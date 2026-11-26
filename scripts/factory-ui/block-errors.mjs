@@ -41,20 +41,24 @@ export function lastBlockingError(flow) {
 }
 
 function attemptErrors(block, skipRetro) {
-  const errors = [];
+  if (block.kind === 'retro' && skipRetro) return [];
   const attempts = block.attempts || [];
   const lastSuccess = attempts.findLastIndex((attempt) => succeeded.has(attempt.status));
-  for (const attempt of attempts.slice(lastSuccess + 1)) {
-    if (!failed.has(attempt.status) || (block.kind === 'retro' && skipRetro)) continue;
-    errors.push({
-      id: attempt.id,
-      attemptId: attempt.id,
-      blockId: block.id,
-      blockLabel: block.label,
-      model: attempt.modelSettings?.model || null,
-      message: attempt.summary || 'This operation could not complete.',
-      at: attempt.endedAt || attempt.lastActiveAt || attempt.startedAt,
-    });
-  }
-  return errors;
+  return attempts
+    .slice(lastSuccess + 1)
+    .filter((attempt) => !attempt.invalidatedAt && failed.has(attempt.status))
+    .map((attempt) => attemptError(block, attempt));
+}
+
+function attemptError(block, attempt) {
+  return {
+    id: attempt.id,
+    attemptId: attempt.id,
+    childTitle: attempt.sequentialChild?.title,
+    blockId: block.id,
+    blockLabel: block.label,
+    model: attempt.modelSettings?.model,
+    message: [attempt.summary, 'This operation could not complete.'].find(Boolean),
+    at: [attempt.endedAt, attempt.lastActiveAt, attempt.startedAt].find(Boolean),
+  };
 }

@@ -45,10 +45,26 @@ function readProof(file, root) {
   }
 }
 
+export function sequentialProofBlocker(attempt, retained, root) {
+  const ids = attempt.sequentialVerification;
+  if (!ids || retained.status === 'blocked') return {};
+  const proofs = readProof(retained.artifacts.files.subIssueProof, root);
+  const passed = new Set(proofs.filter(({ status }) => status === 'passed').map(({ id }) => id));
+  if (ids.every((id) => passed.has(id))) return {};
+  return {
+    status: 'blocked',
+    summary: 'Shared verification needs passing proof for each sub-issue on this candidate.',
+  };
+}
+
 function groupProofAttempts(flow, tree, block) {
   return upstreamBlocks(block, flow.blocks)
     .filter(({ kind }) => supportedBlocks.has(kind))
-    .map(latestCurrentAttempt)
+    .flatMap((block) =>
+      block.attempts.some(({ sequentialChild }) => sequentialChild)
+        ? block.attempts.filter(({ invalidatedAt }) => !invalidatedAt)
+        : [latestCurrentAttempt(block)]
+    )
     .filter((attempt) => ['completed', 'failed', 'blocked'].includes(attempt?.status))
     .filter((attempt) => !tree || attempt.result?.tree === tree)
     .sort((left, right) => (left.endedAt ?? '').localeCompare(right.endedAt ?? ''));

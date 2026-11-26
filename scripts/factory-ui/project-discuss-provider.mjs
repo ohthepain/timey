@@ -15,37 +15,48 @@ import { chatProgressInstructions } from './chat-progress.mjs';
 const writerRechecks = 45;
 const waitForWriter = (signal) => delay(2000, undefined, { signal });
 
-function conversationPromptKind(message) {
+function conversationPromptKind(session, message) {
+  if (session.ownership?.kind === 'issue') return 'issue';
   return message.reportContext ? 'report' : 'project';
 }
 
-function discussionPrompt(session, message) {
+function discussionPrompt(session, message, issueContext) {
   const parts = [];
+  if (issueContext) parts.push('Selected issue request and current flow status:\n' + JSON.stringify(issueContext));
   if (session.noteContext) parts.push('Local note context:\n' + JSON.stringify(session.noteContext));
-  if (message.reportContext)
-    parts.push(
-      'Selected retained investigation report context. Earlier messages retain their original report. Discussion never restores or starts the source investigation. Follow-up issues use the existing guarded tools and require approval.\n' +
-        JSON.stringify(message.reportContext)
-    );
-  if (message.reportContext)
-    parts.push(
-      'Retained investigation conversation history:\n' +
-        JSON.stringify(
-          session.messages
-            .filter((entry) => entry.imported || entry.status === 'historical')
-            .map(({ role, text, reportContext, investigationContext }) => ({
-              role,
-              text,
-              reportContext,
-              investigationContext,
-            }))
-        )
-    );
+  if (message.reportContext) parts.push(...reportPrompt(session, message));
   parts.push('Current request:\n' + message.text);
   parts.push(
     'When the next step depends on a concrete scope decision or an available skill, you may append a fenced timey-recommendations JSON object with recommendations (items with label and prompt). Use Refine scope only for a concrete open scope decision, or use the relevant available skill name as the label. For note discussion include grillingComplete: true only once the work of the selected grilling skill is finished.'
   );
   return parts.join('\n\n');
+}
+
+function reportPrompt(session, message) {
+  const parts = [];
+  parts.push(
+    'Selected retained investigation report context. Earlier messages retain their original report. Discussion never restores or starts the source investigation. Follow-up issues use the existing guarded tools and require approval.\n' +
+      JSON.stringify(message.reportContext)
+  );
+  parts.push(
+    'Retained investigation conversation history:\n' +
+      JSON.stringify(
+        session.messages
+          .filter((entry) => entry.imported || entry.status === 'historical')
+          .map(({ role, text, reportContext, investigationContext }) => ({
+            role,
+            text,
+            reportContext,
+            investigationContext,
+          }))
+      )
+  );
+  return parts;
+}
+
+function issueDiscussPermissions(kind) {
+  if (kind !== 'issue') return '';
+  return '\nIn Issue Discuss, the person may explicitly request file edits under the same workspace permissions and approval controls as Project Discuss. For all other requests, keep shell access read-only. Use the existing guarded tools for issue operations.';
 }
 
 class DiscussConnection extends CodexConnection {
@@ -71,6 +82,7 @@ export function createProjectDiscussProvider(service, options = {}) {
 class ProjectDiscussProvider {
   constructor(service, options) {
     this.service = service;
+    this.flows = options.flows;
     this.injectedConnection = Boolean(options.connection);
     this.tools =
       options.tools ||
@@ -147,7 +159,7 @@ class ProjectDiscussProvider {
       const output = await connection.turn(
         session.threadId,
         this.service.root,
-        discussionPrompt(session, this.active.message),
+        discussionPrompt(session, this.active.message, this.issueContext(session)),
         undefined,
         input,
         message.settings,
@@ -170,7 +182,23 @@ class ProjectDiscussProvider {
     if (session.threadId) return;
     this.retain({ startup: null });
   }
-  async selectedInputs(message) {
+  issueContext(session) {
+    if (session.ownership?.kind !== 'issue') return null;
+    const flows = this.flows();
+    const issue = flows.selected(session.ownership.issueId);
+    const flow = flows.read(issue);
+    return {
+      id: issue.id,
+      title: issue.title,
+      state: issue.state,
+      wording: flow.blocks.find(({ kind }) => kind === 'request')?.data?.wording,
+      blocks: flow.blocks.map(({ id, label, attempts }) => {
+        const current = attempts.findLast((attempt) => !attempt.invalidatedAt);
+        return { id, label, status: current?.status || 'idle', summary: current?.summary };
+      }),
+    };
+  }
+  async selectedInputs(session, message) {
     const available = await this.skills();
     const selected = selectedSkills(available, message.settings.skills || []);
     const clarification = available.find((skill) => skill.name === message.settings.clarificationSkill);
@@ -180,12 +208,12 @@ class ProjectDiscussProvider {
     );
     return {
       inputs: skillInputs(selected),
-      instructions: this.instructions(available, clarification, conversationPromptKind(message)),
+      instructions: this.instructions(available, clarification, conversationPromptKind(session, message)),
     };
   }
   async prepareConversation(session, message) {
     if (!this.injectedConnection) await this.selectAgent(session, message.settings);
-    const { inputs, instructions } = await this.selectedInputs(message);
+    const { inputs, instructions } = await this.selectedInputs(session, message);
     this.active.signal.throwIfAborted();
     await this.attach(session, message.settings, instructions);
     return [...inputs, ...attachmentInputs(message.attachments || [])];
@@ -251,6 +279,7 @@ class ProjectDiscussProvider {
       .map(({ name, description, path }) => ({ name, description, path }));
     return (
       effectiveProjectPrompt(this.service.root, kind) +
+      issueDiscussPermissions(kind) +
       '\n\n' +
       chatProgressInstructions +
       '\n\nWhen creating an issue from this conversation, write issue_create.description as the future work: the agreed problem or change, scope, product constraints, decisions, acceptance criteria and requested proof. Keep instructions about this creation operation, such as "create the issue only", "leave it idle" or "do not start implementation now", in this conversation and the creation receipt, outside the saved work description. The creation tool already leaves the issue idle. Preserve genuine prerequisites and required human approvals in the description. For example, "Create an idle issue to replace the gear menu with project Settings" becomes "Replace the gear menu with project Settings", followed by the agreed requirements and implementation proof. Report the creation result without starting work unless separately requested.' +

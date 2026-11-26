@@ -336,3 +336,38 @@ test('missing selected clarification skill fails before starting a model turn', 
   await assert.rejects(f.provider.turn(f.session, f.message, f.context), /Choose No Grilling or set up skills/);
   assert.ok(!f.calls.some(({ method }) => method === 'thread/start'));
 });
+
+test('Issue Discuss sends the Issue chat prompt with the current request and flow status', async (t) => {
+  const issue = { id: 'selected-issue', title: 'Selected issue', state: 'backlog' };
+  const flow = {
+    blocks: [
+      {
+        id: 'request',
+        kind: 'request',
+        label: 'Request',
+        data: { wording: 'Preserve the original wording' },
+        attempts: [],
+      },
+      { id: 'work', kind: 'work', label: 'Work', attempts: [{ status: 'blocked', summary: 'Waiting for review' }] },
+    ],
+  };
+  const f = fixture(t, undefined, {
+    flows: () => ({ selected: () => issue, read: () => flow }),
+    useProjectTools: true,
+  });
+  mkdirSync(join(f.root, 'user'), { recursive: true });
+  writeFileSync(
+    join(f.root, 'user/factory-preferences.json'),
+    JSON.stringify({ prompts: { issue: 'Configured Issue prompt' } })
+  );
+  f.session.ownership = { kind: 'issue', issueId: issue.id };
+  await f.provider.turn(f.session, f.message, f.context);
+  const started = f.calls.find(({ method }) => method === 'thread/start').params;
+  assert.match(started.developerInstructions, /^Configured Issue prompt/);
+  assert.equal(started.approvalPolicy, 'on-request');
+  assert.ok(started.dynamicTools.some(({ name }) => name === 'issue_control'));
+  const { prompt } = f.calls.find(({ method }) => method === 'provider/turn').params;
+  assert.match(prompt, /"id":"selected-issue"/);
+  assert.match(prompt, /Preserve the original wording/);
+  assert.match(prompt, /"status":"blocked","summary":"Waiting for review"/);
+});

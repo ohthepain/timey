@@ -12,6 +12,13 @@ import { chatProgressBrowserChecks } from './flow-browser-chat-progress.mjs';
 import { inboxDiscussBrowserChecks, inboxFlowBrowserChecks } from './flow-browser-inbox.mjs';
 import { investigationReportsBrowserChecks } from './flow-browser-investigation-reports.mjs';
 import { issueStatusFoldersBrowserChecks } from './flow-browser-issue-status-folders.mjs';
+import {
+  issueDiscussWorkspaceChecks,
+  reopenWorkspaceChecks,
+  projectAppWorkspaceChecks,
+  sequentialWorkspaceChecks,
+  blockerWorkspaceChecks,
+} from './flow-browser-inbox-delivery.mjs';
 import { projectIssuesBrowserChecks } from './flow-browser-project-issues.mjs';
 import { serverHeapBrowserChecks } from './flow-browser-server-heap.mjs';
 import { errorRecoveryBrowserChecks } from './flow-browser-error-recovery.mjs';
@@ -711,6 +718,21 @@ try {
   });
   await check('Status pseudo-folders track project issues without moving them', () =>
     issueStatusFoldersBrowserChecks({ page, project, service, poll, screenshot, output, root })
+  );
+  await check(flowBrowserScenarioNames['--sequential-master'], () =>
+    sequentialWorkspaceChecks({ page, project, service, poll, screenshot, output })
+  );
+  await check(flowBrowserScenarioNames['--issue-blocker-retries'], () =>
+    blockerWorkspaceChecks({ page, project, service, poll, screenshot, output })
+  );
+  await check(flowBrowserScenarioNames['--issue-discuss'], () =>
+    issueDiscussWorkspaceChecks({ page, project, service, poll, screenshot, output })
+  );
+  await check(flowBrowserScenarioNames['--issue-reopen'], () =>
+    reopenWorkspaceChecks({ page, project, root, service, screenshot, output })
+  );
+  await check(flowBrowserScenarioNames['--project-app'], () =>
+    projectAppWorkspaceChecks({ page, project, service, output, root, poll })
   );
   await check('Closed issue selections archive together and issue links open the normal view', () =>
     projectIssuesBrowserChecks({ page, project, root, output, service })
@@ -2759,7 +2781,7 @@ try {
     assert.equal(await close.isVisible(), false);
     assert.equal(await archive.locator('option[value="reveal"]').textContent(), 'Reveal in Finder');
     page.once('dialog', (dialog) => void dialog.accept());
-    await archive.selectOption('reopen');
+    await page.getByRole('button', { name: 'Reopen', exact: true }).click();
     await close.waitFor();
     await page.getByRole('button', { name: 'Start issue' }).waitFor();
     assert.equal(await closedIndicator.isVisible(), false);

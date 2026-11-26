@@ -57,13 +57,13 @@ export function decideIssue(
   resolution = 'fixed',
   cleanup = null,
   artifact = null,
-  { deferCleanup = false, automatic = false, flowGroupClosure = false } = {}
+  { deferCleanup = false, automatic = false, flowGroupClosure = false, flowReopen = false } = {}
 ) {
   service.ownServer();
   const location = decisionLocation(service.root, id);
   let queue = location === 'open' ? readQueue(service.root) : readQueue(service.root, { location, issueId: id }),
     issue = progressIssue(queue, id, state);
-  const groupClosure = validateGroupDecision(service.root, issue, kind, flowGroupClosure);
+  const groupClosure = validateGroupDecision(service.root, issue, kind, flowGroupClosure, flowReopen);
   requireThat(validDecisionBasis(queue, issue, basis), 'This issue changed. Refresh before making a decision.');
   requireThat(['close', 'reopen'].includes(kind), 'Choose Close issue or Reopen issue.');
   const role = queue.lifecycle.find((s) => s.state === state).role;
@@ -95,6 +95,7 @@ export function decideIssue(
     const decision = recordDecision(service, issue, run, result, evidence, target, basis, {
       location,
       moveTo,
+      flowReopen,
     });
     return afterReportWrite(decision, (decision) => {
       if (shared) {
@@ -114,8 +115,14 @@ export function decideIssue(
   });
 }
 
-function validateGroupDecision(root, issue, kind, flowGroupClosure) {
-  if (kind === 'reopen') requireUnmergedIssue(root, issue.id);
+function validateReopen(root, issue, flowReopen) {
+  if (!flowReopen) requireUnmergedIssue(root, issue.id);
+  requireIndependentIssue(root, issue.id);
+  return false;
+}
+
+function validateGroupDecision(root, issue, kind, flowGroupClosure, flowReopen) {
+  if (kind === 'reopen') return validateReopen(root, issue, flowReopen);
   requireIndependentIssue(root, issue.id);
   const grouped = kind === 'close' && groupChildren(issue).length > 0;
   requireThat(!grouped || flowGroupClosure, 'Use the Flow workspace to close a master with attached sub-issues.');
@@ -140,7 +147,8 @@ function publishDecision(shared, issue, context, groupClosure, destination) {
 
 function decisionLocation(root, id) {
   if (existsSync(storedIssuePath(root, id, 'open'))) return 'open';
-  return existsSync(storedIssuePath(root, id, 'closed')) ? 'closed' : 'open';
+  if (existsSync(storedIssuePath(root, id, 'closed'))) return 'closed';
+  return existsSync(storedIssuePath(root, id, 'archive')) ? 'archive' : 'open';
 }
 
 function finishIssueClosure(service, id, decision, cleanup, resolution) {
@@ -184,7 +192,7 @@ function prepareDecision(service, queue, issue, action, decision, suppliedArtifa
   if (decision.kind === 'reopen') {
     service.guard(service.root, action, 'advance', queue.head, {
       target_state: decision.target,
-      ...(issue.reportLocation === 'closed' && { reportLocation: issue.reportLocation }),
+      ...(issue.reportLocation && { reportLocation: issue.reportLocation }),
     });
     return { queue, issue };
   }
@@ -219,7 +227,7 @@ function applyClosure(result, choice, reason, target, dismissed) {
   result.notes = `${choice.description} ${reason.trim()} Closing without completing the work. Existing checks and unfinished steps remain unchanged.`;
   result.stage_records = [{ state: target, outcome: 'completed', actor: 'human', reason: result.summary }];
 }
-function recordDecision(service, issue, run, result, evidence, target, basis, { location, moveTo }) {
+function recordDecision(service, issue, run, result, evidence, target, basis, { location, moveTo, flowReopen }) {
   const summary = result.summary,
     id = issue.id,
     state = issue.state;
@@ -233,8 +241,12 @@ function recordDecision(service, issue, run, result, evidence, target, basis, { 
       'The issue changed. Refresh before deciding.'
     );
     const publishedMove = moveTo && registeredProjectStores(service.root);
+    const preparation = flowReopen ? service.flows.prepareReopenedFlow({ issueId: id }) : undefined;
+    const review = afterReportWrite(preparation, () =>
+      appendReview(service.root, issue, result, run, evidence, target, publishedMove ? { location: moveTo } : {})
+    );
     return afterReportWrite(
-      appendReview(service.root, issue, result, run, evidence, target, publishedMove ? { location: moveTo } : {}),
+      review,
       () =>
         afterReportWrite(
           moveTo && !publishedMove ? moveStoredIssue(service.root, id, location, moveTo) : undefined,

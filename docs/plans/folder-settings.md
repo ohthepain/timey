@@ -98,7 +98,7 @@ Starting or resuming an issue reports each invalid setting with its field name,
 saved value, source file, and validation reason. Issue overrides identify **Issue
 settings** as their source. Model overrides on a block bypass only an invalid
 inherited model; other settings still require repair. Rejected starts retain the
-details in **Last blocking error** and leave earlier attempts unchanged.
+details in the blocker banner and leave earlier attempts unchanged.
 The root `folder.md` is named **project settings** in errors so it cannot be
 confused with the issue folder's file. Chat startup reads the main project's
 configuration and storage-profile registry when an investigation or Fix Branch

@@ -1302,7 +1302,7 @@ Fixtures inject provider execution and make no live model turn.
 
 `node scripts/flow-browser.mjs --block-models` saves a model through Details,
 checks that earlier results remain valid, disables the saved model, and observes
-its inline error. A rejected Run displays Last blocking error across block
+its inline error. A rejected Run displays a persistent blocker banner across block
 selection and reload. Saving an available replacement starts no work; explicit
 Run resolves the blocker. The scenario saves unavailable and recovered
 screenshots. Provider observations and execution results are disposable fixtures;

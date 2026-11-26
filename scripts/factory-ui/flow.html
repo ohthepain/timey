@@ -50,6 +50,62 @@
     <script src="/local-notes-ui.js" defer></script>
     <script src="/sidebar-files-ui.js" defer></script>
     <script src="/view-inspection.js" defer></script>
+    <style>
+      #project-app-status {
+        max-width: 22rem;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      #issue-discuss-panel {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        min-height: 12rem;
+        padding: 0 30px 16px;
+      }
+      #issue-discuss {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        min-height: 0;
+      }
+      #app[data-issue-discuss-expanded] {
+        grid-template-columns: var(--sidebar-width, 242px) minmax(0, 1fr);
+      }
+      #app[data-issue-discuss-expanded] .inspector {
+        display: none;
+      }
+      #app[data-issue-discuss-expanded] .issue-heading > :not(.issue-heading-banner),
+      #app[data-issue-discuss-expanded] .environment {
+        display: none;
+      }
+      .issue-heading-banner {
+        display: grid;
+        gap: 8px;
+      }
+      .issue-playback {
+        justify-content: flex-start;
+        text-align: left;
+      }
+      .sub-issue-remove {
+        border: 0;
+        background: transparent;
+        padding: 2px 6px;
+      }
+      .issue-blocker {
+        border-color: #884341;
+        background: #482625;
+        color: #ffd1ce;
+      }
+      .issue-blocker .folder-controls {
+        justify-content: space-between;
+        margin-bottom: 6px;
+      }
+      .issue-blocker h2 {
+        margin: 0;
+      }
+    </style>
   </head>
   <body>
     <script>
@@ -58,10 +114,13 @@
     </script>
     <header class="factory-header" aria-label="Factory">
       <div class="project-header">
-        <a class="brand" href="/" aria-label="Project home"
-          ><span class="brand-mark" aria-hidden="true">⌘</span> <span id="project-name">Factory</span
-          ><span class="brand-tag">FLOW</span></a
-        >
+        <a class="brand" href="/" aria-label="Project home">
+          <span class="brand-mark" aria-hidden="true">⌘</span> <span id="project-name">Factory</span>
+        </a>
+        <button type="button" class="small-button" id="project-app">App</button>
+        <span class="brand-tag">FLOW</span>
+        <button type="button" class="small-button" id="project-app-stop" hidden>Stop app</button>
+        <span id="project-app-status" role="status"></span>
         <button
           class="diagnostics-trigger"
           id="diagnostics-trigger"
@@ -297,17 +356,6 @@
               <div class="issue-title-row">
                 <span class="issue-number" id="issue-number" hidden></span>
                 <h1 id="issue-title"></h1>
-                <span class="master-badge" id="issue-master-badge" data-issue-badge="master-issue" hidden>Master</span>
-                <span class="issue-heading-badges" id="issue-heading-badges"></span>
-                <button
-                  class="icon-button"
-                  id="rename-issue"
-                  type="button"
-                  aria-label="Rename issue"
-                  title="Rename issue"
-                >
-                  ✎
-                </button>
               </div>
               <form id="rename-issue-form" class="issue-title-row" hidden>
                 <input id="rename-issue-title" aria-label="Issue title" maxlength="256" required />
@@ -315,6 +363,8 @@
                 <button class="small-button" id="cancel-rename" type="button">Cancel</button>
               </form>
               <div class="issue-flow-meta">
+                <span class="master-badge" id="issue-master-badge" data-issue-badge="master-issue" hidden>Master</span>
+                <span class="issue-heading-badges" id="issue-heading-badges"></span>
                 <span id="issue-type-label"></span>
                 <span id="issue-subtitle"></span>
                 <details id="issue-flow-picker" class="issue-flow-picker">
@@ -329,6 +379,37 @@
               </div>
             </div>
             <div class="issue-playback">
+              <button
+                class="icon-button"
+                id="rename-issue"
+                type="button"
+                aria-label="Rename issue"
+                title="Rename issue"
+              >
+                ✎
+              </button>
+
+              <button
+                class="icon-button"
+                id="issue-discuss-toggle"
+                type="button"
+                aria-label="Open Issue Discuss"
+                aria-pressed="false"
+                aria-controls="issue-discuss-panel"
+              >
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.7"
+                  aria-hidden="true"
+                >
+                  <path d="M21 11a8 8 0 0 1-8 8H5l1-4a8 8 0 0 1 7-12 8 8 0 0 1 8 8Z" />
+                </svg>
+              </button>
+              <button class="small-button" id="reopen-issue" type="button" hidden>Reopen</button>
               <button class="primary-button" id="issue-playback" type="button">Start</button>
               <span
                 class="closed-issue-indicator"
@@ -419,11 +500,13 @@
           </details>
           <p id="merged-issue-notice" class="detail-copy" role="status" hidden></p>
         </section>
-        <section id="last-blocking-error" class="issue-results" aria-labelledby="last-blocking-error-title" hidden>
-          <h2 id="last-blocking-error-title">Last blocking error</h2>
-          <p id="last-blocking-error-context" class="muted"></p>
-          <p id="last-blocking-error-message" role="alert"></p>
-          <button type="button" class="small-button" id="last-blocking-error-open">Open block details</button>
+        <section id="issue-blocker" class="issue-results issue-blocker" aria-label="Issue blocker" hidden>
+          <div class="folder-controls">
+            <h2 id="issue-blocker-context"></h2>
+            <span id="issue-blocker-retrying" role="status" hidden>Retrying</span>
+            <button type="button" class="small-button" id="issue-blocker-open">Open block details</button>
+          </div>
+          <p id="issue-blocker-message" role="alert"></p>
         </section>
         <section id="issue-results" class="issue-results" aria-labelledby="issue-results-title" hidden>
           <h2 id="issue-results-title">Results</h2>
@@ -505,7 +588,6 @@
             <option value="" disabled selected>Archive</option>
             <option value="archive">Archive issue</option>
             <option value="reveal">Reveal in Finder</option>
-            <option value="reopen">Reopen</option>
             <option value="cleanup">Run Cleanup</option>
           </select>
         </div>
@@ -878,6 +960,26 @@
           </section>
           <div id="issue-activity" class="issue-activity"></div>
         </div>
+        <section id="issue-discuss-panel" aria-label="Issue Discuss" hidden>
+          <div class="folder-controls">
+            <button type="button" class="icon-button" id="issue-discuss-expand" aria-label="Expand Issue Discuss">
+              ⤢
+            </button>
+            <button type="button" class="small-button" id="issue-discuss-flow">Back to flow</button>
+          </div>
+          <p id="issue-discuss-error" role="alert" hidden></p>
+          <details id="reopen-feedback" hidden>
+            <summary>Save agreed follow-up feedback</summary>
+            <form id="reopen-feedback-form">
+              <label class="field"
+                >Requested changes after the previous implementation
+                <textarea id="reopen-feedback-text" required rows="3"></textarea>
+              </label>
+              <button class="small-button" type="submit">Save feedback</button>
+            </form>
+          </details>
+          <div id="issue-discuss" class="project-discuss"></div>
+        </section>
         <footer class="flow-footer">
           <span><span class="footer-dot"></span> <span id="flow-footer-label">Changes are saved locally</span></span
           ><span id="issue-timestamps" hidden></span>

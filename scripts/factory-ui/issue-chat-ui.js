@@ -879,8 +879,10 @@ const issueChatUI = (() => {
       finishEdit();
       return;
     }
-    skillComposer.reset();
-    draft.value = '';
+    window.timeyView.keepChatScroll(log, () => {
+      skillComposer.reset();
+      draft.value = '';
+    });
     requestId = null;
     status.textContent = result.disposition || 'Saved.';
   }

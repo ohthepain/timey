@@ -1,3 +1,4 @@
+import { mergedDelivery } from '../merged-issue.mjs';
 import { randomUUID } from 'node:crypto';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
@@ -48,17 +49,24 @@ function validateReport(id, report) {
 }
 
 function merged(flow) {
-  if (flow?.merged) return true;
-  return [...(flow?.blocks || []), ...(flow?.retiredBlocks || [])].some(
-    (block) =>
-      block.kind === 'merge' &&
-      block.attempts.some(
-        (attempt) =>
-          attempt.status === 'completed' &&
-          Number.isSafeInteger(attempt.result?.pr) &&
-          Boolean(attempt.result?.revision)
-      )
-  );
+  return flow ? mergedDelivery(flow) : null;
+}
+
+function retainedMerge(flow) {
+  return flow.pastDeliveries?.at(-1)?.merged ?? null;
+}
+
+function preservesReopenedDelivery(before, after) {
+  return inputDigest(retainedMerge(after)) === inputDigest(merged(before)) && !merged(after);
+}
+
+function permitsReopen(before, after, purpose) {
+  if (purpose !== 'reopen' || !after.reopen?.from) return false;
+  return preservesReopenedDelivery(before, after);
+}
+
+function permitsMergedFlowWrite(before, after, purpose) {
+  return permitsClosure(before, after, purpose) || permitsReopen(before, after, purpose);
 }
 
 function assertFlowVersion(record, expected) {
@@ -84,7 +92,7 @@ function sameFlow(record, flow) {
 function validateFlowSave(record, flow, expectedRevision, purpose) {
   const unchanged = sameFlow(record, flow);
   assertStoreState(
-    !merged(record?.value) || permitsClosure(record.value, flow, purpose) || unchanged,
+    !merged(record?.value) || permitsMergedFlowWrite(record.value, flow, purpose) || unchanged,
     'STORE_MERGED',
     'This merged issue is read-only.'
   );

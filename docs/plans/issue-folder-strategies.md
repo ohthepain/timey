@@ -17,6 +17,13 @@ the same code. The explanation identifies the overlap and any checks the issues
 could share. **Different blast radii** selects issues with limited overlap in
 behavior, dependencies, and likely integration conflicts.
 
+**Sequential** selects eligible implementation issues for a shared master flow.
+The master shows its saved sub-issue order. Drag a row to change that order while
+the master is idle. Start or resume the master to run Work for each sub-issue in
+order. A blocker stops the run on that sub-issue. Resolve it and resume to
+continue from that step. Factory retains earlier attempts and checks the combined
+candidate against each sub-issue’s requested proof before the shared delivery.
+
 ## Create a master issue
 
 Select open issues with no active or uncertain work. Issues waiting for approval

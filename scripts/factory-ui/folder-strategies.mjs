@@ -5,6 +5,7 @@ import { requireThat } from './common.mjs';
 import { readFolderSettings, requireIssueFolder, updateFolderSettings } from './issue-folder-settings.mjs';
 
 const builtins = [
+  { id: 'sequential', name: 'Sequential', prompt: 'Select issues to work on in the displayed order.' },
   {
     id: 'same-blast-radius',
     name: 'Same blast radius',

@@ -135,6 +135,56 @@ import { reorderedBlocks } from './flow-order.mjs';
     },
   });
 
+  const appButton = $('project-app');
+  const appStatus = $('project-app-status');
+  const stopApp = $('project-app-stop');
+  function showAppState(result) {
+    stopApp.hidden = !result.managed;
+  }
+  void json('/api/project-app')
+    .then(showAppState)
+    .catch(() => {});
+  appButton.addEventListener('click', async () => {
+    if (appButton.disabled) return;
+    const tab = window.open('about:blank', '_blank');
+    if (!tab) {
+      appStatus.textContent = 'Allow pop-ups to open the app.';
+      return;
+    }
+    tab.opener = null;
+    appButton.disabled = true;
+    appStatus.textContent = 'Starting app…';
+    try {
+      const result = await post('project-app', { action: 'start' });
+      appStatus.textContent = '';
+      appStatus.title = '';
+      appButton.textContent = 'App';
+      showAppState(result);
+      if (result.missing) {
+        tab.close();
+        projectSettingsUI.open('app');
+      } else if (!tab.closed) {
+        tab.location.replace(result.url);
+      }
+    } catch (failure) {
+      tab.close();
+      appStatus.textContent = failure.message.split('\n')[0];
+      appStatus.title = failure.message;
+      appButton.textContent = 'Retry App';
+    } finally {
+      appButton.disabled = false;
+    }
+  });
+  stopApp.addEventListener('click', async () => {
+    try {
+      showAppState(await post('project-app', { action: 'stop' }));
+      appButton.textContent = 'App';
+      appStatus.textContent = 'App stopped.';
+    } catch (failure) {
+      appStatus.textContent = failure.message;
+    }
+  });
+
   function folderLocation() {
     return state.fileFolder ? { root: state.fileFolder.root, path: state.fileFolder.path } : { folder: state.folder };
   }
@@ -201,7 +251,12 @@ import { reorderedBlocks } from './flow-order.mjs';
     if (!issue || location === 'archive' || state.view?.grouping?.master) return 'hidden';
     if (routeComplete(blocks)) return closed || state.view.flow.routeType === 'investigation' ? 'archive' : 'close';
     if (closed || issue.readOnly) return 'hidden';
-    return blocks.some((block) => block.attempts?.length) ? 'resume' : 'start';
+    return blocks.some(routeWasStarted) ? 'resume' : 'start';
+  }
+
+  function routeWasStarted(block) {
+    const reopen = state.view.flow.reopen;
+    return reopen ? block.attempts.some(({ reopenId }) => reopenId === reopen.id) : Boolean(block.attempts?.length);
   }
 
   function isRunning(block) {
@@ -402,6 +457,77 @@ import { reorderedBlocks } from './flow-order.mjs';
     navigateIssue: selectIssue,
     changed: () => load(true),
   });
+  let discussOpen = false;
+  let discussExpanded = false;
+  let discussIssue = null;
+  let issueDiscuss = null;
+
+  function destroyIssueDiscuss() {
+    issueDiscuss?.setVisible(false);
+    issueDiscuss?.destroy();
+    issueDiscuss = null;
+    // Keep callbacks for an outgoing conversation attached to its own DOM.
+    const host = $('issue-discuss');
+    const fresh = host.cloneNode(false);
+    host.replaceWith(fresh);
+  }
+
+  async function mountIssueDiscuss(id) {
+    const error = $('issue-discuss-error');
+    error.hidden = true;
+    try {
+      const result = await post('issue-discuss-action', { issueId: id, action: 'create' });
+      if (discussIssue !== id || issueDiscuss) return;
+      issueDiscuss = window.createProjectDiscussUI({
+        rootId: 'issue-discuss',
+        idPrefix: 'issue-',
+        fixedConversation: true,
+        draftKey: () => id,
+        request: (path) =>
+          path === '/api/project-discuss' || path.startsWith('/api/project-discuss?')
+            ? json('/api/issue-discuss?issue=' + encodeURIComponent(id))
+            : json(path),
+        post: (_path, input) =>
+          post('issue-discuss-action', { ...input, issueId: id, conversationId: result.selected.id }),
+      });
+      await issueDiscuss.setVisible(true);
+    } catch (failure) {
+      if (discussIssue !== id) return;
+      error.hidden = false;
+      error.textContent = failure.message;
+    }
+  }
+
+  function renderIssueDiscuss() {
+    const id = discussOpen && state.view?.issue?.id;
+    const expanded = Boolean(id && discussExpanded);
+    $('app').toggleAttribute('data-issue-discuss-expanded', expanded);
+    $('issue-discuss-panel').hidden = !id;
+    $('reopen-feedback').hidden = !state.view?.flow?.reopen || state.view?.issue?.status === 'closed';
+    $('issue-discuss-toggle').setAttribute('aria-pressed', String(Boolean(id)));
+    $('issue-discuss-toggle').setAttribute('aria-label', id ? 'Show issue flow' : 'Open Issue Discuss');
+    $('issue-discuss-expand').setAttribute('aria-label', (expanded ? 'Collapse' : 'Expand') + ' Issue Discuss');
+    $('issue-discuss-expand').textContent = expanded ? '⤡' : '⤢';
+    if (id) $('graph-region').hidden = true;
+    if (id === discussIssue) return;
+    destroyIssueDiscuss();
+    $('reopen-feedback').open = false;
+    $('reopen-feedback-form').reset();
+    discussIssue = id;
+    if (id) void mountIssueDiscuss(id);
+  }
+
+  function setIssueDiscuss(open) {
+    discussOpen = open;
+    render();
+  }
+
+  $('issue-discuss-toggle').addEventListener('click', () => setIssueDiscuss(!discussOpen));
+  $('issue-discuss-flow').addEventListener('click', () => setIssueDiscuss(false));
+  $('issue-discuss-expand').addEventListener('click', () => {
+    discussExpanded = !discussExpanded;
+    renderIssueDiscuss();
+  });
   const investigationUI = window.createInvestigationIssueUI({ request: json, post, changed: () => load(true) });
   const investigationControls = window.createInvestigationFlowControls({
     request: json,
@@ -577,6 +703,7 @@ import { reorderedBlocks } from './flow-order.mjs';
     state.pending = true;
     state.error = '';
     renderErrors();
+    if (!options.global) $('issue-results').hidden = true;
     setBusy(true);
     try {
       const result = await post('flow-action', {
@@ -592,7 +719,8 @@ import { reorderedBlocks } from './flow-order.mjs';
         $(options.errorId).textContent = error.message;
         $(options.errorId).hidden = false;
       }
-      showError(error.message);
+      if (!options.global && selected === state.issueId) await load(true);
+      if (state.view?.lastBlockingError?.message !== error.message) showError(error.message);
       return null;
     } finally {
       state.pending = false;
@@ -697,12 +825,13 @@ import { reorderedBlocks } from './flow-order.mjs';
     document.querySelectorAll('[data-close-issue]').forEach((button) => {
       button.disabled = busy || Boolean(state.view?.closureBusy) || state.view?.flow?.blocks.some(isRunning);
     });
+    $('reopen-issue').hidden = !closed;
+    $('reopen-issue').disabled = busy || Boolean(state.view?.closureBusy);
     $('issue-archive-menu').hidden = !closed;
     $('issue-archive-menu').disabled = busy;
     const archived = issue?.location === 'archive';
     for (const option of $('issue-archive-menu').options)
-      if (['archive', 'reveal', 'reopen'].includes(option.value))
-        option.hidden = archived || (option.value === 'reopen' && issue?.readOnly);
+      if (['archive', 'reveal'].includes(option.value)) option.hidden = archived;
     $('issue-archive-menu').options[0].textContent = archived ? 'Archived issue' : 'Archive';
     const closing = state.view?.flow?.closing;
     const awaiting = closed && closing && !closing.complete && !state.view.closureBusy;
@@ -1392,7 +1521,7 @@ import { reorderedBlocks } from './flow-order.mjs';
     if (state.view?.issue?.isMaster) masterDrop.dataset.issueMasterDrop = state.view.issue.id;
     else delete masterDrop.dataset.issueMasterDrop;
     renderIssueAttachment(grouping);
-    const { master, children, reasoning, formerMasters, detachedChildren, canReattach } = grouping || {};
+    const { master, children, reasoning, formerMasters, detachedChildren, canReattach, canReorder } = grouping || {};
     const masterRow = $('issue-master');
     masterRow.hidden = !master;
     updateFolderMarkup(
@@ -1408,7 +1537,7 @@ import { reorderedBlocks } from './flow-order.mjs';
       (children || [])
         .map(
           (child) =>
-            `<li>${issueLink(child)}<button class="small-button" type="button" data-detach-action="folder-detach" data-detach-sub-issue="${escape(child.id)}" aria-label="Remove ${escape(issueLabel(child))}"${child.canDetach ? '' : ' disabled'}>Remove</button></li>`
+            `<li data-ordered-child="${escape(child.id)}" draggable="${Boolean(canReorder)}">${issueLink(child)}<button class="icon-button sub-issue-remove" type="button" data-detach-action="folder-detach" data-detach-sub-issue="${escape(child.id)}" aria-label="Remove ${escape(issueLabel(child))}"${child.canDetach ? '' : ' disabled'}>×</button></li>`
         )
         .join('')
     );
@@ -1437,6 +1566,34 @@ import { reorderedBlocks } from './flow-order.mjs';
     updateFolderMarkup(panel, html.join(''));
   }
 
+  const subIssueList = $('issue-sub-issues');
+  let draggedChild;
+  subIssueList.addEventListener('dragstart', (event) => {
+    const row = event.target.closest('[data-ordered-child][draggable="true"]');
+    if (!row) return;
+    draggedChild = row.dataset.orderedChild;
+    event.dataTransfer.setData('text/plain', draggedChild);
+    event.stopPropagation();
+  });
+  subIssueList.addEventListener('dragend', () => {
+    draggedChild = null;
+  });
+  subIssueList.addEventListener('dragover', (event) => {
+    if (draggedChild && event.target.closest('[data-ordered-child][draggable="true"]')) event.preventDefault();
+  });
+  subIssueList.addEventListener('drop', (event) => {
+    const row = event.target.closest('[data-ordered-child][draggable="true"]');
+    if (!row || !draggedChild || row.dataset.orderedChild === draggedChild) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const ids = state.view.grouping.children.map(({ id }) => id);
+    const target = ids.indexOf(row.dataset.orderedChild);
+    ids.splice(ids.indexOf(draggedChild), 1);
+    ids.splice(target, 0, draggedChild);
+    draggedChild = null;
+    void action('folder-reorder', { issueIds: ids });
+  });
+
   function renderSubIssue(child, reason) {
     const { requestedProof, proof, nextAction, canDetach } = child;
     const blocked = child.badges?.includes('blocked');
@@ -1446,7 +1603,7 @@ import { reorderedBlocks } from './flow-order.mjs';
       : proof?.status === 'failed'
         ? 'Detach and fix separately'
         : 'Detach';
-    return `<li data-group-child="${escape(child.id)}">${issueLink(child)} ${window.issueGroupUI.issueBadges(child)}${reason ? `<p>${escape(reason)}</p>` : ''}${requestedProof ? `<p>Requested proof: ${escape(requestedProof)}</p>` : ''}${proof ? `<p>${proof.status === 'passed' ? 'Passed' : 'Unmet'}: ${escape(proof.observation)}</p>` : ''}${nextAction ? `<p>${escape(nextAction)}</p>` : ''}<div class="folder-controls">${proof?.status === 'failed' ? '<button class="small-button" type="button" data-group-play>Continue on the master</button>' : ''}${(blocked ? child.canDetachBlocked : canDetach) ? `<button class="small-button" type="button" data-detach-action="${detachAction}" data-detach-sub-issue="${escape(child.id)}">${detachLabel}</button>` : ''}</div></li>`;
+    return `<li data-group-child="${escape(child.id)}">${issueLink(child)} ${window.issueGroupUI.issueBadges(child)}${reason ? `<p>${escape(reason)}</p>` : ''}${requestedProof ? `<p>Requested proof: ${escape(requestedProof)}</p>` : ''}${proof ? `<p>${proof.status === 'passed' ? 'Passed' : 'Unmet'}: ${escape(proof.observation)}</p>` : ''}${nextAction ? `<p>${escape(nextAction)}</p>` : ''}<div class="folder-controls">${proof?.status === 'failed' ? '<button class="small-button" type="button" data-group-play>Continue on the master</button>' : ''}${(blocked ? child.canDetachBlocked : canDetach) ? `<button class="icon-button sub-issue-remove" type="button" data-detach-action="${detachAction}" data-detach-sub-issue="${escape(child.id)}" aria-label="${escape(detachLabel + ' ' + issueLabel(child))}" title="${escape(detachLabel)}">×</button>` : ''}</div></li>`;
   }
 
   function annotationRow(annotation) {
@@ -1552,6 +1709,7 @@ import { reorderedBlocks } from './flow-order.mjs';
       folder: state.folder,
       issueIds: [...folderSelection.issueIds],
       selectionId: folderSelection.selection?.id,
+      strategy: $('folder-selection-strategy').value,
     });
     if (!preview) return;
     folderSelection.group = { ...preview, requestId: crypto.randomUUID() };
@@ -2622,6 +2780,7 @@ import { reorderedBlocks } from './flow-order.mjs';
 
   function workScopePicker(block) {
     const children = groupWorkChildren(block);
+    if (state.view?.grouping?.sequential) return '';
     if (!children.length || isRunning(block) || state.view.issue.readOnly) return '';
     const excluded = excludedWorkChildren.get(draftKey());
     return `<section class="detail-section" aria-label="Work scope"><div class="section-label">Sub-issues for this run</div>${children
@@ -2633,6 +2792,7 @@ import { reorderedBlocks } from './flow-order.mjs';
   }
 
   function selectedWorkChildren(block) {
+    if (state.view?.grouping?.sequential) return undefined;
     const children = groupWorkChildren(block);
     const excluded = excludedWorkChildren.get(draftKey());
     if (!excluded?.size || !children.length) return;
@@ -2870,10 +3030,12 @@ import { reorderedBlocks } from './flow-order.mjs';
     waitingButton.textContent = waiting ? waiting.label + ' needs confirmation' : '';
     waitingButton.dataset.block = waiting?.id || '';
     const input = state.view?.humanInput;
-    $('playback-status').innerHTML = playbackSpinner(blocks, playback, playing);
-    const result = state.view?.flow?.closing?.error || input?.message || playback?.reason || '';
+    $('playback-status').innerHTML = playback?.userPaused ? 'Paused' : playbackSpinner(blocks, playback, playing);
+    const blocker = state.view?.lastBlockingError;
+    const reason = playback?.reason;
+    const result = input?.message || (reason === blocker?.message ? '' : reason) || '';
     $('issue-results').hidden = !state.view?.issue || !result;
-    $('issue-results-title').textContent = input ? 'Needs your input' : 'Results';
+    $('issue-results-title').textContent = input ? playbackInputTitle(blocks, input) : 'Results';
     $('issue-results').classList.toggle('needs-input', Boolean(input));
     $('issue-results-message').textContent = result;
     $('issue-input-actions').hidden = !input;
@@ -2884,16 +3046,27 @@ import { reorderedBlocks } from './flow-order.mjs';
     $('issue-input-link').textContent = input?.actionLabel || 'Review PR';
   }
 
+  function playbackInputTitle(blocks, input) {
+    const child = latest(blocks.find(({ id }) => id === input.blockId))?.sequentialChild;
+    return child ? 'Needs your input · ' + child.title : 'Needs your input';
+  }
+
   function renderBlockingError() {
     const error = state.view?.lastBlockingError;
-    $('last-blocking-error').hidden = !error;
-    $('last-blocking-error-message').textContent = error?.message || '';
-    $('last-blocking-error-context').textContent = error
-      ? [error.blockLabel || error.operation || 'Issue', error.model, date(error.at)].filter(Boolean).join(' · ')
+    $('issue-blocker').hidden = !error;
+    $('issue-blocker-message').textContent = error?.message || '';
+    $('issue-blocker-context').textContent = error
+      ? [error.childTitle, error.blockLabel || error.operation || 'Issue', error.model, date(error.at)]
+          .filter(Boolean)
+          .join(' · ')
       : '';
-    $('last-blocking-error-open').hidden = !error?.blockId;
+    const retrying = error?.blockId
+      ? state.view.flow.blocks.some((block) => block.id === error.blockId && isRunning(block))
+      : state.view?.autoplay?.mode === 'playing';
+    $('issue-blocker-retrying').hidden = !error || !retrying;
+    $('issue-blocker-open').hidden = !error?.blockId;
   }
-  $('last-blocking-error-open').addEventListener('click', () => {
+  $('issue-blocker-open').addEventListener('click', () => {
     const error = state.view?.lastBlockingError;
     if (!error?.blockId) return;
     state.tab = 'details';
@@ -2997,6 +3170,7 @@ import { reorderedBlocks } from './flow-order.mjs';
       document.querySelector('.inspector').hidden = true;
       $('flow-view-title').textContent = 'Project home';
     }
+    renderIssueDiscuss();
     checkOpenPublication();
     renderInspector();
     renderErrors();
@@ -4226,11 +4400,37 @@ import { reorderedBlocks } from './flow-order.mjs';
   }
 
   async function reopenIssue(issueId) {
-    if (!confirm('Reopen this issue and return it to investigation?')) return;
     const context = await json('/api/issue-closure?kind=reopen&issue=' + encodeURIComponent(issueId));
-    await post('issue-decision', { ...context, kind: 'reopen' });
+    await post('issue-decision', { ...context, kind: 'reopen', flowRevision: state.view.flow.revision });
+    discussOpen = true;
     toast('Issue reopened.');
   }
+
+  $('reopen-issue').addEventListener('click', async () => {
+    const issueId = state.view?.issue?.id;
+    if (!issueId || state.pending) return;
+    state.pending = true;
+    setBusy(true);
+    try {
+      await reopenIssue(issueId);
+      await load(true);
+    } catch (error) {
+      showError(error.message);
+    } finally {
+      state.pending = false;
+      setBusy(false);
+    }
+  });
+
+  $('reopen-feedback-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const feedback = $('reopen-feedback-text');
+    if (await action('save-reopen-feedback', { feedback: feedback.value })) {
+      feedback.value = '';
+      $('reopen-feedback').open = false;
+      toast('Follow-up feedback saved to Your words.');
+    }
+  });
 
   $('issue-archive-menu').addEventListener('change', async (event) => {
     const menu = event.target;
@@ -4255,7 +4455,6 @@ import { reorderedBlocks } from './flow-order.mjs';
     setBusy(true);
     try {
       if (operation === 'reveal') await post('issue-report-reveal', { issueId });
-      if (operation === 'reopen') await reopenIssue(issueId);
     } catch (error) {
       showError(error.message);
     } finally {

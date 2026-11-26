@@ -1,3 +1,4 @@
+import { orderedMasterChildren, sequentialMaster, sequentialWork } from './sequential-master.mjs';
 import { runMetadataOperation } from './stores/metadata-operation.mjs';
 import {
   issueBlockModels,
@@ -177,6 +178,7 @@ const folderGroupActions = new Set([
   'folder-group-preview',
   'folder-group-create',
   'folder-detach',
+  'folder-reorder',
   'folder-detach-blocked',
   'folder-reattach',
   'folder-attach',
@@ -197,6 +199,7 @@ const scopedFolderActions = new Set([
   'folder-group-create',
   'folder-group-preview',
   'folder-detach',
+  'folder-reorder',
   'folder-detach-blocked',
   'move-grouped-issue',
   'folder-move',
@@ -383,9 +386,14 @@ function captureIdentity(
 
 function captureGroupMetadata(grouping) {
   if (!grouping) return {};
-  const { children, reasoning, humanChecks, investigative } = grouping;
+  const { children, reasoning, humanChecks, investigative, sequential } = grouping;
   return {
-    issue_group: { children, reasoning, ...(investigative !== undefined && { investigative }) },
+    issue_group: {
+      children,
+      reasoning,
+      ...(sequential && { sequential }),
+      ...(investigative !== undefined && { investigative }),
+    },
     ...(humanChecks?.length && { human_checks: humanChecks }),
   };
 }
@@ -639,6 +647,7 @@ class IssueFlows {
       badges: issueBadges(issue, badgeIndex, { masterId, approvals, flow, root: this.service.root }),
       masterId,
       isMaster: Boolean(issue.issue_group),
+      ...(sequentialMaster(issue) && { subIssueOrder: orderedMasterChildren(issue, flow).map(({ id }) => id) }),
       folder: flow.folder,
       flowRevision: flow.revision,
       folderLocked: Boolean(flow.folderLocked),
@@ -1201,14 +1210,66 @@ class IssueFlows {
     this.resumeClosure(issue.id);
     return result;
   }
-  async reopened(id) {
+  requireReopen(input) {
+    const issue = this.selected(input.issueId);
+    const flow = this.read(issue);
+    requireThat(issue.closed && flow.revision === input.flowRevision, 'Refresh the closed issue before reopening.');
+    requireThat(!this.active.has(issue.id) && !this.closureTasks.has(issue.id), 'Wait for closure to finish.');
+  }
+  async prepareReopenedFlow({ issueId: id }) {
     const issue = this.selected(id);
     const flow = this.read(issue);
-    requireThat(!mergedDelivery(flow), mergedIssueMessage);
-    if (!flow.closing && !flow.autoClose) return;
+    const from = digest(issue.content);
+    if (flow.reopen?.from === from) return;
+    const merged = mergedDelivery(flow);
+    const at = new Date().toISOString();
+    if (merged || flow.workspace) {
+      flow.pastDeliveries = [
+        ...(flow.pastDeliveries || []),
+        { merged, workspace: flow.workspace, destination: flow.destination, closure: flow.closing },
+      ];
+    }
+    flow.reopen = { id: randomUUID(), at, from };
+    delete flow.merged;
     delete flow.closing;
     delete flow.autoClose;
-    await this.store.save(flow, flow.revision);
+    delete flow.destination;
+    delete flow.workspace;
+    delete flow.sourceCheckpoint;
+    delete flow.sourceUnavailable;
+    delete flow.sourceUnavailableRunnerId;
+    delete flow.workspaceRunnerId;
+    flow.target = { ...flow.target, base: null };
+    delete flow.startingPoint;
+    delete flow.executionSettings;
+    delete flow.resolvedBranch;
+    invalidateBlocks(flow, new Set(flow.blocks.map(({ id }) => id)));
+    for (const error of flow.blockingErrors || []) error.resolvedAt ??= at;
+    await this.store.save(flow, flow.revision, { purpose: 'reopen' });
+  }
+  async reopened(id, prepared = false) {
+    if (!prepared) await this.prepareReopenedFlow({ issueId: id });
+    this.pause(id);
+  }
+  async saveReopenFeedback(input, issue, flow) {
+    requireThat(flow.reopen && !issue.closed, 'Reopen this issue before saving follow-up feedback.');
+    requireThat(
+      !this.active.has(issue.id) && !['playing', 'waiting'].includes(this.autoplay.get(issue.id)?.mode),
+      'Wait for the current run to finish.'
+    );
+    const feedback = typeof input.feedback === 'string' ? input.feedback.trim() : '';
+    requireThat(feedback.length > 0, 'Enter the agreed follow-up feedback.');
+    const request = requestBlock(flow);
+    const heading = '\n\n## Requested changes after the previous implementation\n\n';
+    const separator = flow.reopen.feedbackSaved ? '\n\n' : heading;
+    const wording = request.data.wording + separator + feedback;
+    requireThat(wording.length <= 24000, 'Keep Your words within 24,000 characters.');
+    flow.reopen.feedbackSaved = true;
+    request.data.wording = wording;
+    request.data.wordingChanged = true;
+    request.data.editId = randomUUID();
+    await this.saveEdit(flow, new Set([request.id]));
+    return this.view(issue.id);
   }
   async autoClose(id) {
     const issue = this.selected(id);
@@ -1389,7 +1450,7 @@ class IssueFlows {
           !this.service.issueChats?.active?.has(issueId),
         'Wait for the existing issue operation to finish before starting or resuming the route.'
       );
-      const next = await this.nextAutoplayBlock(flow, catalog);
+      const next = await this.nextAutoplayBlock(issue, flow, catalog);
       blockedBlock = next;
       if (this.autoplay.get(issueId)?.mode !== 'playing') return;
       if (!next) return this.pause(issueId, 'Flow complete');
@@ -1413,8 +1474,11 @@ class IssueFlows {
       this.pauseAutoplay(issueId, redactValue(error.message));
     }
   }
-  async nextAutoplayBlock(flow, catalog) {
-    const next = flow.blocks.find((block) => !completedBlock(block, flow));
+  async nextAutoplayBlock(issue, flow, catalog) {
+    const next = flow.blocks.find((block) => {
+      const sequential = sequentialWork(issue, flow, block);
+      return sequential ? !sequential.finished : !completedBlock(block, flow);
+    });
     return (await this.checkSuggestedWorkUpdate(flow, next, catalog)) || next;
   }
   async checkSuggestedWorkUpdate(flow, block, catalog) {
@@ -1676,7 +1740,7 @@ class IssueFlows {
       return this.reviewPublication(issue, flow, input, catalog);
     if (input.action === 'play') {
       this.groups.requireChildren(issue);
-      requireThat(!issue.closed, 'Reopen this issue before starting or resuming the route.');
+      this.requireOpenRoute(issue);
       if (!['playing', 'waiting'].includes(this.autoplay.get(issue.id)?.mode)) {
         this.autoplay.set(issue.id, { mode: 'playing' });
         void this.advanceAutoplay(issue.id, true);
@@ -1685,7 +1749,8 @@ class IssueFlows {
     }
     if (!['comment', 'open-block'].includes(input.action))
       requireThat(input.revision === flow.revision, 'This flow changed. Refresh before saving this edit.');
-    if (input.action === 'edit-request') return this.editRequest(issue, flow, input, catalog);
+    if (['edit-request', 'save-reopen-feedback'].includes(input.action))
+      return this.changeRequest(issue, flow, input, catalog);
     if (input.action === 'folder' || input.action === 'folder-lock') return await this.editFolder(issue, flow, input);
     if (closureActions.has(input.action)) return await this.dispatchClosure(input, issue, flow, catalog);
     if (['open-block-extension', 'reveal-definition'].includes(input.action))
@@ -1793,6 +1858,10 @@ class IssueFlows {
       await this.store.save(flow, flow.revision);
     }
     return this.view(issue.id);
+  }
+  async changeRequest(issue, flow, input, catalog) {
+    if (input.action === 'save-reopen-feedback') return this.saveReopenFeedback(input, issue, flow);
+    return this.editRequest(issue, flow, input, catalog);
   }
   async editRequest(issue, flow, input, catalog) {
     requireThat(!issue.closed, 'Reopen this issue before editing its request.');
@@ -2465,6 +2534,7 @@ class IssueFlows {
     const startedAt = new Date().toISOString();
     return {
       id: randomUUID(),
+      ...(flow.reopen && { reopenId: flow.reopen.id }),
       ...(groupIssueIds && { groupIssueIds }),
       ...(workIssueIds && { workIssueIds }),
       status: 'running',
@@ -2593,6 +2663,58 @@ class IssueFlows {
     }
     return this.view(issue.id);
   }
+  markSequentialAttempt(attempt, sequential) {
+    if (!sequential) return;
+    if (sequential.child) attempt.sequentialChild = sequential.child;
+    else attempt.sequentialVerification = sequential.ids;
+  }
+  async sequentialAdmission(issue, flow, block, input) {
+    if (!sequentialMaster(issue)) return null;
+    const sequenced = sequentialWork(issue, flow, block);
+    if (sequenced) {
+      requireThat(!input.workIssueIds, 'A Sequential master works on the next saved sub-issue.');
+      if (sequenced.child) await this.groups.requireSequentialChild(sequenced.child);
+      return sequenced;
+    }
+    if (['verify', 'commit', 'publish', 'merge'].includes(block.kind)) {
+      const stages = flow.blocks.flatMap((entry) => sequentialWork(issue, flow, entry) || []);
+      requireThat(
+        stages.length && stages.every(({ finished }) => finished),
+        'Finish Sequential Work and shared verification before delivery.'
+      );
+    }
+    return null;
+  }
+  requireOpenRoute(issue) {
+    requireThat(!issue.closed, 'Reopen this issue before starting or resuming the route.');
+  }
+  requireBlockAdmission(issue, flow, block, input, publication) {
+    if (input.action === 'continue') {
+      const binding = conversationState(this.service.root, issue.id).flowBlocks?.[block.id];
+      if (binding?.threadId) recoverAgentSession(this.service.root, binding.threadId, input.confirmedAgentRecovery);
+    }
+    requireBranchUpdate(flow, block);
+    const unresolved = flow.blocks.find((item) => item.attempts.some(unresolvedAttempt));
+    requireThat(
+      !unresolved || (unresolved.id === block.id && input.action === 'continue'),
+      'Continue and reconcile the disconnected block before starting different work.'
+    );
+    requireThat(
+      !confirmationBlocks.has(block.kind) || input.confirmed === true,
+      'Confirm this specific protected operation before starting it.'
+    );
+    if (['running', 'stopping'].includes(block.attempts.at(-1)?.status))
+      requireThat(input.action === 'continue', 'The previous attempt is uncertain. Inspect it before Continue.');
+    requireThat(block.kind !== 'request', 'Edit Request in Details.');
+    if (block.kind === 'publish') {
+      requireThat(publication, 'Review Publish or resume the route to publish the branch.');
+      const request = requestBlock(flow);
+      requireThat(
+        request.data.fields || (!request.data.editId && !latestCurrentAttempt(request)),
+        'Request clarification did not finish. Retry Request before publishing.'
+      );
+    }
+  }
   async start(issue, flow, input, catalog, publication = null, overnightRunId = null) {
     if (!input.closureId) {
       this.groups.requireChildren(issue);
@@ -2623,31 +2745,7 @@ class IssueFlows {
     const block = flow.blocks.find((item) => item.id === input.blockId);
     requireThat(block, 'Choose a saved block.');
     requireRevisedRequestPrerequisites(flow, block);
-    if (input.action === 'continue') {
-      const binding = conversationState(this.service.root, issue.id).flowBlocks?.[block.id];
-      if (binding?.threadId) recoverAgentSession(this.service.root, binding.threadId, input.confirmedAgentRecovery);
-    }
-    requireBranchUpdate(flow, block);
-    const unresolved = flow.blocks.find((item) => item.attempts.some(unresolvedAttempt));
-    requireThat(
-      !unresolved || (unresolved.id === block.id && input.action === 'continue'),
-      'Continue and reconcile the disconnected block before starting different work.'
-    );
-    requireThat(
-      !confirmationBlocks.has(block.kind) || input.confirmed === true,
-      'Confirm this specific protected operation before starting it.'
-    );
-    if (['running', 'stopping'].includes(block.attempts.at(-1)?.status))
-      requireThat(input.action === 'continue', 'The previous attempt is uncertain. Inspect it before Continue.');
-    requireThat(block.kind !== 'request', 'Edit Request in Details.');
-    if (block.kind === 'publish') {
-      requireThat(publication, 'Review Publish or resume the route to publish the branch.');
-      const request = requestBlock(flow);
-      requireThat(
-        request.data.fields || (!request.data.editId && !latestCurrentAttempt(request)),
-        'Request clarification did not finish. Retry Request before publishing.'
-      );
-    }
+    this.requireBlockAdmission(issue, flow, block, input, publication);
     const definition = catalog.find((entry) => entry.id === blockDefinitionId(block));
     requireThat(definition?.usable, 'This block’s Markdown definition is unavailable. Open Details to inspect it.');
     requireThat(
@@ -2662,8 +2760,10 @@ class IssueFlows {
       flow.resolvedBranch = settings.values.branch;
     }
     await prepareInvestigationBlock(this, issue, flow, block, input);
-    const scope = workScopeIds(issue, block, input.workIssueIds);
+    const sequential = await this.sequentialAdmission(issue, flow, block, input);
+    const scope = workScopeIds(issue, block, sequential?.ids ?? input.workIssueIds);
     const attempt = this.makeAttempt(flow, issue, block, catalog, scope);
+    this.markSequentialAttempt(attempt, sequential);
     attachInvestigationAttempt(flow, issue, block, input, attempt);
     if (input.closureId) attempt.closureId = input.closureId;
     if (block.kind === 'cleanup' && flow.closing.cleanupGeneration)
@@ -2680,12 +2780,7 @@ class IssueFlows {
     );
     flow = admitted.flow;
     const owned = admitted.owned;
-    const waiting = this.autoplay.get(issue.id);
-    if (waiting?.userPaused) this.pause(issue.id, 'A block was started.');
-    if (waiting?.mode === 'waiting') {
-      if (waiting.blockId === block.id && input.confirmed === true) this.autoplay.set(issue.id, { mode: 'playing' });
-      else this.pause(issue.id, 'A different block was started.');
-    }
+    this.continuePlayback(issue.id, block.id, input, sequential);
     owned.task = this.execute(
       issue,
       flow,
@@ -2700,6 +2795,17 @@ class IssueFlows {
       definition
     );
     return { accepted: true, issueId: issue.id, blockId: block.id, attemptId: attempt.id };
+  }
+  continuePlayback(issueId, blockId, input, sequential) {
+    const waiting = this.autoplay.get(issueId);
+    if (waiting?.mode === 'paused') {
+      const mode = sequential && input.action === 'continue' ? 'playing' : 'paused';
+      this.autoplay.set(issueId, { mode, userPaused: mode === 'paused' && waiting.userPaused });
+    }
+    if (waiting?.mode === 'waiting') {
+      if (waiting.blockId === blockId && input.confirmed === true) this.autoplay.set(issueId, { mode: 'playing' });
+      else this.pause(issueId, 'A different block was started.');
+    }
   }
   async admitAttempt(issue, flow, block, attempt, controller, purpose = 'edit') {
     if (!['detach-blocked-child', 'reattach-child', 'attach-child'].includes(block.operation)) {

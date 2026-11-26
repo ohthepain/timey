@@ -69,15 +69,15 @@ export async function blockModelsBrowserChecks({ page, project, service, poll, s
     await page.locator('[data-block-model-error]').waitFor();
     assert.match(await page.locator('[data-block-model-error]').textContent(), /disabled/);
     assert.equal(await select.inputValue(), 'anthropic:opus');
-    assert.equal(await page.locator('#last-blocking-error').isVisible(), false);
+    assert.equal(await page.locator('#issue-blocker').isVisible(), false);
     await page.locator('#run-block').click();
-    await page.locator('#last-blocking-error').waitFor();
-    assert.match(await page.locator('#last-blocking-error-message').textContent(), /disabled/);
+    await page.locator('#issue-blocker').waitFor();
+    assert.match(await page.locator('#issue-blocker-message').textContent(), /disabled/);
     await block(request.id);
-    assert.equal(await page.locator('#last-blocking-error').isVisible(), true);
+    assert.equal(await page.locator('#issue-blocker').isVisible(), true);
     await page.reload();
-    await page.locator('#last-blocking-error').waitFor();
-    await page.locator('#last-blocking-error-open').click();
+    await page.locator('#issue-blocker').waitFor();
+    await page.locator('#issue-blocker-open').click();
     await select.waitFor();
     assert.equal(await page.locator(`.block-card[data-block="${work.id}"]`).getAttribute('aria-pressed'), 'true');
     await page.locator('[data-block-model-error]').scrollIntoViewIfNeeded();
@@ -90,14 +90,14 @@ export async function blockModelsBrowserChecks({ page, project, service, poll, s
       'Replacement model did not save.'
     );
     await page.locator('#draft-note.saved-note').waitFor();
-    assert.equal(await page.locator('#last-blocking-error').isVisible(), true);
+    assert.equal(await page.locator('#issue-blocker').isVisible(), true);
     await page.locator('#run-block').click();
     await poll(
       () => service.flows.read(issue).blocks.find((b) => b.id === work.id).attempts.length,
       (value) => value === 2,
       'Retry did not run.'
     );
-    await page.locator('#last-blocking-error').waitFor({ state: 'hidden' });
+    await page.locator('#issue-blocker').waitFor({ state: 'hidden' });
     await screenshot('block-model-recovered');
     await block(flow.blocks.find((b) => b.kind === 'publish').id);
     assert.equal(await page.locator('#inspector-body [name="model"]').count(), 0);

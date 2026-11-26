@@ -61,7 +61,17 @@ async function observeArchiveBatch({ page, frame, project, output, titles, archi
     const updates = [];
     node.progressUpdates = updates;
     new MutationObserver((records) => {
-      for (const record of records) for (const child of record.addedNodes) updates.push(child.textContent);
+      const dialog = node.closest('dialog');
+      const control = dialog.querySelector('#archive-progress-dismiss');
+      const body = dialog.querySelector('#archive-progress-result');
+      const geometry = {
+        height: dialog.getBoundingClientRect().height,
+        controlTop: control.getBoundingClientRect().top,
+        resultScroll: getComputedStyle(body).overflowY,
+      };
+      for (const record of records) {
+        for (const child of record.addedNodes) updates.push({ ...geometry, text: child.textContent });
+      }
     }).observe(node, { childList: true });
   });
   const dialog = frame.getByRole('dialog', { name: 'Archive selected issues' });
@@ -70,7 +80,12 @@ async function observeArchiveBatch({ page, frame, project, output, titles, archi
   await dialog.getByText(summary, { exact: true }).waitFor();
 
   const selected = [...archived, ...failed];
-  const progress = await status.evaluate((node) => node.progressUpdates);
+  const layout = await status.evaluate((node) => node.progressUpdates);
+  const progress = layout.map(({ text }) => text);
+  const sizes = layout.map(({ height, controlTop }) => [height, controlTop]);
+  assert.ok(sizes.length >= 2 && sizes[0][0] > 0);
+  assert.ok(sizes.every(([height, top]) => height === sizes[0][0] && top === sizes[0][1]));
+  assert.ok(layout.every(({ resultScroll }) => resultScroll === 'auto'));
   const issueUpdates = progress.filter((update) => update.includes('Archiving'));
   assert.deepEqual(
     issueUpdates.map((update) => update.split(' processed. ')[0]),
@@ -92,7 +107,7 @@ async function observeArchiveBatch({ page, frame, project, output, titles, archi
   await page.screenshot({ path: screenshot, fullPage: true });
   await dialog.getByRole('button', { name: 'Dismiss', exact: true }).click();
   await dialog.waitFor({ state: 'hidden' });
-  return { progress, summary, failures, screenshot, stayedOpenAfterRefresh: true, dismissed: true };
+  return { progress, layout, summary, failures, screenshot, stayedOpenAfterRefresh: true, dismissed: true };
 }
 
 export async function projectIssuesBrowserChecks({ page, project, root, output, service }) {

@@ -24,7 +24,7 @@ initial choice is Use issue default, including the resolved model name. A block
 can save its own explicit model override. An unavailable selection retains its
 identity and displays its blocking reason.
 
-The issue section is named Last blocking error. It covers errors that prevent
+The issue page shows the current blocker in a red banner. It covers errors that prevent
 progress, including model availability, authentication, quota, verification and
 publication failures. It identifies the affected block and gives the reason.
 Ordinary UI failures, such as a failed rename, remain beside their controls.
@@ -57,7 +57,7 @@ their history; other blocks' unresolved errors remain.
 
 ## Implementation decisions
 
-- Use the existing issue heading area for Last blocking error and the existing
+- Use the issue heading area for the blocker banner and the existing
   right-hand Details panel for model controls. This adds no workspace column.
 - Resolve Use issue default through the frozen issue snapshot when one exists;
   otherwise use the existing issue, folder and project inheritance.
