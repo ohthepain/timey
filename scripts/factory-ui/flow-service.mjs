@@ -22,7 +22,13 @@ import { registeredProjectStores } from './stores/report-access.mjs';
 import { ensureProjectStores, hydrateProjectEvidence } from './stores/runtime.mjs';
 import { evidencePath, evidenceResolverGeneration } from './stores/evidence.mjs';
 import { fileGeneration } from './file-read-cache.mjs';
-import { mergedDelivery, mergedIssueMessage, allowsMergedAction, mergedIssueState } from './merged-issue.mjs';
+import {
+  mergedDelivery,
+  mergedIssueMessage,
+  allowsMergedAction,
+  mergedIssueState,
+  observedMergeReceipt,
+} from './merged-issue.mjs';
 import { pendingIssueMerge } from './flow-merge-state.mjs';
 import { abortPendingMerge } from './flow-update-branch.mjs';
 import { BranchRepairs } from './branch-repair.mjs';
@@ -981,12 +987,14 @@ class IssueFlows {
     if (!mergedDelivery(flow)) suggestTargetUpdate(flow, environment, catalog);
   }
   async observedDelivery(issue, flow, environment, catalog, { background = false } = {}) {
+    const merged = mergedDelivery(flow) ? null : observedMergeReceipt(environment.pr);
+    const visible = merged ? { ...flow, merged } : flow;
     if (
       this.service.storeStatus?.unavailable ||
       (this.service.projectStores &&
         readSnapshot(this.service.root)?.claims?.some((claim) => claim.issueId === issue.id))
     )
-      return flow;
+      return visible;
     if (background) {
       if (!environment.pr) return flow;
       const basis = JSON.stringify([flow.revision, environment.pr]);
@@ -1003,19 +1011,7 @@ class IssueFlows {
             observation.pending = null;
           });
       }
-      return environment.pr.mergedAt
-        ? {
-            ...flow,
-            merged: {
-              pr: environment.pr.number,
-              url: environment.pr.url,
-              head: environment.pr.head,
-              branch: environment.pr.branch,
-              mergedAt: environment.pr.mergedAt,
-              revision: environment.pr.revision,
-            },
-          }
-        : flow;
+      return visible;
     }
     if (await this.retainMerge(issue, flow, environment.pr)) return this.read(issue, catalog);
     if (mergedDelivery(flow)) return flow;
@@ -1029,16 +1025,10 @@ class IssueFlows {
     return flow;
   }
   async retainMerge(issue, flow, pr) {
-    if (mergedDelivery(flow) || !pr?.mergedAt) return false;
+    const receipt = observedMergeReceipt(pr);
+    if (mergedDelivery(flow) || !receipt) return false;
     const current = this.store.read(issue, flowTarget(this.service.root), this.catalog.read().entries);
-    current.merged = {
-      pr: pr.number,
-      url: pr.url,
-      head: pr.head,
-      branch: pr.branch,
-      mergedAt: pr.mergedAt,
-      revision: pr.revision,
-    };
+    current.merged = receipt;
     await this.store.save(current, current.revision);
     this.pause(issue.id, 'This issue has merged. Close it when ready.');
     return true;
@@ -1057,14 +1047,7 @@ class IssueFlows {
       this.service.projectStores &&
       readSnapshot(this.service.root)?.claims?.some((claim) => claim.issueId === issue.id)
     ) {
-      const receipt = {
-        pr: observed.pr.number,
-        url: observed.pr.url,
-        head: observed.pr.head,
-        branch: observed.pr.branch,
-        mergedAt: observed.pr.mergedAt,
-        revision: observed.pr.revision,
-      };
+      const receipt = observedMergeReceipt(observed.pr);
       const active = this.active.get(issue.id);
       if (active) active.mergedReceipt = receipt;
       return { ...flow, merged: receipt };

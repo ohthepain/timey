@@ -4,6 +4,9 @@ After GitHub confirms that an issue's PR merged, its issue and work flow become
 read-only. A successful Merge receipt remains a delivery fact even when a later
 attempt failed or an older runner invalidated the receipt. An externally observed
 merge is retained locally so the lock survives server restarts and GitHub outages.
+The issue page hides Start and Resume as soon as it observes the merge, even if a
+running block delays saving the observation. Merged and closed issues keep old
+work errors in attempt history and omit them from the issue blocker banner.
 
 The controller rejects work starts, retries, route Start/Resume, graph and definition edits,
 request changes, issue settings, metadata edits, grouping, and bulk updates for

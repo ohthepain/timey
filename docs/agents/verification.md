@@ -254,8 +254,9 @@ file before opening settings, even when earlier scenarios initialized it.
 `node --test scripts/flow.check.mjs scripts/flow-delivery.check.mjs` checks the
 merged-issue lock, preserved definitions and attempts, external merge observation,
 restart persistence, editable unmerged/local issues, and historical Fixed acceptance.
-`node scripts/flow-browser.mjs --merged-issue` drives the disabled controls and
-direct HTTP guards, bulk preflight, history after reload, Close, Cleanup and the
+`node scripts/flow-browser.mjs --merged-issue` checks the transition after a GitHub
+merge, including hidden Resume and blocker controls. It drives direct HTTP
+guards, bulk preflight, history after reload, Close, Cleanup and the
 deferred reopen guard in a disposable project. It saves a screenshot and
 `merged-issue-readonly.json` under its reported evidence directory and starts no
 live model work.

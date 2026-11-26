@@ -3052,7 +3052,9 @@ import { reorderedBlocks } from './flow-order.mjs';
   }
 
   function renderBlockingError() {
-    const error = state.view?.lastBlockingError;
+    const issue = state.view?.issue;
+    const error =
+      issue?.readOnly || ['closed', 'archive'].includes(issue?.location) ? null : state.view?.lastBlockingError;
     $('issue-blocker').hidden = !error;
     $('issue-blocker-message').textContent = error?.message || '';
     $('issue-blocker-context').textContent = error

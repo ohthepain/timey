@@ -15,25 +15,42 @@ export async function mergedIssueBrowserChecks({ page, project, service, screens
   );
   const flows = service.flows;
   const flow = flows.read(flows.selected(id));
+  const blocker = 'The issue checkout changed. Commit or preserve its changes before retrying Merge.';
+  const pr = { number: 91, url: 'https://github.com/test/fixture/pull/91', head: 'verified-head', branch: 'dev' };
+  flow.destination = { branch: pr.branch, pr: pr.number, url: pr.url };
+  const originalObserver = flows.observer;
+  let observedPR = pr;
+  flows.observer = {
+    observe: (flow, options) =>
+      flow.issueId === id ? Promise.resolve({ pr: observedPR }) : originalObserver.observe(flow, options),
+  };
   flow.blocks
     .find((block) => block.kind === 'merge')
     .attempts.push({
-      id: 'confirmed-merge',
-      status: 'completed',
+      id: 'blocked-merge',
+      status: 'blocked',
       startedAt: '2026-11-21T00:00:00Z',
       endedAt: '2026-11-21T00:01:00Z',
-      summary: 'GitHub confirms the protected merge.',
-      result: {
-        pr: 91,
-        revision: 'confirmed-merge',
-        head: 'verified-head',
-        url: 'https://github.com/test/fixture/pull/91',
-      },
+      summary: blocker,
     });
-  const saved = await flows.store.save(flow, flow.revision);
-  const before = readFileSync(flows.store.path(id), 'utf8');
+  await flows.store.save(flow, flow.revision);
+  await page.clock.install();
   await page.goto('/?issue=' + id);
+  await page.getByRole('button', { name: 'Resume issue' }).waitFor();
+  await page.locator('#issue-blocker').getByText(blocker, { exact: true }).waitFor();
+  observedPR = { ...pr, mergedAt: '2026-11-21T00:02:00Z', revision: 'confirmed-merge' };
+  await page.clock.fastForward(60_000);
   await page.getByText('Merged. This issue is read-only. Close it when ready.', { exact: true }).waitFor();
+  const saved = await poll(
+    () => {
+      const saved = flows.read(flows.selected(id));
+      return saved.merged ? saved : null;
+    },
+    Boolean,
+    'External merge receipt was not saved.'
+  );
+  const before = readFileSync(flows.store.path(id), 'utf8');
+  assert.equal(await page.locator('#issue-blocker').isVisible(), false);
   assert.equal(await page.locator('#rename-issue').isDisabled(), true);
   assert.equal(await page.locator('#issue-playback').isVisible(), false);
   assert.equal(await page.locator('#rebuild-flow').isDisabled(), true);
@@ -75,6 +92,7 @@ export async function mergedIssueBrowserChecks({ page, project, service, screens
   await dialog.waitFor({ state: 'hidden' });
   await poll(() => flows.selected(id).closed, Boolean, 'Merged issue did not close.');
   await poll(() => !flows.closureBusy(id), Boolean, 'Merged issue cleanup did not finish.');
+  assert.equal(await page.locator('#issue-blocker').isVisible(), false);
   const closed = flows.selected(id);
   assert.equal(closed.closure.reason, 'duplicate');
   const after = flows.read(closed);
