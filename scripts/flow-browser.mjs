@@ -2612,7 +2612,8 @@ try {
       body: 'Close this open issue with a reason.',
     });
     await page.goto('/?issue=' + closureIssueId);
-    await page.locator('#issue-playback[data-playback-mode="start"]').waitFor();
+    await page.locator('#issue-title').filter({ hasText: 'Header closure fixture' }).waitFor();
+    await page.locator('#issue-playback[aria-label="Start issue"]').waitFor();
     const close = page.locator('#environment #worktree-hint + #close-with-reason');
     await close.waitFor();
     assert.equal(await close.count(), 1);
