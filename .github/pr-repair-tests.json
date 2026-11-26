@@ -8,6 +8,7 @@
         "node",
         "scripts/flow-browser.mjs",
         "--ci-part=1b",
+        "--ai-text",
         "--automate-activity",
         "--activity-indicators",
         "--chat-progress"
@@ -29,10 +30,6 @@
         "--save-block-comment",
         "--work-markdown"
       ]
-    },
-    {
-      "name": "Automate me dots follow each active response",
-      "command": ["node", "scripts/flow-browser.mjs", "--ci-part=1b", "--ai-text", "--automate-activity"]
     },
     {
       "name": "Inbox playback and block Details render the requested controls",

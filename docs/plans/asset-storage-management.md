@@ -36,9 +36,16 @@ information needed to count and describe references.
 Each scan reads the recorded artifact locations once when the coordination
 store is available.
 
-The inventory supports filtering, sorting, page selection, and filtered and
-selected byte totals. A provider failure is visible alongside results from
-available stores.
+Filter by asset type, store, or recorded references. Sort by name, size,
+object date, or recorded reference count in either direction. The inventory
+filters and sorts all assets before showing the first rows. Scroll to load more.
+
+**Select all (visible)** applies to all loaded rows, including rows above the
+scroll position. Rows loaded afterward start unselected. **Select all matches**
+applies to the full filtered inventory, and matching rows appear selected as
+they load. The inventory shows the selected count and byte total. Sorting keeps
+the selection. Changing a filter clears it. A provider failure is visible
+alongside results from available stores.
 
 ## Confirmed behavior
 
