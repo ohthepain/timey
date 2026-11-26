@@ -1,7 +1,7 @@
 import { FileReadCache } from './file-read-cache.mjs';
 import { registeredProjectStores } from './stores/report-access.mjs';
 import { sameOwner } from './stores/coordination.mjs';
-import { blockDefinitionId, missingMergePR, requestBlock, withoutTarget } from './flow-block-data.mjs';
+import { blockDefinitionId, missingMergePR, requestBlock, withoutBlock } from './flow-block-data.mjs';
 import { BlockCatalog } from './block-catalog.mjs';
 import {
   blockDependencies,
@@ -92,15 +92,7 @@ function migrateFlow(flow, defaultTarget) {
     request.data = { wording, fields: { ...fields, requestedProof: proof, type: flow.type } };
     flow.routeType = flow.type;
   }
-  const target = flow.blocks.find((block) => block.kind === 'target');
-  if (target) {
-    flow.target ??= target.data?.delivery;
-    flow.startingPoint ??= target.data?.startingPoint ?? null;
-    flow.blocks = withoutTarget(flow.blocks, target);
-    for (const block of flow.blocks)
-      for (const key of Object.keys(block.links ?? {})) if (block.links[key] === target.id) delete block.links[key];
-    if (target.attempts?.length || target.comments?.length) (flow.retiredBlocks ??= []).push(target);
-  }
+  retireLegacyBlocks(flow);
   migrateUpdateBranch(flow);
   linkPreWorkUpdate(flow.blocks);
   flow.target ??= defaultTarget;
@@ -121,6 +113,21 @@ function migrateFlow(flow, defaultTarget) {
   }
   reconcileMergeAttempts(flow);
   return flow;
+}
+
+function retireLegacyBlocks(flow) {
+  const target = flow.blocks.find((block) => block.kind === 'target');
+  if (target) {
+    flow.target ??= target.data?.delivery;
+    flow.startingPoint ??= target.data?.startingPoint ?? null;
+  }
+  for (const block of flow.blocks.filter(({ kind }) => ['target', 'verify'].includes(kind)).reverse()) {
+    flow.blocks = withoutBlock(flow.blocks, block);
+    for (const remaining of flow.blocks)
+      for (const key of Object.keys(remaining.links ?? {}))
+        if (remaining.links[key] === block.id) delete remaining.links[key];
+    if (block.attempts?.length || block.comments?.length) (flow.retiredBlocks ??= []).push(block);
+  }
 }
 
 function reconcileMergeAttempts(flow) {
@@ -407,6 +414,7 @@ export function editFlow(flow, input, catalog) {
         'Add a block other than Request or the legacy Target block.'
       );
       const added = makeBlock(input.kind, at ? [next.blocks[at - 1].id] : [], false, catalog);
+      requireThat(added.kind !== 'verify', 'Run tests in Work or Merge.');
       added.lane = validLane(input.lane ?? (input.kind === 'update-branch' ? next.blocks[at]?.lane : 0) ?? 0);
       added.after = blockDependencies(next, added, at);
       next.blocks.splice(at, 0, added);

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { createFlowExecutor } from './factory-ui/flow-executor.mjs';
 import { digest } from './factory-ui/common.mjs';
@@ -104,9 +104,6 @@ function fixture(t, options = {}) {
   };
   const executor = createFlowExecutor(service, {
     verifyWork: async () => ({ evidence: [] }),
-    ...(!options.execute && {
-      verifyCandidate: async () => ({ result: { summaries: [] }, evidence: [] }),
-    }),
     createConnection({ onEvent }) {
       emit = onEvent;
       calls.push({ method: 'connection' });
@@ -451,7 +448,7 @@ test('a new checkout uses the selected starting commit and retains it when the s
   assert.equal(retry.workspace.base, selected, 'A retained checkout must keep its original base.');
 });
 
-test('Work repairs formatting and Fallow in its own chat and leaves full checks to Verify', async (t) => {
+test('Work repairs formatting and Fallow in its own chat and standalone Verify cannot run', async (t) => {
   const checks = [];
   const f = fixture(t, {
     async verifyWork(_ctx, workspace, folder) {
@@ -462,10 +459,6 @@ test('Work repairs formatting and Fallow in its own chat and leaves full checks 
           evidence: [{ label: 'Failure', path: 'fallow.log' }],
         });
       return { evidence: [] };
-    },
-    async verifyCandidate() {
-      checks.push('full Verify');
-      return { result: { head: 'checked-head' }, evidence: [] };
     },
   });
   const worked = await f.run('work');
@@ -478,8 +471,7 @@ test('Work repairs formatting and Fallow in its own chat and leaves full checks 
   assert.match(turns[0].prompt, /--work-checks[\s\S]*--write-format/);
   assert.match(turns[1].prompt, /fallow\.log/);
   assert.equal(checks.length, 2);
-  assert.equal((await f.run('verify')).result.head, 'checked-head');
-  assert.equal(checks.at(-1), 'full Verify');
+  await assert.rejects(() => f.run('verify'), /Run tests in Work or Merge/);
 });
 
 test('Work continues in the same conversation until its checked changes are committed', async (t) => {
@@ -868,7 +860,7 @@ test('protected merge and delete block without saved delivery evidence and start
 });
 
 for (const installed of ['matching', 'missing', 'stale', 'missing workspace']) {
-  test(`explicit verification prepares ${installed} dependencies and retains command evidence`, async (t) => {
+  test(`Work verification prepares ${installed} dependencies and retains command evidence`, async (t) => {
     const executions = [];
     const lock = 'lockfileVersion: 9.0\n';
     const workspaces = 'packages:\n  - packages/example\n';
@@ -880,39 +872,31 @@ for (const installed of ['matching', 'missing', 'stale', 'missing workspace']) {
           recursive: true,
         });
     }
-    const f = fixture(t, {
-      async execute(input) {
-        executions.push(input);
-        writeFileSync(input.log, 'Fixture command result.');
-        if (input.command === 'pnpm') return installFixture(input.cwd);
-        return (
-          'FLOW_RESULT ' +
-          JSON.stringify({
-            head: 'fixture-head',
-            tree: 'fixture-tree',
-            summaries: [],
-          })
-        );
-      },
-    });
-    // Verify prepares dependencies in an existing managed worktree.
+    const f = fixture(t);
     const { workspace } = await f.run('understand');
     writeFileSync(join(workspace.checkout, 'pnpm-lock.yaml'), lock);
     writeFileSync(join(workspace.checkout, 'pnpm-workspace.yaml'), workspaces);
     if (installed !== 'missing')
       installFixture(workspace.checkout, installed === 'stale' ? 'old lock' : lock, installed !== 'missing workspace');
-    const modelCalls = f.calls.filter((call) => call.method === 'connection').length;
-    const result = await f.run('verify');
+    const summary = join(workspace.checkout, '.issues/evidence/work-summary.json');
+    const ctx = { signal: new AbortController().signal, onProgress() {} };
+    const result = await runWorkVerification(ctx, workspace, join(f.root, 'verification'), async (input) => {
+      executions.push(input);
+      writeFileSync(input.log, 'Fixture command result.');
+      if (input.command === 'pnpm') return installFixture(input.cwd);
+      mkdirSync(dirname(summary), { recursive: true });
+      writeFileSync(summary, '{}');
+      return 'Verification summary: ' + summary;
+    });
     assert.deepEqual(
       executions.map(({ command }) => command),
       installed === 'matching' ? [process.execPath] : ['pnpm', process.execPath]
     );
     assert.ok(executions.every(({ cwd }) => cwd === workspace.checkout));
     if (installed !== 'matching') assert.deepEqual(executions[0].args, ['install', '--frozen-lockfile']);
-    assert.match(executions.at(-1).args.at(-1), /checkCandidate/);
-    assert.equal(result.result.head, 'fixture-head');
+    assert.ok(executions.at(-1).args.includes('--work-checks'));
+    assert.ok(result.evidence.some(({ path }) => path === summary));
     assert.ok(result.evidence.every((item) => existsSync(item.path)));
-    assert.equal(f.calls.filter((call) => call.method === 'connection').length, modelCalls);
   });
 }
 
@@ -980,7 +964,7 @@ test('stop reaches explicit command execution and preserves its log', async (t) 
       );
     },
   });
-  const task = f.run('verify', { signal: abort.signal });
+  const task = f.run('update-branch', { signal: abort.signal });
   await started;
   abort.abort();
   await assert.rejects(task, (error) => {
@@ -2159,7 +2143,7 @@ test('retained blocked and completed legacy claims require reconciliation before
       join(f.root, '.issues/factory.json'),
       JSON.stringify({ version: 1, actions: [{ id: 'retained', issues: [f.issue.id], status }] })
     );
-    await assert.rejects(f.run('verify'), /legacy assignment still owns/);
+    await assert.rejects(f.run('work'), /legacy assignment still owns/);
     assert.equal(f.calls.length, 0);
   }
 });

@@ -7,11 +7,11 @@ Delivery behavior for the [explicit issue flow](../adr/0013-explicit-issue-flows
 The standard delivery flow goes from **Request** through **Work**, **Publish PR**, **Merge**, and **Close**. [Standard delivery definition](../../factory/system/flow/definitions/delivery.md)
 
 - **Work** verifies the requested behavior and retains focused commands and proof.
-- **Publish PR** prepares and publishes a clean committed candidate.
+- **Publish PR** prepares and publishes a clean committed candidate without running tests.
 - **Merge** updates the existing PR when needed and waits for GitHub branch protection. GitHub supplies the required checks and reviews.
 
-Existing Verify blocks still run on request and retain their evidence. They are
-hidden when adding blocks or generating new flows.
+Flow retires standalone Verify blocks from saved routes and preserves their
+evidence in history. Work and Merge handle test failures within the issue scope.
 
 ## The Merge loop
 
