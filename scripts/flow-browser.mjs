@@ -2038,7 +2038,9 @@ try {
       (labels) => labels.includes('how') && !labels.includes('poteto-mode'),
       'Skill suggestions did not reload.'
     );
-    assert.equal(await card.locator('.block-description').innerText(), 'Ready when you are.');
+    const description = card.locator('.block-description');
+    await description.filter({ hasText: /^Ready when you are\.$/ }).waitFor();
+    assert.equal(await description.innerText(), 'Ready when you are.');
     assert.deepEqual(await layout(), originalLayout);
     assert.equal(await card.locator('.block-label').innerText(), title);
     assert.equal(await card.locator('.block-status').innerText(), status);

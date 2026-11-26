@@ -251,9 +251,9 @@ export async function investigationFlowsBrowserChecks({ page, service, screensho
   await investigate(page, service, calls, screenshot, poll);
 }
 
-async function prepareLongAutomateChat({ page, service, poll }) {
+async function prepareLongAutomateChat({ page, service, poll, sessionId }) {
   const automate = service.projectHome.automateMe;
-  const session = automate.selected(automate.view().sessions[0].id);
+  const session = automate.selected(sessionId);
   session.messages.push(
     ...Array.from({ length: 32 }, (_, index) => ({ role: 'assistant', text: 'Working-style message ' + (index + 1) }))
   );
@@ -268,14 +268,14 @@ async function prepareLongAutomateChat({ page, service, poll }) {
   await messages.evaluate((node) => {
     node.scrollTop = 90;
   });
-  return { metrics, atLatest, followed };
+  return { sessionId, metrics, atLatest, followed };
 }
 
 async function verifyAutomateChatReopening({ page, dialog, poll, output, chat }) {
   const reading = await chat.metrics();
   assert.equal(reading.top, 90, 'An Automate me reply preserves the older reading position.');
   await dialog.getByRole('button', { name: 'Close Automate me', exact: true }).click();
-  await page.locator('[data-home-session="automate"]').click();
+  await page.locator(`[data-home-session="automate"][data-session-id="${chat.sessionId}"]`).click();
   await poll(chat.metrics, chat.atLatest, 'Reopened Automate me did not show the latest reply.');
   writeFileSync(
     join(output, 'automate-chat-scroll.json'),
@@ -292,13 +292,19 @@ export async function automateActivityBrowserChecks({ page, service, screenshot,
     await page.getByRole('button', { name: 'Run Automate me', exact: true }).click();
     const dialog = page.locator('#home-automate-dialog');
     const indicator = dialog.locator('#home-automate-messages > .chat-live .SparkleText');
+    const started = page.waitForResponse(
+      (response) =>
+        response.url().endsWith('/api/project-home-action') &&
+        response.request().postDataJSON()?.action === 'automate-start'
+    );
     await dialog.getByRole('button', { name: 'Start conversation', exact: true }).click();
     await indicator.waitFor();
     await screenshot('automate-activity-running');
     turn.resolve();
     await dialog.getByText('Which working habit matters most?', { exact: true }).waitFor();
     await indicator.waitFor({ state: 'detached' });
-    const chat = await prepareLongAutomateChat({ page, service, poll });
+    const { session } = await (await started).json();
+    const chat = await prepareLongAutomateChat({ page, service, poll, sessionId: session.id });
     turn = Promise.withResolvers();
     await dialog.locator('#home-automate-message').fill('Make verification explicit.');
     await dialog.getByRole('button', { name: 'Send reply', exact: true }).click();

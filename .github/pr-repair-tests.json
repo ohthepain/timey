@@ -1,7 +1,24 @@
 {
   "version": 1,
-  "sourceRun": "https://github.com/ohthepain/timey/actions/runs/45775369660/job/139761063990",
+  "sourceRun": "https://github.com/ohthepain/timey/actions/runs/45791686943/job/139815865470",
   "tests": [
+    {
+      "name": "Work Markdown reloads headings and lists without changing layout, drafts or actions",
+      "command": [
+        "node",
+        "scripts/flow-browser.mjs",
+        "--ci-part=2",
+        "--capture-folder-issue",
+        "--save-request-route",
+        "--add-parallel-block",
+        "--save-block-comment",
+        "--work-markdown"
+      ]
+    },
+    {
+      "name": "Automate me dots follow each active response",
+      "command": ["node", "scripts/flow-browser.mjs", "--ci-part=1b", "--ai-text", "--automate-activity"]
+    },
     {
       "name": "focused test validation identifies the exact rejected argument and rule",
       "command": [
