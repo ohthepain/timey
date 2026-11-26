@@ -137,13 +137,21 @@ async function checkOwnershipRecovery({ page, service, issueId, poll, screenshot
     attempt,
     expectedRevision: saved.flow.revision,
     operationId: 'browser-disconnected-attempt',
+    flow: {
+      ...saved.flow,
+      blockingErrors: [
+        { blockId: block.id, blockLabel: block.label, at: attempt.startedAt, message: 'Fixture runner disconnected.' },
+      ],
+    },
   });
   await stores.refresh();
   await page.goto('/?issue=' + issueId);
-  await page.locator('#issue-settings').evaluate((element) => {
-    element.open = true;
-  });
+  const banner = page.getByRole('region', { name: 'Last blocking error' });
+  const release = banner.getByRole('button', { name: 'Release claim', exact: true });
+  await banner.getByRole('button', { name: 'Open block details' }).waitFor({ state: 'visible' });
+  await release.click();
   await page.locator('#issue-ownership-controls').waitFor({ state: 'visible' });
+  assert.equal((await stores.records.get('claims/' + issueId)).value.token, owner.token);
   const confirmed = page.locator('#issue-ownership-confirmed');
   const reason = page.locator('#issue-ownership-reason');
   const recoveryReason = 'Fixture runner has stopped; its synthetic attempt executed no external work.';
@@ -164,6 +172,7 @@ async function checkOwnershipRecovery({ page, service, issueId, poll, screenshot
     (claim) => claim === null,
     'Explicit ownership recovery did not release the fenced attempt.'
   );
+  await release.waitFor({ state: 'hidden' });
   await screenshot('issue-store-explicit-recovery');
   await checkStaleFlowSave({ page, stores, issueId, owner, flow: saved.flow, screenshot });
 }

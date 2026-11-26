@@ -1,6 +1,8 @@
 (() => {
   'use strict';
   window.createIssueOwnershipUI = ({ request, post, changed }) => {
+    const release = document.getElementById('release-issue-claim');
+    const settings = document.getElementById('issue-settings');
     const form = document.getElementById('issue-ownership-form');
     const description = document.getElementById('issue-ownership-description');
     const controls = document.getElementById('issue-ownership-controls');
@@ -10,11 +12,16 @@
     let current;
     let key;
     let pending;
+    release.addEventListener('click', () => {
+      settings.open = true;
+      reason.focus();
+    });
     async function render(issue, unavailable) {
       const next = JSON.stringify([issue.id, issue.ownership?.token, issue.localOwner, unavailable]);
       if (key === next) return;
       key = next;
       current = null;
+      release.hidden = true;
       controls.hidden = true;
       form.hidden = !issue.ownership;
       if (form.hidden) return;
@@ -27,6 +34,7 @@
         return;
       }
       controls.hidden = !view.canRecover;
+      release.hidden = controls.hidden;
       description.textContent =
         view.reason ||
         'Ownership is held by runner ' +

@@ -2892,6 +2892,9 @@ import { reorderedBlocks } from './flow-order.mjs';
       ? [error.blockLabel || error.operation || 'Issue', error.model, date(error.at)].filter(Boolean).join(' · ')
       : '';
     $('last-blocking-error-open').hidden = !error?.blockId;
+    const release = $('release-issue-claim');
+    const precedingAction = $(error ? 'last-blocking-error-open' : 'waiting-block');
+    if (release.previousElementSibling !== precedingAction) precedingAction.after(release);
   }
   $('last-blocking-error-open').addEventListener('click', () => {
     const error = state.view?.lastBlockingError;
