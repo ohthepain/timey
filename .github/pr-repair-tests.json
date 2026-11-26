@@ -1,7 +1,11 @@
 {
   "version": 1,
-  "sourceRun": "https://github.com/ohthepain/timey/actions/runs/45818424513/job/139907129555",
+  "sourceRun": "https://github.com/ohthepain/timey/actions/runs/45868864059/job/140082258539",
   "tests": [
+    {
+      "name": "Folder plus creates an issue directly in that folder and retains typed wording",
+      "command": ["node", "scripts/flow-browser.mjs", "--ci-part=2", "--capture-folder-issue"]
+    },
     {
       "name": "Activity dots stay anchored and reflect actual work",
       "command": [
