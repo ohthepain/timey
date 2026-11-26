@@ -1,10 +1,18 @@
 {
   "version": 1,
-  "sourceRun": "https://github.com/ohthepain/timey/actions/runs/45844694595/job/140000609917",
+  "sourceRun": "https://github.com/ohthepain/timey/actions/runs/45848079568/job/140013042961",
   "tests": [
     {
-      "name": "Inbox drag and drop attaches, transfers and detaches sub-issues",
-      "command": ["node", "scripts/flow-browser.mjs", "--ci-part=1a", "--sidebar-scroll", "--inbox-group-drag"]
+      "name": "Manual removal clears the sub-issue master links and badge",
+      "command": [
+        "node",
+        "scripts/flow-browser.mjs",
+        "--ci-part=1a",
+        "--sidebar-scroll",
+        "--inbox-group-drag",
+        "--master-issues",
+        "--manual-sub-issue-removal"
+      ]
     },
     {
       "name": "Closed issue selections archive together and issue links open the normal view",

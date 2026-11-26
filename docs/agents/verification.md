@@ -1206,7 +1206,9 @@ expected failed response accounts for one matching console entry.
 
 `node scripts/flow-browser.mjs --manual-sub-issue-removal` removes sub-issues
 from both the master and child pages. It checks active membership, links,
-and badges after removal and saves `manual-sub-issue-removal.json`.
+and badges after removal and saves `manual-sub-issue-removal.json`. A long
+option in the attach picker exercises whether the adjacent inspector covers
+the remove button.
 
 `node scripts/flow-browser.mjs --activity-indicators --project-discuss --automate-activity` checks
 three-dot activity during streamed chat output and its removal after Stop or

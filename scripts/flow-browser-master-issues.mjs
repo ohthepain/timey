@@ -15,6 +15,7 @@ const titles = {
   [unrelated]: 'Add a practice reminder',
 };
 const ids = Object.keys(titles);
+const removalCandidate = '20261126-removal-long-title-candidate';
 const removalGroup = {
   master: '20261124-removal-master',
   children: ['20261124-removal-first', '20261124-removal-second'],
@@ -23,6 +24,8 @@ const removalGroup = {
     '20261124-removal-master': 'Improve issue navigation',
     '20261124-removal-first': 'Keep filtered issues visible',
     '20261124-removal-second': 'Retain the selected issue',
+    [removalCandidate]:
+      'Closed issue with a long title so the closure actions must move to the next row and the title can use the full center column width',
   },
 };
 
@@ -165,6 +168,7 @@ async function checkManualRemoval(page, output, { master, children, titles }) {
   const [first, second] = children;
   const subIssues = page.locator('#issue-heading').getByRole('list', { name: 'Sub-issues', exact: true });
   await page.goto('/?issue=' + master);
+  await page.locator('#issue-attach-choice option[value="' + removalCandidate + '"]').waitFor({ state: 'attached' });
   await removeSubIssue(page, subIssues.getByRole('button', { name: new RegExp(titles[first]) }));
   await subIssues.getByRole('link', { name: new RegExp(titles[first]) }).waitFor({ state: 'hidden' });
   const remaining = await subIssues.getByRole('link').allTextContents();
