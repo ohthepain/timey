@@ -1,3 +1,5 @@
+import { CodexAccountConnection } from './factory-ui/codex-account.mjs';
+import { CodexConnection } from './factory-ui/codex.mjs';
 import { NativeAgentConnection } from './factory-ui/native-agent.mjs';
 import { readModelSettings } from './factory-ui/model-settings.mjs';
 import test from 'node:test';
@@ -142,6 +144,56 @@ test('manual disable interrupts affected work once, preserves other providers, a
   assert.equal(modelAvailability(root, 'google:pro').status, 'disabled');
   assert.equal(stopped.length, 1);
 });
+test('a provider pause preserves Codex’s confirmed interruption and partial output', async (t) => {
+  const root = project(t);
+  initializeProviderConfig(root);
+  const model = 'gpt-6.2-sol';
+  observeProvider(root, 'codex', { ready: true, models: [{ id: model, name: model }] });
+  const config = readProviderConfig(root);
+  config.providers.codex.enabled = [model];
+  t.mock.method(CodexAccountConnection.prototype, 'ready', async () => {});
+  t.mock.method(CodexAccountConnection.prototype, 'call', async (method) => {
+    if (method === 'account/read') return { account: { type: 'chatgpt' } };
+    assert.equal(method, 'account/rateLimits/read');
+    return { rateLimits: { limitId: 'codex', primary: { usedPercent: 70 } } };
+  });
+  saveProviderSettings(root, config);
+  const connection = new CodexConnection({ root });
+  const started = Promise.withResolvers();
+  const interrupted = Promise.withResolvers();
+  connection.call = async (method) => {
+    if (method === 'turn/start') {
+      started.resolve();
+      return { turn: { id: 'repair-turn' } };
+    }
+    assert.equal(method, 'turn/interrupt');
+    interrupted.resolve();
+    return {};
+  };
+  t.after(() => connection.close());
+  const threadId = 'repair-thread';
+  const review = connection.turn(threadId, root, 'Repair Merge', undefined, [], { model });
+  await started.promise;
+  const rejected = assert.rejects(review, (error) => {
+    assert.equal(error.code, 'PROVIDER_PAUSED');
+    assert.match(error.message, /Quota is unknown or stale/);
+    assert.equal(error.terminalStatus, 'interrupted');
+    assert.equal(error.partialText, 'Retained repair progress');
+    return true;
+  });
+  connection.event({
+    method: 'item/agentMessage/delta',
+    params: { threadId, itemId: 'message', delta: 'Retained repair progress' },
+  });
+  observeProvider(root, 'codex', { quota: { windows: [{ remainingPercent: 30, checkedAt: Date.now() - 180000 }] } });
+  await interrupted.promise;
+  connection.event({
+    method: 'turn/completed',
+    params: { threadId, turn: { id: 'repair-turn', status: 'interrupted' } },
+  });
+  await rejected;
+});
+
 test('quota pauses affect all and only models in their scope and stricter saved thresholds interrupt', async (t) => {
   const root = configured(t),
     stopped = [];

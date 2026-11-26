@@ -3065,6 +3065,9 @@ import { reorderedBlocks } from './flow-order.mjs';
       : state.view?.autoplay?.mode === 'playing';
     $('issue-blocker-retrying').hidden = !error || !retrying;
     $('issue-blocker-open').hidden = !error?.blockId;
+    const release = $('release-issue-claim');
+    const precedingAction = $(error ? 'issue-blocker-open' : 'waiting-block');
+    if (release.previousElementSibling !== precedingAction) precedingAction.after(release);
   }
   $('issue-blocker-open').addEventListener('click', () => {
     const error = state.view?.lastBlockingError;

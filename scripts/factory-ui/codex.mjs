@@ -197,12 +197,11 @@ export class CodexConnection {
     this.clearRequests(params.threadId);
     try {
       turn.guard?.assert();
+      if (params.turn.status !== 'completed') throw Error(redactValue(turnFailure(params.turn)));
+      turn.resolve(turn.text);
     } catch (error) {
-      turn.reject(error);
-      return;
+      turn.reject(recordTerminalTurnError(error, params.turn, turn));
     }
-    if (params.turn.status === 'completed') turn.resolve(turn.text);
-    else turn.reject(terminalTurnError(params.turn, turn));
   }
   captureTurnProgress(message, turn) {
     const params = message.params;
@@ -390,8 +389,8 @@ function permissionToolConfig(sandbox) {
   return sandbox === 'workspace-write' ? { config: { 'features.request_permissions_tool': true } } : {};
 }
 
-function terminalTurnError(result, turn) {
-  return Object.assign(Error(redactValue(turnFailure(result))), {
+function recordTerminalTurnError(error, result, turn) {
+  return Object.assign(error, {
     terminalStatus: result.status,
     partialText: redactValue(partialTurnText(turn).slice(0, 32000)),
   });

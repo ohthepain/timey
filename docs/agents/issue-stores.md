@@ -236,11 +236,12 @@ retaining runner, and removes only the versions under its test prefix.
 
 ## Recover ownership
 
-The ownership panel in Issue settings identifies a retained claim. Stop and
-reconcile its original runner before selecting Recover ownership, confirming the
-statement, and entering a reason. Recovery checks the exact issue, attempt,
-runner and owner token. It retains the attempt history and fences a late result
-from the original process; it starts no work. A merged issue stays read-only.
+The ownership panel in Issue settings identifies a retained claim. When Factory
+allows recovery, **Release claim** opens this panel from **Last blocking error**,
+or from the issue header if there is no blocking error. Stop and reconcile the
+original runner, enter a reason, confirm the statement, and select **Recover ownership**. Recovery checks
+the exact issue, attempt, runner and owner token. It retains the attempt history
+and fences a late result from the original process. A merged issue stays read-only.
 
 Local Stop remains available during a storage outage. Remote Stop stays requested
 until the owning runner confirms cancellation. Neither an elapsed timeout nor a
