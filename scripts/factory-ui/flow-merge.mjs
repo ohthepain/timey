@@ -10,13 +10,16 @@ import { abortPendingMerge } from './flow-update-branch.mjs';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import { deliveryTarget, missingMergePR } from './flow-block-data.mjs';
+import { deliveryTarget, latestCurrentAttempt, missingMergePR, upstreamBlocks } from './flow-block-data.mjs';
 import { digest, git, requireThat } from './common.mjs';
 import { assertPublicationIdle, assertFlowRemote, flowDeliveryProvider, lookupFlowPR } from './flow-delivery.mjs';
 import { blockerKey, permissionFailure, repairableBlocker } from './strategy-repair.mjs';
 import { fetchIssueTarget, mergeIssueTarget } from './flow-update-branch.mjs';
 import { queueReportPaths } from './shared-issue-config.mjs';
 import { observeMergeWait, startMergeWait } from './flow-merge-wait.mjs';
+import { requireGroupProof, savedMergeGroupProof } from './flow-group-proof.mjs';
+import { groupLiveProof } from './flow-live-proof.mjs';
+import { groupChildren } from './issue-group.mjs';
 
 const headOf = (workspace) => git(workspace.checkout, 'rev-parse', 'HEAD');
 const treeOf = (workspace) => git(workspace.checkout, 'rev-parse', 'HEAD^{tree}');
@@ -196,13 +199,103 @@ async function attemptRepair(error, operation) {
   }
 }
 
-async function mergeWhenReady(service, ctx, workspace, provider, pr, readiness, state) {
+function finalProofRequired(ctx, tree, state) {
+  if (state.repairHistory.hasRepairs) return true;
+  const priorRepair = ctx.block.attempts?.some(({ evidence }) =>
+    evidence?.some(({ label }) => label === 'Merge repair index')
+  );
+  if (priorRepair) return true;
+  return upstreamBlocks(ctx.block, ctx.flow.blocks).some((block) => {
+    if (block.kind !== 'work') return false;
+    const work = latestCurrentAttempt(block)?.result;
+    return work && !proofMatchesWork(work, tree);
+  });
+}
+
+function proofMatchesWork(work, tree) {
+  return work.tree === tree && work.liveProofReviewed;
+}
+
+function requireNoLiveProofDiscovery(refreshed) {
+  if (!refreshed.liveProofRequirements?.length) return;
+  throw Object.assign(
+    Error(
+      'Final verification discovered required live checks. Use factory live-proof to inspect the pending checks and attach evidence for the current candidate before retrying Merge.'
+    ),
+    { liveProofRequirements: refreshed.liveProofRequirements }
+  );
+}
+
+function reusableGroupProof(saved = {}, check) {
+  if (!saved.verification) return;
+  try {
+    check(saved.file);
+    return saved;
+  } catch (error) {
+    if (error.code !== 'GROUP_PROOF_REQUIRED') throw error;
+  }
+}
+
+async function refreshFinalGroupProof(ctx, workspace, request, refresh, evidence, check) {
+  ctx.onProgress('Rechecking the attached sub-issues on the final PR candidate.\n', true);
+  const refreshed = await refresh(request);
+  evidence.push(...(refreshed.evidence ?? []));
+  ctx.signal.throwIfAborted();
+  requireCleanCandidate(workspace, request.head);
+  requireNoLiveProofDiscovery(refreshed);
+  requireThat(refreshed.status !== 'blocked', refreshed.summary);
+  const proof = refreshed.groupProof;
+  requireThat(proof?.turnId, 'The final verification turn could not be identified. Reconcile or retry Merge.');
+  check(proof.file);
+  return proof;
+}
+
+async function verifyLocalGroupProof(root, ctx, workspace, request, refresh, state) {
+  const { head, tree, proofIds, liveRows } = request;
+  const check = (file) => requireGroupProof(ctx.issue, ctx.flow, tree, ctx.block, root, proofIds, file, liveRows);
+  const previous = state.groupProof?.head === head ? state.groupProof : savedMergeGroupProof([ctx.block], head, tree);
+  const saved = reusableGroupProof(previous, check);
+  if (saved) {
+    state.evidence.push(saved.verification);
+    return saved;
+  }
+  state.groupProof = await refreshFinalGroupProof(ctx, workspace, request, refresh, state.evidence, check);
+  return state.groupProof;
+}
+
+function localProofIds(children, liveRows) {
+  const liveIds = new Set(liveRows.map(({ id }) => id));
+  return children.filter(({ id, requestedProof }) => requestedProof && !liveIds.has(id)).map(({ id }) => id);
+}
+
+function recordedLiveProof(candidate, evidence) {
+  if (evidence.length) return { ...candidate, live: evidence };
+}
+
+async function verifyFinalGroupProof(root, ctx, workspace, head, options, state) {
+  const children = groupChildren(ctx.issue);
+  if (!children.length) return;
+  const tree = treeOf(workspace);
+  const candidate = { head, tree };
+  const { rows, evidence } = groupLiveProof(ctx.issue, ctx.flow, candidate, root);
+  state.evidence.push(...evidence);
+  const proofIds = localProofIds(children, rows);
+  if (proofIds.length && finalProofRequired(ctx, tree, state)) {
+    const request = { ...candidate, proofIds, liveRows: rows };
+    const proof = await verifyLocalGroupProof(root, ctx, workspace, request, options.refreshGroupProof, state);
+    return { ...proof, live: evidence };
+  }
+  return recordedLiveProof(candidate, evidence);
+}
+
+async function mergeWhenReady(service, ctx, workspace, provider, pr, readiness, options, state) {
   const { head, target } = readiness;
   const confirmation = mergeConfirmation(ctx, provider, pr, readiness);
   requireThat(
     !service.sharedIssues || !git(workspace.checkout, 'diff', '--name-only', target, head, '--', ...queueReportPaths()),
     'Shared issue reports require a separate queue PR.'
   );
+  const groupProof = await verifyFinalGroupProof(service.root, ctx, workspace, head, options, state);
   if (
     state.prepareOnly ||
     (state.workflow.policy === 'human-first' && previousApproval(ctx)?.token !== confirmation.token)
@@ -210,7 +303,7 @@ async function mergeWhenReady(service, ctx, workspace, provider, pr, readiness, 
     return {
       status: 'blocked',
       summary: 'PR #' + pr.number + ' passed its checks. Approve merging it into ' + pr.base.ref + '.',
-      result: { pr: pr.number, head, target, checks: readiness.checks, mergeConfirmation: confirmation },
+      result: { pr: pr.number, head, target, checks: readiness.checks, mergeConfirmation: confirmation, groupProof },
     };
   }
   state.repairHistory.validateAttachments();
@@ -246,7 +339,7 @@ async function mergeWhenReady(service, ctx, workspace, provider, pr, readiness, 
     mergeOrigin = 'observed-merged';
   }
   return {
-    result: { ...merged, pr: pr.number, head, target, checks: readiness.checks, mergeOrigin },
+    result: { ...merged, pr: pr.number, head, target, checks: readiness.checks, mergeOrigin, groupProof },
     summary: 'GitHub confirms the protected merge.',
   };
 }
@@ -301,7 +394,7 @@ async function advanceMerge(service, ctx, workspace, provider, pr, invoke, optio
   }
   if (readiness.target !== target) throw pending('GitHub and the fetched target differ. Refreshing both revisions.');
   if ((await fetchTarget(ctx, workspace, invoke)) !== target) return undefined;
-  return mergeWhenReady(service, ctx, workspace, provider, pr, readiness, state);
+  return mergeWhenReady(service, ctx, workspace, provider, pr, readiness, options, state);
 }
 
 async function prepareMergeCheckout(state, workspace, invoke) {

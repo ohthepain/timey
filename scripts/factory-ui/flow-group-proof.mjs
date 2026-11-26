@@ -65,10 +65,26 @@ export function groupProofRows(flow, tree, block = {}, root) {
   return new Map(groupProofAttempts(flow, tree, block).flatMap((attempt) => groupAttemptRows(attempt, tree, root)));
 }
 
-export function requireGroupProof(issue, flow, candidateTree, block, root) {
-  const children = groupChildren(issue);
-  if (!children.length) return [];
-  const proofs = groupProofRows(flow, candidateTree, block, root);
+export function savedMergeGroupProof(blocks, head, tree) {
+  return blocks
+    .flatMap(({ attempts }) => attempts)
+    .filter(({ invalidatedAt }) => !invalidatedAt)
+    .map(({ result }) => result?.groupProof)
+    .findLast((proof) => proof?.head === head && proof.tree === tree);
+}
+
+function finalProofRows(retainedProof, liveRows, root) {
+  const rows = readProof(retainedProof, root).map((entry) => [entry.id, { ...entry, file: retainedProof }]);
+  return new Map([...rows, ...liveRows.map((row) => [row.id, row])]);
+}
+
+export function requireGroupProof(issue, flow, candidateTree, block, root, proofIds, retainedProof, liveRows = []) {
+  const proofs = proofIds
+    ? finalProofRows(retainedProof, liveRows, root)
+    : groupProofRows(flow, candidateTree, block, root);
+  const children = groupChildren(issue).filter(
+    ({ id }) => !proofIds || proofIds.includes(id) || liveRows.some((row) => row.id === id)
+  );
   const missing = children.filter(({ id }) => proofs.get(id)?.status !== 'passed');
   if (missing.length)
     throw Object.assign(

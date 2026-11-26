@@ -68,6 +68,14 @@ digests. Its initial message contains only that index. The index is linked from
 the saved result outside the issue worktree, so Cleanup does not remove it.
 No section is truncated. Missing provider history remains explicitly marked.
 
+After a grouped Merge repair, the attempt records the read-only verification
+thread and turn, the exact candidate commit and tree, and hashed references to
+its sub-issue report and observed command logs. Retro links the turn by ID and
+copies the digest-verified attachments into its `groupVerifications` export.
+A second runner can resolve the attachments through the shared Artifact Store
+even when the original checkout and local files are gone. The export reports
+missing evidence at its recorded reference.
+
 Retro and project-owned temporary discussions use an isolated Codex process
 with the project checkout as the working directory, native file/search/Git
 inspection enabled, a read-only sandbox and no approval escalation. They can
