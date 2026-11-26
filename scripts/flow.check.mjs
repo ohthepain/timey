@@ -431,6 +431,21 @@ test('issue route Start runs Update Branch without confirmation and Pause lets t
   assert.deepEqual((await view()).autoplay, { mode: 'paused', reason: 'Flow complete' });
 });
 
+test('Flow notifies sidebar watchers when an issue is paused', async (t) => {
+  const { id, service } = fixture(t);
+  const flows = createIssueFlows(service, { executor: executor(async () => ({ summary: 'Done' })) });
+  t.after(() => flows.close());
+  const notifications = [];
+  service.flowChanges = {
+    checkout() {},
+    notify(topic, issueId) {
+      if (flows.autoplay.get(id)?.userPaused) notifications.push({ topic, issueId });
+    },
+  };
+  await flows.action({ issueId: id, action: 'pause' });
+  assert.ok(notifications.some(({ topic, issueId }) => topic === 'flow' && issueId === id));
+});
+
 test('Flow notifies watchers when No new actions pauses a route after Work', async (t) => {
   const { id, service } = fixture(t);
   const work = Promise.withResolvers();
@@ -2615,6 +2630,24 @@ test('opening an externally merged issue records its delivery before checking de
   assert.deepEqual(after.blocks, saved.blocks);
   assert.equal(after.merged.pr, 91);
   assert.deepEqual(f.calls, []);
+});
+
+test('a GitHub merge is visible while a shared Work claim prevents saving its receipt', async (t) => {
+  const f = mergedIssueFixture(t, { observed: true });
+  const issue = f.flows.selected(f.id);
+  const runtime = join(f.root, '.issues/store-runtime');
+  mkdirSync(runtime, { recursive: true });
+  writeFileSync(
+    join(runtime, 'snapshot.json'),
+    JSON.stringify({ version: 1, issues: [], claims: [{ issueId: f.id }] })
+  );
+  f.service.projectStores = {};
+  const { entries } = f.flows.catalog.read();
+  const environment = await f.flows.observer.observe(f.flow);
+  const visible = await f.flows.observedDelivery(issue, f.flow, environment, entries, { background: true });
+  assert.equal(visible.merged.pr, 91);
+  assert.equal(f.flow.merged, undefined);
+  assert.equal(JSON.parse(readFileSync(f.flows.store.path(f.id), 'utf8')).merged, undefined);
 });
 
 test('an unmerged PR can still be edited and local files need no remote observer', async (t) => {

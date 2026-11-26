@@ -1,3 +1,4 @@
+import { browserFailure, priorBrowserFailure, runCandidateBrowser } from './flow-browser-evidence.mjs';
 import { activeGroupRequest } from './flow-group-scope.mjs';
 import { issueTypes } from './flow-definitions.mjs';
 import { mergedDelivery } from './merged-issue.mjs';
@@ -287,13 +288,50 @@ function retainPublicationFailure(error, { ctx, candidate, preview, folder, evid
   });
 }
 
+async function checkPublicationBrowser(ctx, workspace, folder, candidate, options) {
+  const browser = await runCandidateBrowser(ctx, workspace, folder, candidate, options.execute);
+  if (!browser?.exit) return { browser };
+  const { scenario, assertion } = browserFailure(browser);
+  const prior = priorBrowserFailure(ctx.block, ctx.attempt.id, browser);
+  const earlier = prior?.result.browser.log;
+  return {
+    browser,
+    blocked: {
+      status: 'blocked',
+      summary: `Focused browser check failed on ${candidate.head.slice(0, 12)}. ${scenario ?? 'Browser startup'}${assertion ? '. ' + assertion : ''}${prior ? ' The same assertion failed on an earlier attempt.' : ''}`,
+      result: {
+        head: candidate.head,
+        browser,
+        scenario,
+        assertion,
+        priorAttemptId: prior?.id,
+        repairCommand: browser.command,
+      },
+      evidence: [
+        browser.log,
+        browser.results,
+        earlier && { ...earlier, label: 'Earlier attempt’s browser log' },
+      ].filter(Boolean),
+      workspace,
+    },
+  };
+}
+
 export async function publishFlowPR(service, ctx, workspace, folder, options) {
-  const { preview, candidate, provider, pr, remote } = await preparePublicationAttempt(
-    service,
-    ctx,
-    workspace,
-    options
-  );
+  const prepared = await preparePublicationAttempt(service, ctx, workspace, options);
+  const { browser, blocked } = await checkPublicationBrowser(ctx, workspace, folder, prepared.candidate, options);
+  if (blocked) return blocked;
+  return publishPreparedPR(service, ctx, workspace, folder, options, { ...prepared, browser });
+}
+
+async function publishPreparedPR(
+  service,
+  ctx,
+  workspace,
+  folder,
+  options,
+  { preview, candidate, provider, pr, remote, browser }
+) {
   const log = join(folder, 'publish.log');
   const requirePreviewHead = () =>
     requireThat(
@@ -307,6 +345,7 @@ export async function publishFlowPR(service, ctx, workspace, folder, options) {
     url: published.html_url,
     title: published.title,
     head: candidate.head,
+    browser,
     target: published.base?.ref ?? preview.target,
   });
   try {
@@ -436,7 +475,7 @@ export async function assertPublicationIdle(provider, pr, branch) {
   );
 }
 
-function deliveryWorkProof(ctx, candidate) {
+export function deliveryWorkProof(ctx, candidate) {
   const requested = activeGroupRequest(ctx.issue, ctx.flow).fields?.requestedProof;
   const work = upstreamBlocks(ctx.block, ctx.flow.blocks).filter(({ kind }) => kind === 'work');
   return {
@@ -445,12 +484,11 @@ function deliveryWorkProof(ctx, candidate) {
       const attempt = latestCurrentAttempt(block);
       const file = attempt?.artifacts?.files?.proof;
       const tree = attempt?.result?.tree;
-      const record = { blockId: block.id, attemptId: attempt?.id, tree };
+      const record = { blockId: block.id, attemptId: attempt?.id, head: attempt?.result?.head, tree };
       if (attempt?.status !== 'completed' || !file?.sha256) return { ...record, status: 'missing' };
-      if (tree !== candidate.tree) return { ...record, status: 'different-tree' };
       try {
         if (digest(readFileSync(evidencePath(ctx.evidenceRoot, file.path, file.sha256))) === file.sha256)
-          return { ...record, status: 'retained', file };
+          return { ...record, status: tree === candidate.tree ? 'retained' : 'different-tree', file };
       } catch {
         // A missing proof file is recorded as a gap.
       }
@@ -471,7 +509,7 @@ export async function flowClosureArtifact(service, ctx, workspace, folder, optio
   requireThat(pr, 'No PR exists for this issue branch. Publish and merge its PR before closing.');
   const delivered = await provider.inspectExternalDelivery(pr.number, { requiredChecksOnly: true });
   assertMatchingDelivery(ctx.flow, workspace, pr.number, delivered, merged);
-  return recordClosureDelivery(ctx, workspace, folder, delivered);
+  return recordClosureDelivery(ctx, workspace, folder, delivered, closureDeliveryReceipt(ctx.flow, delivered));
 }
 
 function assertMatchingDelivery(flow, workspace, number, delivered, merged) {
@@ -491,7 +529,18 @@ function assertMatchingDelivery(flow, workspace, number, delivered, merged) {
   );
 }
 
-function recordClosureDelivery(ctx, workspace, folder, delivered) {
+function closureDeliveryReceipt(flow, delivered) {
+  const historical = [...flow.blocks, ...(flow.retiredBlocks ?? [])].filter(({ kind }) => kind === 'merge');
+  const match = historical
+    .flatMap(({ attempts }) => attempts)
+    .findLast(
+      ({ result }) =>
+        result?.deliveryReceipt && result.head === delivered.head && result.revision === delivered.mergeCommit
+    );
+  return match?.result.deliveryReceipt;
+}
+
+function recordClosureDelivery(ctx, workspace, folder, delivered, deliveryReceipt) {
   const candidate = {
     head: delivered.head,
     tree: git(workspace.checkout, 'rev-parse', delivered.head + '^{tree}'),
@@ -499,7 +548,7 @@ function recordClosureDelivery(ctx, workspace, folder, delivered) {
   ctx.signal.throwIfAborted();
   const path = join(folder, 'merged-delivery.json');
   const workProof = deliveryWorkProof(ctx, candidate);
-  writeJson(path, { ...delivered, candidateTree: candidate.tree, workProof });
+  writeJson(path, { ...delivered, candidateTree: candidate.tree, workProof, deliveryReceipt });
   return {
     revision: candidate.head,
     checkout: workspace.checkout,

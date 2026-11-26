@@ -1,166 +1,36 @@
 {
   "version": 1,
-  "sourceRun": "https://github.com/ohthepain/timey/actions/runs/45870933190/job/140089737384",
   "tests": [
     {
-      "name": "The folder workspace reviews moves and creates a master without starting work",
-      "command": [
-        "node",
-        "scripts/flow-browser.mjs",
-        "--ci-part=2",
-        "--capture-folder-issue",
-        "--folder-workspace-grouping"
-      ]
-    },
-    {
-      "name": "Storage profiles preserve explicit destinations and perform checked moves without workspace updates",
-      "command": ["node", "scripts/flow-browser.mjs", "--ci-part=1b", "--stores", "--storage-status"]
-    },
-    {
-      "name": "Manual removal clears the sub-issue master links and badge",
-      "command": [
-        "node",
-        "scripts/flow-browser.mjs",
-        "--ci-part=1a",
-        "--sidebar-scroll",
-        "--inbox-group-drag",
-        "--master-issues",
-        "--manual-sub-issue-removal"
-      ]
-    },
-    {
-      "name": "Closed issue selections archive together and issue links open the normal view",
-      "command": ["node", "scripts/flow-browser.mjs", "--ci-part=1a", "--issue-reopen", "--project-issues"]
-    },
-    {
-      "name": "The Factory App button configures, recognizes and starts the project server",
-      "command": ["node", "scripts/flow-browser.mjs", "--ci-part=1a", "--project-app"]
-    },
-    {
-      "name": "Work All Night keeps dependency failures separate and records the normal automatic merge",
+      "name": "Merge repairs a target conflict before requesting GitHub readiness",
       "command": [
         "node",
         "--test",
-        "--test-name-pattern=^Work All Night keeps dependency failures separate and records the normal automatic merge$",
-        "scripts/flow.check.mjs"
-      ]
-    },
-    {
-      "name": "stopping Work All Night cancels the owned block and leaves queued issues untouched",
-      "command": [
-        "node",
-        "--test",
-        "--test-name-pattern=^stopping Work All Night cancels the owned block and leaves queued issues untouched$",
-        "scripts/flow.check.mjs"
-      ]
-    },
-    {
-      "name": "saving project profiles invalidates the selected issue storage choices before reloading",
-      "command": [
-        "node",
-        "--test",
-        "--test-name-pattern=^saving project profiles invalidates the selected issue storage choices before reloading$",
-        "scripts/storage-profiles-ui.check.mjs"
-      ]
-    },
-    {
-      "name": "Status pseudo-folders track project issues without moving them",
-      "command": [
-        "node",
-        "scripts/flow-browser.mjs",
-        "--ci-part=1a",
-        "--manual-close",
-        "--error-recovery",
-        "--no-changes",
-        "--sidebar-scroll",
-        "--issue-status-folders"
-      ]
-    },
-    {
-      "name": "Closed issues can be reopened or archived from Flow",
-      "command": ["node", "scripts/flow-browser.mjs", "--ci-part=2", "--reopen-or-archive"]
-    },
-    {
-      "name": "Inbox playback, compact block Details and persistent model blockers",
-      "command": ["node", "scripts/flow-browser.mjs", "--ci-part=1b", "--inbox-details", "--block-models"]
-    },
-    {
-      "name": "The live proof attachment action persists hashed observations in the shared Artifact store",
-      "command": [
-        "node",
-        "--test",
-        "--test-name-pattern=^The live proof attachment action persists hashed observations in the shared Artifact store$",
-        "scripts/flow-grouping.check.mjs"
-      ]
-    },
-    {
-      "name": "Activity dots stay anchored and reflect actual work",
-      "command": [
-        "node",
-        "scripts/flow-browser.mjs",
-        "--ci-part=1b",
-        "--ai-text",
-        "--automate-activity",
-        "--activity-indicators",
-        "--chat-progress"
-      ]
-    },
-    {
-      "name": "Work Markdown reloads headings and lists without changing layout, drafts or actions",
-      "command": [
-        "node",
-        "scripts/flow-browser.mjs",
-        "--ci-part=2",
-        "--capture-folder-issue",
-        "--save-request-route",
-        "--add-parallel-block",
-        "--save-block-comment",
-        "--work-markdown"
-      ]
-    },
-    {
-      "name": "focused test validation identifies the exact rejected argument and rule",
-      "command": [
-        "node",
-        "--test",
-        "--test-name-pattern=^focused test validation identifies the exact rejected argument and rule$",
-        "scripts/verify.check.mjs"
-      ]
-    },
-    {
-      "name": "Work accepts focused Flow scenarios and CI parts registered in the candidate checkout",
-      "command": [
-        "node",
-        "--test",
-        "--test-name-pattern=^Work accepts focused Flow scenarios and CI parts registered in the candidate checkout$",
+        "--test-name-pattern=^Merge repairs a target conflict before requesting GitHub readiness$",
         "scripts/flow-executor.check.mjs"
       ]
     },
     {
-      "name": "Discuss visibly reports a locked conversation while waiting and shows the reason after pausing",
+      "name": "Merge retains the final candidate observations and earlier Work proof through the Artifact store",
       "command": [
         "node",
         "--test",
-        "--test-name-pattern=^Discuss visibly reports a locked conversation while waiting and shows the reason after pausing$",
-        "scripts/interface-state.check.mjs"
+        "--test-name-pattern=^Merge retains the final candidate observations and earlier Work proof through the Artifact store$",
+        "scripts/flow-executor.check.mjs"
       ]
     },
     {
-      "name": "Discuss prepares context and a first prompt without running a model, then offers explicit deletion",
+      "name": "Merge pushes each new candidate, then expires approval if the target moves again",
       "command": [
         "node",
         "--test",
-        "--test-name-pattern=^Discuss prepares context and a first prompt without running a model, then offers explicit deletion$",
-        "scripts/local-notes.check.mjs"
+        "--test-name-pattern=^Merge pushes each new candidate, then expires approval if the target moves again$",
+        "scripts/flow-executor.check.mjs"
       ]
     },
     {
-      "name": "Issue flow dates, statuses, folder ordering and block drag",
-      "command": ["node", "scripts/flow-browser.mjs", "--ci-part=1", "--inbox-flow"]
-    },
-    {
-      "name": "Local notes capture and handoff preserve flow",
-      "command": ["node", "scripts/flow-browser.mjs", "--ci-part=1", "--local-notes"]
+      "name": "Merge reconciles and publishes the issue before requesting GitHub readiness",
+      "command": ["node", "scripts/flow-browser.mjs", "--merge-target-update"]
     }
   ]
 }

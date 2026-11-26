@@ -1,3 +1,4 @@
+import { fixtureRoute } from './flow-browser-routes.mjs';
 import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -103,11 +104,14 @@ async function checkServerControls(page, header) {
     ['server-cancel-restart', () => idle],
     ['server-restart', () => ({ ...idle, phase: 'draining', actions: 1 })],
   ]);
+  const removeRoutes = [];
   for (const [endpoint, next] of endpoints) {
-    await page.route('**/api/' + endpoint, (route) => {
-      state = next();
-      return route.fulfill({ json: state });
-    });
+    removeRoutes.push(
+      await fixtureRoute(page, '**/api/' + endpoint, (route) => {
+        state = next();
+        return route.fulfill({ json: state });
+      })
+    );
   }
   try {
     await page.reload();
@@ -122,7 +126,7 @@ async function checkServerControls(page, header) {
     await header.getByText('New work is paused. Finishing current actions.', { exact: true }).waitFor();
     assert.equal(await restart.isDisabled(), true);
   } finally {
-    for (const endpoint of endpoints.keys()) await page.unroute('**/api/' + endpoint);
+    await Promise.all(removeRoutes.map((remove) => remove()));
   }
   return [
     { trigger: 'No new actions', result: 'Paused and resumed action admission through fixture responses' },

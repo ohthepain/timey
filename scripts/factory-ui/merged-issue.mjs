@@ -4,6 +4,12 @@ import { requireThat } from './common.mjs';
 
 export const mergedIssueMessage = 'This issue has merged and is read-only. Close it when ready.';
 
+export function observedMergeReceipt(pr) {
+  if (!pr?.mergedAt) return null;
+  const { number, url, head, branch, mergedAt, revision } = pr;
+  return { pr: number, url, head, branch, mergedAt, revision };
+}
+
 function confirmedMerge(attempt) {
   if (attempt.status !== 'completed') return false;
   const result = attempt.result;

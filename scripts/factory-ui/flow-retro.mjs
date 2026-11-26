@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { writeDiscussionEvidence } from './discussion-evidence.mjs';
 import { setTimeout as delay } from 'node:timers/promises';
 import { createDiscussionRuntime } from './discussion-codex.mjs';
@@ -8,7 +8,7 @@ import { boundConversationThreads, conversationState } from './conversation-stor
 import { conversationTimeline } from './conversation-view.mjs';
 import { readQueue } from './data.mjs';
 import { redactValue } from './activity.mjs';
-import { digest, requireThat } from './common.mjs';
+import { digest, git, requireThat } from './common.mjs';
 import { exportRetroThread, groupVerificationTurns, repairTurns } from './flow-retro-thread.mjs';
 import { evidencePath } from './stores/evidence.mjs';
 import { readFileSync } from 'node:fs';
@@ -34,7 +34,7 @@ async function retroHistory(service, { issue, flow, signal }) {
   const saved = conversationState(service.root, issue.id);
   const attempts = [...flow.blocks, ...(flow.retiredBlocks || [])]
     .filter((block) => block.kind !== 'retro')
-    .flatMap((block) => block.attempts.map((attempt) => ({ block: block.label, ...attempt })))
+    .flatMap((block) => block.attempts.map((attempt) => ({ block: block.label, kind: block.kind, ...attempt })))
     .sort((a, b) => String(a.startedAt).localeCompare(String(b.startedAt)));
   const threadIds = new Set(
     [
@@ -63,7 +63,7 @@ function retroEvidence(root, history) {
     ...history,
     repairs: exportRepairEvidence(root, directory, history.attempts),
     mergeRepairs: exportMergeRepairs(root, directory, history.attempts),
-    groupVerifications: exportGroupVerifications(root, directory, history.attempts),
+    groupVerifications: exportGroupVerifications(root, directory, history),
   });
   const sections = Object.fromEntries(
     ['report', 'timeline', 'attempts', 'threads', 'repairs', 'mergeRepairs', 'groupVerifications'].map((key) => [
@@ -132,27 +132,132 @@ function exportRepairAttachment(root, directory, file, name) {
   }
 }
 
-function exportGroupVerifications(root, directory, attempts) {
-  const files = attempts.flatMap(({ id, evidence }) =>
-    (evidence ?? []).filter(({ groupVerification }) => groupVerification).map((file) => ({ id, file }))
-  );
-  return files.map(({ id, file }, index) => {
-    const linked = { attemptId: id, ...file.groupVerification };
-    try {
-      const { proof, logs } = JSON.parse(readRepairEvidence(root, file));
-      const prefix = 'group-verification-' + (index + 1);
-      return {
-        ...linked,
-        proof: proof && exportRepairAttachment(root, directory, proof, prefix + '-proof.json'),
-        logs: logs.map((log, position) => ({
-          command: log.command,
-          ...exportRepairAttachment(root, directory, log, `${prefix}-command-${position + 1}.log`),
-        })),
-      };
-    } catch (error) {
-      return { ...linked, unavailable: error.message };
-    }
+function workGroupProof({ artifacts }) {
+  return artifacts?.files?.subIssueProof;
+}
+
+function exportGroupVerifications(root, directory, { attempts, threads }) {
+  const operations = attempts
+    .filter(({ kind }) => ['merge', 'close'].includes(kind))
+    .map(({ id, kind, status, result }) => ({ id, kind, status, head: result?.head, revision: result?.revision }));
+  return attempts.flatMap((attempt, index) => {
+    const prefix = 'group-verification-' + (index + 1);
+    const files = (attempt.evidence ?? []).filter(({ groupVerification }) => groupVerification);
+    const records = files.map((file, position) =>
+      exportIndexedVerification(root, directory, attempt.id, file, prefix + '-' + (position + 1), operations)
+    );
+    if (workGroupProof(attempt))
+      records.push(exportWorkVerification(root, directory, attempt, prefix, threads, operations));
+    if (!files.length)
+      records.push(...exportLegacyVerifications(root, directory, attempt, prefix, threads, operations));
+    return records;
   });
+}
+
+function legacyProofHead(path) {
+  return /^group-proof-([0-9a-f]{40,64})$/.exec(basename(dirname(path)))?.[1];
+}
+
+function legacyResponseMatches(item, sha256) {
+  return item.type === 'agentMessage' && typeof item.text === 'string' && digest(item.text) === sha256;
+}
+
+function legacyTurn(threads, response) {
+  if (!response?.sha256) return {};
+  const matches = threads.flatMap(({ id, turns = [] }) =>
+    turns
+      .filter(({ items }) => items.some((item) => legacyResponseMatches(item, response.sha256)))
+      .map((turn) => ({ threadId: id, turnId: turn.id }))
+  );
+  return matches.length === 1 ? matches[0] : {};
+}
+
+function legacyTree(root, head) {
+  try {
+    return git(root, 'rev-parse', '--verify', head + '^{tree}');
+  } catch {
+    return undefined;
+  }
+}
+
+function exportLegacyVerifications(root, directory, attempt, prefix, threads, operations) {
+  const evidence = attempt.evidence ?? [];
+  const files = evidence.filter(
+    ({ path = '' }) => basename(path).startsWith('artifact-subIssueProof-') && legacyProofHead(path)
+  );
+  return files.map((file, index) => {
+    const matching = evidence.filter(({ path = '' }) => dirname(path) === dirname(file.path));
+    return exportLegacyVerification(root, directory, file, matching, prefix + '-legacy-' + (index + 1), threads, {
+      attemptId: attempt.id,
+      operations,
+    });
+  });
+}
+
+function exportLegacyVerification(root, directory, file, matching, prefix, threads, linked) {
+  const head = legacyProofHead(file.path);
+  const response = matching.find(({ path }) => basename(path) === 'output.txt');
+  const logs = matching.filter(({ path }) => basename(path).startsWith('artifact-log-'));
+  return {
+    ...linked,
+    ...legacyTurn(threads, response),
+    head,
+    tree: legacyTree(root, head),
+    proof: exportRepairAttachment(root, directory, file, prefix + '-proof.json'),
+    logs: logs.map((log, index) => exportRepairAttachment(root, directory, log, `${prefix}-command-${index + 1}.log`)),
+  };
+}
+
+function exportIndexedVerification(root, directory, attemptId, file, prefix, operations) {
+  const linked = { attemptId, ...file.groupVerification, operations };
+  try {
+    const { proof, logs } = JSON.parse(readRepairEvidence(root, file));
+    return {
+      ...linked,
+      proof: proof && exportRepairAttachment(root, directory, proof, prefix + '-proof.json'),
+      logs: logs.map((log, position) => ({
+        command: log.command,
+        ...exportRepairAttachment(root, directory, log, `${prefix}-command-${position + 1}.log`),
+      })),
+    };
+  } catch (error) {
+    return { ...linked, unavailable: error.message };
+  }
+}
+
+function findProofTurn(threads, { threadId, turnId }) {
+  const thread = threads.find(({ id }) => id === threadId);
+  return thread?.turns?.find(({ id }) => id === turnId);
+}
+
+function exportTurnLogs(directory, prefix, items = []) {
+  return items
+    .filter(({ type, command }) => type === 'commandExecution' && command)
+    .map(({ command, aggregatedOutput, exitCode, status }, index) => ({
+      command,
+      status,
+      exitCode,
+      ...(typeof aggregatedOutput === 'string'
+        ? writeDiscussionEvidence(directory, `${prefix}-command-${index + 1}.log`, redactValue(aggregatedOutput))
+        : { unavailable: 'The provider did not return command output.' }),
+    }));
+}
+
+function exportWorkVerification(root, directory, attempt, prefix, threads, operations) {
+  const { threadId, turnId, head, tree } = attempt.result ?? {};
+  const turn = findProofTurn(threads, { threadId, turnId }) ?? {};
+  const proof = exportRepairAttachment(root, directory, workGroupProof(attempt), prefix + '-proof.json');
+  return {
+    attemptId: attempt.id,
+    threadId,
+    turnId,
+    head,
+    tree,
+    proof,
+    logs: exportTurnLogs(directory, prefix, turn.items),
+    operations,
+    ...(turn.id ? {} : { logsUnavailable: 'The original proof turn is unavailable.' }),
+  };
 }
 
 function exportRepair(root, directory, attemptId, file, repairIndex) {

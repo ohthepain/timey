@@ -1,8 +1,9 @@
 import { importBrowserIssue, removeBrowserIssue } from './flow-browser-fixture.mjs';
 import assert from 'node:assert/strict';
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createIssueFolderSettings } from './factory-ui/issue-folder-settings.mjs';
+import { ensureProjectStores } from './factory-ui/stores/runtime.mjs';
 import { git } from './factory-ui/common.mjs';
 
 async function setAttempt(service, entry, status, humanInput) {
@@ -23,8 +24,7 @@ async function setAttempt(service, entry, status, humanInput) {
 
 async function writeFixture(project, service, folders, reports, entry) {
   const content = `---\nid: ${entry.id}\ntitle: Status ${entry.key}\nstate: ${entry.state || 'backlog'}\nfolder_id: ${folders[entry.folder].id}\n---\n\nStatus fixture.\n`;
-  const path = join(project, '.issues', entry.id + '.md');
-  reports.set(path, content);
+  reports.set(entry.id, content);
   await importBrowserIssue(project, entry.id, content);
   await setAttempt(service, entry, entry.status, entry.humanInput);
   if (entry.active) service.flows.active.set(entry.id, { blockId: 'held-fixture' });
@@ -139,6 +139,7 @@ async function checkStatusCarets(page, screenshot, output, poll) {
 }
 
 export async function issueStatusFoldersBrowserChecks({ page, project, service, poll, screenshot, output, root }) {
+  await ensureProjectStores(service);
   const { folders, fixtures, reports } = await createFixtures(project, service);
   async function members(id) {
     return page
@@ -201,7 +202,7 @@ export async function issueStatusFoldersBrowserChecks({ page, project, service, 
       id,
       folder: service.flows.read(service.flows.selected(id)).folder,
     }));
-    for (const [path, content] of reports) assert.equal(readFileSync(path, 'utf8'), content);
+    for (const [id, content] of reports) assert.equal(service.flows.selected(id).content, content);
     fixtures.forEach((entry, index) => assert.equal(assignments[index].folder, folders[entry.folder].name));
     writeFileSync(
       join(output, 'issue-status-folders-proof.json'),

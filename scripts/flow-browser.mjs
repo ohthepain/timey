@@ -1,3 +1,4 @@
+import { fixtureRoute } from './flow-browser-routes.mjs';
 import {
   masterDragBrowserChecks,
   masterIssueBrowserChecks,
@@ -201,7 +202,12 @@ const fingerprint = () =>
         .digest('hex'),
     ])
   );
-const candidate = { revision: git(root, 'rev-parse', 'HEAD'), assets: fingerprint() };
+const candidate = {
+  revision: git(root, 'rev-parse', 'HEAD'),
+  tree: git(root, 'rev-parse', 'HEAD^{tree}'),
+  clean: !git(root, 'status', '--porcelain', '--untracked-files=all'),
+  assets: fingerprint(),
+};
 const results = [];
 const inboxDiscussCheck = 'Project chat stays at the bottom and accepts prompts while work is paused';
 Object.assign(flowBrowserScenarioNames, {
@@ -448,6 +454,7 @@ async function check(name, run) {
     console.log('PASS ' + name);
   } catch (error) {
     results.push({ name, passed: false, error: error.stack });
+    console.error('FAIL ' + name);
     throw error;
   }
 }
@@ -1155,7 +1162,7 @@ try {
       const collapsed = await page.locator('#new-issue').boundingBox();
       assert.equal(await panel.isVisible(), false);
       const quotaResponse = async (route) => route.fulfill({ json: { status: 'unavailable' } });
-      await page.route('**/api/codex-quota*', quotaResponse);
+      const removeQuotaResponse = await fixtureRoute(page, '**/api/codex-quota*', quotaResponse);
       let codexHistory = {
         codexTotal: 3,
         retained: 120,
@@ -1175,8 +1182,8 @@ try {
         codexHistory = { codexTotal: 0, retained: 120, rows: [] };
         return route.fulfill({ json: codexHistory });
       };
-      await page.route('**/api/diagnostic-activity', activityResponse);
-      await page.route('**/api/codex-activity-reset', resetResponse);
+      const removeActivityResponse = await fixtureRoute(page, '**/api/diagnostic-activity', activityResponse);
+      const removeResetResponse = await fixtureRoute(page, '**/api/codex-activity-reset', resetResponse);
       let expanded;
       try {
         await pulse.click();
@@ -1209,9 +1216,9 @@ try {
         const hidden = await page.locator('#new-issue').boundingBox();
         assert.equal(hidden.y, collapsed.y, 'Hiding Pulse left space in the column.');
       } finally {
-        await page.unroute('**/api/codex-quota*', quotaResponse);
-        await page.unroute('**/api/diagnostic-activity', activityResponse);
-        await page.unroute('**/api/codex-activity-reset', resetResponse);
+        await removeQuotaResponse();
+        await removeActivityResponse();
+        await removeResetResponse();
       }
       writeFileSync(join(output, 'pulse-sidebar.json'), JSON.stringify({ collapsed, expanded }, null, 2));
       await screenshot('github-refresh-on-demand');
@@ -1241,12 +1248,12 @@ try {
           body: JSON.stringify({ error: 'Request admission rejected.' }),
         });
       };
-      await page.route('**/api/flow-action', rejectSave);
+      const removeRejectSave = await fixtureRoute(page, '**/api/flow-action', rejectSave);
       await page.locator('#request-form button[type="submit"]').click();
       await page.locator('#error-message').filter({ hasText: 'Request admission rejected.' }).waitFor();
       assert.equal(await wording.inputValue(), 'Edited request\ntype: bug\ngoal: Keep controls usable');
       assert.equal(await wording.isEnabled(), true);
-      await page.unroute('**/api/flow-action', rejectSave);
+      await removeRejectSave();
       const saved = await clickAction(page.locator('#request-form button[type="submit"]'));
       assert.equal(saved.accepted, true);
       await page.locator('#run-block[data-action="stop"]').waitFor();
@@ -2408,7 +2415,7 @@ try {
     const draft = join(checkout, 'branch-draft.txt');
     writeFileSync(draft, 'Preserve this local change.\n');
     const release = Promise.withResolvers();
-    await page.route('**/api/flow-action', async (route) => {
+    const removeApproval = await fixtureRoute(page, '**/api/flow-action', async (route) => {
       if (route.request().postDataJSON().action === 'update-worktree') await release.promise;
       await route.continue();
     });
@@ -2419,7 +2426,7 @@ try {
       .locator('#toast')
       .getByText('Updated the issue branch from the starting branch.', { exact: true })
       .waitFor();
-    await page.unroute('**/api/flow-action');
+    await removeApproval();
     await targetMenu.waitFor({ state: 'hidden' });
     const finished = (await view()).flow.blocks;
     assert.deepEqual(
@@ -2712,13 +2719,15 @@ try {
       delayedDelete = new Promise((done) => setTimeout(done, 16000)).then(() => route.continue());
       return delayedDelete;
     };
-    if (process.argv.includes('--delayed-delete')) await page.route('**/api/flow-action', delayDelete);
+    const removeDelete = process.argv.includes('--delayed-delete')
+      ? await fixtureRoute(page, '**/api/flow-action', delayDelete)
+      : undefined;
     page.once('dialog', (dialog) => void dialog.accept());
     try {
       await clickAction(remove);
     } finally {
       await delayedDelete;
-      if (process.argv.includes('--delayed-delete')) await page.unroute('**/api/flow-action', delayDelete);
+      await removeDelete?.();
     }
     await row.waitFor({ state: 'detached' });
     assert.equal(new URL(page.url()).searchParams.has('issue'), false);
@@ -3085,13 +3094,13 @@ try {
 
         const release = Promise.withResolvers();
         const pauseReceived = Promise.withResolvers();
-        await page.route('**/api/health', async (route) => {
+        const removeHealth = await fixtureRoute(page, '**/api/health', async (route) => {
           await pauseReceived.promise;
           if (screen.path.startsWith('/classic')) await release.promise;
           await route.abort().catch(() => {});
         });
         let clicks = 0;
-        await page.route('**/api/server-pause', async (route) => {
+        const removePause = await fixtureRoute(page, '**/api/server-pause', async (route) => {
           clicks++;
           const response = await route.fetch();
           assert.equal(response.status(), 200);
@@ -3106,14 +3115,13 @@ try {
         assert.equal(clicks, 1);
 
         const reloaded = page.waitForEvent('load');
-        await page.unroute('**/api/health');
-        release.resolve();
+        await removeHealth(release.resolve);
         await reloaded;
         assert.equal(page.url(), url);
         await page.locator(screen.toggle + ':checked').waitFor();
         assert.equal(await waiting.isVisible(), false);
         assert.equal(clicks, 1);
-        await page.unroute('**/api/server-pause');
+        await removePause();
         await toggle.uncheck();
         await page.locator(screen.toggle + ':not(:checked):not(:disabled)').waitFor();
       }
@@ -3195,6 +3203,15 @@ try {
         candidate,
         output,
         project,
+        files: readdirSync(output, { withFileTypes: true })
+          .filter((entry) => entry.isFile() && /\.(?:json|png)$/.test(entry.name))
+          .filter(({ name }) => !['browser.log.json', 'results.json'].includes(name))
+          .map(({ name }) => ({
+            name,
+            sha256: createHash('sha256')
+              .update(readFileSync(join(output, name)))
+              .digest('hex'),
+          })),
         results,
         passed,
         failure,
