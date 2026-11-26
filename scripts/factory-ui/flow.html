@@ -1493,10 +1493,13 @@
             <p class="report-source">Source revision <code>{{revision}}</code></p>
           </header>
           <div class="report-content">{{content}}</div>
-          <section class="report-evidence" aria-label="Retained evidence">
-            <h2>Evidence</h2>
-            {{evidence}}
-          </section>
+          <div class="report-resources">
+            {{createdIssues}}
+            <section class="report-evidence" aria-label="Retained evidence">
+              <h2>Evidence</h2>
+              {{evidence}}
+            </section>
+          </div>
         </article>
         <div
           class="report-divider"

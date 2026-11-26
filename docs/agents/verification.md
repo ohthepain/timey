@@ -12,6 +12,11 @@ missing evidence links, blocked scripts, and blocked external resources. It uses
 saved fixture content, not live model generation, so it does not establish that a
 model follows the report design prompt.
 
+`node scripts/flow-browser.mjs --investigation-flows` runs the inquiry and output
+blocks with a fixture provider. It creates two approval-needed issue records and
+checks the links in the published report. The next run links to matching work,
+so its own report has no created issues.
+
 `node --test scripts/discussion-evidence.check.mjs` checks temporary discussion
 protocol configuration, complete context/input references above the provider
 limit, small follow-up messages, and cleanup that preserves the project. It uses
