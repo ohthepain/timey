@@ -1,7 +1,17 @@
 {
   "version": 1,
-  "sourceRun": "https://github.com/ohthepain/timey/actions/runs/45818424513/job/139907129555",
+  "sourceRun": "https://github.com/ohthepain/timey/actions/runs/45870933190/job/140089737384",
   "tests": [
+    {
+      "name": "The folder workspace reviews moves and creates a master without starting work",
+      "command": [
+        "node",
+        "scripts/flow-browser.mjs",
+        "--ci-part=2",
+        "--capture-folder-issue",
+        "--folder-workspace-grouping"
+      ]
+    },
     {
       "name": "Activity dots stay anchored and reflect actual work",
       "command": [
