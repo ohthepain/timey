@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { digest, git } from './common.mjs';
+import { digest } from './common.mjs';
 import { latestCurrentAttempt, upstreamBlocks } from './flow-block-data.mjs';
 import { issueNumberLabel, savedIssueNumbers } from './issue-numbers.mjs';
 import { groupChildren } from './issue-group.mjs';
@@ -8,8 +8,8 @@ import { evidencePath } from './stores/evidence.mjs';
 const supportedBlocks = new Set(['work', 'understand', 'advice', 'playbook']);
 const proofArtifact = { key: 'subIssueProof', kind: 'file', label: 'Sub-issue proof', type: 'file' };
 
-export function withGroupProof(ctx, refresh = false) {
-  if (!groupChildren(ctx.issue).length || (!refresh && !supportedBlocks.has(ctx.block.kind))) return ctx;
+export function withGroupProof(ctx) {
+  if (!groupChildren(ctx.issue).length || !supportedBlocks.has(ctx.block.kind)) return ctx;
   const artifacts = (ctx.definition.artifacts ?? []).filter((artifact) => artifact.key !== proofArtifact.key);
   return { ...ctx, definition: { ...ctx.definition, artifacts: [...artifacts, proofArtifact] } };
 }
@@ -45,12 +45,12 @@ function readProof(file, root) {
   }
 }
 
-function groupProofAttempts(flow, tree, block, rechecked) {
+function groupProofAttempts(flow, tree, block) {
   return upstreamBlocks(block, flow.blocks)
     .filter(({ kind }) => supportedBlocks.has(kind))
     .map(latestCurrentAttempt)
     .filter((attempt) => ['completed', 'failed', 'blocked'].includes(attempt?.status))
-    .filter((attempt) => matchesProofTree(attempt, tree, rechecked))
+    .filter((attempt) => !tree || attempt.result?.tree === tree)
     .sort((left, right) => (left.endedAt ?? '').localeCompare(right.endedAt ?? ''));
 }
 
@@ -61,27 +61,14 @@ function groupAttemptRows(attempt, tree, root) {
     .map((entry) => [entry.id, { ...entry, file }]);
 }
 
-export function groupProofRows(flow, tree, block = {}, root, rechecked) {
-  return new Map(
-    groupProofAttempts(flow, tree, block, rechecked).flatMap((attempt) => groupAttemptRows(attempt, tree, root))
-  );
+export function groupProofRows(flow, tree, block = {}, root) {
+  return new Map(groupProofAttempts(flow, tree, block).flatMap((attempt) => groupAttemptRows(attempt, tree, root)));
 }
 
-export function savedMergeGroupProof(blocks, head, tree) {
-  return blocks
-    .filter(({ kind }) => kind === 'merge')
-    .flatMap(({ attempts }) => attempts)
-    .map(({ result }) => result?.groupProof)
-    .findLast((proof) => proof?.head === head && proof.tree === tree);
-}
-
-export function requireGroupProof(issue, flow, candidateTree, block, root, rechecked, retainedProof) {
+export function requireGroupProof(issue, flow, candidateTree, block, root) {
   const children = groupChildren(issue);
   if (!children.length) return [];
-  const proofs = groupProofRows(flow, candidateTree, block, root, rechecked);
-  for (const entry of readProof(retainedProof, root)) {
-    proofs.set(entry.id, { ...entry, file: retainedProof });
-  }
+  const proofs = groupProofRows(flow, candidateTree, block, root);
   const missing = children.filter(({ id }) => proofs.get(id)?.status !== 'passed');
   if (missing.length)
     throw Object.assign(
@@ -93,11 +80,6 @@ export function requireGroupProof(issue, flow, candidateTree, block, root, reche
       { code: 'GROUP_PROOF_REQUIRED' }
     );
   return [...new Set(children.map(({ id }) => proofs.get(id).file))];
-}
-
-function matchesProofTree(attempt, tree, rechecked = () => false) {
-  if (!tree) return true;
-  return attempt.result?.tree === tree || rechecked(attempt);
 }
 
 function missingProofLabels(root, missing) {
@@ -116,61 +98,4 @@ function missingProofLabel(issue, number) {
   const issueNumber = number ?? issue.issueNumber;
   if (!Number.isSafeInteger(issueNumber)) return title;
   return issueNumberLabel({ ...issue, issueNumber }) + ' ' + title;
-}
-
-function changedPaths(checkout, from, to) {
-  return git(checkout, 'diff', '--name-only', '--no-renames', '-z', from, to, '--').split('\0').filter(Boolean);
-}
-
-function retainedVerificationSummary(proof, root) {
-  try {
-    const bytes = readFileSync(evidencePath(root, proof.path, proof.sha256));
-    if (digest(bytes) === proof.sha256) return JSON.parse(bytes);
-  } catch {
-    return undefined;
-  }
-}
-
-function verifiedFocusedCommands(proof, tree, root) {
-  const summary = retainedVerificationSummary(proof, root);
-  if (summary?.checkpoint !== 'verification' || summary.snapshot_tree !== tree) return [];
-  return summary.checks
-    .filter(({ passed, name }) => passed && /^focused-\d+$/.test(name))
-    .map(({ command }) => JSON.stringify(command));
-}
-
-function sameImplementation(checkout, result, candidate) {
-  const { base, head, tree } = result;
-  try {
-    git(checkout, 'merge-base', '--is-ancestor', base, head);
-    git(checkout, 'merge-base', '--is-ancestor', head, candidate.head);
-    if (git(checkout, 'rev-parse', head + '^{tree}') !== tree) return false;
-    const updated = new Set(changedPaths(checkout, head, candidate.head));
-    const implementation = changedPaths(checkout, base, head).filter((path) => !path.startsWith('docs/'));
-    return implementation.length > 0 && implementation.every((path) => !updated.has(path));
-  } catch {
-    return false;
-  }
-}
-
-function hasRecheckedCommands(focused, commands) {
-  return (
-    Array.isArray(focused) && focused.length > 0 && focused.every((command) => commands.has(JSON.stringify(command)))
-  );
-}
-
-function recheckedAttempt(attempt, commands, checkout, candidate) {
-  const result = attempt.result ?? {};
-  const eligible = [
-    attempt.status === 'completed',
-    !result.uncommitted,
-    hasRecheckedCommands(result.focusedTests, commands),
-  ];
-  return eligible.every(Boolean) && sameImplementation(checkout, result, candidate);
-}
-
-export function recheckedGroupProof(checkout, candidate, root) {
-  const summaries = candidate.verification?.proof ?? [];
-  const commands = new Set(summaries.flatMap((proof) => verifiedFocusedCommands(proof, candidate.tree, root)));
-  return (attempt) => recheckedAttempt(attempt, commands, checkout, candidate);
 }

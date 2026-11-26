@@ -1115,8 +1115,8 @@ class IssueFlows {
     requireThat(flow.revision === input.flowRevision, 'The flow changed. Review Close again.');
     requireThat(!flowOwnsIssue(this.service, issue.id), 'Wait for the running block or stop it before closing.');
     if (groupChildren(issue).length && (input.resolution ?? 'fixed') === 'fixed') {
-      requireThat(!input.automatic, 'Review and accept the sub-issue proof before closing the master.');
-      requireThat(artifact?.groupProof === true, 'Check the current candidate and proof for each sub-issue.');
+      requireThat(!input.automatic, 'Accept the master issue explicitly before closing its attached sub-issues.');
+      requireThat(artifact?.revision, 'Verify the master’s recorded result before closing its attached sub-issues.');
     }
     const branches = (input.cleanup?.selectedResources || []).filter((item) =>
       ['local-branch', 'remote-branch'].includes(item.kind)
@@ -1539,7 +1539,7 @@ class IssueFlows {
       requireThat(typeof input.enabled === 'boolean', 'Choose whether to close automatically.');
       requireThat(
         !input.enabled || !groupChildren(issue).length,
-        'Accept the master’s sub-issue proof before closing it.'
+        'Accept the master issue explicitly before closing its attached sub-issues.'
       );
       flow.autoClose = input.enabled;
       await this.store.save(flow, flow.revision);

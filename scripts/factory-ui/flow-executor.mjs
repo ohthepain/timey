@@ -2,8 +2,6 @@ import { blockExecutionSettings } from './block-models.mjs';
 import { agentModel, sessionProvider } from './agent-models.mjs';
 import { modelAvailability } from './provider-runtime.mjs';
 import { restoreSourceCheckpoint } from './stores/source-checkpoints.mjs';
-import { hydrateProjectEvidence } from './stores/runtime.mjs';
-import { groupChildren } from './issue-group.mjs';
 import { createWorkProgress } from './work-progress.mjs';
 import { chatProgressInstructions } from './chat-progress.mjs';
 import { executionPermissionInstructions } from './execution-permissions.mjs';
@@ -176,9 +174,6 @@ export function createFlowExecutor(service, options = {}) {
             sourceWorkspace ?? (await workspaceFor(service, context)),
             evidenceDirectory(service, context)
           );
-        if (context.block.kind === 'merge' && groupChildren(context.issue).length) {
-          await hydrateProjectEvidence(service, context.issue.id);
-        }
         const result = !command
           ? await runModel(service, context, owned, runtime)
           : await runReconciledCommand(scopedService, context, {
@@ -187,7 +182,6 @@ export function createFlowExecutor(service, options = {}) {
                 options.repair ??
                 ((error, round, record) =>
                   runMergeRepair(scopedService, context, owned, runtime, error, round, record)),
-              refreshGroupProof: (candidate) => runMergeGroupProof(scopedService, context, owned, runtime, candidate),
               resolveBranchConflicts: (paths, target, recovery) =>
                 runBranchConflictRepair(scopedService, context, owned, runtime, paths, target, recovery),
             });
@@ -607,19 +601,6 @@ function runMergeRepair(service, ctx, owned, options, error, round, record) {
   });
 }
 
-function runMergeGroupProof(service, ctx, owned, options, candidate) {
-  const context = {
-    ...ctx,
-    block: { ...ctx.block, prompt: '' },
-    definition: {
-      ...ctx.definition,
-      prompt:
-        'Verify the requested behavior on the supplied committed candidate. Write only the requested evidence. Factory owns any updates to the PR and the protected merge.',
-    },
-  };
-  return runMergeModel(service, context, owned, { ...options, groupProofCandidate: candidate });
-}
-
 async function runMergeModel(service, ctx, owned, options) {
   try {
     return await runModel(service, ctx, owned, options);
@@ -629,9 +610,8 @@ async function runMergeModel(service, ctx, owned, options) {
   }
 }
 
-function modelRunSuffix({ repair, groupProofCandidate }) {
-  if (repair) return `-repair-${repair.round}`;
-  return groupProofCandidate ? `-group-proof-${groupProofCandidate.head}` : '';
+function modelRunSuffix({ repair }) {
+  return repair ? `-repair-${repair.round}` : '';
 }
 
 function recordModelMessage(service, ctx, options, threadId, kind, body) {
@@ -656,13 +636,8 @@ function recordModelMessage(service, ctx, options, threadId, kind, body) {
   }
 }
 
-function modelEvidenceDirectory(service, ctx, { repair, groupProofCandidate }) {
-  if (repair) return repair.folder;
-  const folder = evidenceDirectory(service, ctx);
-  if (!groupProofCandidate) return folder;
-  const proofFolder = join(folder, 'group-proof-' + groupProofCandidate.head);
-  mkdirSync(proofFolder, { recursive: true });
-  return proofFolder;
+function modelEvidenceDirectory(service, ctx, { repair }) {
+  return repair?.folder ?? evidenceDirectory(service, ctx);
 }
 
 async function runBranchConflictRepair(service, ctx, owned, options, paths, target, recovery) {
@@ -745,14 +720,6 @@ function modelCommandProgress(ctx) {
 
 function modelPrompt(ctx, options) {
   if (options.branchConflictTask) return options.branchConflictTask;
-  if (options.groupProofCandidate)
-    return blockInput(ctx, {
-      candidate: options.groupProofCandidate,
-      focusedTests: upstreamBlocks(ctx.block, ctx.flow.blocks)
-        .filter(({ kind }) => kind === 'work')
-        .flatMap((block) => latestCurrentAttempt(block)?.result?.focusedTests ?? []),
-      task: 'Verify every attached sub-issue on this exact committed PR candidate. Run the checks that demonstrate each requested behavior, including the Work block’s relevant focused checks. Preserve the candidate and write proof and supporting logs under .issues/evidence. Return the subIssueProof artifact with an observed result for every attached sub-issue and attach a combined command log as the log artifact. Report any failed or unavailable required check. Leave source, tests, commits, the PR, and issue membership as they are.',
-    });
   if (options.workBase)
     return blockInput(ctx, {
       workExecution: {
@@ -970,7 +937,7 @@ function modelToolRegistry(outputExecution, ctx) {
 }
 
 async function runModel(service, ctx, owned, options) {
-  ctx = withGroupProof(ctx, Boolean(options.groupProofCandidate));
+  ctx = withGroupProof(ctx);
   ctx = {
     ...ctx,
     block: { ...ctx.block, skill: executionBlockSkill(ctx.block, ctx.definition, ctx.flow.executionSettings) },

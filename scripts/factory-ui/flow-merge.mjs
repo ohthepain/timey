@@ -17,8 +17,6 @@ import { blockerKey, permissionFailure, repairableBlocker } from './strategy-rep
 import { fetchIssueTarget, mergeIssueTarget } from './flow-update-branch.mjs';
 import { queueReportPaths } from './shared-issue-config.mjs';
 import { observeMergeWait, startMergeWait } from './flow-merge-wait.mjs';
-import { requireGroupProof, savedMergeGroupProof } from './flow-group-proof.mjs';
-import { groupChildren } from './issue-group.mjs';
 
 const headOf = (workspace) => git(workspace.checkout, 'rev-parse', 'HEAD');
 const treeOf = (workspace) => git(workspace.checkout, 'rev-parse', 'HEAD^{tree}');
@@ -198,33 +196,9 @@ async function attemptRepair(error, operation) {
   }
 }
 
-async function mergeGroupProof(ctx, workspace, root, head, options, state) {
-  if (!groupChildren(ctx.issue).length) return;
-  const tree = treeOf(workspace);
-  const check = (file) => requireGroupProof(ctx.issue, ctx.flow, tree, ctx.block, root, undefined, file);
-  const saved = state.groupProof?.head === head ? state.groupProof : savedMergeGroupProof([ctx.block], head, tree);
-  try {
-    check(saved?.file);
-    return saved;
-  } catch (error) {
-    if (error.code !== 'GROUP_PROOF_REQUIRED' || !options.refreshGroupProof) throw error;
-  }
-  ctx.onProgress('Rechecking the attached sub-issues on the final PR candidate.\n', true);
-  const refreshed = await options.refreshGroupProof({ head, tree });
-  state.evidence.push(...(refreshed.evidence ?? []));
-  ctx.signal.throwIfAborted();
-  requireCleanCandidate(workspace, head);
-  requireThat(refreshed.status !== 'blocked', refreshed.summary);
-  const file = refreshed.artifacts?.files?.subIssueProof;
-  check(file);
-  state.groupProof = { head, tree, file };
-  return state.groupProof;
-}
-
-async function mergeWhenReady(service, ctx, workspace, provider, pr, readiness, options, state) {
+async function mergeWhenReady(service, ctx, workspace, provider, pr, readiness, state) {
   const { head, target } = readiness;
   const confirmation = mergeConfirmation(ctx, provider, pr, readiness);
-  const groupProof = await mergeGroupProof(ctx, workspace, service.root, head, options, state);
   requireThat(
     !service.sharedIssues || !git(workspace.checkout, 'diff', '--name-only', target, head, '--', ...queueReportPaths()),
     'Shared issue reports require a separate queue PR.'
@@ -236,7 +210,7 @@ async function mergeWhenReady(service, ctx, workspace, provider, pr, readiness, 
     return {
       status: 'blocked',
       summary: 'PR #' + pr.number + ' passed its checks. Approve merging it into ' + pr.base.ref + '.',
-      result: { pr: pr.number, head, target, checks: readiness.checks, mergeConfirmation: confirmation, groupProof },
+      result: { pr: pr.number, head, target, checks: readiness.checks, mergeConfirmation: confirmation },
     };
   }
   state.repairHistory.validateAttachments();
@@ -272,7 +246,7 @@ async function mergeWhenReady(service, ctx, workspace, provider, pr, readiness, 
     mergeOrigin = 'observed-merged';
   }
   return {
-    result: { ...merged, pr: pr.number, head, target, checks: readiness.checks, mergeOrigin, groupProof },
+    result: { ...merged, pr: pr.number, head, target, checks: readiness.checks, mergeOrigin },
     summary: 'GitHub confirms the protected merge.',
   };
 }
@@ -327,7 +301,7 @@ async function advanceMerge(service, ctx, workspace, provider, pr, invoke, optio
   }
   if (readiness.target !== target) throw pending('GitHub and the fetched target differ. Refreshing both revisions.');
   if ((await fetchTarget(ctx, workspace, invoke)) !== target) return undefined;
-  return mergeWhenReady(service, ctx, workspace, provider, pr, readiness, options, state);
+  return mergeWhenReady(service, ctx, workspace, provider, pr, readiness, state);
 }
 
 async function prepareMergeCheckout(state, workspace, invoke) {

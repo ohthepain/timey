@@ -16,10 +16,8 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { cleanEnvironment, digest, git, requireThat, writeJson } from './common.mjs';
 import { StrategyProvider } from './strategy-provider.mjs';
 import { queueReportPaths } from './shared-issue-config.mjs';
-import { recheckedGroupProof, requireGroupProof, savedMergeGroupProof } from './flow-group-proof.mjs';
+import { requireGroupProof } from './flow-group-proof.mjs';
 import { evidencePath } from './stores/evidence.mjs';
-import { hydrateProjectEvidence } from './stores/runtime.mjs';
-import { groupChildren } from './issue-group.mjs';
 import { fetchIssueTarget } from './flow-update-branch.mjs';
 import { checkFlowPublication } from './flow-publication-checks.mjs';
 
@@ -473,8 +471,7 @@ export async function flowClosureArtifact(service, ctx, workspace, folder, optio
   requireThat(pr, 'No PR exists for this issue branch. Publish and merge its PR before closing.');
   const delivered = await provider.inspectExternalDelivery(pr.number, { requiredChecksOnly: true });
   assertMatchingDelivery(ctx.flow, workspace, pr.number, delivered, merged);
-  const [retained] = groupChildren(ctx.issue).length ? await hydrateProjectEvidence(service, ctx.issue.id) : [];
-  return recordClosureDelivery(ctx, workspace, folder, delivered, merged?.verification, retained?.manifest.groupProof);
+  return recordClosureDelivery(ctx, workspace, folder, delivered);
 }
 
 function assertMatchingDelivery(flow, workspace, number, delivered, merged) {
@@ -494,22 +491,11 @@ function assertMatchingDelivery(flow, workspace, number, delivered, merged) {
   );
 }
 
-function recordClosureDelivery(ctx, workspace, folder, delivered, verification, retained) {
+function recordClosureDelivery(ctx, workspace, folder, delivered) {
   const candidate = {
     head: delivered.head,
     tree: git(workspace.checkout, 'rev-parse', delivered.head + '^{tree}'),
-    verification,
   };
-  const groupEvidence = requireGroupProof(
-    ctx.issue,
-    ctx.flow,
-    candidate.tree,
-    ctx.block,
-    ctx.evidenceRoot,
-    ctx.issue.issue_group ? recheckedGroupProof(workspace.checkout, candidate, ctx.evidenceRoot) : undefined,
-    savedMergeGroupProof([...ctx.flow.blocks, ...(ctx.flow.retiredBlocks || [])], candidate.head, candidate.tree)
-      ?.file ?? (retained?.head === candidate.head && retained.tree === candidate.tree ? retained.file : undefined)
-  );
   ctx.signal.throwIfAborted();
   const path = join(folder, 'merged-delivery.json');
   const workProof = deliveryWorkProof(ctx, candidate);
@@ -517,10 +503,8 @@ function recordClosureDelivery(ctx, workspace, folder, delivered, verification, 
   return {
     revision: candidate.head,
     checkout: workspace.checkout,
-    ...(groupEvidence.length && { groupProof: true }),
     evidence: [
       ...workProof.attempts.flatMap(({ file }) => (file ? [file] : [])),
-      ...groupEvidence,
       { path, sha256: digest(readFileSync(path)) },
     ],
   };
@@ -595,7 +579,6 @@ function investigationClosureArtifact(ctx, workspace) {
   return {
     revision: head,
     checkout: workspace.checkout,
-    ...(groupEvidence.length && { groupProof: true }),
     evidence: [...evidence, ...groupEvidence],
   };
 }

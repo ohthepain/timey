@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import { gitFixture } from './git-fixture.mjs';
 import { digest, git as checkoutGit } from './factory-ui/common.mjs';
 import { latestCurrentAttempt, requestBlock } from './factory-ui/flow-block-data.mjs';
-import { recheckedGroupProof, requireGroupProof } from './factory-ui/flow-group-proof.mjs';
+import { requireGroupProof } from './factory-ui/flow-group-proof.mjs';
 import { activeGroupRequest, sourceObservation } from './factory-ui/flow-group-scope.mjs';
 import { issueAnnotations } from './factory-ui/issue-annotations.mjs';
 import { closeProjectStores, ensureProjectStores } from './factory-ui/stores/runtime.mjs';
@@ -450,63 +450,8 @@ test('Only retained passing proof for the candidate tree can satisfy every attac
   save('passed');
   assert.throws(() => requireGroupProof(issue, flow, 'new-tree'), /Save the edit, Show errors/);
   assert.deepEqual(requireGroupProof(issue, flow, 'exact-tree'), [attempt.artifacts.files.subIssueProof]);
-  const legacy = { proof: [{ path: join(root, 'missing-summary.json'), sha256: digest('old verification') }] };
-  assert.deepEqual(
-    requireGroupProof(issue, flow, 'exact-tree', {}, root, recheckedGroupProof(root, { verification: legacy }, root)),
-    [attempt.artifacts.files.subIssueProof]
-  );
   writeFileSync(path, 'changed');
   assert.throws(() => requireGroupProof(issue, flow, 'exact-tree'), /Save the edit, Show errors/);
-});
-
-test('Closure reuses numbered sub-issue proof after a verified target update only', (t) => {
-  const { root, git } = gitFixture(t, 'group-proof-update-');
-  const commit = (name, body) => {
-    writeFileSync(join(root, name), body);
-    git('add', name);
-    git('commit', '-qm', body);
-    return git('rev-parse', 'HEAD');
-  };
-  const base = commit('change.txt', 'before');
-  const head = commit('change.txt', 'fixed');
-  const tree = git('rev-parse', 'HEAD^{tree}');
-  commit('unrelated.txt', 'target update');
-  const command = ['node', '--test', 'behavior.check.mjs'];
-  const file = (name, value) => {
-    const path = join(root, name);
-    const bytes = JSON.stringify(value);
-    writeFileSync(path, bytes);
-    return { path, sha256: digest(bytes) };
-  };
-  const child = { id: 'one', title: 'Save the edit', issueNumber: 181 };
-  const proof = file('proof.json', [{ id: child.id, status: 'passed', observation: 'Save check passed.' }]);
-  const attempt = {
-    status: 'completed',
-    result: { base, head, tree, focusedTests: [command] },
-    artifacts: { files: { subIssueProof: proof } },
-  };
-  const flow = { blocks: [{ kind: 'work', attempts: [attempt] }] };
-  const issue = { issue_group: { children: [child] } };
-  const verify = (passed) => {
-    const next = { head: git('rev-parse', 'HEAD'), tree: git('rev-parse', 'HEAD^{tree}') };
-    const summary = file('summary.json', {
-      checkpoint: 'verification',
-      snapshot_tree: next.tree,
-      checks: [{ name: 'focused-1', command, passed }],
-    });
-    return requireGroupProof(
-      issue,
-      flow,
-      next.tree,
-      {},
-      root,
-      recheckedGroupProof(root, { ...next, verification: { proof: [summary] } }, root)
-    );
-  };
-  assert.deepEqual(verify(true), [proof]);
-  assert.throws(() => verify(false), /#181 Save the edit/);
-  commit('change.txt', 'changed implementation');
-  assert.throws(() => verify(true), /#181 Save the edit/);
 });
 
 async function blockedGroup(service, flows) {

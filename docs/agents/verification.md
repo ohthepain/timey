@@ -555,7 +555,9 @@ GitHub artifact downloads have a two-minute transfer deadline; ordinary GitHub
 CLI requests retain their 30-second deadline. This lets large failure evidence
 finish transferring before the repair worker is invoked.
 
-Close confirms the exact merged PR, target branch, and required GitHub checks.
+Merge uses GitHub readiness for the exact PR candidate on both individual and
+master issues. Close confirms the exact merged PR, target branch, and required
+GitHub checks.
 The delivery manifest records the merged candidate tree and retained Work proof.
 
 The Notes browser scenario leaves a pending Discuss draft, unloads the preceding

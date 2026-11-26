@@ -1108,70 +1108,22 @@ test('Update Branch leaves publication of the updated candidate to Merge', async
   assert.ok(f.observations.some(({ operation }) => operation === 'push'));
 });
 
-test('Merge requires passing proof on the candidate for attached sub-issues only', async (t) => {
+test('Merge uses GitHub readiness for a master without starting another verification turn', async (t) => {
   const f = mergeFixture(t);
   await f.run('understand');
   f.issue.issue_group = {
-    children: [
-      { id: 'attached', title: 'Attached issue' },
-      { id: 'detached', title: 'Detached issue', detachedAt: '2026-11-25T00:00:00Z' },
-    ],
+    children: [{ id: 'attached', title: 'Attached issue' }],
   };
-  const path = join(f.root, '.issues', 'child-proof.json');
-  const proof = JSON.stringify([{ id: 'attached', status: 'passed', observation: 'The requested check passed.' }]);
-  writeFileSync(path, proof);
-  const work = {
-    id: 'work',
-    kind: 'work',
-    after: [],
-    attempts: [
-      {
-        status: 'completed',
-        result: { tree: 'older tree' },
-        artifacts: { files: { subIssueProof: { path, sha256: digest(proof) } } },
-      },
-    ],
-  };
-  f.flow.blocks.push(work);
-  await assert.rejects(f.run('merge', { after: [work.id] }), /passing proof for these sub-issues: Attached issue\./);
-  assert.ok(!f.observations.some(({ operation }) => operation === 'merge'));
+  const callsBeforeMerge = f.calls.length;
 
-  work.attempts[0].result.tree = f.git('rev-parse', 'HEAD^{tree}');
-  const result = await f.run('merge', { after: [work.id] });
-  assert.equal(result.result.revision, 'actual-merge');
-});
+  const merged = await f.run('merge');
 
-test('Merge refreshes stale group proof for the verified candidate and reuses it on approval', async (t) => {
-  const proof = JSON.stringify([{ id: 'attached', status: 'passed', observation: 'The final candidate passed.' }]);
-  let refreshes = 0;
-  const f = mergeFixture(t, {
-    respond(prompt, checkout) {
-      const { candidate } = JSON.parse(prompt);
-      if (!candidate) return;
-      const { head, tree } = candidate;
-      refreshes++;
-      const current = (ref) => execFileSync('git', ['-C', checkout, 'rev-parse', ref], { encoding: 'utf8' }).trim();
-      assert.equal(head, current('HEAD'));
-      assert.equal(tree, current('HEAD^{tree}'));
-      const path = join(checkout, '.issues', 'refreshed-child-proof.json');
-      mkdirSync(join(checkout, '.issues'), { recursive: true });
-      writeFileSync(path, proof);
-      return '```flow-result\n' + JSON.stringify({ files: { subIssueProof: path } }) + '\n```';
-    },
-  });
-  await f.run('understand');
-  f.issue.issue_group = { children: [{ id: 'attached', title: 'Attached issue' }] };
-  const prepared = await f.run('merge', humanFirstMerge);
-  const instructions = f.calls.findLast((call) => call.instructions)?.instructions;
-  assert.match(instructions, /Verify the requested behavior on the supplied committed candidate/);
-  assert.doesNotMatch(instructions, /Commit the repaired candidate/);
-  assert.equal(prepared.status, 'blocked');
-  assert.ok(prepared.result.mergeConfirmation);
-  assert.ok(!f.observations.some(({ operation }) => operation === 'merge'));
-  const merged = await approveMerge(f, prepared);
   assert.equal(merged.result.revision, 'actual-merge');
-  assert.equal(merged.result.groupProof.file.sha256, digest(proof));
-  assert.equal(refreshes, 1);
+  assert.deepEqual(
+    f.observations.map(({ operation }) => operation),
+    ['ready', 'ready', 'merge']
+  );
+  assert.ok(!f.calls.slice(callsBeforeMerge).some(({ instructions }) => instructions));
 });
 
 function approvalAttempt(result) {
