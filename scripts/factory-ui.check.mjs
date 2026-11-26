@@ -3708,9 +3708,21 @@ test('the coordinator page links back to the issue queue', async (t) => {
   const link = window.document.querySelector('[data-view-id="coordinator"] a[href="#/queue"]');
   assert.equal(link?.textContent, '← Issue queue');
   snapshot.coordinator.active = { operation: 'Responding' };
+  snapshot.coordinator.threads[0].progress = {
+    label: 'Exploring',
+    text: 'Reading the queue',
+    milestones: [{ id: 'review', kind: 'milestone', text: 'Found a blocked issue.' }],
+    commands: [{ id: 'list', command: 'ls', output: '<script>bad()</script>' }],
+  };
   window.screenTest.show(snapshot);
   assert.equal(window.document.querySelectorAll('#coordinator-activity .activity-indicator').length, 1);
+  const activity = window.document.querySelector('#coordinator-activity');
+  assert.match(activity.querySelector('[role="status"]').textContent, /Exploring.*Reading the queue/);
+  assert.match(activity.querySelector('[data-chat-milestone]').textContent, /Found a blocked issue/);
+  assert.equal(activity.querySelector('details').open, false);
+  assert.equal(activity.querySelector('script'), null);
   snapshot.coordinator.active = null;
+  delete snapshot.coordinator.threads[0].progress;
   window.screenTest.show(snapshot);
   assert.equal(window.document.querySelectorAll('#coordinator-activity .activity-indicator').length, 0);
 });

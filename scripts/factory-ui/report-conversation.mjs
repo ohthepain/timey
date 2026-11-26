@@ -1,4 +1,5 @@
 import { appendMessage } from './conversation-store.mjs';
+import { chatProgress } from './chat-progress.mjs';
 
 export function retainReportConversation(root, session) {
   if (session.ownership?.kind !== 'investigation') return;
@@ -18,6 +19,7 @@ function reportMessage(message) {
     kind: 'report-discussion',
     body: message.text,
     status: message.status,
+    progress: message.chatActivity && chatProgress(message.chatActivity),
     replyTo: message.replyTo,
     at: message.createdAt,
     reportContext: message.reportContext,

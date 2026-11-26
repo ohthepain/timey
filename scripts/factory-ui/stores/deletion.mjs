@@ -1,7 +1,8 @@
 import { mergedDelivery } from '../merged-issue.mjs';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { realpath } from 'node:fs/promises';
+import { join, sep } from 'node:path';
 import { assertStoreState, inputDigest, sealCoordination, storeFailure } from './coordination.mjs';
 import { planRetirement, redactDeletedMove } from './deletion-retention.mjs';
 import { deletedFilePlanner, removeDeletedFiles } from './deletion-files.mjs';
@@ -228,29 +229,32 @@ function artifactHomes(project) {
   return physical;
 }
 
-async function beginArtifactCleanup(project, operation, retained, seal) {
-  const { cleanup } = operation.value;
-  if (cleanup.phase === 'pending') {
-    assertStoreState(
-      !retained.incomplete,
-      'STORE_RETENTION_UNKNOWN',
-      'Restore access to the retained reference sources before resuming artifact cleanup.'
-    );
-    return;
-  }
-  if (!retained.incomplete && cleanup.candidates.some(([sha256]) => !retained.hashes.has(sha256)))
-    await project.coordination.updateOperation(
-      operation,
-      { cleanup: { ...cleanup, phase: 'pending' } },
-      'artifact-cleanup-started',
-      seal.token
-    );
+async function localArtifactHome(root, store) {
+  const localDirectory = await store.localDirectory?.();
+  if (!localDirectory) return false;
+  const directory = await realpath(localDirectory).catch(() => null);
+  return directory?.startsWith(root + sep);
 }
 
-async function eraseArtifacts(project, operation, stores, seal) {
-  const { candidates } = operation.value.cleanup;
-  const retained = await retainedArtifacts(project, stores, candidates);
-  await beginArtifactCleanup(project, operation, retained, seal);
+async function artifactRemoval(project, root, physical, migratedHomes, [sha256, bytes, mediaType, locations]) {
+  const alias = await project.coordination.get('artifact-locations/' + sha256);
+  const ids = new Set([...locations, ...migratedHomes, ...(alias ? [alias.value.ref.storeId] : [])]);
+  const stores = [];
+  for (const id of ids) {
+    const store = physical.get(id);
+    assertStoreState(
+      store,
+      'STORE_UNCONFIGURED',
+      'Configure the evidence’s retained Artifact home before deleting it.'
+    );
+    if (!(await localArtifactHome(root, store))) return null;
+    stores.push(store);
+  }
+  return { ref: { key: project.projectId + '/sha256/' + sha256, sha256, bytes, mediaType }, stores, alias };
+}
+
+async function planArtifactRemovals(project, candidates, retained) {
+  const root = await realpath(project.root);
   const physical = artifactHomes(project);
   const migratedHomes = (
     await project.coordination.list('operations/', ({ value }) =>
@@ -261,37 +265,49 @@ async function eraseArtifacts(project, operation, stores, seal) {
   )
     .flat()
     .filter(Boolean);
-  let removed = 0;
-  let kept = 0;
-  for (const [sha256, bytes, mediaType, locations] of candidates) {
-    if (retained.incomplete || retained.hashes.has(sha256)) {
-      kept++;
-      continue;
-    }
-    const alias = await project.coordination.get('artifact-locations/' + sha256);
-    const ids = new Set([...locations, ...migratedHomes, ...(alias ? [alias.value.ref.storeId] : [])]);
-    for (const id of ids) {
-      const store = physical.get(id);
-      assertStoreState(
-        store,
-        'STORE_UNCONFIGURED',
-        'Configure the evidence’s retained Artifact home before deleting it.'
-      );
-      await store.remove({ storeId: id, key: project.projectId + '/sha256/' + sha256, sha256, bytes, mediaType });
-    }
+  const removals = [];
+  for (const candidate of candidates) {
+    if (retained.hashes.has(candidate[0])) continue;
+    const removal = await artifactRemoval(project, root, physical, migratedHomes, candidate);
+    if (removal) removals.push(removal);
+  }
+  return removals;
+}
+
+async function removeArtifactCopies(project, operationId, removals, token) {
+  for (const { ref, stores, alias } of removals) {
+    for (const store of stores) await store.remove({ ...ref, storeId: store.id });
     if (alias)
       await project.coordination.commit(
-        operation.value.id + '/remove-alias/' + sha256,
+        operationId + '/remove-alias/' + ref.sha256,
         [{ key: alias.key, revision: alias.revision }],
         [{ key: alias.key, value: null }],
-        seal.token
+        token
       );
-    removed++;
   }
-  const local = removeDeletedFiles(project.root, operation.value.cleanup.localFiles, {
+}
+
+async function eraseArtifacts(project, operation, stores, seal) {
+  const { cleanup } = operation.value;
+  const retained = await retainedArtifacts(project, stores, cleanup.candidates);
+  assertStoreState(
+    cleanup.phase !== 'pending' || !retained.incomplete,
+    'STORE_RETENTION_UNKNOWN',
+    'Restore access to the retained reference sources before resuming artifact cleanup.'
+  );
+  const removals = retained.incomplete ? [] : await planArtifactRemovals(project, cleanup.candidates, retained);
+  if (removals.length && cleanup.phase !== 'pending')
+    await project.coordination.updateOperation(
+      operation,
+      { cleanup: { ...cleanup, phase: 'pending' } },
+      'artifact-cleanup-started',
+      seal.token
+    );
+  await removeArtifactCopies(project, operation.value.id, removals, seal.token);
+  const local = removeDeletedFiles(project.root, cleanup.localFiles, {
     issueId: operation.value.input.issueId,
   });
-  return { removed, retained: kept, local };
+  return { removed: removals.length, retained: cleanup.candidates.length - removals.length, local };
 }
 
 export async function resumeDelete(project, { operationId }) {

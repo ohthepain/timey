@@ -20,7 +20,7 @@
   function renderMessages(id, messages, sessionId, working) {
     const markup =
       (messages || []).map((message, index) => homeMessage(message, index, id, sessionId)).join('') +
-      window.timeyActivity.markup(working);
+      window.timeyChatProgress.live(undefined, working);
     const scope = 'home-messages:' + id + ':' + sessionId;
     const first = !window.timeyView.read(scope);
     window.timeyView.render($(id), markup, scope);
@@ -35,12 +35,6 @@
     block.dataset.aiSource = content;
     window.FactoryTextControls.refresh();
   }
-  function saveProjectTab(tab) {
-    const url = new URL(location.href);
-    if (tab !== 'home') url.searchParams.set('projectTab', tab);
-    else url.searchParams.delete('projectTab');
-    history.replaceState(null, '', url);
-  }
   function updateChatVisibility(visible, projectTab, discuss, reports) {
     const chats = new Map([
       ['discuss', discuss],
@@ -48,15 +42,13 @@
     ]);
     for (const [tab, chat] of chats) chat.setVisible(visible && projectTab === tab);
   }
-  window.createProjectHomeUI = ({ request, post, navigateHome, changed }) => {
+  window.createProjectHomeUI = ({ request, post, navigateHome, navigateIssue, changed }) => {
     const discuss = window.createProjectDiscussUI({ request, post });
     const reports = window.createProjectReportsUI({ request, post });
     window.createProjectAdminUI({ request, post });
-    const tabs = document.querySelectorAll('[role="tab"][data-project-tab]');
-    const requestedTab = new URL(location.href).searchParams.get('projectTab');
-    let projectTab = ['issues', 'reports', 'discuss', 'automate', 'admin'].includes(requestedTab)
-      ? requestedTab
-      : 'home';
+    const tabs = [...document.querySelectorAll('[role="tab"][data-project-tab]')];
+    const labels = new Map(tabs.map((button) => [button.dataset.projectTab, button.textContent.trim()]));
+    let projectTab;
     const state = {
       visible: false,
       data: null,
@@ -80,8 +72,9 @@
     }
 
     function selectProjectTab(tab) {
+      if (!labels.has(tab)) tab = 'home';
+      if (tab === projectTab) return;
       projectTab = tab;
-      saveProjectTab(tab);
       $('project-home').dataset.projectTab = tab;
       document.querySelector('.workspace').dataset.projectHomeTab = tab;
       document.querySelector('.flow-footer')?.classList.toggle('discuss-hidden', ['discuss', 'reports'].includes(tab));
@@ -93,12 +86,8 @@
       updateTabSelection();
       loadIssuesFrame();
     }
-    for (const button of tabs)
-      button.addEventListener('click', () => {
-        selectProjectTab(button.dataset.projectTab);
-        if (!state.visible) navigateHome();
-      });
-    selectProjectTab(projectTab);
+    for (const button of tabs) button.addEventListener('click', () => navigateHome(button.dataset.projectTab));
+    selectProjectTab(new URL(location.href).searchParams.get('projectTab'));
 
     function syncIssueDetailWidth() {
       const frame = document.querySelector('#project-issues iframe');
@@ -402,7 +391,7 @@
     function savedNavigation(button) {
       const kind = button.dataset.homeSession;
       if (kind === 'investigation') {
-        location.href = '/?issue=' + encodeURIComponent(button.dataset.sessionId);
+        navigateIssue(button.dataset.sessionId);
         return;
       }
       const sessions = automateSessions();
@@ -431,7 +420,8 @@
       $('home-investigation-run').disabled = true;
       try {
         const result = await post('project-home-action', { action: 'investigation-create', ...investigationInput() });
-        location.href = '/?issue=' + encodeURIComponent(result.issueId);
+        $('home-investigation-dialog').close();
+        navigateIssue(result.issueId);
       } catch (error) {
         $('home-investigation-error').textContent = error.message;
       } finally {
@@ -474,6 +464,8 @@
     }, 2000);
     return {
       isVisible: () => state.visible,
+      title: () => (projectTab === 'home' ? 'Project Home' : labels.get(projectTab)),
+      selectTab: selectProjectTab,
       setVisible(value) {
         const wasVisible = state.visible;
         state.visible = value;
@@ -484,8 +476,7 @@
         if (value && !wasVisible) void refresh();
       },
       openIssuesTab() {
-        navigateHome();
-        selectProjectTab('issues');
+        navigateHome('issues');
       },
       refresh,
     };

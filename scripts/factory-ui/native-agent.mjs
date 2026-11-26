@@ -9,6 +9,7 @@ import { cleanEnvironment, requireThat, writeJson } from './common.mjs';
 import { createChatToolMcp } from './chat-tool-mcp.mjs';
 import { approvalReply } from './approval-options.mjs';
 import { redactValue } from './activity.mjs';
+import { isChatCommentary, stripChatProgress } from './chat-progress.mjs';
 import { newChatModelSettings } from './model-settings.mjs';
 import { validateTextInput } from './codex-input.mjs';
 import { agentSessionPath } from './agent-recovery.mjs';
@@ -423,6 +424,7 @@ export class NativeAgentConnection {
     }
     this.process.call('session/prompt', { sessionId: this.session.nativeId, prompt: [{ type: 'text', text }] }, 0).then(
       (result) => {
+        this.finishGoogleCommentary(turn);
         if (result.stopReason === 'end_turn') this.finish(turn);
         else this.finish(turn, Error(`The Gemini turn stopped (${result.stopReason}). Continue explicitly.`));
       },
@@ -472,7 +474,7 @@ export class NativeAgentConnection {
     if (['assistant', 'stream_event', 'result'].includes(message.type)) this.acceptTurn(turn);
     const handlers = {
       stream_event: () => this.claudeStream(message.event, turn),
-      assistant: () => this.claudeTools(message.message),
+      assistant: () => this.claudeMessage(message.message),
       user: () => this.claudeToolResults(message.message),
       result: () => this.claudeResult(message, turn),
       system: () => this.claudeSystem(message, turn),
@@ -483,15 +485,28 @@ export class NativeAgentConnection {
     if (message.method !== 'session/update' || message.params.sessionId !== this.session.nativeId) return;
     const update = message.params.update;
     const handlers = {
-      agent_message_chunk: () => {
-        if (update.content.type === 'text') this.delta(turn, update.content.text);
+      agent_message_chunk: () => this.googleText(turn, update.content),
+      tool_call: () => {
+        this.finishGoogleCommentary(turn);
+        this.googleTool(update);
       },
-      tool_call: () => this.googleTool(update),
       tool_call_update: () => this.googleTool(update),
     };
     if (!Object.hasOwn(handlers, update.sessionUpdate)) return;
     this.acceptTurn(turn);
     handlers[update.sessionUpdate]();
+  }
+  googleText(turn, content) {
+    if (content.type !== 'text') return;
+    turn.segment = (turn.segment || '') + content.text;
+    this.delta(turn, content.text);
+  }
+  finishGoogleCommentary(turn) {
+    const text = turn.segment;
+    turn.segment = '';
+    if (!isChatCommentary({ text })) return;
+    turn.text = turn.text.slice(0, -text.length);
+    this.emitCommentary(randomUUID(), text);
   }
   googleTool(update) {
     const completed = ['completed', 'failed'].includes(update.status);
@@ -502,11 +517,20 @@ export class NativeAgentConnection {
         tool: update.title || update.toolCallId,
         status: update.status,
         arguments: redactValue(update.rawInput),
+        output: redactValue(update.rawOutput),
       },
     });
   }
   claudeStream(event, turn) {
     if (event?.delta?.type === 'text_delta') this.delta(turn, event.delta.text);
+  }
+  emitCommentary(id, text) {
+    this.emit('item/completed', { item: { id, type: 'agentMessage', phase: 'commentary', text } });
+  }
+  claudeMessage(message) {
+    const commentary = (message.content || []).filter((entry) => entry.type === 'text' && isChatCommentary(entry));
+    for (const [index, { text }] of commentary.entries()) this.emitCommentary(message.id + '-' + index, text);
+    this.claudeTools(message);
   }
   claudeTools(message) {
     for (const block of (message.content || []).filter(({ type }) => type === 'tool_use'))
@@ -523,7 +547,12 @@ export class NativeAgentConnection {
     if (!Array.isArray(message.content)) return;
     for (const block of message.content.filter(({ type }) => type === 'tool_result'))
       this.emit('item/completed', {
-        item: { id: block.tool_use_id, type: 'dynamicToolCall', status: block.is_error ? 'failed' : 'completed' },
+        item: {
+          id: block.tool_use_id,
+          type: 'dynamicToolCall',
+          status: block.is_error ? 'failed' : 'completed',
+          output: redactValue(block.content),
+        },
       });
   }
   claudeResult(message, turn) {
@@ -575,7 +604,7 @@ export class NativeAgentConnection {
     this.clearRequests();
     this.emit('turn/completed', { turn: { id: turn.id, status: error ? 'failed' : 'completed' } });
     if (error) turn.reject(terminalError(turn, error, uncertain));
-    else turn.resolve(turn.text);
+    else turn.resolve(stripChatProgress(turn.text));
   }
   permissionRequest(id, native, command, input, decisions) {
     return {

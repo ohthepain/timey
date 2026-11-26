@@ -1091,6 +1091,10 @@ Flow-card reveal checks wait for the whole card to be visible in the current
 scroll viewport. Card bounds and viewport bounds are measured together; partial
 scroll movement alone does not mean the reveal has finished. Failures retain
 relative card bounds and viewport height in the polling diagnostic.
+`node scripts/flow-browser.mjs --ci-part=2 --capture-folder-issue --save-request-route --block-reveal`
+also checks that clicking the selected card reveals it without adding a history entry.
+The `--project-navigation` scenario preloads Chromium history so it checks the
+recorded destinations even when the browser evicts older entries.
 
 `node scripts/flow-browser.mjs --error-recovery` triggers a rejected branch update
 and verifies that a successful explicit Refresh clears its old error banner.

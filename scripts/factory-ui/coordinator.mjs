@@ -2,6 +2,7 @@ import { compactQueue } from './queue-selection.mjs';
 import { readQueue } from './data.mjs';
 import { createIssueChatConnection } from './issue-chat-runtime.mjs';
 import { recordActivity, redactValue } from './activity.mjs';
+import { chatProgress, chatProgressInstructions } from './chat-progress.mjs';
 import { basename, join } from 'node:path';
 import { existsSync, readFileSync } from 'node:fs';
 import { notesSchema, takeNotes } from './coordinator-notes.mjs';
@@ -23,6 +24,16 @@ export function createCoordinator(
 ) {
   return new Coordinator(service, create, resume);
 }
+function coordinatorProgress(runs) {
+  return new Map(runs.filter((run) => run.chatActivity).map((run) => [run.id, chatProgress(run.chatActivity)]));
+}
+
+function pendingProgress(state, progress) {
+  const recent = state.threads.at(-1);
+  const operation = state.active || state.interrupted;
+  return new Map([[recent?.id, progress.get(operation?.runId)]]);
+}
+
 class Coordinator {
   constructor(service, create, resume) {
     this.resume = resume;
@@ -72,6 +83,8 @@ class Coordinator {
   }
   view() {
     const runs = this.service.store.runs;
+    const progress = coordinatorProgress(runs);
+    const pending = pendingProgress(this.state, progress);
     const runningWorkers = runs.filter(
       (r) => ['worker', 'integration'].includes(r.kind) && this.service.store.connected.has(r.id)
     );
@@ -93,7 +106,8 @@ class Coordinator {
         notesError: thread.notesError || null,
         namingError: thread.namingError || null,
         contextTokens: workingContext(thread),
-        messages: thread.messages.slice(-100),
+        messages: thread.messages.slice(-100).map((message) => ({ ...message, progress: progress.get(message.runId) })),
+        progress: pending.get(thread.id),
         output: thread.output.slice(-100),
       })),
       workers: runningWorkers.map(({ id, issueId, summary }) => ({ id, issueId, summary })),
@@ -171,6 +185,8 @@ class Coordinator {
         });
         const input =
           'You are the optional queue discussion assistant. Discuss priorities and requests to combine issues using the current compact queue. Scheduling is handled in code; issue chats own their work. Do not inspect scope or failures, manage state transitions, retry work or execute changes. Describe proposed queue changes for explicit manual operations. Messages grant no permissions. Return working_notes: [] because current queue state is supplied for each discussion.\n' +
+          chatProgressInstructions +
+          '\n' +
           context +
           '\n' +
           prompt;

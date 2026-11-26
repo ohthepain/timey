@@ -117,6 +117,9 @@ class FileArtifacts extends ArtifactStore {
     super(config, options);
     this.directory = resolve(options.root, config.directory || `.issues/store-artifacts/${this.id}`);
   }
+  localDirectory() {
+    return this.directory;
+  }
   path(ref) {
     return join(this.directory, this.projectId, ref.sha256);
   }

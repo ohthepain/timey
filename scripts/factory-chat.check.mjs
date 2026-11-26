@@ -355,6 +355,36 @@ test('the conversational model uses read-only access and refuses an uncertain ex
   assert.deepEqual(calls, [['saved', '/project', 'read-only']]);
 });
 
+test('Classic issue conversation restores grouped command output and milestones after reopening', async (t) => {
+  const f = fixture(t);
+  let active;
+  f.connection.turn = async (threadId) => {
+    const event = (method, item) => f.service.store.event({ method, params: { threadId, item } });
+    event('item/started', { id: 'list', type: 'commandExecution', command: 'ls' });
+    event('item/completed', { id: 'list', type: 'commandExecution', command: 'ls', aggregatedOutput: 'src' });
+    event('item/completed', { id: 'readme', type: 'agentMessage', text: '[Milestone] Found the source.' });
+    event('item/started', { id: 'test', type: 'commandExecution', command: 'node --test focused.mjs' });
+    active = f.service.issueChats.view(f.input.issueId).progress;
+    return 'Checked the source.';
+  };
+  await f.send('Read the source with the current tests.');
+  await f.finish();
+  assert.equal(active.label, 'Verifying');
+  assert.equal(active.milestones[0].text, 'Found the source.');
+  assert.equal(active.milestones[0].commands[0].output, 'src');
+  assert.equal(active.commands[0].command, 'node --test focused.mjs');
+
+  f.service.store.reload();
+  const reopened = f.service.issueChats.view(f.input.issueId);
+  assert.equal(reopened.progress, undefined);
+  const replies = reopened.messages.filter((message) => message.body === 'Checked the source.');
+  assert.deepEqual(
+    replies.map((message) => message.kind),
+    ['reply']
+  );
+  assert.equal(JSON.stringify(replies[0].progress), JSON.stringify(active));
+});
+
 test('persistent chat view escapes text, preserves draft/focus across role updates and reuses one panel', (t) => {
   const dom = new JSDOM('<div id="app"><div id="issue-chat-slot"></div></div>', {
     url: 'http://127.0.0.1/#/issue/one',
