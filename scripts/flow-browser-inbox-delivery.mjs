@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { cpSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
@@ -204,6 +204,8 @@ export async function projectAppWorkspaceChecks({ page, project, service, output
 }
 const timeySources = [
   'package.json',
+  'pnpm-workspace.yaml',
+  'pnpm-lock.yaml',
   'vite.config.ts',
   '.oxfmtrc.json',
   'tsconfig.json',
@@ -218,6 +220,7 @@ const timeySources = [
 function removeAppFixtures(project) {
   const files = [
     ...timeySources,
+    'vite.timey.config.ts',
     '.env',
     '.nitro',
     '.output',
@@ -231,7 +234,16 @@ function removeAppFixtures(project) {
 
 function copyTimeyApp(root, project) {
   for (const file of timeySources) cpSync(join(root, file), join(project, file), { recursive: true });
-  symlinkSync(join(root, 'node_modules'), join(project, 'node_modules'), 'dir');
+  const dependencies = realpathSync(join(root, 'node_modules'));
+  symlinkSync(dependencies, join(project, 'node_modules'), 'dir');
+  // The verifier links dependencies from outside the exported workspace.
+  const config = join(project, 'vite.config.ts');
+  renameSync(config, join(project, 'vite.timey.config.ts'));
+  writeFileSync(
+    config,
+    `import config from './vite.timey.config.ts';\n` +
+      `export default { ...config, server: { ...config.server, fs: { ...config.server?.fs, allow: ${JSON.stringify([project, dependencies])} } } };\n`
+  );
   writeFileSync(
     join(project, '.env'),
     [
