@@ -38,9 +38,13 @@ async function checkPlayback(page, service, id, work, poll, screenshot) {
     assert.equal(await status.textContent(), '');
     await screenshot('inbox-issue-running');
     await page.getByRole('button', { name: 'Pause issue', exact: true }).click();
-    await status.locator('.active-spinner').waitFor({ state: 'detached' });
-    assert.equal(await status.textContent(), '');
+    await status.getByText('Paused', { exact: true }).waitFor();
+    assert.equal(await status.locator('.active-spinner').count(), 0);
+    const title = await page.locator('#issue-title').boundingBox();
+    const paused = await status.boundingBox();
+    assert.ok(paused.y >= title.y + title.height, 'Paused status must appear below the issue title.');
     await screenshot('inbox-issue-paused');
+    return { runningSpinner: true, runningText: '', pausedText: await status.textContent(), title, paused };
   } finally {
     running.resolve({ summary: 'Finished fixture Request.', artifacts: { values: {} } });
     await poll(() => !service.flows.active.has(id), Boolean, 'Fixture Request ended');
@@ -93,10 +97,14 @@ export async function inboxDetailsBrowserChecks({ page, service, project, poll, 
   await withBrowserScenarioFixture({ project, service }, async () => {
     initializeProjectLifecycle(service, { digest: readProjectSettings(project).lifecycle.digest });
     const id = '20261126-inbox-details';
-    await writeBrowserIssue(service, { id, title: 'Inbox Details', body: 'Keep fixture proof inputs.' });
+    await writeBrowserIssue(service, {
+      id,
+      title: 'Inbox Details keeps the full title width while playback controls and the Paused status remain visible',
+      body: 'Keep fixture proof inputs.',
+    });
     const flows = service.flows;
     const work = flows.read(flows.selected(id)).blocks.find(({ kind }) => kind === 'work');
-    await checkPlayback(page, service, id, work.id, poll, screenshot);
+    const playback = await checkPlayback(page, service, id, work.id, poll, screenshot);
     const flow = flows.read(flows.selected(id));
     const merge = flow.blocks.find(({ kind }) => kind === 'merge');
     merge.attempts.push(completed('earlier-merge', proofFiles(project, ['previous-proof'])));
@@ -121,7 +129,7 @@ export async function inboxDetailsBrowserChecks({ page, service, project, poll, 
       join(output, 'inbox-details.json'),
       JSON.stringify(
         {
-          playback: { runningSpinner: true, runningText: '', pausedText: '' },
+          playback,
           merge: {
             latestCount: 2,
             emptyLatestCount: 0,
