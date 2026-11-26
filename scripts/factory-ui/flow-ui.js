@@ -2776,6 +2776,23 @@ import { reorderedBlocks } from './flow-order.mjs';
     button.title = blockDeletionReason(block) || 'Delete block';
   }
 
+  function renderInspectorContent(body, html, scope) {
+    const conversation = state.tab === 'conversation';
+    const follow =
+      conversation && (inspectorRender?.scope !== scope || view.follows(body, view.captureSelection(body)));
+    body.toggleAttribute('data-chat-scroll', conversation);
+    view.render(body, html, scope);
+    if (follow && !view.dragging(body)) alignInspectorHistory(body, scope);
+  }
+
+  function alignInspectorHistory(body, scope) {
+    body.scrollTop = body.scrollHeight;
+    const top = body.scrollTop;
+    requestAnimationFrame(() => {
+      if (inspectorRender?.scope === scope && body.scrollTop >= top) body.scrollTop = body.scrollHeight;
+    });
+  }
+
   function renderInspector() {
     const block = activeBlock();
     const style = blockStyle(block?.definition ?? block?.kind);
@@ -2803,15 +2820,7 @@ import { reorderedBlocks } from './flow-order.mjs';
             ? blockDetails(block)
             : '<p class="inline-empty">Add a block to begin this issue.</p>';
     if (inspectorRender?.scope === scope && inspectorRender.html === html) return;
-    const conversation = state.tab === 'conversation';
-    const opening = inspectorRender?.scope !== scope;
-    view.render(body, html, scope);
-    if (conversation) {
-      body.dataset.chatScroll = '';
-      if (opening) body.scrollTop = body.scrollHeight;
-    } else {
-      delete body.dataset.chatScroll;
-    }
+    renderInspectorContent(body, html, scope);
     if (block) view.write('flow-selection:' + state.issueId, { blockId: state.blockId, tab: state.tab });
     inspectorRender = { scope, html };
   }
