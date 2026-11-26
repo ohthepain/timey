@@ -1271,10 +1271,11 @@ try {
     await page.locator('.inspector').waitFor({ state: 'visible' });
     await page.locator('#request-form').waitFor({ state: 'visible' });
     const markdownMenu = page.locator('.block-markdown-menu');
-    await markdownMenu.getByText('Markdown', { exact: true }).click();
+    const markdownToggle = markdownMenu.getByText('.md', { exact: true });
+    await markdownToggle.click();
     assert.ok(await markdownMenu.getByRole('button', { name: 'Reveal Markdown in Finder' }).isVisible());
     assert.ok(await markdownMenu.getByRole('button', { name: 'Create extension' }).isVisible());
-    await markdownMenu.getByText('Markdown', { exact: true }).click();
+    await markdownToggle.click();
     assert.equal(await page.locator('[name="wording"]').inputValue(), description);
     assert.equal(data.flow.routeType, 'feature');
     assert.equal(startingPoint(data.flow).ref, 'refs/heads/dev');
@@ -1350,7 +1351,7 @@ try {
     await clickAction(page.getByRole('button', { name: 'Work All Night', exact: true }));
     await page
       .getByRole('region', { name: 'Overnight plan' })
-      .getByText('Verified, merge-ready pull requests')
+      .getByText('Follow each issue’s configured merge policy', { exact: true })
       .waitFor();
     await page.locator('[data-folder-command="cancel-night"]').click();
     const groupButton = page.locator('[data-folder-command="group"]');
