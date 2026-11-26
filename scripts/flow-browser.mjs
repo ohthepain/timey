@@ -3113,8 +3113,7 @@ try {
         assert.equal(clicks, 1);
 
         const reloaded = page.waitForEvent('load');
-        await removeHealth();
-        release.resolve();
+        await removeHealth(release.resolve);
         await reloaded;
         assert.equal(page.url(), url);
         await page.locator(screen.toggle + ':checked').waitFor();

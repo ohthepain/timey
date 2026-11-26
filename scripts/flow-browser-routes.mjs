@@ -10,8 +10,9 @@ export async function fixtureRoute(page, pattern, handler, options) {
     }
   };
   await page.route(pattern, wrapped, options);
-  return async () => {
+  return async (onRemoved) => {
     await page.unroute(pattern, wrapped);
+    onRemoved?.();
     await Promise.all(active);
   };
 }
