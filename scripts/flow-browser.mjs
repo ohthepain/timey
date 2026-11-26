@@ -800,7 +800,7 @@ try {
     await assertCleanSidebarConsole();
   });
   await check('Automate me dots follow each active response', () =>
-    automateActivityBrowserChecks({ page, service, screenshot })
+    automateActivityBrowserChecks({ page, service, screenshot, poll, output })
   );
   await check('Activity dots stay anchored and reflect actual work', () =>
     activityBrowserChecks({ page, project, service, poll, screenshot, output })

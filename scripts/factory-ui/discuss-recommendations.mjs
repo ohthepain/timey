@@ -62,11 +62,26 @@ function grillingRecommendation(session, skills) {
   ];
 }
 
+const reportRecommendations = [
+  recommendation('report-findings', 'Explain the findings', 'Explain the most important finding in this report.'),
+  recommendation('report-priorities', 'Prioritize recommendations', 'Which recommendations should we act on first?'),
+  recommendation(
+    'report-followups',
+    'Create follow-up issues',
+    'Create approval-needed follow-up issues for uncovered work in this report, linking matching existing issues.'
+  ),
+];
+
+function baseRecommendations(root, session, skills) {
+  if (session.noteContext) return noteRecommendations(root, session, skills);
+  if (session.ownership?.kind === 'investigation') return reportRecommendations;
+  return [];
+}
+
 export function discussionRecommendations(root, session, skills) {
   const latest = session.messages.findLast(({ role, status }) => role === 'assistant' && status === 'completed');
   const contextual = latest?.recommendations || [];
-  const note = session.noteContext ? noteRecommendations(root, session, skills) : [];
-  return [...note, ...contextual];
+  return [...baseRecommendations(root, session, skills), ...contextual];
 }
 
 function noteDirection(id) {

@@ -69,6 +69,16 @@ export async function investigationReportsBrowserChecks({ page, service, project
     blockId: 'investigate',
     source: { attemptId: 'run-one' },
   });
+  for (let index = 1; index <= 36; index++) {
+    appendMessage(project, source.issueId, {
+      id: 'report-chat-history-' + index,
+      actor: 'agent',
+      role: 'Investigate',
+      kind: 'flow-block-result',
+      body: 'Retained report discussion message ' + index + '.',
+      blockId: 'investigate',
+    });
+  }
   const first = reports.publish({
     publicationId: 'publication-one',
     attemptId: 'output-one',
@@ -141,11 +151,56 @@ export async function investigationReportsBrowserChecks({ page, service, project
     .locator('#report-discuss-messages')
     .getByText('Historical inquiry finding retained by the ordinary flow.', { exact: true })
     .waitFor();
-  await page.locator('[data-report-prompt]').first().click();
-  assert.equal(calls.length, 0, 'Recommended prompt fills without sending.');
-  assert.match(await page.locator('#report-discuss-draft').inputValue(), /most important finding/);
-  await page.locator('#report-discuss-send').click();
-  await page.locator('#report-discuss-messages').getByText('Retained report answer.', { exact: true }).waitFor();
+  const messages = page.locator('#report-discuss-messages');
+  const metrics = () =>
+    messages.evaluate((node) => ({ top: node.scrollTop, end: node.scrollHeight - node.clientHeight }));
+  const atLatest = (position) => position.end > 50 && position.end - position.top < 3;
+  await messages.getByText('Retained report discussion message 36.', { exact: true }).waitFor();
+  await poll(metrics, atLatest, 'Report chat did not open on its latest message.');
+  const opened = await metrics();
+  const prompt = page.getByRole('button', { name: 'Explain the findings', exact: true });
+  assert.ok(
+    await prompt.evaluate((node) => {
+      const draft = document.getElementById('report-discuss-draft');
+      return (
+        node.closest('form') === draft.closest('form') &&
+        node.getBoundingClientRect().bottom <= draft.getBoundingClientRect().top
+      );
+    }),
+    'The recommendation sits above the draft inside the composer.'
+  );
+  await prompt.click();
+  await messages.getByText('Retained report answer.', { exact: true }).waitFor();
+  assert.equal(calls.length, 1, 'One click sends one prompt.');
+  assert.equal(calls[0].text, 'Explain the most important finding in this report.');
+  await poll(metrics, atLatest, 'Report chat did not follow its latest reply.');
+  const followed = await metrics();
+  await messages.evaluate((node) => {
+    node.scrollTop = Math.round(node.scrollTop / 3);
+  });
+  const reading = await metrics();
+  appendMessage(project, source.issueId, {
+    id: 'report-chat-live-update',
+    actor: 'agent',
+    role: 'Investigate',
+    kind: 'flow-block-result',
+    body: 'Live report discussion update.',
+    blockId: 'investigate',
+  });
+  await messages.getByText('Live report discussion update.', { exact: true }).waitFor();
+  const afterUpdate = await metrics();
+  assert.equal(afterUpdate.top, reading.top, 'Incoming report history preserves the reader position.');
+  await page.locator('[data-report-discuss]').click();
+  await page.locator('[data-report-discuss]').click();
+  await poll(metrics, atLatest, 'Reopened report chat did not show its latest message.');
+  writeFileSync(
+    join(output, 'report-chat-scroll.json'),
+    JSON.stringify(
+      { opened, followed, reading, afterUpdate, reopened: await metrics(), prompt: calls[0].text },
+      null,
+      2
+    ) + '\n'
+  );
   assert.equal(calls[0].reportContext.reportId, first.id);
   assert.equal(
     service.projectDiscuss.view().conversations.length,

@@ -57,8 +57,9 @@ Investigate, Generate report, and Create Issues. Either output can be removed or
 run independently after a completed inquiry. Create Issues saves uncovered work
 as Needs approval and links matching existing issues without changing them.
 Approval does not start work. Reports retains dated publications and evidence,
-with optional discussion below the reader. Archived investigations retain report
-access and discussion without starting another inquiry. See the
+with optional discussion below the reader. Recommended prompts sit above the
+report composer and send their full text with the selected report as context.
+Archived investigations retain report access and discussion without starting another inquiry. See the
 [investigation reports design](../plans/investigation-reports.md).
 
 **Automate me** runs the installed PStack skill through a guided Codex conversation.

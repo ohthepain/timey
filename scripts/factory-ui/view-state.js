@@ -438,5 +438,16 @@
   window.addEventListener('blur', finishPointer);
   for (const name of ['scroll', 'toggle', 'input', 'change']) document.addEventListener(name, saveViews, true);
   window.addEventListener('pagehide', () => saveViews());
-  window.timeyView = { render, text, read, write, remember, track, dragging, captureSelection, restoreSelection };
+  window.timeyView = {
+    render,
+    text,
+    read,
+    write,
+    remember,
+    track,
+    dragging,
+    follows,
+    captureSelection,
+    restoreSelection,
+  };
 })();

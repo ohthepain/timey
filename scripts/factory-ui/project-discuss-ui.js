@@ -503,9 +503,11 @@
       node.hidden = Boolean(draft.value || editId || !suggestion);
     }
     function syncResponseLine(active) {
+      const follow = view.follows(log, view.captureSelection(log));
       const line = log.querySelector(':scope > .chat-live');
       if (line) removeIdleResponseLine(line, active);
       else if (pendingResponses) log.insertAdjacentHTML('beforeend', liveResponseMarkup());
+      if (follow) log.scrollTop = log.scrollHeight;
     }
     function removeIdleResponseLine(line, active) {
       if (!active && !pendingResponses) line.remove();
