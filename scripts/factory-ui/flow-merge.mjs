@@ -349,9 +349,10 @@ async function waitForMergeChecks(ctx, state, error, head, options) {
   await (options.mergeDelay ?? delay)(interval, undefined, { signal: ctx.signal });
 }
 
-function retainMergeFailure(error, pr, evidence) {
+function retainMergeFailure(error, { html_url, number, head } = {}, repository, evidence) {
   error.evidence = [...evidence, ...(error.evidence ?? [])];
-  if (error.humanInput) error.humanInput = { ...error.humanInput, url: pr?.html_url };
+  if (error.humanInput)
+    error.humanInput = { ...error.humanInput, url: html_url, repository, pr: number, head: head?.sha };
 }
 
 async function finishMerge(state, provider, workspace, outcome, observed = outcome.result) {
@@ -433,7 +434,7 @@ export async function mergeFlowPR(service, ctx, workspace, folder, options) {
       requireThat(pr, 'The existing PR is no longer available.');
     }
   } catch (error) {
-    retainMergeFailure(error, pr, evidence());
+    retainMergeFailure(error, pr, provider.config.repository, evidence());
     throw error;
   }
 }

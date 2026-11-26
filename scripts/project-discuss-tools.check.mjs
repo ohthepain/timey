@@ -310,3 +310,20 @@ test('report discussion follow-ups retain source provenance and require approval
     'Creation neither restores nor runs the investigation.'
   );
 });
+
+test('the project chat note tool checks its turn guard before deleting a note', async (t) => {
+  const { service, tools } = fixture(t);
+  const created = await tools.invoke('local_note', { action: 'create', text: 'Keep this note if creation fails.' });
+  const { id } = created.notes[0];
+  const guarded = createProjectDiscussTools(service, {
+    beforeNoteChange({ action }) {
+      if (action === 'delete') throw Error('Wait for a confirmed issue creation.');
+    },
+  });
+  const deletion = { action: 'delete', id, basis: created.basis };
+  await assert.rejects(guarded.invoke('local_note', deletion), /confirmed issue creation/);
+  const retained = await tools.invoke('local_notes', {});
+  assert.equal(retained.notes[0].id, id);
+  const removed = await tools.invoke('local_note', deletion);
+  assert.deepEqual(removed.notes, []);
+});

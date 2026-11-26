@@ -65,6 +65,16 @@ windows for ChatGPT versus API key sessions. It starts no model turn.
 
 ## Commands and evidence
 
+The Verify workflow splits its first Flow browser part into `--ci-part=1a`
+and `--ci-part=1b`. `--ci-part=1` still selects both for local use. The former
+second non-browser job runs its Factory shard and the app tests and build
+in separate jobs. The aggregate `test` check requires all jobs and combines
+evidence for the same candidate.
+
+`node scripts/flow-browser.mjs --inbox-details --manual-close --local-notes`
+uses a disposable project to exercise playback, block Details, the Close menu,
+and contextual note recommendations.
+
 `node scripts/flow-browser.mjs --request-save` holds Request clarification after
 saving Your words on an existing issue. Rename, Close, Stop, and the editor remain
 usable while clarification runs, and the wording survives completion and reload.

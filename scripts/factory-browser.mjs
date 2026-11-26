@@ -1,3 +1,4 @@
+import { checkCoordinatorHistoryScroll } from './factory-browser-coordinator.mjs';
 import { browserScenarioSelected } from './browser-scenario-policy.mjs';
 import { mkdirSync, readdirSync, writeFileSync, existsSync } from 'node:fs';
 import { resolve, join, dirname } from 'node:path';
@@ -97,6 +98,7 @@ try {
         const coordinatorData = (${coordinatorData.toString()});
         const coordinatorQueueRoute = (${coordinatorQueueRoute.toString()});
         const coordinatorIssueRoute = (${coordinatorIssueRoute.toString()});
+        const checkCoordinatorHistoryScroll = (${checkCoordinatorHistoryScroll.toString()});
         const verifyIssueScopedNavigation = (${verifyIssueScopedNavigation.toString()});
         return (${check.toString()});
       })({ routeQueueIssue: (${routeQueueIssue.toString()}), updateProgressSnapshot: (${updateProgressSnapshot.toString()}) })`

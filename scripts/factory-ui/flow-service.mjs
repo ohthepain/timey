@@ -180,6 +180,7 @@ const folderGroupActions = new Set([
   'folder-detach-blocked',
   'folder-reattach',
   'folder-attach',
+  'move-grouped-issue',
 ]);
 const folderNightActions = new Set(['folder-night-plan', 'folder-night-start', 'folder-night-stop']);
 const folderOperationActions = new Set(['folder-ai-search', 'folder-bulk-preview', 'folder-bulk-run']);
@@ -197,6 +198,7 @@ const scopedFolderActions = new Set([
   'folder-group-preview',
   'folder-detach',
   'folder-detach-blocked',
+  'move-grouped-issue',
   'folder-move',
   'folder-remove',
   'folder-bulk-preview',
@@ -208,9 +210,9 @@ const scopedFolderActions = new Set([
 const cachedFlowActions = new Set(['agent-answer', 'cancel-confirmation', 'reveal-definition', 'open-block-extension']);
 
 export async function prepareFlowActionStores(service, input) {
-  const { action, issueId, subIssueId, masterId } = input;
+  const { action, issueId, subIssueId, masterId, destinationMaster } = input;
   const ids = Array.isArray(input.issueIds) ? input.issueIds : [];
-  const issueIds = [...new Set([issueId, subIssueId, masterId, ...ids])].filter(
+  const issueIds = [...new Set([issueId, subIssueId, masterId, destinationMaster, ...ids])].filter(
     (id) => typeof id === 'string' && /^[\w-]+$/.test(id)
   );
   const queueWide = folderActions.has(action) && !scopedFolderActions.has(action);
@@ -634,7 +636,7 @@ class IssueFlows {
       updated: issue.updated,
       state: issue.state,
       type: requestData(flow).fields?.type ?? flow.routeType,
-      badges: issueBadges(issue, badgeIndex, { masterId, approvals, flow }),
+      badges: issueBadges(issue, badgeIndex, { masterId, approvals, flow, root: this.service.root }),
       masterId,
       isMaster: Boolean(issue.issue_group),
       folder: flow.folder,
@@ -697,11 +699,50 @@ class IssueFlows {
         const path = this.store.path(row.id);
         const flow = existsSync(path) ? this.store.read(issue, flowTarget(this.service.root)) : undefined;
         const approvals = this.agentApprovals(row.id);
-        return { ...row, badges: issueBadges(issue, index, { masterId: row.masterId, approvals, flow }) };
+        return {
+          ...row,
+          badges: issueBadges(issue, index, { masterId: row.masterId, approvals, flow, root: this.service.root }),
+        };
       }),
       ...(warning && { annotationsWarning: warning }),
     };
   }
+  observeSelectedRow({
+    requestOnly,
+    issue,
+    savedFlow,
+    issuesWithSelected,
+    resolveFolder,
+    badgeIndex,
+    data,
+    agentApprovals,
+    environment,
+    flow,
+  }) {
+    const id = issue.id;
+    const selectedRow =
+      requestOnly || issue.location === 'archive'
+        ? this.indexIssue(issue, savedFlow, issuesWithSelected, resolveFolder, badgeIndex)
+        : selectedFlowRow(data.issues, id);
+    selectedRow.badges = issueBadges(issue, badgeIndex, {
+      masterId: selectedRow.masterId,
+      approvals: agentApprovals,
+      flow: savedFlow,
+      root: this.service.root,
+    });
+    if (requestOnly) data.issues = [selectedRow];
+    if (!['closed', 'needs-approval'].includes(selectedRow.status) && !this.active.has(id)) {
+      if (environment.pr?.mergedAt) selectedRow.status = 'merged';
+      else if (environment.startingBranchBehind > 0) selectedRow.status = 'need-merge-from-dev';
+      else if (
+        selectedRow.status === 'ready-to-merge' &&
+        !flow.blocks.some((block) => flowVerificationHead(block) === environment.head)
+      )
+        selectedRow.status = 'ready';
+    }
+    return selectedRow;
+  }
+
   async view(id, { requestOnly = false, refresh = false } = {}) {
     const { ownership, ...storage } = await this.storageView(id, { refresh });
     const issues = this.issues();
@@ -779,20 +820,18 @@ class IssueFlows {
     this.addLegacyOperation(flow, id, catalog);
     this.suggestTargetUpdate(flow, environment, catalog);
     const issuesWithSelected = issues.some((entry) => entry.id === id) ? issues : [...issues, issue];
-    const selectedRow =
-      requestOnly || issue.location === 'archive'
-        ? this.indexIssue(issue, savedFlow, issuesWithSelected, resolveFolder, badgeIndex)
-        : selectedFlowRow(data.issues, id);
-    if (requestOnly) data.issues = [selectedRow];
-    if (!['closed', 'needs-approval'].includes(selectedRow.status) && !this.active.has(id)) {
-      if (environment.pr?.mergedAt) selectedRow.status = 'merged';
-      else if (environment.startingBranchBehind > 0) selectedRow.status = 'need-merge-from-dev';
-      else if (
-        selectedRow.status === 'ready-to-merge' &&
-        !flow.blocks.some((block) => flowVerificationHead(block) === environment.head)
-      )
-        selectedRow.status = 'ready';
-    }
+    const selectedRow = this.observeSelectedRow({
+      requestOnly,
+      issue,
+      savedFlow,
+      issuesWithSelected,
+      resolveFolder,
+      badgeIndex,
+      data,
+      agentApprovals,
+      environment,
+      flow,
+    });
     this.populateBlockDetails(flow, issue, catalog);
     const conversation = flowChatProgress(flow, conversationMessages(this.service.root, id).slice(-100));
     return {
@@ -1392,7 +1431,12 @@ class IssueFlows {
   actionNeedsFreshStore(input) {
     const localControl = ['stop', 'pause'].includes(input.action) && this.active.has(input.issueId);
     return (
-      !localControl && Boolean(this.service.projectStores || existsSync(join(this.service.root, '.issues/stores.json')))
+      !localControl &&
+      Boolean(
+        input.action === 'move-grouped-issue' ||
+        this.service.projectStores ||
+        existsSync(join(this.service.root, '.issues/stores.json'))
+      )
     );
   }
   async action(input, { storesReady = false } = {}) {
@@ -1790,6 +1834,7 @@ class IssueFlows {
     if (folderSelectionActions.has(input.action)) return this.folderSelection.action(input);
     if (folderNightActions.has(input.action)) return this.overnight.action(input);
     if (folderOperationActions.has(input.action)) return this.folderOperations.action(input);
+    if (input.action === 'move-grouped-issue') return this.groups.moveGroupedIssue(input);
     if (folderGroupActions.has(input.action)) {
       const reasoning =
         input.action === 'folder-group-preview'

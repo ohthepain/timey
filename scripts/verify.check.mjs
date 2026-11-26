@@ -266,7 +266,8 @@ void test('CI assembles passing evidence across rerun jobs only for one exact sn
     readFileSync(browser.log, 'utf8'),
     /PASS browser scenario: classic\nPASS Flow fixture\nPASS Flow fixture/
   );
-  assert.equal(browser.artifacts.length, 6);
+  assert.equal(browser.artifacts.length, 8);
+  assert.deepEqual(browser.command, ['CI', 'classic-browser', 'flow-browser-1', 'flow-browser-1b', 'flow-browser-2']);
   assert.ok(browser.artifacts.every(({ path, sha256 }) => sha256 === digest(readFileSync(path))));
   const factory = summary.checks.find(({ name }) => name === 'factory');
   assert.equal(readFileSync(factory.log, 'utf8'), 'ℹ tests 1\nℹ tests 1');

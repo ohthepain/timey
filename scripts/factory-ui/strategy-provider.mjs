@@ -9,6 +9,7 @@ import { safeGitHubFailure } from './github-request-failure.mjs';
 export class StrategyProvider {
   constructor(root, config, credentialRoot = root) {
     this.root = root;
+    this.reviewRoot = credentialRoot;
     this.config = config;
     this.credentials = githubAppCredentials(credentialRoot, config.repository);
   }

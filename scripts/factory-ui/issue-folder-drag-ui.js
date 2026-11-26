@@ -16,7 +16,7 @@ window.createIssueFolderDrag = ({ list, canMove, move, dragging }) => {
   }
 
   function destination(event) {
-    const row = event.target.closest('[data-issue-folder-drop]');
+    const row = event.target.closest('[data-issue-folder-drop], [data-issue-master-drop]');
     return row && list.contains(row) ? row : null;
   }
 
@@ -28,6 +28,7 @@ window.createIssueFolderDrag = ({ list, canMove, move, dragging }) => {
       return;
     }
     issueId = row.dataset.issue;
+    event.dataTransfer.clearData();
     event.dataTransfer.effectAllowed = 'move';
     event.dataTransfer.setData(payload, issueId);
     dragging(issueId);
@@ -36,8 +37,8 @@ window.createIssueFolderDrag = ({ list, canMove, move, dragging }) => {
   list.addEventListener('dragover', (event) => {
     if (!issueId) return;
     const row = destination(event);
-    const folder = row?.dataset.issueFolderDrop || null;
-    if (!row || !canMove(issueId, folder)) {
+    const drop = row?.dataset;
+    if (!row || !canMove(issueId, drop)) {
       clearTarget();
       return;
     }
@@ -56,12 +57,12 @@ window.createIssueFolderDrag = ({ list, canMove, move, dragging }) => {
   list.addEventListener('drop', (event) => {
     if (!issueId) return;
     const row = destination(event);
-    const folder = row?.dataset.issueFolderDrop || null;
+    const drop = row?.dataset;
     const id = issueId;
     event.preventDefault();
-    const allowed = row && event.dataTransfer.getData(payload) === id && canMove(id, folder);
+    const allowed = row && event.dataTransfer.getData(payload) === id && canMove(id, drop);
     finish();
-    if (allowed) void move(id, folder);
+    if (allowed) void move(id, drop);
   });
 
   list.addEventListener('dragend', finish);

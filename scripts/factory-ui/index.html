@@ -5090,6 +5090,7 @@
         document.querySelectorAll('[data-chat-tab]').forEach((tab) => {
           tab.onclick = () => {
             const selected = tab.dataset.chatTab;
+            const openingIssueThread = selected === 'issue' && selectedChatTab !== selected;
             selectedChatTab = selected;
             document
               .querySelectorAll('[data-chat-tab]')
@@ -5097,6 +5098,7 @@
             document
               .querySelectorAll('[data-chat-panel]')
               .forEach((panel) => panel.setAttribute('data-chat-active', String(panel.dataset.chatPanel === selected)));
+            if (openingIssueThread) issueChatUI.openLatest();
           };
         });
         bind();

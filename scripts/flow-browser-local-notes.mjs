@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { LocalNotes } from './factory-ui/local-notes.mjs';
+import { resolveIssueStorage } from './factory-ui/stores/settings.mjs';
 import { ensureIssueNumbers } from './factory-ui/issue-numbers.mjs';
 
 export async function localNotesBrowserChecks({ page, service, project, poll, screenshot, output, candidate }) {
@@ -19,8 +20,10 @@ export async function localNotesBrowserChecks({ page, service, project, poll, sc
     }),
     skills: async () => [],
     createProvider: () => ({
-      async turn(_session, message) {
+      async turn(session, message, context) {
         turns.push(message);
+        if (message.recommendation?.id === 'create-delete-next')
+          return fixtureCreateAndAdvance(service, session, context);
         return { text: 'Let’s discuss this note.' };
       },
       close() {},
@@ -29,11 +32,14 @@ export async function localNotesBrowserChecks({ page, service, project, poll, sc
   const notes = new LocalNotes(project);
   await page.goto('/');
   const field = page.locator('#local-note-text');
+  const disclosure = page.locator('#local-notes-toggle');
+  assert.equal(await disclosure.getAttribute('aria-expanded'), 'false');
+  assert.equal(await field.isVisible(), false);
+  await disclosure.click();
   await field.fill('Remember the quick thought');
   await field.press('Enter');
   await page.getByRole('button', { name: 'Remember the quick thought', exact: true }).waitFor();
   assert.equal(await field.inputValue(), '');
-  const disclosure = page.locator('#local-notes-toggle');
   const otherDisclosure = page.locator('.sidebar-files .folder-disclosure').first();
   await otherDisclosure.waitFor();
   const caretStyle = (button) => {
@@ -140,6 +146,10 @@ export async function localNotesBrowserChecks({ page, service, project, poll, sc
   const link = page.locator('#discuss-messages').getByRole('link', { name: 'the new issue', exact: true });
   assert.match(await link.getAttribute('href'), /\?issue=/);
   assert.ok(notes.get(second.id).issueId);
+  const createdPrompts = page.locator('[data-discuss-recommendations]');
+  await createdPrompts.getByRole('button', { name: 'Delete note', exact: true }).waitFor();
+  assert.equal(await createdPrompts.getByRole('button', { name: 'Create issue', exact: true }).count(), 0);
+  assert.equal(await createdPrompts.getByRole('button', { name: 'Create, delete & next', exact: true }).count(), 0);
   assert.equal(turns.length, 1);
   await screenshot('local-note-created-issue');
   const issueId = notes.get(second.id).issueId;
@@ -215,6 +225,7 @@ export async function localNotesBrowserChecks({ page, service, project, poll, sc
     await page.locator('#local-note-edit-cancel').click();
   }
   await screenshot('local-notes-first-sentences');
+  await checkNoteRecommendations({ page, notes, turns, poll, screenshot, output });
   return [
     'Inline and shortcut capture persist across reloads',
     'Edit, completion and order are retained',
@@ -224,4 +235,95 @@ export async function localNotesBrowserChecks({ page, service, project, poll, sc
     'Unsaved capture draft survives reload',
     'Multi-sentence notes show only their first sentence and retain the full text in the editor',
   ];
+}
+
+async function fixtureCreateAndAdvance(service, session, context) {
+  if (session.messages.filter(({ recommendation }) => recommendation?.id === 'create-delete-next').length === 1)
+    throw Error('Fixture issue creation failed.');
+  const result = await service.flows.action({
+    action: 'capture',
+    requestId: '4a9cfdb0-6797-4eaf-8ef4-b90ff340c547',
+    description: 'Create the issue from the agreed note.',
+    storageProfile: resolveIssueStorage(service.root).profileId,
+  });
+  assert.ok(result.issue.id);
+  await context.issueCreated(result.issue.id);
+  return { text: 'Fixture issue created.' };
+}
+
+async function openNoteFromSidebar(page, id) {
+  const row = page.locator('[data-note-id="' + id + '"]');
+  await row.locator('summary').click();
+  await row.getByRole('button', { name: 'Discuss', exact: true }).click();
+}
+
+async function checkNoteRecommendations({ page, notes, turns, poll, screenshot, output }) {
+  const currentNotes = notes.view().notes;
+  const [first, second, third] = currentNotes;
+  const prompts = page.locator('[data-discuss-recommendations]');
+  const names = () => prompts.getByRole('button').allTextContents();
+  await openNoteFromSidebar(page, first.id);
+  await prompts.getByRole('button', { name: 'Next', exact: true }).waitFor();
+  const firstUrl = page.url();
+  const top = await names();
+  assert.ok(!top.includes('Prev'));
+  const above = await prompts.evaluate((element) => {
+    const draft = document.getElementById('discuss-draft');
+    return (
+      element.closest('form') === draft.closest('form') &&
+      element.getBoundingClientRect().bottom <= draft.getBoundingClientRect().top
+    );
+  });
+  assert.equal(above, true);
+  await screenshot('note-recommendations');
+  await openNoteFromSidebar(page, currentNotes.at(-1).id);
+  await prompts.getByRole('button', { name: 'Prev', exact: true }).waitFor();
+  const last = await names();
+  assert.ok(!last.includes('Next'));
+  await page.goto(firstUrl);
+  await prompts.getByRole('button', { name: 'Next', exact: true }).click();
+  await page.waitForURL((url) => url.href !== firstUrl);
+  const secondUrl = page.url();
+  await prompts.getByRole('button', { name: 'Prev', exact: true }).waitFor();
+  await prompts.getByRole('button', { name: 'Prev', exact: true }).click();
+  await page.waitForURL(firstUrl);
+  await page.goto(secondUrl);
+  const combined = prompts.getByRole('button', { name: 'Create, delete & next', exact: true });
+  await combined.click();
+  await page.getByText('Fixture issue creation failed.', { exact: true }).waitFor();
+  assert.equal(page.url(), secondUrl);
+  assert.equal(notes.get(second.id).issueId, undefined);
+  const sent = turns.at(-1).text;
+  assert.match(sent, /After issue creation succeeds, Factory should delete source local note/);
+  assert.match(sent, new RegExp(third.id));
+  await combined.click();
+  await page.waitForURL((url) => url.href !== secondUrl);
+  await page.getByText(third.text, { exact: false }).first().waitFor();
+  assert.equal(
+    notes.view().notes.some(({ id }) => id === second.id),
+    false
+  );
+  await prompts.getByRole('button', { name: 'Delete note', exact: true }).click();
+  await page.getByText('Deleted the source note.', { exact: true }).waitFor();
+  assert.equal(
+    notes.view().notes.some(({ id }) => id === third.id),
+    false
+  );
+  await poll(names, (labels) => labels.length === 0, 'Deleted note recommendations cleared');
+  writeFileSync(
+    join(output, 'note-recommendations.json'),
+    JSON.stringify(
+      {
+        aboveComposer: above,
+        top,
+        nextAndPrev: true,
+        sent,
+        failureKeptSource: true,
+        successDeletedAndNavigated: true,
+        standaloneDelete: true,
+      },
+      null,
+      2
+    )
+  );
 }

@@ -276,7 +276,39 @@ export async function investigationFlowsBrowserChecks({ page, service, screensho
   await investigate(page, service, calls, screenshot, poll);
 }
 
-export async function automateActivityBrowserChecks({ page, service, screenshot }) {
+async function prepareLongAutomateChat({ page, service, poll, sessionId }) {
+  const automate = service.projectHome.automateMe;
+  const session = automate.selected(sessionId);
+  session.messages.push(
+    ...Array.from({ length: 32 }, (_, index) => ({ role: 'assistant', text: 'Working-style message ' + (index + 1) }))
+  );
+  automate.save(session);
+  const messages = page.locator('#home-automate-messages');
+  const metrics = () =>
+    messages.evaluate((node) => ({ top: node.scrollTop, end: node.scrollHeight - node.clientHeight }));
+  const atLatest = (position) => position.end > 100 && position.end - position.top < 3;
+  await messages.getByText('Working-style message 32', { exact: true }).waitFor();
+  await poll(metrics, atLatest, 'Automate me did not follow incoming history at the bottom.');
+  const followed = await metrics();
+  await messages.evaluate((node) => {
+    node.scrollTop = 90;
+  });
+  return { sessionId, metrics, atLatest, followed };
+}
+
+async function verifyAutomateChatReopening({ page, dialog, poll, output, chat }) {
+  const reading = await chat.metrics();
+  assert.equal(reading.top, 90, 'An Automate me reply preserves the older reading position.');
+  await dialog.getByRole('button', { name: 'Close Automate me', exact: true }).click();
+  await page.locator(`[data-home-session="automate"][data-session-id="${chat.sessionId}"]`).click();
+  await poll(chat.metrics, chat.atLatest, 'Reopened Automate me did not show the latest reply.');
+  writeFileSync(
+    join(output, 'automate-chat-scroll.json'),
+    JSON.stringify({ followed: chat.followed, reading, reopened: await chat.metrics() }, null, 2) + '\n'
+  );
+}
+
+export async function automateActivityBrowserChecks({ page, service, screenshot, poll, output }) {
   const calls = await prepareHome(page, service);
   let turn = Promise.withResolvers();
   calls.beforeTurn = () => turn.promise;
@@ -285,12 +317,19 @@ export async function automateActivityBrowserChecks({ page, service, screenshot 
     await page.getByRole('button', { name: 'Run Automate me', exact: true }).click();
     const dialog = page.locator('#home-automate-dialog');
     const indicator = dialog.locator('#home-automate-messages > .chat-live .SparkleText');
+    const started = page.waitForResponse(
+      (response) =>
+        response.url().endsWith('/api/project-home-action') &&
+        response.request().postDataJSON()?.action === 'automate-start'
+    );
     await dialog.getByRole('button', { name: 'Start conversation', exact: true }).click();
     await indicator.waitFor();
     await screenshot('automate-activity-running');
     turn.resolve();
     await dialog.getByText('Which working habit matters most?', { exact: true }).waitFor();
     await indicator.waitFor({ state: 'detached' });
+    const { session } = await (await started).json();
+    const chat = await prepareLongAutomateChat({ page, service, poll, sessionId: session.id });
     turn = Promise.withResolvers();
     await dialog.locator('#home-automate-message').fill('Make verification explicit.');
     await dialog.getByRole('button', { name: 'Send reply', exact: true }).click();
@@ -298,6 +337,7 @@ export async function automateActivityBrowserChecks({ page, service, screenshot 
     turn.resolve();
     await dialog.locator('#home-automate-review:not([hidden])').waitFor();
     await indicator.waitFor({ state: 'detached' });
+    await verifyAutomateChatReopening({ page, dialog, poll, output, chat });
     await dialog.getByRole('button', { name: 'Close Automate me', exact: true }).click();
   } finally {
     turn.resolve();

@@ -328,7 +328,6 @@
       ['data-report-open', (button) => open(button.dataset.reportOpen)],
       ['data-report-all', () => list()],
       ['data-report-discuss', () => showDiscussion(!state(selected.id).discuss)],
-      ['data-report-prompt', (button) => chat.setDraft(button.dataset.reportPrompt)],
       ['data-report-copy-evidence', copyEvidenceLink],
     ];
     root.addEventListener('click', (event) => {

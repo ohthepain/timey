@@ -68,6 +68,8 @@ function browserOutput(check, scenario) {
   return output;
 }
 
+const browserSuites = Object.keys(ciSuites).filter((id) => ciSuites[id].flowPart || id === 'classic-browser');
+
 function browserCheck(folder, [classic, ...flow]) {
   const classicOutput = browserOutput(classic, /PASS browser scenario:/);
   const flowOutput = flow.map((check) => browserOutput(check, /^PASS /m));
@@ -76,7 +78,7 @@ function browserCheck(folder, [classic, ...flow]) {
   return {
     ...classic,
     log,
-    command: ['CI', 'classic-browser', 'flow-browser-1', 'flow-browser-2'],
+    command: ['CI', ...browserSuites],
     artifacts: [classic, ...flow].flatMap((check) => [
       { path: check.log, sha256: digest(readFileSync(check.log)) },
       ...check.artifacts,
@@ -108,11 +110,10 @@ export function assembleCIEvidence(directory, candidate) {
   );
   const browser = browserCheck(
     folder,
-    ['classic-browser', 'flow-browser-1', 'flow-browser-2'].flatMap((id) => evidence[id])
+    browserSuites.flatMap((id) => evidence[id])
   );
-  const [factoryTwo, ...nonBrowser] = evidence['non-browser-2'];
-  const factory = factoryCheck(folder, [...evidence['non-browser-1'], factoryTwo]);
-  const checks = [...evidence.early, factory, ...nonBrowser, browser];
+  const factory = factoryCheck(folder, [...evidence['non-browser-1'], ...evidence['non-browser-2']]);
+  const checks = [...evidence.early, factory, ...evidence['non-browser-app'], browser];
   const { ciSuite: _ciSuite, ...summary } = suites.early;
   const path = join(folder, 'ci-verification-summary.json');
   writeFileSync(

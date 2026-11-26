@@ -216,8 +216,8 @@
                 id="local-notes-toggle"
                 class="icon-button folder-disclosure"
                 type="button"
-                aria-label="Collapse Local notes"
-                aria-expanded="true"
+                aria-label="Expand Local notes"
+                aria-expanded="false"
                 aria-controls="local-notes-body"
               ></button>
               <h2 class="sidebar-folder-name">Local notes</h2>
@@ -225,7 +225,7 @@
                 ＋ Note
               </button>
             </header>
-            <div id="local-notes-body" class="local-notes-body">
+            <div id="local-notes-body" class="local-notes-body" hidden>
               <form id="local-note-form">
                 <textarea
                   id="local-note-text"
@@ -1412,6 +1412,7 @@
         <form id="discuss-form" class="discuss-composer">
           <p id="discuss-editing" class="muted" hidden></p>
           <div id="discuss-draft-attachments" class="discuss-attachments"></div>
+          <div id="discuss-recommendations" data-discuss-recommendations aria-label="Recommended prompts"></div>
           <div class="discuss-draft-wrap">
             <textarea
               id="discuss-draft"
@@ -1510,18 +1511,6 @@
           aria-valuemax="80"
         ></div>
         <section class="report-discussion-panel" aria-label="Report discussion">
-          <div class="report-prompts">
-            <button type="button" data-report-prompt="Explain the most important finding in this report.">
-              Explain the findings</button
-            ><button type="button" data-report-prompt="Which recommendations should we act on first?">
-              Prioritize recommendations</button
-            ><button
-              type="button"
-              data-report-prompt="Create approval-needed follow-up issues for uncovered work in this report, linking matching existing issues."
-            >
-              Create follow-up issues
-            </button>
-          </div>
           <div id="report-discussion" class="project-discuss"></div>
         </section>
       </div>
