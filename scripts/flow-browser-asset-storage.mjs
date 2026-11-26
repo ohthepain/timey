@@ -57,6 +57,7 @@ function mockS3({ objects, copy }) {
   const original = S3Client.prototype.send;
   const calls = [];
   const reads = [];
+  let listing;
   const buckets = new Map([
     ['secondary-fixture', copy],
     ['primary-fixture', objects],
@@ -88,6 +89,7 @@ function mockS3({ objects, copy }) {
     const name = command.constructor.name;
     const { Bucket } = command.input;
     calls.push(name);
+    if (name === 'ListObjectsV2Command') await listing;
     if (name === 'GetObjectCommand') reads.push(Bucket);
     if (!buckets.has(Bucket)) throw Error('Fixture store unavailable');
     assert.ok(Object.hasOwn(handlers, name), 'Unexpected S3 command ' + name);
@@ -96,6 +98,11 @@ function mockS3({ objects, copy }) {
   return {
     calls,
     reads,
+    holdListing() {
+      const { promise, resolve } = Promise.withResolvers();
+      listing = promise;
+      return resolve;
+    },
     restore: () => {
       S3Client.prototype.send = original;
     },
@@ -416,9 +423,23 @@ export async function assetStorageBrowserChecks({ page, screenshot, output }) {
     server.listen(0, '127.0.0.1');
     await once(server, 'listening');
     const origin = 'http://127.0.0.1:' + server.address().port;
+    const releaseListing = mock.holdListing();
     await page.goto(origin + '/?settings=asset-storage');
     const dialog = page.locator('#project-settings-dialog');
     await dialog.getByRole('link', { name: 'Asset Storage', exact: true }).waitFor();
+    try {
+      await dialog.getByText('Listing assets in S3…', { exact: true }).waitFor();
+      const status = await page.request.get(origin + '/api/project-asset-storage?status');
+      assert.deepEqual(await status.json(), { phase: 'listing' });
+      await dialog.getByRole('link', { name: 'Git', exact: true }).click();
+      await dialog.getByRole('link', { name: 'Asset Storage', exact: true }).click();
+      const before = mock.calls.filter((name) => name === 'ListObjectsV2Command').length;
+      const reused = await page.request.get(origin + '/api/project-asset-storage?status&refresh=true');
+      assert.deepEqual(await reused.json(), { phase: 'listing' });
+      assert.equal(mock.calls.filter((name) => name === 'ListObjectsV2Command').length, before);
+    } finally {
+      releaseListing();
+    }
     const browsing = await checkControls({ page, dialog, inventory: fixture.inventory });
     await dialog.getByText('5 recorded', { exact: true }).click();
     await screenshot('asset-storage');

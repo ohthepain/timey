@@ -271,6 +271,11 @@ function adoptIdleInvestigation(owner, issue, flow, catalog) {
     savedInvestigationFollowups(owner.service.root, issue.id)
   );
 }
+function mergeApprovalRequired(block, catalog) {
+  if (!latestCurrentAttempt(block)?.result?.mergeConfirmation) return false;
+  return catalog.find(({ id }) => id === blockDefinitionId(block))?.mergeWorkflow?.policy !== 'automatic';
+}
+
 const completedBlock = (block, flow) =>
   (flow && historicalInvestigationOutputComplete(block, flow)) ||
   latestCurrentAttempt(block)?.status === 'completed' ||
@@ -1422,7 +1427,7 @@ class IssueFlows {
       const needsRetry = ['failed', 'blocked', 'stopped'].includes(status);
       if (needsRetry && !retry)
         return this.pause(issueId, flowHumanInput(flow)?.message || `${next.label} needs a retry.`);
-      if (confirmationBlocks.has(next.kind) || latestCurrentAttempt(next)?.result?.mergeConfirmation) {
+      if (confirmationBlocks.has(next.kind) || mergeApprovalRequired(next, catalog)) {
         this.autoplay.set(issueId, { mode: 'waiting', blockId: next.id });
         return;
       }
@@ -1529,7 +1534,7 @@ class IssueFlows {
       'continue-closure',
       'skip-retro',
     ];
-    if (!input.issueId || !actions.includes(input.action)) return;
+    if (!input.issueId || !actions.includes(input.action) || this.active.has(input.issueId)) return;
     try {
       const issue = this.selected(input.issueId),
         flow = this.read(issue);
@@ -2640,7 +2645,7 @@ class IssueFlows {
     }
     return this.view(issue.id);
   }
-  async start(issue, flow, input, catalog, publication = null, overnightRunId = null) {
+  async start(issue, flow, input, catalog, publication = null) {
     if (!input.closureId) {
       this.groups.requireChildren(issue);
       await this.requireEditableIssue(issue.id);
@@ -2742,7 +2747,6 @@ class IssueFlows {
       {
         ...input,
         automaticPublication: block.kind === 'publish' && publication === 'play',
-        prepareMerge: block.kind === 'merge' && this.overnight.owns(issue.id, overnightRunId),
       },
       definition
     );
