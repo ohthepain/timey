@@ -1,12 +1,10 @@
-import { groupChildren } from './issue-group.mjs';
+import { groupChildren, wasDetachedByMasterRun } from './issue-group.mjs';
 import { flowHumanInput } from './flow-human-input.mjs';
 import { latestCurrentAttempt } from './flow-block-data.mjs';
 import { isInvestigation } from './investigation-records.mjs';
 
 function completedDetaches({ id, issue_group: group }) {
-  return (group?.children ?? [])
-    .filter(({ detachedAt }) => detachedAt)
-    .map((child) => ({ issueId: child.id, masterId: id }));
+  return (group?.children ?? []).filter(wasDetachedByMasterRun).map((child) => ({ issueId: child.id, masterId: id }));
 }
 
 export function issueBadgeIndex(annotations, masters) {

@@ -323,9 +323,11 @@ test('The master protects its original issues across a server restart and releas
     masterRevision: childView.grouping.master.revision,
   });
   assert.equal(detached.issue.id, issueIds[0]);
-  assert.equal(detached.grouping.master, undefined);
+  assert.equal(detached.grouping, undefined);
+  assert.ok(!detached.issue.badges.includes('removed-from-master'));
+  assert.deepEqual(detached.annotations, childView.annotations);
   assert.doesNotThrow(() => requireIndependentIssue(root, issueIds[0]));
-  assert.equal((await flows.view(issueIds[0])).grouping.formerMasters[0].id, result.issue.id);
+  assert.equal((await flows.view(issueIds[0])).grouping, undefined);
   assert.deepEqual(flows.selected(issueIds[0]).human_checks, [check]);
   assert.deepEqual(flows.selected(result.issue.id).human_checks, []);
   assert.throws(() => requireIndependentIssue(root, issueIds[1]), /sub-issue/);
@@ -340,7 +342,7 @@ test('The master protects its original issues across a server restart and releas
   for (const issueId of issueIds) {
     assert.doesNotThrow(() => requireIndependentIssue(root, issueId));
     const released = await flows.view(issueId);
-    assert.equal(released.grouping.formerMasters[0].id, master.id);
+    assert.equal(released.grouping?.formerMasters[0].id, issueId === issueIds[1] ? master.id : undefined);
     assert.notEqual(released.issue.status, 'closed');
   }
 });

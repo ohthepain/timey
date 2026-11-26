@@ -1,4 +1,4 @@
-import { masterIssueBrowserChecks } from './flow-browser-master-issues.mjs';
+import { masterIssueBrowserChecks, manualSubIssueRemovalBrowserChecks } from './flow-browser-master-issues.mjs';
 import { investigativeGroupingBrowserChecks } from './flow-browser-investigative-grouping.mjs';
 import { issueAnnotationBrowserChecks } from './flow-browser-issue-annotations.mjs';
 import { blockModelsBrowserChecks } from './flow-browser-block-models.mjs';
@@ -8,6 +8,7 @@ import { inboxDiscussBrowserChecks, inboxFlowBrowserChecks } from './flow-browse
 import { investigationReportsBrowserChecks } from './flow-browser-investigation-reports.mjs';
 import { issueStatusFoldersBrowserChecks } from './flow-browser-issue-status-folders.mjs';
 import { projectIssuesBrowserChecks } from './flow-browser-project-issues.mjs';
+import { serverHeapBrowserChecks } from './flow-browser-server-heap.mjs';
 import { errorRecoveryBrowserChecks } from './flow-browser-error-recovery.mjs';
 import { mergeStateBrowserChecks } from './flow-browser-merge-state.mjs';
 import {
@@ -182,12 +183,14 @@ Object.assign(flowBrowserScenarioNames, {
 });
 const {
   '--master-issues': masterIssuesCheck,
+  '--manual-sub-issue-removal': manualSubIssueRemovalCheck,
   '--investigative-grouping': investigativeGroupingCheck,
   '--issue-annotations': issueAnnotationsCheck,
   '--folder-settings': folderSettingsCheck,
   '--block-deletion': blockDeletionCheck,
   '--investigation-followups': followupsCheck,
   '--project-navigation': navigationCheck,
+  '--server-heap': serverHeapCheck,
   '--project-home': homeCheck,
   '--investigation-reports': reportsCheck,
   '--investigation-flows': investigationFlowsCheck,
@@ -681,9 +684,11 @@ try {
     issueStatusFoldersBrowserChecks({ page, project, service, poll, screenshot, output, root })
   );
   await check('Closed issue selections archive together and issue links open the normal view', () =>
-    projectIssuesBrowserChecks({ page, project, root, output })
+    projectIssuesBrowserChecks({ page, project, root, output, service })
   );
+  await check(serverHeapCheck, () => serverHeapBrowserChecks({ page, output, poll, screenshot }));
   await check(masterIssuesCheck, () => masterIssueBrowserChecks({ page, project, root, output }));
+  await check(manualSubIssueRemovalCheck, () => manualSubIssueRemovalBrowserChecks({ page, project, root, output }));
   await check(investigativeGroupingCheck, () =>
     investigativeGroupingBrowserChecks({ page, project, output, candidate, clickAction, poll })
   );

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { copyFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { stringify } from 'yaml';
 import { importBrowserIssue, removeBrowserIssue } from './flow-browser-fixture.mjs';
 import { withQueueConfiguration } from './flow-browser-queue-configuration.mjs';
 
@@ -14,11 +15,29 @@ const titles = {
   [unrelated]: 'Add a practice reminder',
 };
 const ids = Object.keys(titles);
+const removalGroup = {
+  master: '20261124-removal-master',
+  children: ['20261124-removal-first', '20261124-removal-second'],
+  detachable: true,
+  titles: {
+    '20261124-removal-master': 'Improve issue navigation',
+    '20261124-removal-first': 'Keep filtered issues visible',
+    '20261124-removal-second': 'Retain the selected issue',
+  },
+};
 
-async function createGroup(project) {
-  for (const id of ids) {
-    const group =
-      id === master ? 'issue_group:\n  children:\n' + children.map((child) => `    - id: ${child}\n`).join('') : '';
+async function createGroup(project, { master, children, titles, detachable }) {
+  const scope = children.map((child) => ({
+    id: child,
+    ...(detachable && {
+      title: titles[child],
+      wording: titles[child] + '.',
+      requestedProof: 'Show the issue behavior.',
+      appended: true,
+    }),
+  }));
+  for (const id of Object.keys(titles)) {
+    const group = id === master ? stringify({ issue_group: { children: scope } }) : '';
     await importBrowserIssue(
       project,
       id,
@@ -109,23 +128,89 @@ async function checkIssueWorkspace(page, output) {
   return { left, centerWidth };
 }
 
-export async function masterIssueBrowserChecks({ page, project, root, output }) {
+async function observeIndependentIssue(page, id, title) {
+  await page.goto('/?issue=' + id);
+  const heading = page.locator('#issue-heading');
+  await heading.getByRole('heading', { name: title, exact: true }).waitFor();
+  const activeMaster = await heading.getByRole('group', { name: 'Master issue', exact: true }).isVisible();
+  const formerMaster = await page.getByText(/^Earlier work and evidence in /).isVisible();
+  const removalBadge = await heading.getByText('Removed from master', { exact: true }).isVisible();
+  assert.deepEqual(
+    { activeMaster, formerMaster, removalBadge },
+    {
+      activeMaster: false,
+      formerMaster: false,
+      removalBadge: false,
+    }
+  );
+  return { title, activeMaster, formerMaster, removalBadge };
+}
+
+async function removeSubIssue(page, button) {
+  const [response] = await Promise.all([
+    page.waitForResponse(
+      (response) =>
+        response.url().endsWith('/api/flow-action') && response.request().postDataJSON()?.action === 'folder-detach'
+    ),
+    button.click(),
+  ]);
+  assert.equal(response.status(), 200, await response.text());
+}
+
+async function checkManualRemoval(page, output, { master, children, titles }) {
+  const [first, second] = children;
+  const subIssues = page.locator('#issue-heading').getByRole('list', { name: 'Sub-issues', exact: true });
+  await page.goto('/?issue=' + master);
+  await removeSubIssue(page, subIssues.getByRole('button', { name: new RegExp(titles[first]) }));
+  await subIssues.getByRole('link', { name: new RegExp(titles[first]) }).waitFor({ state: 'hidden' });
+  const remaining = await subIssues.getByRole('link').allTextContents();
+  assert.equal(remaining.length, 1);
+  assert.match(remaining[0], new RegExp(titles[second]));
+  const removedFromMasterPage = await observeIndependentIssue(page, first, titles[first]);
+
+  await page.goto('/?issue=' + second);
+  const masterRow = page.getByRole('group', { name: 'Master issue', exact: true });
+  await removeSubIssue(page, masterRow.getByRole('button', { name: 'Remove', exact: true }));
+  await masterRow.waitFor({ state: 'hidden' });
+  const removedFromChildPage = await observeIndependentIssue(page, second, titles[second]);
+  await page.locator('#issue-heading').screenshot({ path: join(output, 'detached-sub-issue.png') });
+
+  await page.goto('/?issue=' + master);
+  await page.getByRole('heading', { name: titles[master], exact: true }).waitFor();
+  assert.equal(await subIssues.isVisible(), false);
+  return { remaining, attachedAfterBothRemovals: [], removedFromMasterPage, removedFromChildPage };
+}
+
+async function withIssueGroup({ page, project, root }, group, check) {
   const helper = '.agents/skills/issues/scripts';
   mkdirSync(join(project, helper), { recursive: true });
   for (const file of ['human-input.mjs', 'human-input-version.json'])
     copyFileSync(join(root, helper, file), join(project, helper, file));
   await withQueueConfiguration({ page, project, root }, async () => {
     try {
-      await createGroup(project);
-      const { left, centerWidth } = await checkIssueWorkspace(page, output);
-      const issues = await checkIssuesTab(page, output);
-      const compactWidth = left.find(({ id }) => id === master).badge.width;
-      assert.ok(issues.find(({ id }) => id === master).badge.width > compactWidth);
-      assert.ok(centerWidth > compactWidth);
-      writeFileSync(join(output, 'master-issues.json'), JSON.stringify({ left, issues, centerWidth }, null, 2) + '\n');
+      await createGroup(project, group);
+      await check();
     } finally {
       await page.goto('about:blank');
-      for (const id of ids) await removeBrowserIssue(project, id);
+      for (const id of Object.keys(group.titles)) await removeBrowserIssue(project, id);
     }
+  });
+}
+
+export async function masterIssueBrowserChecks({ page, project, root, output }) {
+  await withIssueGroup({ page, project, root }, { master, children, titles }, async () => {
+    const { left, centerWidth } = await checkIssueWorkspace(page, output);
+    const issues = await checkIssuesTab(page, output);
+    const compactWidth = left.find(({ id }) => id === master).badge.width;
+    assert.ok(issues.find(({ id }) => id === master).badge.width > compactWidth);
+    assert.ok(centerWidth > compactWidth);
+    writeFileSync(join(output, 'master-issues.json'), JSON.stringify({ left, issues, centerWidth }, null, 2) + '\n');
+  });
+}
+
+export async function manualSubIssueRemovalBrowserChecks({ page, project, root, output }) {
+  await withIssueGroup({ page, project, root }, removalGroup, async () => {
+    const removal = await checkManualRemoval(page, output, removalGroup);
+    writeFileSync(join(output, 'manual-sub-issue-removal.json'), JSON.stringify(removal, null, 2) + '\n');
   });
 }

@@ -121,7 +121,7 @@ async function moveOne(service, action, id) {
   return finishLocalMove(service.root, action, id, content);
 }
 
-export async function moveIssueStorage(service, input) {
+export async function moveIssueStorage(service, input, onProgress = () => {}) {
   service.ownServer();
   requireThat(['archive', 'restore'].includes(input.action), 'Choose Archive or Restore to closed.');
   const byNumber = input.issueNumbers !== undefined;
@@ -148,6 +148,7 @@ export async function moveIssueStorage(service, input) {
   const results = [];
   try {
     for (const id of ids) {
+      onProgress({ currentId: id, processed: results.length, total: ids.length });
       try {
         results.push({
           ...(await moveOne(service, input.action, id)),
