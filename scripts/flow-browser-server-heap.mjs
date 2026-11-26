@@ -1,3 +1,4 @@
+import { fixtureRoute } from './flow-browser-routes.mjs';
 import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -81,6 +82,7 @@ export async function serverHeapBrowserChecks({ page, output, poll, screenshot }
     { status: 503, json: { error: 'The test made the heap reading unavailable.' } },
   ];
   const fulfillFixture = (route) => route.fulfill(fixtures.shift());
+  let removeHeap;
   try {
     await page.goto('/');
     const initial = await readSample((samples) => samples[0]);
@@ -88,7 +90,7 @@ export async function serverHeapBrowserChecks({ page, output, poll, screenshot }
     assert.equal(refreshed.navigationTime, initial.navigationTime);
     await screenshot('server-heap-live');
 
-    await page.route(heapRoute, fulfillFixture, { times: fixtures.length });
+    removeHeap = await fixtureRoute(page, heapRoute, fulfillFixture, { times: fixtures.length });
     const firstRounded = (samples) => samples.findIndex(({ usedBytes }) => usedBytes === sameLabelBytes[0]);
     const sameLabel = [
       await readSample((samples) => samples[firstRounded(samples)]),
@@ -136,7 +138,7 @@ export async function serverHeapBrowserChecks({ page, output, poll, screenshot }
       ) + '\n'
     );
   } finally {
-    await page.unroute(heapRoute, fulfillFixture);
+    await removeHeap?.();
     await sampleObserver.dispose();
     await page.evaluate(() => window.stopHeapBrowserObserver?.());
   }

@@ -227,3 +227,23 @@ unknown external paths fail with their specific path. Legacy prose remains reada
 but grants no permission to import arbitrary files. Missing or altered retained
 files, symlinks, changed contribution identity and failed or mismatched verifier
 proof still block readiness. Publication and acceptance remain separate decisions.
+
+### Focused browser evidence
+
+Publish runs the Flow browser scenarios declared by upstream Work. If Work
+declares either folder capture or folder grouping, Publish runs both. A blocked
+attempt records the first failed scenario, the candidate, and the command log.
+An unchanged retry that repeats the same assertion links the prior log and
+shows the focused command to rerun after a repair.
+
+Merge reruns the declared scenarios on the candidate before pushing an updated
+head. Its delivery receipt links the candidate commit and tree, command results,
+screenshots with SHA-256 hashes, observation files, and available GitHub job
+identifiers. The receipt also links the original Work proof and records when it
+belongs to an earlier tree. The issue's Artifact store retains the referenced
+files through the Flow evidence manifest.
+
+Retro includes historical group proof even when a later Merge or Close
+succeeds. It retains the proof turn, candidate tree, child verdicts, and
+available command logs. For older Merge attempts, Retro matches the saved
+response hash to a unique turn and reads the tree from the candidate commit.

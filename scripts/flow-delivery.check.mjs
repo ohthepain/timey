@@ -1,3 +1,4 @@
+import { writeBrowserEvidenceFixture } from './flow-browser-evidence-fixture.mjs';
 import { test } from 'node:test';
 import { randomUUID } from 'node:crypto';
 import assert from 'node:assert/strict';
@@ -647,6 +648,58 @@ test('publication authorized by starting the route creates the PR without a prev
     f.calls.filter((call) => call !== 'credentials'),
     ['push', 'publish']
   );
+});
+
+test('Publish links the earlier failed browser assertion and groups both folder checks before push', async (t) => {
+  const f = fixture(t);
+  const registry = join(f.workspace.checkout, 'scripts', 'browser-scenario-policy.mjs');
+  mkdirSync(join(registry, '..'), { recursive: true });
+  writeFileSync(
+    registry,
+    "const flowBrowserScenarioNames = { '--capture-folder-issue': 'Capture', '--folder-workspace-grouping': 'Group' };"
+  );
+  f.source.git('add', 'scripts');
+  f.source.git('commit', '-qm', 'Add focused scenario registry');
+  const head = f.source.git('rev-parse', 'HEAD');
+  const tree = f.source.git('rev-parse', 'HEAD^{tree}');
+  f.ctx.input = { automaticPublication: true };
+  f.ctx.block.attempts = [];
+  f.ctx.flow.blocks.push({
+    kind: 'work',
+    attempts: [
+      {
+        status: 'completed',
+        result: { focusedTests: [['node', 'scripts/flow-browser.mjs', '--capture-folder-issue']] },
+      },
+    ],
+  });
+  const assertion = 'AssertionError: The .md menu is missing.';
+  f.options.execute = async (input) => {
+    assert.equal(input.command, 'node', 'No remote write occurs when the browser check fails.');
+    assert.deepEqual(input.args, ['scripts/flow-browser.mjs', '--capture-folder-issue', '--folder-workspace-grouping']);
+    writeBrowserEvidenceFixture(input, {
+      head,
+      tree,
+      scenarios: [{ name: 'Capture', passed: false, error: assertion }],
+    });
+  };
+  const publish = async (id) => {
+    const folder = join(f.folder, id);
+    mkdirSync(folder);
+    const result = await publishFlowPR(f.service, { ...f.ctx, attempt: { id } }, f.workspace, folder, f.options);
+    f.ctx.block.attempts.push({ id, ...result });
+    return result;
+  };
+  const first = await publish('first');
+  assert.equal(first.status, 'blocked');
+  assert.match(first.summary, new RegExp(head.slice(0, 12)));
+  assert.equal(first.result.assertion, assertion);
+  const retry = await publish('retry');
+  assert.equal(retry.result.priorAttemptId, 'first');
+  assert.match(retry.summary, /same assertion/);
+  const prior = retry.evidence.find(({ label }) => label.includes('Earlier attempt'));
+  assert.equal(prior.path, first.result.browser.log.path);
+  assert.equal(digest(readFileSync(prior.path)), prior.sha256);
 });
 
 test('failed publication retains its sanitized GitHub validation response with the proposed head and target', async (t) => {

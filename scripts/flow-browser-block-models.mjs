@@ -5,12 +5,20 @@ import { writeBrowserIssue } from './flow-browser-fixture.mjs';
 import { initializeProviderConfig, readProviderConfig } from './factory-ui/provider-config.mjs';
 import { observeProvider, saveProviderSettings } from './factory-ui/provider-runtime.mjs';
 
-async function chooseModel(page, current, next) {
+async function chooseModel(page, current, next, poll) {
   const picker = page.getByRole('combobox', { name: 'Choose model' });
   const control = picker.locator('..');
   assert.equal(await control.locator('span').textContent(), current);
-  await picker.click();
-  await page.waitForFunction(() => document.querySelector('select[name="model"]:open'));
+  const opened = () => picker.evaluate((select) => select.matches(':open'));
+  await poll(
+    async () => {
+      if (await opened()) return true;
+      await picker.click();
+      return opened();
+    },
+    Boolean,
+    'The native model picker did not open.'
+  );
   await picker.press('Escape');
   await picker.selectOption(next);
   return picker;
@@ -35,7 +43,7 @@ async function checkRequestControls(page, block, request, screenshot, poll) {
   assert.equal(await refresh.isVisible(), true);
   assert.equal(await page.getByText('Workspace', { exact: true }).filter({ visible: true }).count(), 0);
   assert.equal(await page.getByText('INSPECTOR', { exact: true }).count(), 0);
-  const picker = await chooseModel(page, 'Codex Luna', 'gpt-6.1-sol');
+  const picker = await chooseModel(page, 'Codex Luna', 'gpt-6.1-sol', poll);
   await poll(
     () => picker.locator('..').locator('span').textContent(),
     (value) => value === 'Codex Sol',
@@ -123,7 +131,7 @@ export async function blockModelsBrowserChecks({ page, project, service, poll, s
       await page.locator('#draft-note.saved-note').waitFor();
     };
     await block(work.id);
-    const select = await chooseModel(page, 'anthropic:sonnet', 'anthropic:opus');
+    const select = await chooseModel(page, 'anthropic:sonnet', 'anthropic:opus', poll);
     assert.match(await select.locator('option[value=""]').textContent(), /Use issue default.*anthropic:sonnet/);
     const wand = page.getByRole('button', { name: 'Refresh block definition' });
     const markdown = page.getByText('.md', { exact: true });
