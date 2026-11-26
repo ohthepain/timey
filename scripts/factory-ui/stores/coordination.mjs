@@ -146,8 +146,8 @@ export function createCoordination(records, { runnerId = randomUUID(), now = () 
       get(key) {
         return this.records.get(key);
       },
-      list(prefix) {
-        return this.records.list(prefix);
+      list(prefix, select) {
+        return this.records.list(prefix, select);
       },
       async commit(operationId, expected, writes, sealToken) {
         const gate = await this.get('project/migration');
@@ -299,6 +299,13 @@ export function createCoordination(records, { runnerId = randomUUID(), now = () 
   );
 }
 
+async function otherPendingOperation(coordination, operationId) {
+  const pending = await coordination.list('operations/', ({ value }) =>
+    value.status === 'pending' && value.id !== operationId ? value.id : undefined
+  );
+  return pending.length > 0;
+}
+
 export async function sealCoordination(coordination, { id, role, storeId, operationId }) {
   const claims = await coordination.list('claims/');
   assertStoreState(
@@ -306,9 +313,8 @@ export async function sealCoordination(coordination, { id, role, storeId, operat
     'STORE_BUSY',
     'Finish or explicitly reconcile all issue claims before moving project storage.'
   );
-  const pending = (await coordination.list('operations/')).filter((record) => record.value.status === 'pending');
   assertStoreState(
-    pending.every((record) => record.value.id === operationId),
+    !(await otherPendingOperation(coordination, operationId)),
     'STORE_PENDING',
     'Reconcile pending operations before moving project storage.'
   );
@@ -321,9 +327,7 @@ export async function sealCoordination(coordination, { id, role, storeId, operat
   const value = { id, role, storeId, operationId, token: randomUUID(), state: 'sealed', sealedAt: coordination.now() };
   await coordination.commit(operationId + '/seal', [{ key, revision: null }], [{ key, value }]);
   const freshClaims = await coordination.list('claims/');
-  const freshPending = (await coordination.list('operations/')).some(
-    (record) => record.value.status === 'pending' && record.value.id !== operationId
-  );
+  const freshPending = await otherPendingOperation(coordination, operationId);
   if (freshClaims.length || freshPending) {
     const installed = await coordination.get(key);
     await coordination.commit(

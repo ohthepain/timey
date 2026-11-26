@@ -47,11 +47,6 @@ async function linkedStoreOperations(records, input, saved) {
   );
 }
 
-function readStoreOperations(records, input, saved) {
-  if (input.discoverMigrations === true || input.discoverMigrations === 'true') return records.list('operations/');
-  return linkedStoreOperations(records, input, saved);
-}
-
 function operationSubject({ kind, input = {} }) {
   const { issueId, owner, storeId, artifactStoreId, ids, role } = input;
   switch (kind) {
@@ -66,19 +61,25 @@ function operationSubject({ kind, input = {} }) {
   }
 }
 
+function pendingStoreOperation({ value }) {
+  if (value.status !== 'pending') return undefined;
+  return {
+    operationId: value.id,
+    kind: value.kind,
+    status: value.status,
+    ...operationSubject(value),
+    createdAt: value.createdAt,
+  };
+}
+
 async function pendingStoreOperations(service, input, saved) {
   if (service.storeStatus?.unavailable) return pendingViews.get(service) || [];
-  if (!service.projectStores?.records?.list) return [];
-  const operations = await readStoreOperations(service.projectStores.records, input, saved);
-  const pending = operations
-    .filter(({ value }) => value.status === 'pending')
-    .map(({ value }) => ({
-      operationId: value.id,
-      kind: value.kind,
-      status: value.status,
-      ...operationSubject(value),
-      createdAt: value.createdAt,
-    }));
+  const records = service.projectStores?.records;
+  if (!records?.list) return [];
+  const pending =
+    input.discoverMigrations === true || input.discoverMigrations === 'true'
+      ? await records.list('operations/', pendingStoreOperation)
+      : (await linkedStoreOperations(records, input, saved)).map(pendingStoreOperation).filter(Boolean);
   pending.sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
   pendingViews.set(service, pending);
   return pending;

@@ -24,16 +24,6 @@ function localPath(root, path, alias) {
   return child !== '..' && !child.startsWith('..' + sep) && !isAbsolute(child) ? resolve(root, child) : target;
 }
 
-function protections(root, values, alias) {
-  const paths = new Set();
-  const hashes = new Set();
-  visit(values, (value, key) => {
-    if (key === 'sha256' && validHash(value)) hashes.add(value);
-    if (locators.has(key) && typeof value === 'string') paths.add(localPath(root, value, alias));
-  });
-  return { paths, hashes };
-}
-
 function managedPath(root, path, issueId, alias) {
   if (typeof path !== 'string') return null;
   const target = localPath(root, path, alias);
@@ -93,18 +83,45 @@ function verifiedFile(root, path, sha256) {
 }
 
 export function planDeletedFiles(root, ownedValues, retainedValues, { issueId } = {}) {
+  const plan = deletedFilePlanner(root, issueId);
+  plan.own(ownedValues);
+  plan.retain(retainedValues);
+  return plan.finish();
+}
+
+export function deletedFilePlanner(root, issueId) {
   const actualRoot = realpathSync(root);
   const alias = resolve(root);
-  const protectedFiles = protections(actualRoot, retainedValues, alias);
-  const planned = new Map();
-  visit(ownedValues, (value) => {
-    if (!value || typeof value !== 'object') return;
-    const sha256 = value.sha256 || value.ref?.sha256;
-    const path = managedPath(actualRoot, value.path, issueId, alias);
-    if (!path || !validHash(sha256) || protectedFiles.paths.has(path) || protectedFiles.hashes.has(sha256)) return;
-    if (verifiedFile(actualRoot, path, sha256)) planned.set(path, { path, sha256 });
-  });
-  return [...planned.values()].sort((a, b) => a.path.localeCompare(b.path));
+  const paths = new Set();
+  const hashes = new Set();
+  const candidates = new Map();
+  return {
+    retain(values) {
+      visit(values, (value, key) => {
+        if (key === 'sha256' && validHash(value)) hashes.add(value);
+        if (locators.has(key) && typeof value === 'string') paths.add(localPath(actualRoot, value, alias));
+      });
+    },
+    own(values) {
+      visit(values, (value) => {
+        if (!value || typeof value !== 'object') return;
+        const sha256 = value.sha256 || value.ref?.sha256;
+        const path = managedPath(actualRoot, value.path, issueId, alias);
+        if (!path || !validHash(sha256)) return;
+        if (!candidates.has(path)) candidates.set(path, new Set());
+        candidates.get(path).add(sha256);
+      });
+    },
+    finish() {
+      const planned = [];
+      for (const [path, candidatesForPath] of candidates) {
+        if (paths.has(path)) continue;
+        const sha256 = [...candidatesForPath].find((hash) => !hashes.has(hash) && verifiedFile(actualRoot, path, hash));
+        if (sha256) planned.push({ path, sha256 });
+      }
+      return planned.sort((a, b) => a.path.localeCompare(b.path));
+    },
+  };
 }
 
 export function removeDeletedFiles(root, plan, { issueId } = {}) {

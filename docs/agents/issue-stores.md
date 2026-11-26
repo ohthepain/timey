@@ -136,6 +136,7 @@ browser's retained retry identity. To discover older unfinished moves from anoth
 runner that stopped before sealing an issue, open **Factory settings → Issue
 Storage** and choose **Find unfinished storage moves**. This explicit recovery
 search reads historical operations and can take longer than a profile change.
+Factory keeps only pending operation details for recovery as it scans the history.
 It also identifies other pending updates that can block permanent deletion.
 **Reconcile stale save** retains the original operation and marks it rejected
 once Factory verifies that the issue has advanced and released its claim.
@@ -205,6 +206,9 @@ shared with retained issues stay available. Archive retains the report and histo
 
 1. Finish running project work before deleting an issue. Deletion holds shared
    changes while Factory checks retained references and removes unused evidence.
+   Factory processes retained records and receipts in batches where the store
+   supports it. The cleanup plan saves record identities, revisions, and
+   reference and file checks for the selected issue.
 2. If deletion stops while the issue is still present, retry its original Delete
    action after the blocker clears.
 3. If the issue is already absent, open **Project settings → Issue Storage** and

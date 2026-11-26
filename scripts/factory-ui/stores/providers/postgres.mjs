@@ -63,22 +63,26 @@ export async function openPostgresRecords(config, { root, projectId, readOnly })
       client.release();
     }
   }
-  async function visitPages(client, statement, visit) {
+  async function visitPages(client, statement, visit, params = []) {
     let after = '';
     for (;;) {
-      const { rows } = await client.query(statement, [...scope, after]);
+      const { rows } = await client.query(statement, [...scope, after, ...params]);
       if (!rows.length) return;
       for (const row of rows) await visit(row);
       after = rows.at(-1).id;
     }
   }
-  async function scanRetained(client, { visitRecord, visitReceipt }) {
-    await visitPages(
+  function visitPrefix(client, prefix, visit) {
+    return visitPages(
       client,
       `SELECT key AS id,key,revision,value FROM factory.store_records
-       WHERE project_id=$1 AND store_id=$2 AND key>$3 ORDER BY key LIMIT 16`,
-      (row) => visitRecord(record(row))
+       WHERE project_id=$1 AND store_id=$2 AND key>$3 AND starts_with(key,$4) ORDER BY key LIMIT 16`,
+      (row) => visit(record(row)),
+      [prefix]
     );
+  }
+  async function scanRetained(client, { visitRecord, visitReceipt }) {
+    await visitPrefix(client, '', visitRecord);
     await visitPages(
       client,
       `SELECT operation_id AS id,receipt FROM factory.store_operations
@@ -131,7 +135,11 @@ export async function openPostgresRecords(config, { root, projectId, readOnly })
     },
     readSnapshot(read) {
       return transaction('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY', (client) =>
-        read({ get: (key) => get(client, key), list: (prefix) => list(client, prefix) })
+        read({
+          get: (key) => get(client, key),
+          list: (prefix) => list(client, prefix),
+          visit: (prefix, visit) => visitPrefix(client, prefix, visit),
+        })
       );
     },
     get: (key) => get(pool, key),
