@@ -290,130 +290,132 @@
           ><button class="icon-button" id="dismiss-error" aria-label="Dismiss error">×</button>
         </div>
         <section class="issue-heading" id="issue-heading" hidden>
-          <div>
-            <div class="issue-title-row">
-              <span class="issue-number" id="issue-number" hidden></span>
-              <h1 id="issue-title"></h1>
-              <span class="master-badge" id="issue-master-badge" data-issue-badge="master-issue" hidden>Master</span>
-              <span class="issue-heading-badges" id="issue-heading-badges"></span>
-              <button
-                class="icon-button"
-                id="rename-issue"
-                type="button"
-                aria-label="Rename issue"
-                title="Rename issue"
-              >
-                ✎
-              </button>
+          <div class="issue-heading-banner">
+            <div>
+              <div class="issue-title-row">
+                <span class="issue-number" id="issue-number" hidden></span>
+                <h1 id="issue-title"></h1>
+                <span class="master-badge" id="issue-master-badge" data-issue-badge="master-issue" hidden>Master</span>
+                <span class="issue-heading-badges" id="issue-heading-badges"></span>
+                <button
+                  class="icon-button"
+                  id="rename-issue"
+                  type="button"
+                  aria-label="Rename issue"
+                  title="Rename issue"
+                >
+                  ✎
+                </button>
+              </div>
+              <form id="rename-issue-form" class="issue-title-row" hidden>
+                <input id="rename-issue-title" aria-label="Issue title" maxlength="256" required />
+                <button class="small-button" type="submit">Save</button>
+                <button class="small-button" id="cancel-rename" type="button">Cancel</button>
+              </form>
+              <div class="issue-flow-meta">
+                <span id="issue-type-label"></span>
+                <span id="issue-subtitle"></span>
+                <details id="issue-flow-picker" class="issue-flow-picker">
+                  <summary id="issue-flow-menu" class="small-button" title="Choose a flow">
+                    Flow <span id="issue-flow-name"></span>
+                  </summary>
+                  <div id="issue-flow-options" class="issue-flow-options"></div>
+                </details>
+                <button id="rebuild-flow" class="small-button" type="button" data-action="rebuild-flow">
+                  <span aria-hidden="true">🪄</span> Rebuild flow
+                </button>
+              </div>
             </div>
-            <form id="rename-issue-form" class="issue-title-row" hidden>
-              <input id="rename-issue-title" aria-label="Issue title" maxlength="256" required />
-              <button class="small-button" type="submit">Save</button>
-              <button class="small-button" id="cancel-rename" type="button">Cancel</button>
-            </form>
-            <div id="issue-master" class="folder-controls" role="group" aria-label="Master issue" hidden></div>
-            <ul id="issue-sub-issues" class="folder-issues issue-sub-issues" aria-label="Sub-issues" hidden></ul>
-            <form id="issue-attach-form" class="folder-controls" hidden>
-              <label for="issue-attach-choice">Sub-issue to attach</label>
-              <select id="issue-attach-choice" required aria-describedby="issue-attach-reason"></select>
-              <button class="small-button" type="submit" disabled>Attach sub-issue</button>
-              <p id="issue-attach-reason" class="muted" role="status" hidden></p>
-            </form>
-            <details id="issue-annotations" class="issue-annotations">
-              <summary>Annotations <span id="issue-annotation-count"></span></summary>
-              <p id="issue-annotation-warning" role="status" hidden></p>
-              <ul id="active-issue-annotations" aria-label="Active annotations"></ul>
-              <details id="issue-annotation-history" hidden>
-                <summary>Cleared history</summary>
-                <ul id="cleared-issue-annotations" aria-label="Cleared annotations"></ul>
-              </details>
-              <form id="issue-annotation-form">
-                <fieldset id="issue-annotation-fields" class="folder-settings-fields">
-                  <label class="field"
-                    >Annotation type<select name="kind">
-                      <option value="comment">Comment</option>
-                      <option value="blocked">Blocked</option>
-                      <option value="not-ready">Not ready</option>
-                    </select></label
-                  >
-                  <label class="field"
-                    ><span id="issue-annotation-text-label">Comment</span>
-                    <textarea name="content" rows="2" maxlength="8000" required></textarea>
-                  </label>
-                  <label class="field">Related issue ID (optional)<input name="relatedIssueId" /></label>
-                  <button class="small-button" type="submit">Add annotation</button>
-                </fieldset>
-                <p id="issue-annotation-error" class="inline-error" role="alert" hidden></p>
-              </form>
-            </details>
-            <details id="issue-settings" class="issue-settings">
-              <summary>Issue settings</summary>
-              <form id="issue-settings-form">
-                <div id="issue-settings-fields" class="folder-settings-fields"></div>
-                <button class="small-button" type="submit">Save issue settings</button>
-                <p id="issue-settings-error" class="inline-error" role="alert" hidden></p>
-              </form>
-              <form id="issue-store-form" class="folder-settings-fields">
-                <label class="field">Issue storage profile<select id="issue-store" required></select></label>
-                <p class="detail-copy">
-                  Changes save automatically. This moves the issue and its artifacts while retaining existing history.
-                </p>
-                <p class="detail-copy" id="issue-store-source"></p>
-                <button class="small-button" id="resume-issue-store" type="button" hidden>Resume storage move</button>
-                <p id="issue-store-error" class="inline-error" role="alert" hidden></p>
-              </form>
-              <p id="issue-store-progress" class="detail-copy" role="status"></p>
-              <form id="issue-ownership-form" hidden>
-                <p id="issue-ownership-description" class="detail-copy"></p>
-                <fieldset id="issue-ownership-controls">
-                  <label class="field"
-                    >Recovery reason<textarea
-                      id="issue-ownership-reason"
-                      minlength="8"
-                      maxlength="2000"
-                      required
-                    ></textarea>
-                  </label>
-                  <label
-                    ><input id="issue-ownership-confirmed" type="checkbox" required /><span
-                      id="issue-ownership-confirmation"
-                    ></span
-                  ></label>
-                  <button class="small-button" type="submit">Recover ownership</button>
-                </fieldset>
-                <p id="issue-ownership-error" class="inline-error" role="alert" hidden></p>
-              </form>
-            </details>
-            <p id="merged-issue-notice" class="detail-copy" role="status" hidden></p>
-            <div class="issue-flow-meta">
-              <span id="issue-type-label"></span>
-              <span id="issue-subtitle"></span>
-              <details id="issue-flow-picker" class="issue-flow-picker">
-                <summary id="issue-flow-menu" class="small-button" title="Choose a flow">
-                  Flow <span id="issue-flow-name"></span>
-                </summary>
-                <div id="issue-flow-options" class="issue-flow-options"></div>
-              </details>
-              <button id="rebuild-flow" class="small-button" type="button" data-action="rebuild-flow">
-                <span aria-hidden="true">🪄</span> Rebuild flow
-              </button>
+            <div class="issue-playback">
+              <button class="primary-button" id="issue-playback" type="button">Start</button>
+              <span
+                class="closed-issue-indicator"
+                id="closed-issue-indicator"
+                role="img"
+                aria-label="Issue closed"
+                title="Issue closed"
+                hidden
+              ></span>
+              <button class="small-button" id="waiting-block" type="button" hidden></button>
+              <button class="small-button" id="retry-closure" type="button" hidden>Continue closure</button>
+              <button class="small-button" id="skip-retro" type="button" hidden>Continue to Cleanup</button>
+              <span class="muted" id="playback-status" aria-live="polite"></span>
             </div>
           </div>
-          <div class="issue-playback">
-            <button class="primary-button" id="issue-playback" type="button">Start</button>
-            <span
-              class="closed-issue-indicator"
-              id="closed-issue-indicator"
-              role="img"
-              aria-label="Issue closed"
-              title="Issue closed"
-              hidden
-            ></span>
-            <button class="small-button" id="waiting-block" type="button" hidden></button>
-            <button class="small-button" id="retry-closure" type="button" hidden>Continue closure</button>
-            <button class="small-button" id="skip-retro" type="button" hidden>Continue to Cleanup</button>
-            <span class="muted" id="playback-status" aria-live="polite"></span>
-          </div>
+          <div id="issue-master" class="folder-controls" role="group" aria-label="Master issue" hidden></div>
+          <ul id="issue-sub-issues" class="folder-issues issue-sub-issues" aria-label="Sub-issues" hidden></ul>
+          <form id="issue-attach-form" class="folder-controls" hidden>
+            <label for="issue-attach-choice">Sub-issue to attach</label>
+            <select id="issue-attach-choice" required aria-describedby="issue-attach-reason"></select>
+            <button class="small-button" type="submit" disabled>Attach sub-issue</button>
+            <p id="issue-attach-reason" class="muted" role="status" hidden></p>
+          </form>
+          <details id="issue-annotations" class="issue-annotations">
+            <summary>Annotations <span id="issue-annotation-count"></span></summary>
+            <p id="issue-annotation-warning" role="status" hidden></p>
+            <ul id="active-issue-annotations" aria-label="Active annotations"></ul>
+            <details id="issue-annotation-history" hidden>
+              <summary>Cleared history</summary>
+              <ul id="cleared-issue-annotations" aria-label="Cleared annotations"></ul>
+            </details>
+            <form id="issue-annotation-form">
+              <fieldset id="issue-annotation-fields" class="folder-settings-fields">
+                <label class="field"
+                  >Annotation type<select name="kind">
+                    <option value="comment">Comment</option>
+                    <option value="blocked">Blocked</option>
+                    <option value="not-ready">Not ready</option>
+                  </select></label
+                >
+                <label class="field"
+                  ><span id="issue-annotation-text-label">Comment</span>
+                  <textarea name="content" rows="2" maxlength="8000" required></textarea>
+                </label>
+                <label class="field">Related issue ID (optional)<input name="relatedIssueId" /></label>
+                <button class="small-button" type="submit">Add annotation</button>
+              </fieldset>
+              <p id="issue-annotation-error" class="inline-error" role="alert" hidden></p>
+            </form>
+          </details>
+          <details id="issue-settings" class="issue-settings">
+            <summary>Issue settings</summary>
+            <form id="issue-settings-form">
+              <div id="issue-settings-fields" class="folder-settings-fields"></div>
+              <button class="small-button" type="submit">Save issue settings</button>
+              <p id="issue-settings-error" class="inline-error" role="alert" hidden></p>
+            </form>
+            <form id="issue-store-form" class="folder-settings-fields">
+              <label class="field">Issue storage profile<select id="issue-store" required></select></label>
+              <p class="detail-copy">
+                Changes save automatically. This moves the issue and its artifacts while retaining existing history.
+              </p>
+              <p class="detail-copy" id="issue-store-source"></p>
+              <button class="small-button" id="resume-issue-store" type="button" hidden>Resume storage move</button>
+              <p id="issue-store-error" class="inline-error" role="alert" hidden></p>
+            </form>
+            <p id="issue-store-progress" class="detail-copy" role="status"></p>
+            <form id="issue-ownership-form" hidden>
+              <p id="issue-ownership-description" class="detail-copy"></p>
+              <fieldset id="issue-ownership-controls">
+                <label class="field"
+                  >Recovery reason<textarea
+                    id="issue-ownership-reason"
+                    minlength="8"
+                    maxlength="2000"
+                    required
+                  ></textarea>
+                </label>
+                <label
+                  ><input id="issue-ownership-confirmed" type="checkbox" required /><span
+                    id="issue-ownership-confirmation"
+                  ></span
+                ></label>
+                <button class="small-button" type="submit">Recover ownership</button>
+              </fieldset>
+              <p id="issue-ownership-error" class="inline-error" role="alert" hidden></p>
+            </form>
+          </details>
+          <p id="merged-issue-notice" class="detail-copy" role="status" hidden></p>
         </section>
         <section id="last-blocking-error" class="issue-results" aria-labelledby="last-blocking-error-title" hidden>
           <h2 id="last-blocking-error-title">Last blocking error</h2>

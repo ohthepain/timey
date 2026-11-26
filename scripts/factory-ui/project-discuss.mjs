@@ -261,7 +261,7 @@ export class ProjectDiscuss {
           }),
           status: 'context',
         });
-        if (initial) session.draft.text = 'Help me think through this note and identify a useful next step.';
+        if (initial) session.draft.text = 'Ask me questions before creating the issue.';
       }
       if (note.issueId && !session.messages.some((message) => message.id === 'issue-' + note.issueId)) {
         session.messages.push({
