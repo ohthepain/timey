@@ -95,11 +95,11 @@ test('focused test validation identifies the exact rejected argument and rule', 
     ],
     [
       ['node', 'scripts/flow-browser.mjs', '--project-discuss', '--import=other.mjs'],
-      'argument 4 "--import=other.mjs". Use a recognized Flow browser scenario flag, a recognized --ci-part option, or --reverse-fixture-scenarios.',
+      'argument 4 "--import=other.mjs". Use a registered Flow browser scenario or CI-part flag, or --reverse-fixture-scenarios.',
     ],
     [
       ['node', 'scripts/flow-browser.mjs', '--bogus'],
-      'argument 3 "--bogus". Use a recognized Flow browser scenario flag, a recognized --ci-part option, or --reverse-fixture-scenarios.',
+      'argument 3 "--bogus". Use a registered Flow browser scenario or CI-part flag, or --reverse-fixture-scenarios.',
     ],
     [
       ['node', 'scripts/flow-browser.mjs', '--reverse-fixture-scenarios'],
