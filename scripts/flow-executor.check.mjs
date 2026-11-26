@@ -6,6 +6,8 @@ import { join, resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { createFlowExecutor } from './factory-ui/flow-executor.mjs';
 import { digest } from './factory-ui/common.mjs';
+import { groupProofRows } from './factory-ui/flow-group-proof.mjs';
+import { saveLiveProof } from './factory-ui/flow-live-proof.mjs';
 import { runRetro } from './factory-ui/flow-retro.mjs';
 import { collectEvidence, hydrateEvidence, registerEvidenceResolver } from './factory-ui/stores/evidence.mjs';
 import { BlockCatalog } from './factory-ui/block-catalog.mjs';
@@ -1125,6 +1127,315 @@ test('Merge uses GitHub readiness for a master without starting another verifica
   );
   assert.ok(!f.calls.slice(callsBeforeMerge).some(({ instructions }) => instructions));
 });
+
+test('Work surfaces an attached live check before Merge without granting remote writes', async (t) => {
+  const child = {
+    id: 'live-check',
+    title: 'Verify the live transition',
+    requestedProof: 'Observe a disposable live PR merge after its required checks.',
+  };
+  const f = fixture(t, {
+    prepareWorkDependencies: async () => {},
+    respond(prompt) {
+      const input = JSON.parse(prompt);
+      assert.match(input.liveProofHandoff, /does not authorize that side effect/);
+      assert.deepEqual(
+        input.subIssues.attached.map(({ id }) => id),
+        [child.id]
+      );
+      const manifest = { liveProofRequirements: [{ id: child.id, check: child.requestedProof }] };
+      return `The candidate is ready for an authorized live check.\n\`\`\`flow-result\n${JSON.stringify(manifest)}\n\`\`\``;
+    },
+  });
+  f.issue.issue_group = { children: [child] };
+  const result = await f.run('work');
+  assert.equal(result.status, undefined);
+  assert.equal(result.result.liveProofRequirements[0].check, child.requestedProof);
+  assert.ok(result.result.head);
+});
+
+test('Merge reuses an authorized live attachment after read-only discovery and Work retry', async (t) => {
+  const child = {
+    id: '20261126T044948057-295a460d8895b92a',
+    title: 'Work All Night waits for required checks',
+    requestedProof:
+      'Observe an unreviewed live PR stay open while a required check is pending or failing, then merge automatically when checks pass.',
+  };
+  const liveProofRequirements = [{ id: child.id, check: child.requestedProof }];
+  const sibling = { id: 'other', title: 'Check the report', requestedProof: 'Inspect the rendered report.' };
+  let verificationTurns = 0;
+  const f = mergeFixture(t, {
+    respond(prompt) {
+      const input = JSON.parse(prompt);
+      if (!input.candidate) return 'Observed block result.';
+      verificationTurns++;
+      if (verificationTurns === 1) {
+        assert.deepEqual(input.retainedLiveProof, []);
+        return `The Work All Night fixtures passed. The live transition is unavailable in read-only verification.\n\`\`\`flow-result\n${JSON.stringify({ liveProofRequirements })}\n\`\`\``;
+      }
+      assert.deepEqual(
+        input.subIssues.map(({ id }) => id),
+        [sibling.id]
+      );
+      assert.equal(input.retainedLiveProof[0].pr.url, 'https://github.com/test/disposable/pull/41');
+      assert.match(input.retainedLiveProof[0].observation, /pending.*merged/s);
+      const subIssueProof = [{ id: sibling.id, status: 'passed', observation: 'Rendered report opened.' }];
+      return `\`\`\`flow-result\n${JSON.stringify({ subIssueProof })}\n\`\`\``;
+    },
+  });
+  await f.run('understand');
+  f.issue.issue_group = { children: [child, sibling] };
+  const workspace = f.flow.workspace;
+  const candidate = {
+    head: f.git('-C', workspace.checkout, 'rev-parse', 'HEAD'),
+    tree: f.git('-C', workspace.checkout, 'rev-parse', 'HEAD^{tree}'),
+  };
+  const legacyFile = join(f.root, '.issues', 'legacy-proof.json');
+  const legacyBytes = JSON.stringify([
+    {
+      id: child.id,
+      status: 'passed',
+      source: 'live-github',
+      observation:
+        'Fixture of a retained live record showing an unreviewed PR stayed open while pending and merged after success.',
+    },
+  ]);
+  writeFileSync(legacyFile, legacyBytes);
+  const work = {
+    id: 'work',
+    kind: 'work',
+    after: [],
+    attempts: [
+      {
+        status: 'completed',
+        result: { tree: candidate.tree },
+        artifacts: { files: { subIssueProof: { path: legacyFile, sha256: digest(legacyBytes) } } },
+      },
+    ],
+  };
+  f.flow.blocks.push(work);
+  assert.equal(groupProofRows(f.flow, candidate.tree, {}, f.root).get(child.id).status, 'passed');
+  work.attempts.push({ status: 'blocked', result: { tree: candidate.tree } });
+  assert.equal(groupProofRows(f.flow, candidate.tree, {}, f.root).has(child.id), false);
+  assert.equal(readFileSync(legacyFile, 'utf8'), legacyBytes);
+
+  const merge = { id: 'block-merge', kind: 'merge', after: ['work'], attempts: [] };
+  f.flow.blocks.push(merge);
+  const prepare = () => f.run('merge', { after: merge.after, attempts: merge.attempts, input: { prepareMerge: true } });
+  await assert.rejects(prepare(), (error) => {
+    assert.match(error.message, /live checks.*factory live-proof/i, error.stack);
+    assert.equal(error.liveProofRequirements[0].id, child.id);
+    merge.attempts.push({ status: 'blocked', result: { liveProofRequirements: error.liveProofRequirements } });
+    return true;
+  });
+  await assert.rejects(prepare(), /no bounded authorization.*attach.*retry Merge/i);
+  assert.equal(verificationTurns, 1);
+  assert.ok(!f.observations.some(({ operation }) => operation === 'merge'));
+
+  const store = {
+    async save(flow) {
+      return structuredClone(flow);
+    },
+  };
+  const scope = { repository: 'test/disposable', branch: 'proof-source', target: 'proof-target' };
+  const submit = (action, input) =>
+    saveLiveProof(
+      f.service,
+      f.issue,
+      f.flow,
+      workspace,
+      'live-proof-' + action,
+      {
+        ...input,
+        confirmed: true,
+      },
+      store
+    );
+  await assert.rejects(
+    submit('authorize', {
+      childId: child.id,
+      check: child.requestedProof,
+      candidate,
+      scope: { ...scope, repository: 'test/fixture', target: 'dev' },
+    }),
+    /outside the production PR/
+  );
+  const { record: authorization } = await submit('authorize', {
+    childId: child.id,
+    check: child.requestedProof,
+    candidate,
+    scope,
+  });
+  const bundle = {
+    authorizationId: authorization.id,
+    status: 'passed',
+    pr: { ...scope, number: 41, head: candidate.head },
+    observations: [
+      { at: '2026-11-26T08:01:00Z', observed: 'Required check pending, zero reviews, PR open.' },
+      { at: '2026-11-26T08:02:00Z', observed: 'Required check passed, zero reviews, PR automatically merged.' },
+    ],
+    logs: [{ name: 'github-observations', text: 'Fixture transcript of the two GitHub observations' }],
+  };
+  await assert.rejects(submit('attach', { ...bundle, source: 'fixture' }), /live-github/);
+  const { record: attachment } = await submit('attach', { ...bundle, source: 'live-github' });
+  assert.equal((await submit('attach', { ...bundle, source: 'live-github' })).record.id, attachment.id);
+  f.flow.liveProof = JSON.parse(JSON.stringify(f.flow.liveProof));
+  const ready = await prepare();
+  assert.equal(verificationTurns, 2);
+  assert.equal(f.calls.findLast(({ method }) => method === 'start' || method === 'resume').sandbox, 'read-only');
+  assert.deepEqual(ready.result.groupProof.live, attachment.evidence);
+  assert.equal(ready.result.mergeConfirmation.pr, 9);
+  assert.ok(!f.observations.some(({ operation }) => operation === 'merge'));
+  merge.attempts.push({ status: 'blocked', result: ready.result });
+  await prepare();
+  assert.equal(verificationTurns, 2);
+  writeFileSync(join(workspace.checkout, 'source.txt'), 'Changed required-check decision.\n');
+  f.git('-C', workspace.checkout, 'commit', '-am', 'Change the candidate after collecting proof');
+  await assert.rejects(prepare(), /authorized head.*tree.*differ.*attach.*retry Merge/i);
+  assert.equal(verificationTurns, 2);
+  assert.deepEqual(f.flow.liveProof.attachments, [attachment]);
+  for (const { path, sha256 } of attachment.evidence) assert.equal(digest(readFileSync(path)), sha256);
+  t.diagnostic(
+    'Incident #255 / PR #130, retained attempt 5390dae0: fixture passed, live proof was unavailable in the read-only turn.'
+  );
+  t.diagnostic(
+    'Simulated test PR #41 observations survived Work retry and read-only refresh. A changed head and tree blocked Merge and preserved the original hashes.'
+  );
+});
+
+test('Merge records final group verification and hashed command logs for a second runner', async (t) => {
+  let repaired = false;
+  const checks = [
+    ['node scripts/flow-browser.mjs --project-discuss', 'Discuss scenario rendered and passed'],
+    ['node --test scripts/flow-grouping.check.mjs', 'Grouping scenario passed'],
+    ['node --test scripts/storage-profiles-runtime.check.mjs', 'Storage scenario passed'],
+  ];
+  const f = mergeFixture(t, {
+    onReady() {
+      if (!repaired) throw Object.assign(Error('Required browser check failed.'), { code: 'ci-failure' });
+    },
+    repair() {
+      const { checkout } = f.flow.workspace;
+      writeFileSync(join(checkout, 'source.txt'), 'Repaired source.\n');
+      f.git('-C', checkout, 'commit', '-am', 'Repair browser check');
+      repaired = true;
+      return {};
+    },
+    respond(prompt) {
+      const input = JSON.parse(prompt);
+      if (!input.candidate) return 'Observed block result.';
+      const { checkout, base } = f.flow.workspace;
+      assert.notEqual(input.candidate.head, base);
+      assert.deepEqual(input.candidate, {
+        head: f.git('-C', checkout, 'rev-parse', 'HEAD'),
+        tree: f.git('-C', checkout, 'rev-parse', 'HEAD^{tree}'),
+      });
+      for (const [index, [command, output]] of checks.entries()) {
+        const item = { id: 'check-' + index, type: 'commandExecution', command };
+        f.emit({ method: 'item/started', params: { item } });
+        f.emit({ method: 'item/commandExecution/outputDelta', params: { itemId: item.id, delta: output } });
+        f.emit({ method: 'item/completed', params: { item: { ...item, exitCode: 0 } } });
+      }
+      const subIssueProof = [
+        { id: 'attached', status: 'passed', observation: 'Browser, grouping and storage passed.' },
+      ];
+      return 'Checked the repaired candidate.\n```flow-result\n' + JSON.stringify({ subIssueProof }) + '\n```';
+    },
+  });
+  await f.run('understand');
+  f.issue.issue_group = {
+    children: [{ id: 'attached', title: 'Attached issue', requestedProof: 'Verify browser, grouping and storage.' }],
+  };
+  const merged = await f.run('merge');
+  assert.equal(merged.result.revision, 'actual-merge');
+  const verification = merged.result.groupProof;
+  assert.ok(verification.turnId);
+  assert.equal(f.calls.findLast(({ method }) => method === 'start' || method === 'resume').sandbox, 'read-only');
+  const merge = JSON.parse(JSON.stringify({ id: 'attempt-2', ...merged }));
+  await verifyFinalGroupRetrospective(t, f, merge, checks);
+});
+
+async function verifyFinalGroupRetrospective(t, producer, merge, checks) {
+  const stored = new Map();
+  const artifacts = {
+    async put({ body }) {
+      const hash = digest(body);
+      stored.set(hash, body);
+      return hash;
+    },
+    async get(hash) {
+      return stored.get(hash);
+    },
+  };
+  const consumer = fixture(t);
+  const manifest = await collectEvidence({ root: producer.root, flow: { merge }, artifacts });
+  assert.deepEqual(manifest.gaps, []);
+  const resolver = await hydrateEvidence({ manifest, artifacts, directory: join(consumer.root, '.issues/hydrated') });
+  t.after(registerEvidenceResolver(consumer.root, resolver));
+  rmSync(join(producer.root, '.issues/factory-ui/flow-evidence'), { recursive: true });
+  rmSync(producer.flow.workspace.checkout, { recursive: true });
+  consumer.service.store.directory = join(consumer.root, '.issues');
+  const { threadId, turnId, head, tree } = merge.result.groupProof;
+  consumer.service.codex = {
+    async ready() {},
+    async call(_, request) {
+      assert.equal(request.threadId, threadId);
+      return { thread: { turns: [{ id: turnId, items: [] }] } };
+    },
+  };
+  const retro = await runRetro(
+    consumer.service,
+    {
+      issue: producer.issue,
+      flow: { blocks: [{ label: 'Merge', attempts: [merge] }] },
+      signal: new AbortController().signal,
+      definition: { prompt: 'Review the fixture.' },
+    },
+    () => ({
+      async begin() {},
+      async ask() {
+        return JSON.stringify({ summary: 'Reviewed fixture evidence.', recommendations: [] });
+      },
+      close() {},
+    })
+  );
+  const { sections } = JSON.parse(readFileSync(retro.evidence[0].path));
+  const [verification] = JSON.parse(readFileSync(sections.groupVerifications.path));
+  const [attempt] = JSON.parse(readFileSync(sections.attempts.path));
+  const [thread] = JSON.parse(readFileSync(sections.threads.path));
+  assert.equal(attempt.result.groupProof.turnId, turnId);
+  assert.equal(verification.attemptId, attempt.id);
+  assert.equal(verification.threadId, thread.id);
+  assert.equal(verification.turnId, thread.turns[0].id);
+  assert.deepEqual(thread.turns[0].attemptIds, [attempt.id]);
+  assert.equal(verification.head, head);
+  assert.equal(verification.tree, tree);
+  const read = ({ path, sha256 }) => {
+    assert.ok(path.startsWith(consumer.root + '/'));
+    const bytes = readFileSync(path);
+    assert.equal(digest(bytes), sha256);
+    return bytes.toString();
+  };
+  assert.equal(JSON.parse(read(verification.proof))[0].id, 'attached');
+  assert.deepEqual(
+    verification.logs.map(({ command }) => command),
+    checks.map(([command]) => command)
+  );
+  for (const [index, [command, output]] of checks.entries()) {
+    assert.equal(read(verification.logs[index]), `$ ${command}\n${output}\n\nStatus: completed, exit: 0`);
+  }
+  t.diagnostic(
+    JSON.stringify({
+      attemptId: attempt.id,
+      threadId,
+      turnId,
+      head,
+      tree,
+      proof: { sha256: verification.proof.sha256, contents: read(verification.proof) },
+      logs: verification.logs.map((log) => ({ command: log.command, sha256: log.sha256, contents: read(log) })),
+    })
+  );
+}
 
 function approvalAttempt(result) {
   return { id: 'approval-attempt', status: 'blocked', result: result.result };

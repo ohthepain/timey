@@ -1,12 +1,13 @@
 (() => {
   'use strict';
-  const pageSize = 25;
-  const bytes = (size) => new Intl.NumberFormat().format(size) + ' bytes';
-  const sum = (rows) => rows.reduce((total, row) => total + row.bytes, 0);
+  const batchSize = 25;
+  const numberFormat = new Intl.NumberFormat();
+  const bytes = (size) => numberFormat.format(size) + ' bytes';
   const orders = {
     name: (a, b) => a.name.localeCompare(b.name),
-    size: (a, b) => b.bytes - a.bytes,
-    date: (a, b) => (b.observedAt || '').localeCompare(a.observedAt || ''),
+    size: (a, b) => a.bytes - b.bytes,
+    date: (a, b) => (a.observedAt || '').localeCompare(b.observedAt || ''),
+    references: (a, b) => a.references.length - b.references.length,
   };
 
   window.renderProjectAssetStorage = (container, { assets, stores, unavailableReferenceSources }, esc) => {
@@ -31,49 +32,67 @@
         </select></label>
         <label>Sort by <select name="sort">
           <option value="name">Name</option><option value="size">Size</option><option value="date">Object date</option>
+          <option value="references">Recorded reference count</option>
         </select></label>
+        <label>Sort direction <select name="direction">
+          <option value="asc">Ascending</option><option value="desc">Descending</option>
+        </select></label>
+      </div>
+      <div data-asset-selection>
+        <label><input type="checkbox" data-asset-select-visible> Select all (visible)</label>
+        <label><input type="checkbox" data-asset-select-matches> Select all matches</label>
       </div>
       <p data-asset-totals role="status"></p>
       <div data-asset-table tabindex="0" role="region" aria-label="Project assets">
         <table>
-          <thead><tr><th><label><input type="checkbox" data-asset-select-page> Select all</label></th>
+          <thead><tr><th scope="col" aria-label="Selection"></th>
           <th scope="col">Asset</th><th scope="col">Store</th><th scope="col">Size</th>
           <th scope="col">Object date</th><th scope="col">References</th></tr></thead>
           <tbody></tbody>
         </table>
-      </div>
-      <div data-asset-filters>
-        <button type="button" data-asset-previous>Previous</button>
-        <span data-asset-page></span>
-        <button type="button" data-asset-next>Next</button>
       </div>`;
     initializeTable(container, assets, storeNames, esc);
   };
 
   function initializeTable(container, assets, storeNames, esc) {
-    const selected = new Set();
+    const selected = new Map();
     const controls = container.querySelector('[data-asset-filters]');
-    const selectPage = container.querySelector('[data-asset-select-page]');
+    const selectVisible = container.querySelector('[data-asset-select-visible]');
+    const selectMatches = container.querySelector('[data-asset-select-matches]');
+    const table = container.querySelector('[data-asset-table]');
     const body = container.querySelector('tbody');
-    const previous = container.querySelector('[data-asset-previous]');
-    const next = container.querySelector('[data-asset-next]');
     const totals = container.querySelector('[data-asset-totals]');
-    const pageLabel = container.querySelector('[data-asset-page]');
-    let page = 0;
-    let visible = [];
     let filtered = [];
+    let filteredBytes = 0;
+    let loadedCount = 0;
 
-    function updateSelection() {
-      const current = visible.filter((asset) => selected.has(asset.id)).length;
-      selectPage.disabled = !visible.length;
-      selectPage.checked = !!visible.length && current === visible.length;
-      selectPage.indeterminate = current > 0 && current < visible.length;
-      const chosen = filtered.filter((asset) => selected.has(asset.id));
-      totals.textContent = `${filtered.length} ${filtered.length === 1 ? 'asset' : 'assets'} · ${bytes(sum(filtered))} | ${chosen.length} selected · ${bytes(sum(chosen))}`;
+    function updateBulkControls() {
+      let loadedSelected = 0;
+      for (let index = 0; index < loadedCount; index++) {
+        loadedSelected += Number(selected.has(filtered[index].id));
+      }
+      updateBulkCheckbox(selectVisible, loadedCount, loadedSelected);
+      updateBulkCheckbox(selectMatches, filtered.length, selected.size);
+    }
+
+    function updateTotals() {
+      let selectedBytes = 0;
+      for (const size of selected.values()) selectedBytes += size;
+      totals.textContent = `${filtered.length} ${filtered.length === 1 ? 'asset' : 'assets'} · ${bytes(filteredBytes)} | ${selected.size} selected · ${bytes(selectedBytes)}`;
+    }
+
+    function appendBatch() {
+      const batch = filtered.slice(loadedCount, loadedCount + batchSize);
+      body.insertAdjacentHTML(
+        'beforeend',
+        batch.map((asset, index) => row(asset, loadedCount + index, selected, storeNames, esc)).join('')
+      );
+      loadedCount += batch.length;
+      updateBulkControls();
     }
 
     function render() {
-      const { type, store, references, sort } = Object.fromEntries(
+      const { type, store, references, sort, direction } = Object.fromEntries(
         [...controls.querySelectorAll('select')].map((select) => [select.name, select.value])
       );
       const predicates = [
@@ -81,48 +100,54 @@
         [store, (asset) => asset.stores.includes(store)],
         [references, (asset) => (references === 'found') === asset.references.length > 0],
       ].flatMap(([value, predicate]) => (value ? [predicate] : []));
-      filtered = assets.filter((asset) => predicates.every((matches) => matches(asset))).sort(orders[sort]);
-      visible = filtered.slice(page * pageSize, (page + 1) * pageSize);
-      body.innerHTML =
-        visible.map((asset, index) => row(asset, index, selected, storeNames, esc)).join('') ||
-        '<tr><td colspan="6">No assets match.</td></tr>';
-      const pages = Math.max(1, Math.ceil(filtered.length / pageSize));
-      pageLabel.textContent = `Page ${page + 1} of ${pages}`;
-      previous.disabled = page === 0;
-      next.disabled = page + 1 >= pages;
-      updateSelection();
+      const order = direction === 'desc' ? -1 : 1;
+      filtered = assets
+        .filter((asset) => predicates.every((matches) => matches(asset)))
+        .sort((a, b) => order * orders[sort](a, b) || orders.name(a, b));
+      filteredBytes = filtered.reduce((total, asset) => total + asset.bytes, 0);
+      loadedCount = 0;
+      table.scrollTop = 0;
+      body.innerHTML = filtered.length ? '' : '<tr><td colspan="6">No assets match.</td></tr>';
+      appendBatch();
+      updateTotals();
     }
 
     controls.addEventListener('change', (event) => {
-      if (event.target.name !== 'sort') selected.clear();
-      page = 0;
+      if (event.target.name !== 'sort' && event.target.name !== 'direction') selected.clear();
       render();
     });
-    previous.onclick = () => {
-      page--;
-      render();
+    table.addEventListener('scroll', () => {
+      const remaining = table.scrollHeight - table.scrollTop - table.clientHeight;
+      if (loadedCount < filtered.length && remaining <= 48) appendBatch();
+    });
+    selectVisible.onchange = () => selectRows(loadedCount, selectVisible.checked);
+    selectMatches.onchange = () => selectRows(filtered.length, selectMatches.checked);
+    body.onchange = ({ target }) => {
+      recordSelection(filtered[Number(target.dataset.assetRow)], target.checked);
+      updateBulkControls();
+      updateTotals();
     };
-    next.onclick = () => {
-      page++;
-      render();
-    };
-    selectPage.onchange = () => {
-      for (const input of body.querySelectorAll('input')) {
-        input.checked = selectPage.checked;
-        recordSelection(input);
+
+    function selectRows(count, checked) {
+      for (let index = 0; index < count; index++) recordSelection(filtered[index], checked);
+      for (const input of body.querySelectorAll('[data-asset-row]')) {
+        input.checked = selected.has(filtered[Number(input.dataset.assetRow)].id);
       }
-      updateSelection();
-    };
-    body.onchange = (event) => {
-      recordSelection(event.target);
-      updateSelection();
-    };
-    function recordSelection(input) {
-      const { id } = visible[Number(input.dataset.assetRow)];
-      if (input.checked) selected.add(id);
-      else selected.delete(id);
+      updateBulkControls();
+      updateTotals();
+    }
+
+    function recordSelection(asset, checked) {
+      if (checked) selected.set(asset.id, asset.bytes);
+      else selected.delete(asset.id);
     }
     render();
+  }
+
+  function updateBulkCheckbox(input, count, checked) {
+    input.disabled = count === 0;
+    input.checked = count > 0 && checked === count;
+    input.indeterminate = checked > 0 && checked < count;
   }
 
   function row(asset, index, selected, storeNames, esc) {
