@@ -106,7 +106,7 @@ test('Discuss visibly reports a locked conversation while waiting and shows the 
   assert.match(status.textContent, /ChatGPT desktop app/);
   assert.ok(!status.classList.contains('visually-hidden'));
   assert.equal(window.document.querySelector('#discuss-send').getAttribute('aria-label'), 'Stop response');
-  assert.equal(window.document.querySelector('#discuss-messages > .activity-indicator'), null);
+  assert.equal(window.document.querySelector('#discuss-messages [data-chat-live] [data-sparkle-text]'), null);
 
   selected.status = 'paused';
   delete selected.threadLock;
