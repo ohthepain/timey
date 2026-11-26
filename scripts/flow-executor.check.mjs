@@ -74,7 +74,7 @@ function fixture(t, options = {}) {
         method: 'item/agentMessage/delta',
         params: { threadId, delta: 'Observed progress.' },
       });
-      return 'Observed block result.';
+      return options.respond?.(prompt, cwd) ?? 'Observed block result.';
     },
     async interrupt(threadId) {
       calls.push({ method: 'interrupt', threadId });
@@ -987,19 +987,7 @@ test('stop reaches explicit command execution and preserves its log', async (t) 
 
 function mergeFixture(
   t,
-  {
-    merged = false,
-    onWait,
-    repair,
-    onGit,
-    onReady,
-    onLookup,
-    onMerge,
-    onInspect,
-    github,
-    mergeNow,
-    refreshGroupProof,
-  } = {}
+  { merged = false, onWait, repair, onGit, onReady, onLookup, onMerge, onInspect, github, mergeNow, respond } = {}
 ) {
   const observations = [];
   let publishedHead;
@@ -1019,7 +1007,7 @@ function mergeFixture(
   });
   const f = fixture(t, {
     repair,
-    refreshGroupProof,
+    respond,
     mergeNow,
     async mergeDelay(interval) {
       await onWait?.(advanceTarget, interval);
@@ -1139,18 +1127,26 @@ test('Merge refreshes stale group proof for the verified candidate and reuses it
   const proof = JSON.stringify([{ id: 'attached', status: 'passed', observation: 'The final candidate passed.' }]);
   let refreshes = 0;
   const f = mergeFixture(t, {
-    async refreshGroupProof({ head, tree }) {
+    respond(prompt, checkout) {
+      const { candidate } = JSON.parse(prompt);
+      if (!candidate) return;
+      const { head, tree } = candidate;
       refreshes++;
-      assert.equal(head, f.git('rev-parse', 'HEAD'));
-      assert.equal(tree, f.git('rev-parse', 'HEAD^{tree}'));
-      const path = join(f.root, '.issues', 'refreshed-child-proof.json');
+      const current = (ref) => execFileSync('git', ['-C', checkout, 'rev-parse', ref], { encoding: 'utf8' }).trim();
+      assert.equal(head, current('HEAD'));
+      assert.equal(tree, current('HEAD^{tree}'));
+      const path = join(checkout, '.issues', 'refreshed-child-proof.json');
+      mkdirSync(join(checkout, '.issues'), { recursive: true });
       writeFileSync(path, proof);
-      return { artifacts: { files: { subIssueProof: { path, sha256: digest(proof) } } } };
+      return '```flow-result\n' + JSON.stringify({ files: { subIssueProof: path } }) + '\n```';
     },
   });
   await f.run('understand');
   f.issue.issue_group = { children: [{ id: 'attached', title: 'Attached issue' }] };
   const prepared = await f.run('merge', humanFirstMerge);
+  const instructions = f.calls.findLast((call) => call.instructions)?.instructions;
+  assert.match(instructions, /Verify the requested behavior on the supplied committed candidate/);
+  assert.doesNotMatch(instructions, /Commit the repaired candidate/);
   assert.equal(prepared.status, 'blocked');
   assert.ok(prepared.result.mergeConfirmation);
   assert.ok(!f.observations.some(({ operation }) => operation === 'merge'));

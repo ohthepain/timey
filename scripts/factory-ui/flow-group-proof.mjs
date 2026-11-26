@@ -10,7 +10,7 @@ const proofArtifact = { key: 'subIssueProof', kind: 'file', label: 'Sub-issue pr
 
 export function withGroupProof(ctx, refresh = false) {
   if (!groupChildren(ctx.issue).length || (!refresh && !supportedBlocks.has(ctx.block.kind))) return ctx;
-  const artifacts = ctx.definition.artifacts.filter((artifact) => artifact.key !== proofArtifact.key);
+  const artifacts = (ctx.definition.artifacts ?? []).filter((artifact) => artifact.key !== proofArtifact.key);
   return { ...ctx, definition: { ...ctx.definition, artifacts: [...artifacts, proofArtifact] } };
 }
 

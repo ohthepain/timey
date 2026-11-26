@@ -186,10 +186,7 @@ export function createFlowExecutor(service, options = {}) {
                 options.repair ??
                 ((error, round, record) =>
                   runMergeRepair(scopedService, context, owned, runtime, error, round, record)),
-              refreshGroupProof:
-                options.refreshGroupProof ??
-                ((candidate) =>
-                  runMergeModel(scopedService, context, owned, { ...runtime, groupProofCandidate: candidate })),
+              refreshGroupProof: (candidate) => runMergeGroupProof(scopedService, context, owned, runtime, candidate),
               resolveBranchConflicts: (paths, target, recovery) =>
                 runBranchConflictRepair(scopedService, context, owned, runtime, paths, target, recovery),
             });
@@ -607,6 +604,19 @@ function runMergeRepair(service, ctx, owned, options, error, round, record) {
     ...options,
     repair: { ...record, error, round },
   });
+}
+
+function runMergeGroupProof(service, ctx, owned, options, candidate) {
+  const context = {
+    ...ctx,
+    block: { ...ctx.block, prompt: '' },
+    definition: {
+      ...ctx.definition,
+      prompt:
+        'Verify the requested behavior on the supplied committed candidate. Write only the requested evidence. Factory owns any updates to the PR and the protected merge.',
+    },
+  };
+  return runMergeModel(service, context, owned, { ...options, groupProofCandidate: candidate });
 }
 
 async function runMergeModel(service, ctx, owned, options) {
