@@ -29,20 +29,20 @@ export function mergeGitHubProvider(provider, ctx, options) {
   for (const method of ['findIssueBranchPR', 'inspect', 'ready', 'gh']) {
     observed[method] = (...args) => retry(method, () => provider[method](...args));
   }
-  observed.merge = (number, head, settings) =>
+  observed.merge = (number, head, observePR, settings) =>
     retry('merge', async (attempt) => {
       if (attempt) {
-        const actual = await provider.inspect(number);
-        if (actual.merged_at) return (await provider.ready(actual, actual.head.ref, head)).merge;
+        const actual = await observePR();
+        if (actual?.merged_at) return (await provider.ready(actual, actual.head.ref, head)).merge;
       }
       return provider.merge(number, head, settings);
     });
   return observed;
 }
 
-export async function inspectMergeOutcome(provider, number, error) {
+export async function inspectMergeOutcome(observePR, error) {
   try {
-    return await provider.inspect(number);
+    return await observePR();
   } catch (inspectionError) {
     error.message += ' Merge outcome could not be checked: ' + inspectionError.message;
     throw error;

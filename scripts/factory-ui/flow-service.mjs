@@ -2018,7 +2018,8 @@ class IssueFlows {
           const pr = await lookupFlowPR(
             this.deliveryProvider(flow, workspace),
             workspace.branch,
-            flow.destination?.pr ?? workspace.pr
+            flow.destination?.pr ?? workspace.pr,
+            { metadataOnly: true }
           );
           requireThat(this.read(issue).revision === flow.revision, 'The issue changed. Review Merge again.');
           if (pr && !flow.destination?.pr) {

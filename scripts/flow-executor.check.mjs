@@ -1071,7 +1071,6 @@ function mergeFixture(
         };
       },
       async inspect() {
-        await onInspect?.();
         return pullRequest();
       },
       async merge(_number, head, { beforeMerge }) {
@@ -1639,7 +1638,7 @@ test('Merge pushes each new candidate, then expires approval if the target moves
   assert.equal(first.status, 'blocked');
   assert.deepEqual(
     f.observations.map(({ operation }) => operation),
-    ['ready', 'push', 'ready', 'push', 'ready']
+    ['push', 'push', 'ready']
   );
   assert.equal(first.result.mergeConfirmation.target, f.git('rev-parse', 'dev'));
   f.advanceTarget();
@@ -1653,7 +1652,7 @@ test('Merge pushes each new candidate, then expires approval if the target moves
   assert.equal((await approveMerge(f, second)).result.revision, 'actual-merge');
 });
 
-test('Merge repairs a target conflict even when GitHub only reports blocked readiness', async (t) => {
+test('Merge repairs a target conflict before requesting GitHub readiness', async (t) => {
   const { inspectReadiness } = await import('./factory-ui/strategy-readiness.mjs');
   let observed = false;
   const f = mergeFixture(t, {
@@ -1707,7 +1706,7 @@ test('Merge repairs a target conflict even when GitHub only reports blocked read
   assert.equal(result.result.revision, 'actual-merge');
   assert.deepEqual(
     f.observations.map(({ operation }) => operation),
-    ['ready', 'ready', 'push', 'ready', 'ready', 'merge']
+    ['push', 'ready', 'ready', 'ready', 'merge']
   );
   assert.equal(issueGit('merge-base', 'HEAD', 'dev'), f.git('rev-parse', 'dev'));
   assert.equal(readFileSync(join(checkout, 'source.txt'), 'utf8'), 'Issue and target changes.\n');
@@ -2993,7 +2992,7 @@ void test('Merge waits for newly published checks to register before merging', a
   );
 });
 
-void test('Merge waits for CI without refetching source and still incorporates a target advanced during the wait', async (t) => {
+void test('Merge refreshes the target while waiting for CI and incorporates an advance during the wait', async (t) => {
   let pending = 3;
   let fetches = 0;
   const f = mergeFixture(t, {
@@ -3005,7 +3004,7 @@ void test('Merge waits for CI without refetching source and still incorporates a
     },
     onWait(advance) {
       if (!pending) return;
-      assert.equal(fetches, 1, 'Fetch the target once before waiting, then skip refetching while CI is pending.');
+      assert.equal(fetches, 4 - pending, 'Refresh the target before each readiness request.');
       assert.equal(
         f.observations.some(({ operation }) => operation === 'verify'),
         false
@@ -3151,7 +3150,7 @@ test('Merge retains the original merge error when outcome inspection also fails'
       requested = true;
       throw Error('HTTP 422 merge candidate rejected');
     },
-    onInspect() {
+    onLookup() {
       if (requested) throw Object.assign(Error('HTTP 503 outcome lookup unavailable'), { transient: true });
     },
   });

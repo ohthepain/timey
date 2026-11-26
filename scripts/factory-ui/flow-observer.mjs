@@ -126,7 +126,7 @@ export function createFlowObserver(service, options = {}) {
     cache.promise = Promise.resolve()
       .then(async () => {
         const provider = options.provider || new StrategyProvider(service.root, config);
-        const pr = await lookupFlowPR(provider, branch, number);
+        const pr = await lookupFlowPR(provider, branch, number, { metadataOnly: true });
         if (!pr) {
           cache.value = { pr: null, remoteObservedAt: new Date().toISOString() };
           return;
