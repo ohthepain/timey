@@ -22,22 +22,24 @@ try {
       .join('\n'),
   });
   await page.evaluate(() => {
+    const fixtures = {
+      '/api/capture-grilling-skills': [
+        { label: 'Grilling', skill: 'grilling' },
+        { label: 'Grill Me', skill: 'grill-me' },
+      ],
+      '/api/issue-folder-default': { folder: 'Inbox' },
+      '/api/issue-stores': { selected: 'files', profiles: [{ id: 'files', label: 'Local files' }] },
+    };
     window.fetch = async (url) => ({
       ok: true,
-      json: async () =>
-        url.includes('grilling-skills')
-          ? [
-              { label: 'Grilling', skill: 'grilling' },
-              { label: 'Grill Me', skill: 'grill-me' },
-            ]
-          : url.includes('folder-default')
-            ? { folder: 'Inbox' }
-            : ['Inbox'],
+      json: async () => fixtures[new URL(url, location.href).pathname] ?? ['Inbox'],
     });
     window.submissions = [];
   });
   await page.addScriptTag({
     content:
+      readFileSync('scripts/factory-ui/issue-store-ui.js', 'utf8') +
+      '\n' +
       readFileSync('scripts/factory-ui/issue-capture-ui.js', 'utf8') +
       `
     issueCaptureUI.bind(async (_route, input) => {
@@ -46,15 +48,18 @@ try {
     }, async () => {}, {models:[{id:'test', name:'Test'}], defaults:{model:'test'}});`,
   });
   await page.locator('#create-issue').click();
-  assert.equal(await page.getByLabel('Grill me', { exact: true }).isChecked(), false);
-  await page.getByLabel('Description', { exact: true }).fill('Review the issue before implementation.');
-  await page.getByLabel('Grill me', { exact: true }).check();
-  await page.getByLabel('Grilling skill', { exact: true }).selectOption('grill-me');
+  const grill = page.locator('#capture-grill');
+  const skill = page.locator('#capture-grill-skill');
+  assert.equal(await grill.isChecked(), false);
+  await page.locator('#capture-description').fill('Review the issue before implementation.');
+  await grill.check();
+  await skill.selectOption('grill-me');
+  await page.locator('#capture-issue-store').selectOption('files');
   await page.locator('#capture-grill-skill').scrollIntoViewIfNeeded();
   await page.screenshot({ path: join(output, 'selection.png') });
   await page.locator('#capture-save').click();
   await page.getByRole('alert').filter({ hasText: 'Disposable save failure' }).waitFor();
-  assert.equal(await page.getByLabel('Grilling skill', { exact: true }).inputValue(), 'grill-me');
+  assert.equal(await skill.inputValue(), 'grill-me');
   await page.locator('#capture-save').click();
   const requests = await page.evaluate(() => window.submissions);
   assert.equal(requests.length, 2);
