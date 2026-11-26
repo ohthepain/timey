@@ -8,6 +8,11 @@ import { digest, requireThat } from './common.mjs';
 import { agentModel, sessionProvider } from './agent-models.mjs';
 import { NativeAgentConnection } from './native-agent.mjs';
 import { agentRecovery } from './agent-recovery.mjs';
+import { setTimeout as delay } from 'node:timers/promises';
+import { desktopThreadWriter, isCodexWriterConflict, threadLockedMessage } from './codex-thread-writer.mjs';
+
+const writerRechecks = 45;
+const waitForWriter = (signal) => delay(2000, undefined, { signal });
 
 function conversationPromptKind(message) {
   return message.reportContext ? 'report' : 'project';
@@ -74,6 +79,8 @@ class ProjectDiscussProvider {
     this.connection.toolHandler = (params) => this.invokeTool(params);
     this.connection.onEvent = (event) => this.event(event);
     this.active = null;
+    this.threadWriterOwner = options.threadWriterOwner ?? desktopThreadWriter;
+    this.threadWriterDelay = options.threadWriterDelay ?? waitForWriter;
   }
   async skills(model) {
     if (!model || agentModel(model).provider === 'codex')
@@ -257,7 +264,9 @@ class ProjectDiscussProvider {
       developerInstructions: instructions,
     };
     if (session.threadId) {
-      await connection.call('thread/resume', { ...params, threadId: session.threadId, excludeTurns: true });
+      const resume = () =>
+        connection.call('thread/resume', { ...params, threadId: session.threadId, excludeTurns: true });
+      await this.resumeThread(session.threadId, resume);
       const { thread } = await connection.call('thread/read', { threadId: session.threadId, includeTurns: false });
       requireThat(
         thread.status?.type === 'idle',
@@ -282,6 +291,33 @@ class ProjectDiscussProvider {
       this.retain({ threadId: thread.id, startup: { status: 'ready' } });
     }
     connection.approvalReviewers?.set(session.threadId, 'auto_review');
+  }
+
+  async resumeThread(threadId, resume) {
+    if (sessionProvider(threadId) !== 'codex') return resume();
+    const signal = this.active.signal;
+    let notice;
+    try {
+      for (let attempt = 0; ; attempt++) {
+        signal.throwIfAborted();
+        try {
+          return await resume();
+        } catch (error) {
+          if (!isCodexWriterConflict(error.message)) throw error;
+          if (attempt === writerRechecks) {
+            const current = threadLockedMessage(await this.threadWriterOwner(threadId));
+            throw Error(current + ' Retry after that session releases the conversation.');
+          }
+        }
+        if (!notice) {
+          notice = threadLockedMessage(await this.threadWriterOwner(threadId));
+          this.retain({ threadLock: notice + ' Factory will retry automatically. Use Stop to cancel the wait.' });
+        }
+        await this.threadWriterDelay(signal);
+      }
+    } finally {
+      if (notice) this.retain({ threadLock: null });
+    }
   }
   async invokeTool(params) {
     const active = this.active;

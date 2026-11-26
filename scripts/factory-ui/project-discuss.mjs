@@ -11,6 +11,7 @@ import { createProjectDiscussProvider } from './project-discuss-provider.mjs';
 import { LocalNotes } from './local-notes.mjs';
 import { agentRecovery, recoverAgentSession } from './agent-recovery.mjs';
 import { retainReportConversation } from './report-conversation.mjs';
+import { isCodexWriterConflict } from './codex-thread-writer.mjs';
 
 const idPattern = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/;
 const stamp = () => new Date().toISOString();
@@ -185,6 +186,9 @@ export class ProjectDiscuss {
     delete result.toolReceipts;
     const expose = (message) => {
       if (message.role === 'assistant') message.text = message.text.replace(/\n?```timey-suggestion[\s\S]*$/, '');
+      if (isCodexWriterConflict(message.error))
+        message.error =
+          'Another Codex session held the conversation lock. Retry to check whether it has been released.';
       message.attachments = (message.attachments || []).map((file) => this.publicAttachment(session.id, file));
       delete message.stream;
       return message;
@@ -196,6 +200,7 @@ export class ProjectDiscuss {
       result.status = 'interrupted';
       result.paused = true;
       result.recovery = 'The server stopped during a response. Retry explicitly to reconcile the saved conversation.';
+      delete result.threadLock;
     }
     return result;
   }

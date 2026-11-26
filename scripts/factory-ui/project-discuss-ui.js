@@ -305,8 +305,8 @@
       return running(session()?.status) || pending;
     }
     function responseWorking() {
-      const { status, approvals = [] } = session() || {};
-      return approvals.length === 0 && (running(status) || pendingResponses > 0);
+      const { status, approvals = [], threadLock } = session() || {};
+      return [!threadLock, approvals.length === 0, running(status) || pendingResponses > 0].every(Boolean);
     }
     function messageEditAction(message, user) {
       if (user)
@@ -325,7 +325,7 @@
         content: markdown(messageText(message)),
         aiSource: messageText(message),
         aiKey: 'discuss-' + selectedId + '-' + message.id,
-        tail: `${messageAttachments(message)}${eventsHtml(message.events)}<div class="discuss-message-actions"><button class="discuss-icon-button" type="button" data-discuss-copy="${escape(message.id)}" aria-label="Copy message" title="Copy message"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5" y="5" width="8" height="9" rx="1"/><path d="M3 11V3h8"/></svg></button>${messageEditAction(message, user)}</div>`,
+        tail: `${message.error ? `<p class="inline-error">${escape(message.error)}</p>` : ''}${messageAttachments(message)}${eventsHtml(message.events)}<div class="discuss-message-actions"><button class="discuss-icon-button" type="button" data-discuss-copy="${escape(message.id)}" aria-label="Copy message" title="Copy message"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="5" y="5" width="8" height="9" rx="1"/><path d="M3 11V3h8"/></svg></button>${messageEditAction(message, user)}</div>`,
       });
     }
     function conversationTab(entry) {
@@ -437,7 +437,8 @@
       node.hidden = Boolean(draft.value || editId || !suggestion);
     }
     function updateControls() {
-      const active = running(session()?.status);
+      const current = session() || {};
+      const active = running(current.status);
       window.timeyActivity.sync(log, responseWorking());
       draft.disabled = creating;
       byId('discuss-files').disabled = creating;
@@ -445,7 +446,7 @@
       byId('discuss-new').disabled = pending || creating;
       for (const tab of byId('discuss-conversation-tabs').querySelectorAll('button'))
         tab.disabled = pending || creating;
-      byId('discuss-resume').hidden = !['paused', 'interrupted', 'stopped'].includes(session()?.status);
+      byId('discuss-resume').hidden = !['paused', 'interrupted', 'stopped'].includes(current.status);
       byId('discuss-resume').disabled = pending;
       const send = byId('discuss-send');
       send.disabled = pending || creating;
@@ -459,7 +460,12 @@
       byId('discuss-editing').textContent = editId
         ? 'Editing a queued message. The current response keeps running.'
         : '';
-      byId('discuss-status').textContent = active ? 'Response running' : '';
+      updateStatus(active, current.threadLock);
+    }
+    function updateStatus(active, threadLock) {
+      const status = byId('discuss-status');
+      status.classList.toggle('visually-hidden', !threadLock);
+      status.textContent = threadLock || (active ? 'Response running' : '');
     }
     function renderApprovals(approvals) {
       const holder = byId('discuss-approvals');

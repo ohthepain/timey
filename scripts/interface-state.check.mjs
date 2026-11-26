@@ -93,3 +93,26 @@ test('Discuss keeps expanded tool activity and highlighted text through unchange
   );
   assert.notEqual(selection.toString(), 'error');
 });
+
+test('Discuss visibly reports a locked conversation while waiting and shows the reason after pausing', async (t) => {
+  const { window, selected, ui } = discussFixture(t);
+  ui.setVisible(true);
+  await new Promise((resolve) => setImmediate(resolve));
+  const status = window.document.querySelector('#discuss-status');
+  const lock = 'This conversation is locked by the ChatGPT desktop app.';
+  selected.status = 'running';
+  selected.threadLock = lock + ' Factory will retry automatically.';
+  await ui.refresh();
+  assert.match(status.textContent, /ChatGPT desktop app/);
+  assert.ok(!status.classList.contains('visually-hidden'));
+  assert.equal(window.document.querySelector('#discuss-send').getAttribute('aria-label'), 'Stop response');
+  assert.equal(window.document.querySelector('#discuss-messages > .activity-indicator'), null);
+
+  selected.status = 'paused';
+  delete selected.threadLock;
+  selected.messages[0].error = lock;
+  await ui.refresh();
+  assert.ok(status.classList.contains('visually-hidden'));
+  assert.equal(window.document.querySelector('#discuss-messages .inline-error').textContent, lock);
+  assert.ok(!window.document.querySelector('[data-discuss-retry]').disabled);
+});
