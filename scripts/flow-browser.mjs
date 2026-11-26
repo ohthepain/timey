@@ -87,7 +87,12 @@ import { actionsMenuBrowserChecks } from './flow-browser-actions-menu.mjs';
 import { mergedIssueBrowserChecks } from './flow-browser-merged-issue.mjs';
 import { manualCloseBrowserChecks } from './flow-browser-manual-close.mjs';
 import { noChangesBrowserChecks } from './flow-browser-no-changes.mjs';
-import { importBrowserIssue, removeBrowserIssue, writeBrowserIssue } from './flow-browser-fixture.mjs';
+import {
+  importBrowserIssue,
+  installBrowserHumanInput,
+  removeBrowserIssue,
+  writeBrowserIssue,
+} from './flow-browser-fixture.mjs';
 import { issueStoresBrowserChecks } from './flow-browser-stores.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -2772,7 +2777,20 @@ try {
     await page.goto(new URL('/flow?issue=' + issueId, page.url()).href);
     await page.getByRole('img', { name: 'Issue closed' }).waitFor();
   });
-  await check('Closed issues can be reopened or archived from Flow', async () => {
+  await check(flowBrowserScenarioNames['--reopen-or-archive'], async () => {
+    installBrowserHumanInput(project, root);
+    const reopenId = '20261126-reopen-from-flow';
+    const archiveId = '20261126-archive-from-flow';
+    for (const id of [reopenId, archiveId]) {
+      await importBrowserIssue(
+        project,
+        id,
+        `---\nid: ${id}\ntitle: Closed issue ${id}\nstate: closed\nclosure:\n  reason: duplicate\n  label: Duplicate\n  at: '2026-11-26T12:00:00Z'\n  actor: human\n---\n\nClosed fixture.\n`,
+        'closed'
+      );
+    }
+    issueId = reopenId;
+    await page.goto('/?issue=' + issueId);
     const archive = page.getByRole('combobox', { name: 'Archive', exact: true });
     const close = page.getByRole('button', { name: 'Close', exact: true });
     await archive.waitFor();
@@ -2781,7 +2799,6 @@ try {
     assert.equal(await page.locator('#issue-playback').isVisible(), false);
     assert.equal(await close.isVisible(), false);
     assert.equal(await archive.locator('option[value="reveal"]').textContent(), 'Reveal in Finder');
-    page.once('dialog', (dialog) => void dialog.accept());
     await page.getByRole('button', { name: 'Reopen', exact: true }).click();
     await close.waitFor();
     await page.getByRole('button', { name: 'Start issue' }).waitFor();
@@ -2789,11 +2806,15 @@ try {
     assert.equal(service.flows.selected(issueId).location, 'open');
     assert.equal(await archive.isVisible(), false);
 
-    issueId = playbackIssueId;
+    issueId = archiveId;
     await page.goto('/?issue=' + issueId);
     await archive.waitFor();
-    page.once('dialog', (dialog) => void dialog.accept());
-    await archive.selectOption('archive');
+    const confirmation = page.waitForEvent('dialog');
+    const selectArchive = archive.selectOption('archive');
+    const dialog = await confirmation;
+    assert.equal(dialog.message(), 'Archive this closed issue?');
+    await dialog.accept();
+    await selectArchive;
     await page.getByText('Issue archived.', { exact: true }).waitFor();
     await archive.waitFor({ state: 'hidden' });
     assert.equal(new URL(page.url()).searchParams.has('issue'), false);

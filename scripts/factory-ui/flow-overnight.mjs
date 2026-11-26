@@ -339,7 +339,7 @@ export class FlowOvernight {
 
   async advanceRoute(run, row) {
     const { issue, flow, entries } = this.readRoute(row.id);
-    const block = await this.flows.nextAutoplayBlock(flow, entries);
+    const block = await this.flows.nextAutoplayBlock(issue, flow, entries);
     if (!this.canAdvance(run) || blockNeedsAttention(row, block)) return;
     this.requireRunAllowed(row.id);
     row.blockId = block.id;

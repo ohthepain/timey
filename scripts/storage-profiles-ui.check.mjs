@@ -340,7 +340,7 @@ test('an invalid inherited profile blocks creation while keeping storage setting
 test('saving project profiles invalidates the selected issue storage choices before reloading', () => {
   const source = readFileSync(new URL('./factory-ui/flow-ui.js', import.meta.url), 'utf8');
   const start = source.indexOf('  const projectSettingsUI =');
-  const end = source.indexOf('\n\n  function folderLocation(', start);
+  const end = source.indexOf('\n  });', start);
   assert.ok(start >= 0 && end > start);
   const state = { storeSelection: 'selected-issue' };
   const reloads = [];
@@ -349,7 +349,7 @@ test('saving project profiles invalidates the selected issue storage choices bef
     'json',
     'state',
     'load',
-    source.slice(start, end) + '\nreturn projectSettingsUI;'
+    source.slice(start, end + '\n  });'.length) + '\nreturn projectSettingsUI;'
   )(
     { createProjectSettingsUI: (options) => options },
     async () => {},

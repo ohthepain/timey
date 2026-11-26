@@ -75,6 +75,7 @@ export const flowBrowserScenarioNames = {
   '--capture-folder-issue': 'Folder plus creates an issue directly in that folder and retains typed wording',
   '--starting-point': 'Starting point lists every branch in date order, saves selection and survives polling',
   '--closed-destination': 'Closed issues open with Destination flush with the bottom, including short flows',
+  '--reopen-or-archive': 'Closed issues can be reopened or archived from Flow',
   '--folder-workspace-grouping': 'The folder workspace reviews moves and creates a master without starting work',
   '--tab-source': 'Inspect and edit a tab source without starting work or losing an issue draft',
   '--sidebar-issue-names': 'Numbered full issue names wrap and sidebar resizing survives reload',

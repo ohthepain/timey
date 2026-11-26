@@ -2844,7 +2844,7 @@ class IssueFlows {
     const waiting = this.autoplay.get(issueId);
     if (waiting?.mode === 'paused') {
       const mode = sequential && input.action === 'continue' ? 'playing' : 'paused';
-      this.autoplay.set(issueId, { mode, userPaused: mode === 'paused' && waiting.userPaused });
+      this.autoplay.set(issueId, { mode });
     }
     if (waiting?.mode === 'waiting') {
       if (waiting.blockId === blockId && input.confirmed === true) this.autoplay.set(issueId, { mode: 'playing' });
