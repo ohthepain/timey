@@ -6,13 +6,7 @@ import { createWorkProgress } from './work-progress.mjs';
 import { chatProgressInstructions } from './chat-progress.mjs';
 import { executionPermissionInstructions } from './execution-permissions.mjs';
 import { BlockCatalog } from './block-catalog.mjs';
-import {
-  blockDefinitionId,
-  deliveryTarget,
-  latestCurrentAttempt,
-  startingPoint,
-  upstreamBlocks,
-} from './flow-block-data.mjs';
+import { blockDefinitionId, deliveryTarget, startingPoint, upstreamBlocks } from './flow-block-data.mjs';
 import { spawn, execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import {
@@ -59,8 +53,6 @@ import { moveIssueBase, startingBranchUpstream, updateIssueBranch } from './flow
 import { runRetro } from './flow-retro.mjs';
 import { groupProofRequest, withGroupProof } from './flow-group-proof.mjs';
 import { sourceObservation } from './flow-group-scope.mjs';
-import { captureGroupVerification } from './flow-group-verification.mjs';
-import { writeDiscussionEvidence } from './discussion-evidence.mjs';
 import { reportedLiveProofRequirements } from './flow-live-proof.mjs';
 import { isInvestigation } from './investigation-records.mjs';
 import { investigationSnapshot, removeInvestigationSnapshot } from './investigation-snapshot.mjs';
@@ -170,7 +162,6 @@ export function createFlowExecutor(service, options = {}) {
                 repair ??
                 ((error, round, record) =>
                   runMergeRepair(scopedService, context, owned, runtime, error, round, record)),
-              refreshGroupProof: (candidate) => runMergeGroupProof(scopedService, context, owned, runtime, candidate),
               resolveBranchConflicts: (paths, target, recovery) =>
                 runBranchConflictRepair(scopedService, context, owned, runtime, paths, target, recovery),
             });
@@ -499,7 +490,7 @@ function repairTurnEvidence(folder, repairTurn, logs = []) {
   return { path, label: 'Repair worker turn', sha256: digest(readFileSync(path)), repairTurn };
 }
 
-function trackModelTurns(ctx, options, retain, folder, groupVerification) {
+function trackModelTurns(ctx, options, retain, folder) {
   let turnId;
   let repairTurn;
   let evidence;
@@ -513,7 +504,6 @@ function trackModelTurns(ctx, options, retain, folder, groupVerification) {
         clientId,
         accepted(receipt) {
           turnId = receipt.turnId;
-          groupVerification?.accepted(receipt);
           if (options.repair || options.branchConflictTask) {
             repairTurn = { id: clientId, threadId: receipt.threadId, turnId };
             if (options.repair) options.repair.conversation.turnId = turnId;
@@ -571,24 +561,6 @@ function modelArtifacts(definition, output, workspace, response) {
   };
 }
 
-function retainGroupVerification(ctx, verification, retained, folder, output, proofIds) {
-  const manifest = modelManifest(output);
-  const { subIssueProof } = manifest;
-  retained.liveProofRequirements = reportedLiveProofRequirements(ctx, manifest, proofIds);
-  const file = Array.isArray(subIssueProof)
-    ? {
-        ...writeDiscussionEvidence(folder, 'sub-issue-proof.json', JSON.stringify(subIssueProof, null, 2)),
-        label: 'Sub-issue proof',
-      }
-    : undefined;
-  if (file) retained.artifacts.files.subIssueProof = file;
-  const index = verification.retain(file);
-  if (index) {
-    retained.evidence.push(index);
-    retained.groupProof = { ...index.groupVerification, file, verification: index };
-  }
-}
-
 function commandArtifacts(definition, result) {
   const values = {};
   const files = {};
@@ -609,25 +581,6 @@ function runMergeRepair(service, ctx, owned, options, error, round, record) {
   });
 }
 
-function runMergeGroupProof(service, ctx, owned, options, candidate) {
-  return runMergeModel(
-    service,
-    {
-      ...ctx,
-      block: { ...ctx.block, prompt: '', skill: null },
-      tools: undefined,
-      definition: {
-        ...ctx.definition,
-        artifacts: [],
-        prompt:
-          'Verify the specified sub-issues on the committed candidate in a read-only turn. Factory retains your response, proof rows and observed command output.',
-      },
-    },
-    owned,
-    { ...options, groupProofCandidate: candidate }
-  );
-}
-
 async function runMergeModel(service, ctx, owned, options) {
   try {
     return await runModel(service, ctx, owned, options);
@@ -637,9 +590,8 @@ async function runMergeModel(service, ctx, owned, options) {
   }
 }
 
-function modelRunSuffix({ repair, groupProofCandidate }) {
-  if (repair) return `-repair-${repair.round}`;
-  return groupProofCandidate ? `-group-proof-${groupProofCandidate.head}` : '';
+function modelRunSuffix({ repair }) {
+  return repair ? `-repair-${repair.round}` : '';
 }
 
 function recordModelMessage(service, ctx, options, threadId, kind, body) {
@@ -666,11 +618,7 @@ function recordModelMessage(service, ctx, options, threadId, kind, body) {
 
 function modelEvidenceDirectory(service, ctx, options) {
   if (options.repair) return options.repair.folder;
-  const folder = evidenceDirectory(service, ctx);
-  if (!options.groupProofCandidate) return folder;
-  const verification = join(folder, modelRunSuffix(options).slice(1));
-  mkdirSync(verification, { recursive: true, mode: 0o700 });
-  return verification;
+  return evidenceDirectory(service, ctx);
 }
 
 async function runBranchConflictRepair(service, ctx, owned, options, paths, target, recovery) {
@@ -753,7 +701,6 @@ function modelCommandProgress(ctx) {
 
 function modelPrompt(ctx, options) {
   if (options.branchConflictTask) return options.branchConflictTask;
-  if (options.groupProofCandidate) return groupVerificationPrompt(ctx, options.groupProofCandidate);
   if (options.workBase)
     return blockInput(ctx, {
       workExecution: {
@@ -790,18 +737,6 @@ function modelPrompt(ctx, options) {
     failure: options.repair.error.message,
     evidence: options.repair.evidence,
     failedChecks: options.repair.failedChecks,
-  });
-}
-
-function groupVerificationPrompt(ctx, { head, tree, proofIds, liveRows }) {
-  return blockInput(ctx, {
-    candidate: { head, tree },
-    focusedTests: upstreamBlocks(ctx.block, ctx.flow.blocks)
-      .filter(({ kind }) => kind === 'work')
-      .flatMap((block) => latestCurrentAttempt(block)?.result?.focusedTests ?? []),
-    subIssues: groupProofRequest(ctx.issue, proofIds)?.attached,
-    retainedLiveProof: liveRows,
-    task: 'Check the listed sub-issues on the committed candidate. Factory already validated the retained live evidence. Do not collect live proof or make any remote changes. If a listed sub-issue also requires a live side-effect check, return that obligation in flow-result liveProofRequirements as [{id, check}] and continue independent verification. Preserve source, tests, commits, the PR, and issue membership. Return a top-level subIssueProof array in flow-result with one {id, status, observation, nextAction?} row per listed issue. Use passed or failed based on actual observations. Report failed and unavailable checks as failures. Factory saves the rows and command output, so this turn requires no file writes.',
   });
 }
 
@@ -997,7 +932,7 @@ function modelToolRegistry(outputExecution, ctx) {
   return outputExecution?.tools ?? ctx.tools;
 }
 
-function modelNotifications(service, ctx, owned, outputPath, groupVerification) {
+function modelNotifications(service, ctx, owned, outputPath) {
   let liveText = '';
   let finished = false;
   const progress = modelCommandProgress(ctx);
@@ -1020,7 +955,6 @@ function modelNotifications(service, ctx, owned, outputPath, groupVerification) 
     },
     onEvent(message) {
       if (finished) return;
-      groupVerification?.event(message);
       ctx.onEvent?.(message);
       const params = message.params || {};
       if (message.method === 'item/agentMessage/delta') {
@@ -1052,9 +986,7 @@ async function runModel(service, ctx, owned, options) {
     ...ctx,
     block: {
       ...ctx.block,
-      skill: options.groupProofCandidate
-        ? null
-        : executionBlockSkill(ctx.block, ctx.definition, ctx.flow.executionSettings),
+      skill: executionBlockSkill(ctx.block, ctx.definition, ctx.flow.executionSettings),
     },
   };
   requireThat(
@@ -1071,7 +1003,7 @@ async function runModel(service, ctx, owned, options) {
   const tools = modelToolRegistry(outputExecution, ctx);
   const sandbox = workspace.temporary
     ? 'workspace-write'
-    : options.groupProofCandidate || readOnlyBlocks.has(ctx.block.kind)
+    : readOnlyBlocks.has(ctx.block.kind)
       ? 'read-only'
       : 'workspace-write';
   if (sandbox === 'workspace-write' && !workspace.temporary) guardBlock(service, ctx, 'implement', workspace.base);
@@ -1085,13 +1017,11 @@ async function runModel(service, ctx, owned, options) {
   const { previous, recover, binding } = modelConversationBinding(service, ctx, state, savedBlock, basis);
   service.issueChats?.release(ctx.issue.id);
   const folder = modelEvidenceDirectory(service, ctx, options);
-  const groupVerification =
-    options.groupProofCandidate && captureGroupVerification(folder, options.groupProofCandidate);
   const source = retainSourceIssueEvidence(service.root, ctx.issue.source_issue, folder, ctx.issue.source_attempt);
   if (source) ctx = { ...ctx, sourceEvidence: source.promptValue };
   const outputPath = join(folder, 'output.txt');
   writeFileSync(outputPath, '', { mode: 0o600 });
-  const notifications = modelNotifications(service, ctx, owned, outputPath, groupVerification);
+  const notifications = modelNotifications(service, ctx, owned, outputPath);
   const { progress, inputRequired } = notifications;
   const settings = executionModels(service, ctx);
   const connection = options.create({
@@ -1137,7 +1067,7 @@ async function runModel(service, ctx, owned, options) {
   let workCheck;
   let repairPrompt;
   let threadId;
-  const turns = trackModelTurns(ctx, options, retain, folder, groupVerification);
+  const turns = trackModelTurns(ctx, options, retain, folder);
   let turnDispatched = false;
   let terminalObserved = false;
   let rejectStopped;
@@ -1192,7 +1122,6 @@ async function runModel(service, ctx, owned, options) {
       skill: ctx.block.skill || null,
     });
     recordModelMessage(service, ctx, options, threadId, 'request', prompt);
-    groupVerification?.begin(threadId);
     for (let round = 1; round <= rounds; round++) {
       ctx.signal.throwIfAborted();
       progress.begin(
@@ -1246,15 +1175,6 @@ async function runModel(service, ctx, owned, options) {
     retain({ status: 'idle' });
     const response = { path: outputPath, label: 'Block response', sha256: digest(readFileSync(outputPath)) };
     const retained = modelArtifacts(ctx.definition, outputs.at(-1), workspace, response);
-    if (groupVerification)
-      retainGroupVerification(
-        ctx,
-        groupVerification,
-        retained,
-        folder,
-        outputs.at(-1),
-        options.groupProofCandidate.proofIds
-      );
     retained.evidence.push(...turns.evidence(outputs.at(-1), workspace, retained.artifacts.files.log));
     outputExecution?.complete(modelManifest(outputs.at(-1)), retained);
     const head = git(workspace.checkout, 'rev-parse', 'HEAD');
@@ -1300,7 +1220,6 @@ async function runModel(service, ctx, owned, options) {
       retain,
       failedChecks,
       turns,
-      groupVerification,
     });
     throw error;
   } finally {
@@ -1323,7 +1242,6 @@ async function retainModelFailure(error, ctx, activity) {
     retain,
     failedChecks,
     turns,
-    groupVerification,
   } = activity;
   const terminal =
     error.turnRejected || terminalObserved || ['failed', 'interrupted', 'completed'].includes(error.terminalStatus);
@@ -1345,7 +1263,6 @@ async function retainModelFailure(error, ctx, activity) {
     ...turns.evidence(),
     ...(error.evidence || []),
     ...(partial ? [{ path: outputPath, label: 'Partial block response' }] : []),
-    ...[groupVerification?.retain()].filter(Boolean),
   ];
 }
 

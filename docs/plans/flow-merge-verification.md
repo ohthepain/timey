@@ -24,6 +24,8 @@ When Publish PR records the linked PR, an earlier Merge attempt that failed only
 3. Wait for GitHub to report readiness for the current PR commit. Fetch the Destination again before merging. If it advanced, repeat from step 1.
 4. Once the issue commit and target revision are current and GitHub reports the PR ready, apply the merge policy. Automatic policy can proceed through GitHub's protected merge. Human-first policy asks for approval of the exact PR commit and target revision. A change to either revision expires that approval and returns the run to preparation.
 
+Master issues use the same Merge rules. Work records requested sub-issue evidence, and Merge uses GitHub readiness and the configured merge policy after any repair.
+
 Merge can resolve straightforward conflicts and repair required check failures reported by GitHub within the approved issue scope. It retries after a concrete repair or a target update. It pauses and reports the blocker when progress stalls or a decision, additional permission, or broader scope is required. Each attempt retains the GitHub and repair outcomes.
 
 A required GitHub review is shown as **Needs your input**, with instructions to
