@@ -1,6 +1,72 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { cpSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { runRetro } from './factory-ui/flow-retro.mjs';
 import { exportRetroThread } from './factory-ui/flow-retro-thread.mjs';
+import { gitFixture } from './git-fixture.mjs';
+
+function pendingRetro(t) {
+  const { root, git } = gitFixture(t, 'retro-deadline-');
+  const directory = join(root, '.issues');
+  mkdirSync(directory);
+  cpSync(new URL('../.issues/triage-labels.md', import.meta.url), join(directory, 'triage-labels.md'));
+  const id = '20261113-one';
+  const content = `---\nid: ${id}\ntitle: Review issue\nstate: backlog\ncreated: 2026-11-13T12:00:00Z\n---\n\n## Original request\n\nReview the issue.\n`;
+  writeFileSync(join(directory, id + '.md'), content);
+  git('commit', '--allow-empty', '-qm', 'Fixture');
+  const entered = Promise.withResolvers();
+  const answer = Promise.withResolvers();
+  let closed = false;
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const result = runRetro(
+    { root, store: { runs: [], directory } },
+    {
+      issue: { id, content },
+      flow: { blocks: [] },
+      definition: { prompt: 'Review the issue.' },
+      signal: new AbortController().signal,
+    },
+    () => ({
+      async begin() {},
+      ask() {
+        entered.resolve();
+        return answer.promise;
+      },
+      close() {
+        closed = true;
+      },
+    })
+  );
+  return { entered: entered.promise, answer, result, closed: () => closed };
+}
+
+test('Retro accepts a review that needs more than 90 seconds', async (t) => {
+  const retro = pendingRetro(t);
+  await retro.entered;
+  t.mock.timers.tick(91_000);
+  retro.answer.resolve(JSON.stringify({ summary: 'Reviewed the issue.', recommendations: [] }));
+  const result = await retro.result;
+  assert.equal(result.summary, 'Reviewed the issue.');
+  assert.equal(retro.closed(), true);
+});
+
+test('Retro closes a stalled review at five minutes and links its exported evidence', async (t) => {
+  const retro = pendingRetro(t);
+  await retro.entered;
+  const failure = assert.rejects(retro.result, (error) => {
+    assert.match(error.message, /Retro timed out while reviewing issue history/);
+    const index = JSON.parse(readFileSync(error.evidence[0].path, 'utf8'));
+    assert.ok(index.sections.report.sha256);
+    return true;
+  });
+  t.mock.timers.tick(299_999);
+  await Promise.resolve();
+  assert.equal(retro.closed(), false);
+  t.mock.timers.tick(1);
+  await failure;
+  assert.equal(retro.closed(), true);
+});
 
 test('retrospective exports retain ordered tool calls, outcomes, and public permission decisions', () => {
   const exported = exportRetroThread(

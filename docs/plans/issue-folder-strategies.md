@@ -104,13 +104,14 @@ An issue with the restriction keeps its current folder.
 
 Show the exact issues and the finish condition before starting. Timey runs the
 selection using its issue runner and pstack's [Autonomous run playbook](../../.agents/skills/poteto-mode/playbooks/autonomous-run.md).
-The default finish line is verified, merge-ready PRs. An issue that needs human
-input pauses while independent work continues. If the runner exhausts the
+Each issue follows its configured Merge policy. Automatic Merge proceeds after
+GitHub confirms readiness. Human-first Merge waits for approval of the current
+candidate while independent work continues. If the runner exhausts the
 available repairs for an issue, leave that issue and its dependent work paused.
 Continue with independent issues. A Stop control ends the run. The morning
 report lists what finished and gives the failed check, where applicable, and
-the next action for each issue that needs attention. Merge and closure remain
-separate actions.
+the next action for each issue that needs attention. Close follows the issue’s
+existing acceptance rules.
 
 Code closure can use the merged PR after target updates and CI repairs.
 Required human checks still apply.

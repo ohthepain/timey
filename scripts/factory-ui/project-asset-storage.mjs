@@ -2,6 +2,8 @@ import { retainedContentReferences } from './project-asset-retained-content.mjs'
 import { readStoreConfig } from './stores/config.mjs';
 import { inspectProjectStores } from './stores/runtime.mjs';
 
+const empty = { assets: [], stores: [], unavailableReferenceSources: 0 };
+const inventories = new WeakMap();
 const identity = (ref) => ref.sha256 + ':' + ref.bytes;
 const sourceTypes = new Map([
   ['issues', 'Issue report'],
@@ -99,11 +101,12 @@ async function readReferenceSources(project) {
   };
 }
 
-async function assetInventory(project, configs) {
+async function assetInventory(project, configs, onListed) {
   const results = await Promise.all(
     storedAssets(configs.map((config) => ({ config, store: project.artifactStores.get(config.id) })))
   );
   const assets = inventoryRows(results, project.projectId);
+  onListed?.(assets.size);
   const [shared, retained] = assets.size
     ? await Promise.all([readReferenceSources(project), retainedContentReferences(project.root)])
     : [
@@ -123,11 +126,47 @@ async function assetInventory(project, configs) {
   };
 }
 
-export async function projectAssetStorage(service) {
-  const empty = { assets: [], stores: [], unavailableReferenceSources: 0 };
-  if (service.reviewMode === 'preview') return empty;
-  const config = readStoreConfig(service.root);
+function inspectInventory(service, config, onListed) {
   const stores = config.stores.filter((store) => store.kind === 's3' && store.roles.includes('artifact'));
   if (!stores.length) return empty;
-  return inspectProjectStores(service.root, config, (project) => assetInventory(project, stores));
+  return inspectProjectStores(service.root, config, (project) => assetInventory(project, stores, onListed));
+}
+
+export async function projectAssetStorage(service) {
+  if (service.reviewMode === 'preview') return empty;
+  return inspectInventory(service, readStoreConfig(service.root));
+}
+
+export function projectAssetStorageStatus(service, refresh) {
+  if (service.reviewMode === 'preview') return { phase: 'ready', inventory: empty };
+  const config = readStoreConfig(service.root);
+  const existing = inventories.get(service);
+  if (reusableInventory(existing, config, refresh)) return existing.status;
+  return startAssetInventory(service, config);
+}
+
+function reusableInventory(existing, config, refresh) {
+  return existing?.revision === config.revision && (existing.running || !refresh);
+}
+
+function startAssetInventory(service, config) {
+  const scan = { revision: config.revision, running: true, status: { phase: 'listing' } };
+  inventories.set(service, scan);
+  void Promise.resolve()
+    .then(() =>
+      inspectInventory(service, config, (count) => {
+        scan.status = { phase: 'references', count };
+      })
+    )
+    .then(
+      (inventory) => {
+        scan.status = { phase: 'ready', inventory };
+        scan.running = false;
+      },
+      () => {
+        scan.status = { phase: 'failed' };
+        scan.running = false;
+      }
+    );
+  return scan.status;
 }

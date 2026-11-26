@@ -539,6 +539,50 @@
       window.factoryAgentOptions(content);
       baseline = snapshot();
     }
+    async function readAssetInventory(ticket, status) {
+      const endpoint = '/api/project-asset-storage?status';
+      let path = endpoint + '&refresh=true';
+      while (ticket === sequence) {
+        const result = await request(path);
+        const inventory = finishedAssetInventory(result);
+        if (inventory) return inventory;
+        showAssetScanProgress(status, result);
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        path = endpoint;
+      }
+    }
+    function finishedAssetInventory(result) {
+      if (result.phase === 'failed') throw Error('Factory could not read the asset inventory.');
+      return result.inventory ?? (Array.isArray(result.assets) ? result : null);
+    }
+    function showAssetScanProgress(status, result) {
+      if (result.phase === 'references') {
+        status.textContent = `Checking retained references for ${result.count} listed assets…`;
+      }
+    }
+    async function loadAssetStorage(ticket) {
+      document.getElementById('settings-page-title').textContent = 'Asset Storage';
+      content.innerHTML = '<p role="status">Listing assets in S3…</p>';
+      try {
+        const inventory = await readAssetInventory(ticket, content.firstElementChild);
+        if (ticket !== sequence) return;
+        data = inventory;
+        render();
+      } catch (failure) {
+        if (ticket !== sequence) return;
+        showError(failure.message);
+        content.innerHTML =
+          '<button type="button" class="small-button" data-asset-storage-retry>Retry inventory</button>';
+      }
+    }
+    async function readSettings(value, path, ticket) {
+      const result = await request(path);
+      if (value === 'storage' && ticket === sequence) {
+        result.storeRegistry = await request('/api/issue-stores');
+        if (ticket === sequence) savedStoreConfiguration = JSON.stringify(storeConfiguration(result.storeRegistry));
+      }
+      return result;
+    }
     async function load(
       value,
       { preserveScroll = false, scrollTop = dialog.querySelector('.settings-body').scrollTop } = {}
@@ -550,24 +594,19 @@
       if (!preserveScroll) content.textContent = 'Loading settings…';
       baseline = snapshot();
       navigation();
+      if (value === 'asset-storage') return loadAssetStorage(ticket);
       const endpoints = {
         providers: '/api/ai-providers',
         app: '/api/project-app',
-        'asset-storage': '/api/project-asset-storage',
         issues: '/api/folder-settings?project=true',
         prompts: '/api/project-preferences',
         hotkeys: '/api/project-preferences',
         skills: '/api/project-discuss-skills?all=true',
       };
       try {
-        const result = await request(endpoints[value] || '/api/project-settings');
+        const result = await readSettings(value, endpoints[value] || '/api/project-settings', ticket);
         if (ticket !== sequence) return;
         data = result;
-        if (value === 'storage') {
-          data.storeRegistry = await request('/api/issue-stores');
-          savedStoreConfiguration = JSON.stringify(storeConfiguration(data.storeRegistry));
-        }
-        if (ticket !== sequence) return;
         render();
         dialog.querySelector('.settings-body').scrollTop = preserveScroll ? scrollTop : 0;
       } catch (failure) {
@@ -699,6 +738,7 @@
       ['[data-provider-action]', (button) => leave(() => void providerAction(button))],
       ['[data-settings-page]', (button) => select(button.dataset.settingsPage)],
       ['[data-settings-close]', close],
+      ['[data-asset-storage-retry]', () => load('asset-storage')],
       ['[data-restore-prompt]', restorePrompt],
       ['[data-restore-hotkeys]', restoreHotkeys],
       ['[data-settings-action]', runAction],

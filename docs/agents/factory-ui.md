@@ -122,8 +122,11 @@ Drag an issue from the sidebar, a folder view, or a master’s sub-issue list
 onto a master to attach or transfer it. Drop a sub-issue onto a sidebar folder
 to detach it and move it there. Transfers require both masters to be idle and
 the Issue and Coordination stores to support the same transaction.
-**Work All Night** starts the reviewed list and prepares verified PRs for you to
-merge. The folder shows the run report and the next action for issues that paused.
+**Work All Night** starts the reviewed list using each issue’s configured Merge
+policy. Automatic Merge proceeds after GitHub confirms readiness. Human-first
+Merge waits for approval in the issue. A rejected manual action while a block
+is running reports its error without updating the running flow’s revision. The
+folder shows the run report and the next action for issues that paused.
 See the [folder design](../plans/issue-folder-strategies.md) for the master issue's
 acceptance and detachment rules.
 

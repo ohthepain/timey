@@ -172,28 +172,39 @@ function exportRepair(root, directory, attemptId, file, repairIndex) {
 
 export async function runRetro(service, ctx, create = createDiscussionRuntime) {
   const session = create(undefined, { root: service.root, model: ctx.attempt?.modelSettings?.model });
-  let evidence;
+  const evidence = [];
+  const progress = (text) => ctx.onProgress?.(text + '\n', true);
+  let phase = 'collecting issue history';
   let timer;
   let abort;
   let ended = false;
   try {
     const expired = new Promise((_, reject) => {
       timer = setTimeout(
-        () => reject(Error('Retro timed out. The issue history is still available for a retry.')),
-        90_000
+        () =>
+          reject(
+            Object.assign(Error(`Retro timed out while ${phase}. The issue history is still available for a retry.`), {
+              evidence,
+            })
+          ),
+        5 * 60_000
       );
       abort = () => reject(ctx.signal.reason);
       ctx.signal.addEventListener('abort', abort, { once: true });
     });
     const review = async () => {
+      progress('Collecting issue history for Retro.');
       const history = await retroHistory(service, ctx);
       requireThat(!ended, 'The Retro attempt ended before the history was ready.');
-      evidence = retroEvidence(service.root, history);
+      const { index, reference } = retroEvidence(service.root, history);
+      evidence.push({ ...reference, key: 'retro-input', label: 'Complete retro input evidence' });
+      phase = 'starting the review session';
+      progress('Starting the Retro review session.');
       await session.begin(
         {
           task: 'Run an issue retrospective.',
           issueCheckout: ctx.flow.workspace?.checkout,
-          evidence: evidence.reference,
+          evidence: reference,
         },
         [
           ctx.definition.prompt,
@@ -202,7 +213,11 @@ export async function runRetro(service, ctx, create = createDiscussionRuntime) {
           'Return a concise summary and concrete follow-up issues. An empty recommendation list is valid. Do not claim model descriptions prove actual checks, merge or acceptance.',
         ].join('\n\n')
       );
-      return session.ask(JSON.stringify(evidence.index), [], retroSchema);
+      if (ended) return;
+      ctx.signal.throwIfAborted();
+      phase = 'reviewing issue history';
+      progress('Reviewing the issue history.');
+      return session.ask(JSON.stringify(index), [], retroSchema);
     };
     ctx.signal.throwIfAborted();
     const result = parseRetroResult(await Promise.race([expired, review()]));
@@ -216,7 +231,7 @@ export async function runRetro(service, ctx, create = createDiscussionRuntime) {
       'Retro returned invalid follow-up issues.'
     );
     return {
-      evidence: [{ ...evidence.reference, key: 'retro-input', label: 'Complete retro input evidence' }],
+      evidence,
       summary: redactValue(result.summary),
       recommendations: result.recommendations.map((item) => ({ ...redactValue(item), requestId: randomUUID() })),
     };

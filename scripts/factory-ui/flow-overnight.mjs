@@ -9,8 +9,9 @@ import { folderName } from './flow-store.mjs';
 import { issueHasActiveWork } from './issue-cleanup.mjs';
 import { groupChildren } from './issue-group.mjs';
 import { listStoredIssues } from './issue-report-storage.mjs';
+import { mergedDelivery } from './merged-issue.mjs';
 
-const finishLine = 'Verified, merge-ready pull requests';
+const finishLine = 'Follow each issue’s configured merge policy';
 const protectionOnly = new Set(['close', 'retro', 'cleanup', 'delete-worktree']);
 const inspectionActions = new Set([
   'open-block',
@@ -50,30 +51,38 @@ function recordFailure(row, block, attempt) {
   end(row, 'paused', attempt?.summary || `${block.label} needs attention.`, `Open ${block.label} to continue.`);
 }
 
-function recordMergeAttempt(row, block, attempt) {
-  const mergeConfirmation = attempt?.result?.mergeConfirmation;
+function recordMergedIssue(row, attempt, flow, merged) {
+  Object.assign(row, { pr: merged.pr, url: flow.destination?.url });
+  end(row, 'merged', attempt.summary, 'Open the issue to review the result.');
+}
+
+function recordMergeAttempt(row, block, attempt, flow) {
+  const merged = mergedDelivery(flow);
+  if (merged) return recordMergedIssue(row, attempt, flow, merged);
+  const mergeConfirmation = attempt.result?.mergeConfirmation;
   if (mergeConfirmation) {
     const { pr, url } = mergeConfirmation;
     Object.assign(row, { pr, url });
-    end(row, 'ready', attempt.summary, 'Review the PR and merge when ready.');
+    end(row, 'ready', attempt.summary, 'Open Merge to approve the current candidate.');
     return;
   }
-  recordUnpreparedMerge(row, block, attempt);
+  recordFailure(row, block, attempt);
 }
 
-function recordUnpreparedMerge(row, block, attempt) {
-  if (attempt?.status !== 'completed') return recordFailure(row, block, attempt);
-  end(row, 'paused', attempt.summary, 'Review the current PR and issue status.');
+function savedAttempt(flow, blockId) {
+  const block = flow.blocks.find(({ id }) => id === blockId);
+  return block && latestCurrentAttempt(block);
 }
 
-function recordAttempt(row, block, attempt) {
-  if (block.kind === 'merge') return recordMergeAttempt(row, block, attempt);
-  if (attempt?.status !== 'completed') recordFailure(row, block, attempt);
+function recordAttempt(row, block, flow) {
+  const attempt = savedAttempt(flow, block.id) ?? {};
+  if (block.kind === 'merge') return recordMergeAttempt(row, block, attempt, flow);
+  if (attempt.status !== 'completed') recordFailure(row, block, attempt);
 }
 
 function blockNeedsAttention(row, block) {
   if (!block || protectionOnly.has(block.kind)) {
-    end(row, 'paused', 'The flow reached its end without a merge-ready PR.', 'Review the saved flow and PR.');
+    end(row, 'paused', 'The flow reached its end without a recorded merge.', 'Review the saved flow and PR.');
     return true;
   }
   return attemptNeedsAttention(row, block);
@@ -85,10 +94,6 @@ function attemptNeedsAttention(row, block) {
   if (!previous.input && !unresolvedStatuses.has(previous.status)) return false;
   end(row, 'paused', previous.summary, `Open ${block.label} to continue.`);
   return true;
-}
-
-function verifiedMerge(attempt) {
-  return attempt?.status === 'completed' && attempt.result?.verification;
 }
 
 function dependencyLabel(issue) {
@@ -309,9 +314,7 @@ export class FlowOvernight {
 
   dependencyDelivered(issue) {
     if (issue.closed && ['fixed', 'fixed-by'].includes(issue.closure?.reason)) return true;
-    return this.flows
-      .read(issue)
-      .blocks.some((block) => block.kind === 'merge' && verifiedMerge(latestCurrentAttempt(block)));
+    return Boolean(mergedDelivery(this.flows.read(issue)));
   }
 
   async runRoute(run, row) {
@@ -346,13 +349,7 @@ export class FlowOvernight {
     row.block = block.label;
     this.save(run);
     await this.runBlock(run, issue, flow, block, entries);
-    if (this.canAdvance(run)) recordAttempt(row, block, this.savedAttempt(row.id, entries, block.id));
-  }
-
-  savedAttempt(issueId, catalog, blockId) {
-    const flow = this.flows.read(this.flows.selected(issueId), catalog);
-    const block = flow.blocks.find(({ id }) => id === blockId);
-    return block && latestCurrentAttempt(block);
+    if (this.canAdvance(run)) recordAttempt(row, block, this.flows.read(this.flows.selected(row.id), entries));
   }
 
   async runBlock(run, issue, flow, block, catalog) {
