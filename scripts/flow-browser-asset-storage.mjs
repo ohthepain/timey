@@ -17,12 +17,22 @@ const prefix = 'factory/artifacts/' + projectId + '/sha256/';
 const archived = 'archived-asset-issue';
 
 function fixtures() {
+  const inventory = Array.from({ length: 58 }, (_, index) => {
+    const bytes = index + 10;
+    const name = createHash('sha256').update(Buffer.alloc(bytes, index)).digest('hex');
+    return {
+      name,
+      bytes,
+      mediaType: index ? 'text/plain' : 'image/png',
+      date: new Date(Date.UTC(2026, 8, 1 + ((index * 19) % 58))).toISOString().slice(0, 10),
+      references: index === 1 ? 2 : index === 2 ? 1 : 0,
+    };
+  });
   const objects = new Map(
-    Array.from({ length: 26 }, (_, index) => {
-      const Size = index + 10;
-      const hash = createHash('sha256').update(Buffer.alloc(Size, index)).digest('hex');
-      return [prefix + hash, { Size, ContentType: index ? 'text/plain' : 'image/png' }];
-    })
+    inventory.map(({ name, bytes, mediaType, date }) => [
+      prefix + name,
+      { Size: bytes, ContentType: mediaType, LastModified: new Date(date) },
+    ])
   );
   const first = objects.keys().next().value;
   const image = objects.get(first);
@@ -30,7 +40,7 @@ function fixtures() {
   for (const key of [prefix + 'unrelated/' + first.slice(prefix.length), 'outside-project/' + first])
     objects.set(key, image);
   objects.set(prefix + '0'.repeat(64), { Size: 9, disappearsAfterListing: true });
-  return { objects, first, image, copy: new Map() };
+  return { inventory, objects, first, image, copy: new Map() };
 }
 
 function listObjects(contents, Prefix, ContinuationToken) {
@@ -38,11 +48,7 @@ function listObjects(contents, Prefix, ContinuationToken) {
   const entries = [...contents.entries()].filter(([key]) => key.startsWith(Prefix));
   const offset = Number(ContinuationToken || 0);
   return {
-    Contents: entries.slice(offset, offset + 10).map(([Key, { Size }]) => ({
-      Key,
-      Size,
-      LastModified: new Date('2026-11-25T00:00:00Z'),
-    })),
+    Contents: entries.slice(offset, offset + 10).map(([Key, { Size, LastModified }]) => ({ Key, Size, LastModified })),
     NextContinuationToken: offset + 10 < entries.length ? String(offset + 10) : undefined,
   };
 }
@@ -70,7 +76,12 @@ function mockS3({ objects, copy }) {
       return { Body: { transformToByteArray: async () => contents.get(Key).body } };
     },
     PutObjectCommand(contents, { Key, Body, ContentType }) {
-      contents.set(Key, { Size: Body.length, ContentType, body: Buffer.from(Body) });
+      contents.set(Key, {
+        Size: Body.length,
+        ContentType,
+        body: Buffer.from(Body),
+        LastModified: new Date('2026-11-25'),
+      });
       return {};
     },
   };
@@ -119,7 +130,7 @@ async function seedPartialRecordSource(project, config, ref) {
   });
 }
 
-async function setup({ project, service, output }, key) {
+async function setup({ project, service, output }, { first, inventory }) {
   const remote = join(output, 'asset-storage.git');
   git(project, 'init', '--bare', remote);
   git(project, 'remote', 'add', 'asset-storage', remote);
@@ -154,7 +165,7 @@ async function setup({ project, service, output }, key) {
     })
   );
   const coldInventory = await projectAssetStorage({ root: project });
-  assert.equal(coldInventory.assets.length, 26);
+  assert.equal(coldInventory.assets.length, inventory.length);
   assert.equal(
     existsSync(join(project, partial.directory)),
     false,
@@ -172,9 +183,16 @@ async function setup({ project, service, output }, key) {
   });
   assert.equal((await storesRuntime.readIssue(archived)).location, 'archive');
   const { records } = storesRuntime;
-  const sha256 = key.slice(prefix.length);
+  const sha256 = first.slice(prefix.length);
   const ref = { storeId: 'primary', key: projectId + '/sha256/' + sha256, sha256, bytes: 10, mediaType: 'image/png' };
-  const writes = [{ key: 'evidence/' + archived, value: { files: [{ ref }, { ref }] } }];
+  const files = inventory.slice(1, 3).map(({ name, bytes, mediaType }) => ({
+    ref: { ...ref, sha256: name, key: projectId + '/sha256/' + name, bytes, mediaType },
+  }));
+  const writes = [
+    { key: 'evidence/' + archived, value: { files: [{ ref }, { ref }] } },
+    { key: 'evidence/browsing-first', value: { files } },
+    { key: 'evidence/browsing-second', value: { files: files.slice(0, 1) } },
+  ];
   await seedPartialRecordSource(project, partial, ref);
   const saved = await records.commit({
     operationId: 'inventory-fixture',
@@ -190,29 +208,153 @@ async function setup({ project, service, output }, key) {
   return { sha256, ref };
 }
 
-async function checkControls(dialog, hash) {
-  await dialog.getByText('26 assets · 585 bytes | 0 selected · 0 bytes').waitFor();
+const byteTotal = (assets) => assets.reduce((sum, { bytes }) => sum + bytes, 0);
+const formatBytes = (size) => new Intl.NumberFormat('en-US').format(size) + ' bytes';
+const assetCounts = (assets) => assets.length + (assets.length === 1 ? ' asset' : ' assets');
+
+async function observeTotals(dialog, matches, selected = []) {
+  const label = `${assetCounts(matches)} · ${formatBytes(byteTotal(matches))} | ${selected.length} selected · ${formatBytes(byteTotal(selected))}`;
+  return dialog.getByText(label, { exact: true }).textContent();
+}
+
+async function observeRows(dialog, expected, selected = []) {
+  const rows = dialog.locator('tbody tr');
+  await rows.nth(expected.length - 1).waitFor();
+  const actual = await rows.evaluateAll((elements) =>
+    elements.map((row) => ({
+      name: row.querySelector('code').textContent,
+      mediaType: row.querySelector('small').textContent,
+      bytes: Number(row.cells[3].textContent.replace(/[^0-9]/g, '')),
+      date: row.cells[4].textContent,
+      references: Number(row.cells[5].textContent.split(' ')[0]),
+      checked: row.querySelector('input').checked,
+    }))
+  );
+  const chosenNames = new Set(selected.map(({ name }) => name));
+  assert.deepEqual(
+    actual,
+    expected.map((asset) => ({ ...asset, checked: chosenNames.has(asset.name) }))
+  );
+  return actual;
+}
+
+async function scrollBatch(page, dialog) {
+  const region = dialog.getByRole('region', { name: 'Project assets' });
+  await region.hover();
+  await page.mouse.wheel(0, 20000);
+}
+
+const sortFields = [
+  ['name', (asset) => asset.name],
+  ['size', (asset) => asset.bytes],
+  ['date', (asset) => asset.date],
+  ['references', (asset) => asset.references],
+];
+
+function expectedOrder(matches, value, direction) {
+  const ordered = [...matches].sort((a, b) => a.name.localeCompare(b.name));
+  return ordered.sort((a, b) => {
+    const left = value(a);
+    const right = value(b);
+    const order = left < right ? -1 : Number(left > right);
+    return direction === 'asc' ? order : -order;
+  });
+}
+
+async function checkSorts(page, dialog, matches) {
+  const observed = [];
+  for (const [field, value] of sortFields) {
+    for (const direction of ['asc', 'desc']) {
+      await dialog.getByLabel('Sort by').selectOption(field);
+      await dialog.getByLabel('Sort direction').selectOption(direction);
+      const ordered = expectedOrder(matches, value, direction);
+      const first = await observeRows(dialog, ordered.slice(0, 25));
+      await scrollBatch(page, dialog);
+      const second = await observeRows(dialog, ordered.slice(0, 50));
+      await scrollBatch(page, dialog);
+      const third = await observeRows(dialog, ordered);
+      observed.push({ field, direction, batches: [first, second.slice(first.length), third.slice(second.length)] });
+    }
+  }
+  return observed;
+}
+
+async function checkVisibleSelection(page, dialog, matches) {
+  await dialog.getByLabel('Sort by').selectOption('size');
+  await dialog.getByLabel('Sort direction').selectOption('asc');
+  const ordered = [...matches].sort((a, b) => a.bytes - b.bytes);
+  const selected = ordered.slice(0, 50);
+  await scrollBatch(page, dialog);
+  await observeRows(dialog, selected);
+  const firstRowAboveViewport = await dialog
+    .locator('tbody tr')
+    .first()
+    .evaluate((row) => row.getBoundingClientRect().bottom < row.closest('[role="region"]').getBoundingClientRect().top);
+  assert.equal(firstRowAboveViewport, true);
+  await dialog.getByRole('checkbox', { name: 'Select all (visible)', exact: true }).check();
+  const afterSelect = await observeTotals(dialog, matches, selected);
+  await observeRows(dialog, selected, selected);
+  await scrollBatch(page, dialog);
+  const afterScroll = await observeRows(dialog, ordered, selected);
+  await dialog.getByLabel('Sort direction').selectOption('desc');
+  const afterSort = await observeRows(dialog, [...ordered].reverse().slice(0, 25), selected);
+  assert.equal(await observeTotals(dialog, matches, selected), afterSelect);
+  await dialog.getByLabel('Recorded references').selectOption('zero');
+  const zero = [...ordered].reverse().filter(({ references }) => !references);
+  const afterFilter = await observeTotals(dialog, zero);
+  await observeRows(dialog, zero.slice(0, 25));
+  return { firstRowAboveViewport, afterSelect, afterScroll, afterSort, afterFilter };
+}
+
+async function checkMatchSelection(page, dialog, matches) {
+  await dialog.getByLabel('Recorded references').selectOption('');
+  const ordered = [...matches].sort((a, b) => b.bytes - a.bytes);
+  await observeRows(dialog, ordered.slice(0, 25));
+  await dialog.getByRole('checkbox', { name: 'Select all matches', exact: true }).check();
+  const immediately = await observeTotals(dialog, matches, matches);
+  const firstBatch = await observeRows(dialog, ordered.slice(0, 25), matches);
+  await scrollBatch(page, dialog);
+  await observeRows(dialog, ordered.slice(0, 50), matches);
+  await scrollBatch(page, dialog);
+  const afterScroll = await observeRows(dialog, ordered, matches);
+  await dialog.getByLabel('Sort by').selectOption('name');
+  const afterSort = await observeRows(
+    dialog,
+    expectedOrder(matches, (asset) => asset.name, 'desc').slice(0, 25),
+    matches
+  );
+  assert.equal(await observeTotals(dialog, matches, matches), immediately);
+  await dialog.getByLabel('Store', { exact: false }).selectOption('primary');
+  const afterStoreFilter = await observeTotals(dialog, matches);
+  await dialog.getByRole('checkbox', { name: 'Select all matches', exact: true }).check();
+  await dialog.getByLabel('Asset type').selectOption('image/png');
+  return { immediately, firstBatch, afterScroll, afterSort, afterStoreFilter };
+}
+
+async function checkControls({ page, dialog, inventory }) {
+  const [image, ...matches] = inventory;
+  await observeTotals(dialog, inventory);
   await dialog.getByText('Stores unavailable: Unavailable S3.').waitFor();
   await dialog.getByText('Some retained records could not be read. Counts may be incomplete.').waitFor();
-  await dialog.getByRole('checkbox', { name: 'Select all' }).check();
-  await dialog.getByRole('button', { name: 'Next' }).click();
-  await dialog.getByRole('checkbox', { name: 'Select all' }).check();
-  await dialog.getByText('26 assets · 585 bytes | 26 selected · 585 bytes').waitFor();
-  await dialog.getByLabel('Sort by').selectOption('size');
-  assert.match(await dialog.locator('tbody tr').first().innerText(), /35 bytes/);
   await dialog.getByLabel('Recorded references').selectOption('found');
-  await dialog.getByText('1 asset · 10 bytes | 0 selected · 0 bytes').waitFor();
-  await dialog.getByText('5 recorded', { exact: true }).click();
-  await dialog.getByText('Issue evidence', { exact: true }).waitFor();
-  await dialog.getByText('Published investigation evidence', { exact: true }).waitFor();
-  assert.equal(await dialog.getByText('Restricted reference', { exact: true }).count(), 3);
+  await observeTotals(dialog, [image, ...matches.filter(({ references }) => references)]);
+  const imageRow = dialog.getByRole('row').filter({ hasText: image.name });
+  await imageRow.getByText('5 recorded', { exact: true }).click();
+  await imageRow.getByText('Issue evidence', { exact: true }).waitFor();
+  await imageRow.getByText('Published investigation evidence', { exact: true }).waitFor();
+  assert.equal(await imageRow.getByText('Restricted reference', { exact: true }).count(), 3);
   assert.equal(await dialog.getByText('Confidential chat title').count(), 0);
   assert.equal(await dialog.getByRole('button', { name: 'Delete selected' }).count(), 0);
-  await dialog.getByLabel('Recorded references').selectOption('zero');
-  await dialog.getByText('25 assets · 575 bytes | 0 selected · 0 bytes').waitFor();
-  assert.equal(await dialog.getByText(hash).count(), 0);
   await dialog.getByLabel('Recorded references').selectOption('');
-  await dialog.getByLabel('Asset type').selectOption('image/png');
+  await dialog.getByLabel('Asset type').selectOption('text/plain');
+  await observeTotals(dialog, matches);
+  assert.equal(await dialog.getByRole('button', { name: /^(Previous|Next)$/ }).count(), 0);
+  assert.equal(await dialog.getByText(/Page \d+ of \d+/).count(), 0);
+  const sort = await checkSorts(page, dialog, matches);
+  const visible = await checkVisibleSelection(page, dialog, matches);
+  const allMatches = await checkMatchSelection(page, dialog, matches);
+  allMatches.afterFilter = await observeTotals(dialog, [image]);
+  return { filter: 'text/plain', sort, visible, allMatches };
 }
 
 function retainLocalContent(project, bytes) {
@@ -276,7 +418,7 @@ export async function assetStorageBrowserChecks({ page, screenshot, output }) {
   const fixture = fixtures();
   const mock = mockS3(fixture);
   try {
-    const seeded = await setup({ project, service, output }, fixture.first);
+    const seeded = await setup({ project, service, output }, fixture);
     const publication = retainLocalContent(project, fixture.image.body);
     server.listen(0, '127.0.0.1');
     await once(server, 'listening');
@@ -298,7 +440,7 @@ export async function assetStorageBrowserChecks({ page, screenshot, output }) {
     } finally {
       releaseListing();
     }
-    await checkControls(dialog, seeded.sha256);
+    const browsing = await checkControls({ page, dialog, inventory: fixture.inventory });
     await dialog.getByText('5 recorded', { exact: true }).click();
     await screenshot('asset-storage');
     const read = async () => {
@@ -356,6 +498,7 @@ export async function assetStorageBrowserChecks({ page, screenshot, output }) {
       JSON.stringify(
         {
           provider: 'S3 SDK fixture',
+          browsing,
           observed: {
             before,
             copiedEvidencePath,
@@ -369,9 +512,6 @@ export async function assetStorageBrowserChecks({ page, screenshot, output }) {
             retainedInventoryWhenAnObjectDisappeared: true,
             movedIssueReadOriginalReferenceFromDestination: true,
             retainedPayloadReadsFollowedRecordedLocation: true,
-            listedAssets: 26,
-            filteredBytes: 585,
-            selectedBytes: 585,
           },
           providerCommands: [...new Set(mock.calls)],
         },

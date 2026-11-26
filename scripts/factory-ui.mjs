@@ -1,11 +1,13 @@
 import { monitorProviders } from './factory-ui/provider-runtime.mjs';
 import { initializeProviderConfig } from './factory-ui/provider-config.mjs';
 import { handoffRestart, waitForPrevious, resumeAfterRestart } from './factory-ui/restart-process.mjs';
-import { resolve } from 'node:path';
+import { mkdirSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { FactoryUI } from './factory-ui/service.mjs';
 import { createFactoryServer } from './factory-ui/http.mjs';
 import { recordFactoryFatalErrors } from './factory-ui/heap-crash.mjs';
+import { writeJson } from './factory-ui/common.mjs';
 
 // No chat, worker or integration starts until a reviewed browser action is submitted.
 async function main() {
@@ -21,6 +23,7 @@ async function main() {
     }),
     server = createFactoryServer(service, { restart: () => handoffRestart(service, server) });
   server.listen(port, '127.0.0.1', () => {
+    if (service.reviewMode === 'live') publishDiscovery(service.root, server);
     console.log(
       `Factory UI: http://127.0.0.1:${server.address().port}/\nProject: ${service.root}\nOpening or refreshing the page does not launch work.`
     );
@@ -42,6 +45,16 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   } catch (error) {
     console.error(error.message);
     process.exitCode = 1;
+  }
+}
+
+function publishDiscovery(project, server) {
+  const path = join(project, '.issues/factory-discovery.json');
+  try {
+    mkdirSync(dirname(path), { recursive: true });
+    writeJson(path, { port: server.address().port, instanceId: server.instanceId });
+  } catch (error) {
+    console.warn(`Could not publish Factory discovery: ${error.message}`);
   }
 }
 

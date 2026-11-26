@@ -11,35 +11,50 @@ function unique(values, identity) {
   return [...new Map(values.map((value) => [identity(value), value])).values()];
 }
 
-async function retainAttemptEvidence(stores, owner, attempt) {
+export async function retainFlowEvidence(stores, issueId, flow, operationId, owner) {
   const incoming = await collectEvidence({
     root: stores.root,
-    flow: { evidence: attempt.evidence, result: attempt.result, artifacts: attempt.artifacts },
-    artifacts: await stores.issueArtifacts(owner.issueId),
-    originId: owner.issueId,
+    flow,
+    artifacts: await stores.issueArtifacts(issueId),
+    originId: issueId,
     allowedRoots: [join(stores.root, '.issues')],
   });
-  const key = 'evidence/' + owner.issueId;
+  const key = 'evidence/' + issueId;
   const previous = await stores.coordination.get(key);
-  const retained = previous?.value ?? {};
-  const { files = [], gaps = [] } = retained;
-  const manifest = {
-    ...retained,
+  const manifest = mergeEvidenceManifests(previous?.value, incoming);
+  if (sameEvidenceManifest(previous, manifest)) return incoming.gaps;
+  await publishEvidenceManifest(stores, issueId, owner, operationId, key, previous, manifest);
+  return incoming.gaps;
+}
+
+function sameEvidenceManifest(previous, manifest) {
+  return inputDigest(previous?.value ?? null) === inputDigest(manifest);
+}
+
+async function publishEvidenceManifest(stores, issueId, owner, operationId, key, previous, manifest) {
+  const claim = await evidenceClaim(stores, issueId, owner);
+  await stores.coordination.commit(
+    'evidence-' + operationId + '-' + inputDigest(manifest),
+    [{ key, revision: previous?.revision ?? null }, claim],
+    [{ key, value: manifest }]
+  );
+}
+
+function mergeEvidenceManifests(previous = {}, incoming) {
+  const { files = [], gaps = [] } = previous;
+  return {
+    ...previous,
     ...incoming,
     files: unique([...files, ...incoming.files], (file) => file.path + '\0' + file.sha256),
     gaps: unique([...gaps, ...incoming.gaps], (gap) => JSON.stringify(gap)),
   };
-  if (previous && inputDigest(previous.value) === inputDigest(manifest)) return incoming.gaps;
-  const claim = await stores.coordination.owned(owner);
-  await stores.coordination.commit(
-    'evidence-' + owner.attemptId + '-' + inputDigest(manifest),
-    [
-      { key, revision: previous?.revision ?? null },
-      { key: claim.key, revision: claim.revision },
-    ],
-    [{ key, value: manifest }]
-  );
-  return incoming.gaps;
+}
+
+async function evidenceClaim(stores, issueId, owner) {
+  const key = 'claims/' + issueId;
+  if (owner) return { key, revision: (await stores.coordination.owned(owner)).revision };
+  if (await stores.coordination.get(key)) throw Error('Wait for the owning attempt before attaching proof.');
+  return { key, revision: null };
 }
 
 export async function prepareAttemptCommit(flows, issue, owner, outcome, block) {
@@ -61,7 +76,8 @@ export async function prepareAttemptCommit(flows, issue, owner, outcome, block) 
     });
   }
   await shareCommittedSource(flows, issue, owner, outcome, block);
-  const gaps = await retainAttemptEvidence(stores, owner, outcome);
+  const { evidence, result, artifacts } = outcome;
+  const gaps = await retainFlowEvidence(stores, owner.issueId, { evidence, result, artifacts }, owner.attemptId, owner);
   if (gaps.length) {
     outcome.evidenceGaps = gaps;
     if (block.kind !== 'merge' && outcome.status === 'completed' && outcome.result?.verification?.status === 'passed') {

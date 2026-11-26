@@ -9,7 +9,7 @@ import { conversationTimeline } from './conversation-view.mjs';
 import { readQueue } from './data.mjs';
 import { redactValue } from './activity.mjs';
 import { digest, requireThat } from './common.mjs';
-import { exportRetroThread, repairTurns } from './flow-retro-thread.mjs';
+import { exportRetroThread, groupVerificationTurns, repairTurns } from './flow-retro-thread.mjs';
 import { evidencePath } from './stores/evidence.mjs';
 import { readFileSync } from 'node:fs';
 
@@ -42,6 +42,7 @@ async function retroHistory(service, { issue, flow, signal }) {
       ...timeline.map((event) => event.source?.threadId),
       ...attempts.map((entry) => entry.result?.threadId),
       ...attempts.flatMap((entry) => repairTurns(entry).map(({ threadId }) => threadId)),
+      ...attempts.flatMap((entry) => groupVerificationTurns(entry).map(({ threadId }) => threadId)),
     ].filter(Boolean)
   );
   const threads = await Promise.all([...threadIds].map((id) => readThread(service.codex, id, signal, attempts)));
@@ -62,9 +63,10 @@ function retroEvidence(root, history) {
     ...history,
     repairs: exportRepairEvidence(root, directory, history.attempts),
     mergeRepairs: exportMergeRepairs(root, directory, history.attempts),
+    groupVerifications: exportGroupVerifications(root, directory, history.attempts),
   });
   const sections = Object.fromEntries(
-    ['report', 'timeline', 'attempts', 'threads', 'repairs', 'mergeRepairs'].map((key) => [
+    ['report', 'timeline', 'attempts', 'threads', 'repairs', 'mergeRepairs', 'groupVerifications'].map((key) => [
       key,
       writeDiscussionEvidence(directory, key + '.json', JSON.stringify(safe[key], null, 2)),
     ])
@@ -130,6 +132,29 @@ function exportRepairAttachment(root, directory, file, name) {
   }
 }
 
+function exportGroupVerifications(root, directory, attempts) {
+  const files = attempts.flatMap(({ id, evidence }) =>
+    (evidence ?? []).filter(({ groupVerification }) => groupVerification).map((file) => ({ id, file }))
+  );
+  return files.map(({ id, file }, index) => {
+    const linked = { attemptId: id, ...file.groupVerification };
+    try {
+      const { proof, logs } = JSON.parse(readRepairEvidence(root, file));
+      const prefix = 'group-verification-' + (index + 1);
+      return {
+        ...linked,
+        proof: proof && exportRepairAttachment(root, directory, proof, prefix + '-proof.json'),
+        logs: logs.map((log, position) => ({
+          command: log.command,
+          ...exportRepairAttachment(root, directory, log, `${prefix}-command-${position + 1}.log`),
+        })),
+      };
+    } catch (error) {
+      return { ...linked, unavailable: error.message };
+    }
+  });
+}
+
 function exportRepair(root, directory, attemptId, file, repairIndex) {
   const linked = { attemptId, ...file.repairTurn };
   try {
@@ -184,7 +209,7 @@ export async function runRetro(service, ctx, create = createDiscussionRuntime) {
         [
           ctx.definition.prompt,
           'Use the issue report, timeline, attempts, and linked Codex turns as evidence. Preserve order within each thread. Use recorded repair attempt and turn IDs to link repairs before using timestamps for other events. State missing history and unclear ordering.',
-          'The evidence index links to the report, timeline, attempts, linked Codex turns, repair command logs, and merge repair revisions, CI runs and failure attachments. Search and read relevant ranges across the history, including earlier attempts. Inspect relevant project files and recent Git work when useful. Cite evidence paths/revisions, distinguish observations from claims, and state which evidence was unavailable or not inspected.',
+          'The evidence index links to the report, timeline, attempts, linked Codex turns, repair command logs, merge repair revisions, CI runs and failure attachments, and final group verification with its candidate and command logs. Search and read relevant ranges across the history, including earlier attempts. Inspect relevant project files and recent Git work when useful. Cite evidence paths/revisions, distinguish observations from claims, and state which evidence was unavailable or not inspected.',
           'Return a concise summary and concrete follow-up issues. An empty recommendation list is valid. Do not claim model descriptions prove actual checks, merge or acceptance.',
         ].join('\n\n')
       );

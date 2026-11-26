@@ -83,6 +83,7 @@ import {
   reconcileInvestigationFindings,
 } from './investigation-execution.mjs';
 import { flowHumanInput } from './flow-human-input.mjs';
+import { liveProofSummary, saveLiveProof } from './flow-live-proof.mjs';
 import { FolderOperations } from './folder-operations.mjs';
 import {
   executionBlockSkill,
@@ -224,6 +225,25 @@ export async function prepareFlowActionStores(service, input) {
   });
   if (stores && fresh) for (const id of issueIds) await reconcileRecoveredProgress(service, stores, id);
   return stores;
+}
+
+function hydrateMergeLiveProof(service, issue, flow, block) {
+  if (block.kind === 'merge' && flow.liveProof?.attachments.length) return hydrateProjectEvidence(service, issue.id);
+}
+
+function retainExecutionFailure(current, error) {
+  const { humanInput, liveProofRequirements, input } = error;
+  if (humanInput || liveProofRequirements)
+    current.result = {
+      ...current.result,
+      ...conditionalField('humanInput', humanInput),
+      ...conditionalField('liveProofRequirements', liveProofRequirements),
+    };
+  if (input) current.input = input;
+}
+
+function conditionalField(key, value) {
+  return value ? { [key]: value } : {};
 }
 
 const unresolvedAttempt = (attempt) =>
@@ -838,6 +858,7 @@ class IssueFlows {
       flow,
     });
     this.populateBlockDetails(flow, issue, catalog);
+    const proofWorkspace = flowWorkspace(this.service, flow);
     const conversation = flowChatProgress(flow, conversationMessages(this.service.root, id).slice(-100));
     return {
       ...data,
@@ -860,6 +881,9 @@ class IssueFlows {
         closure: issue.closure,
       },
       flow,
+      ...(issue.issue_group && {
+        liveProof: liveProofSummary(issue, flow, environment.worktreeExists && proofWorkspace),
+      }),
       blockModels: issueBlockModels(this.service, issue, savedFlow, issueSettings, resolveFolder),
       lastBlockingError: lastBlockingError(savedFlow),
       humanInput: availableHumanInput(issue, flow, agentApprovals[0]),
@@ -1690,6 +1714,8 @@ class IssueFlows {
     }
     if (!['comment', 'open-block'].includes(input.action))
       requireThat(input.revision === flow.revision, 'This flow changed. Refresh before saving this edit.');
+    if (['live-proof-authorize', 'live-proof-attach'].includes(input.action))
+      return this.recordLiveProof(issue, flow, input);
     if (input.action === 'edit-request') return this.editRequest(issue, flow, input, catalog);
     if (input.action === 'folder' || input.action === 'folder-lock') return await this.editFolder(issue, flow, input);
     if (closureActions.has(input.action)) return await this.dispatchClosure(input, issue, flow, catalog);
@@ -1728,24 +1754,42 @@ class IssueFlows {
     if (input.action === 'destination' || input.action === 'accept-pr-base')
       return this.setDestination(issue, flow, input);
     if (input.action === 'issue-settings') return await this.editIssueSettings(issue, flow, input);
-    if (input.action === 'rename-issue') {
-      const title = typeof input.title === 'string' ? input.title.trim() : '';
-      requireThat(
-        title && title.length <= 256 && !/[\r\n\x00-\x1f]/.test(title),
-        'Enter an issue title of up to 256 characters on one line.'
-      );
-      requireThat(
-        !this.active.has(issue.id) || this.active.get(issue.id).blockId === requestBlock(flow).id,
-        'Wait for the running block before renaming the issue.'
-      );
-      requireThat(input.previousTitle === issue.title, 'The issue title changed. Refresh before renaming.');
-      if (title !== issue.title) {
-        if (!existsSync(this.store.path(issue.id))) await this.store.save(flow, flow.revision);
-        await renameStoredIssue(this.service.root, issue, title);
-      }
-      return this.view(issue.id);
-    }
+    if (input.action === 'rename-issue') return this.renameIssue(issue, flow, input);
     return this.dispatchBlockAction(issue, flow, input, catalog);
+  }
+  async recordLiveProof(issue, flow, input) {
+    requireThat(
+      !issue.closed && !issueHasActiveWork(this.service, issue.id),
+      'Choose an open issue with no running work.'
+    );
+    this.groups.requireChildren(issue);
+    await hydrateProjectEvidence(this.service, issue.id);
+    return saveLiveProof(
+      this.service,
+      issue,
+      flow,
+      flowWorkspace(this.service, flow),
+      input.action,
+      input.proof,
+      this.store
+    );
+  }
+  async renameIssue(issue, flow, input) {
+    const title = typeof input.title === 'string' ? input.title.trim() : '';
+    requireThat(
+      title && title.length <= 256 && !/[\r\n\x00-\x1f]/.test(title),
+      'Enter an issue title of up to 256 characters on one line.'
+    );
+    requireThat(
+      !this.active.has(issue.id) || this.active.get(issue.id).blockId === requestBlock(flow).id,
+      'Wait for the running block before renaming the issue.'
+    );
+    requireThat(input.previousTitle === issue.title, 'The issue title changed. Refresh before renaming.');
+    if (title !== issue.title) {
+      if (!existsSync(this.store.path(issue.id))) await this.store.save(flow, flow.revision);
+      await renameStoredIssue(this.service.root, issue, title);
+    }
+    return this.view(issue.id);
   }
   async abortMerge(issue, flow, input) {
     this.branchRepairs.requireIdle(issue);
@@ -2814,6 +2858,7 @@ class IssueFlows {
             detach: (request) => this.groups.detachFromRun(issue.id, attempt.id, request),
           }
       );
+      await hydrateMergeLiveProof(this.service, issue, flow, block);
       const result =
         block.kind === 'request'
           ? await this.clarify(
@@ -2941,8 +2986,7 @@ class IssueFlows {
         current.endedAt = new Date().toISOString();
         if (error.partialText) current.output += error.partialText;
         current.evidence = error.evidence || current.evidence;
-        if (error.humanInput) current.result = { ...current.result, humanInput: error.humanInput };
-        if (error.input) current.input = error.input;
+        retainExecutionFailure(current, error);
         outcome = current;
       });
     } finally {
