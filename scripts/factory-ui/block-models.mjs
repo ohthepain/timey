@@ -70,6 +70,7 @@ export function blockModelView(service, issue, flow, block, observed) {
     selected: block.model || '',
     defaultModel: defaults.model,
     reason,
+    reasonInTooltip: block.kind === 'merge',
     availability,
     defaultAvailability: modelAvailability(service.root, defaults.model),
     choices: kind === 'select' ? settings.models : [],

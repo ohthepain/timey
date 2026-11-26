@@ -26,7 +26,7 @@ function checkFlowBrowserTests(args, reject, isSelector) {
     args,
     (arg) => arg === flowBrowserOrderModifier || flowBrowserCiParts.has(arg) || isSelector(arg),
     reject,
-    'Use a recognized Flow browser scenario flag, --ci-part=1, --ci-part=2, or --reverse-fixture-scenarios.'
+    'Use a recognized Flow browser scenario flag, a recognized --ci-part option, or --reverse-fixture-scenarios.'
   );
   const parts = args.filter((arg) => flowBrowserCiParts.has(arg));
   if (parts.length > 1) reject(args.lastIndexOf(parts[1]) + 2, 'Select at most one Flow browser CI part.');

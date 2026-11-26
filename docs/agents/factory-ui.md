@@ -117,6 +117,10 @@ folder moves, enable **Prevent moves into folders** on its Request block.
 
 **Group into one** previews a master issue with the selected requests. Creating
 it leaves the original issues linked and assigns their work to the master.
+Drag an issue from the sidebar, a folder view, or a master’s sub-issue list
+onto a master to attach or transfer it. Drop a sub-issue onto a sidebar folder
+to detach it and move it there. Transfers require both masters to be idle and
+the Issue and Coordination stores to support the same transaction.
 **Work All Night** starts the reviewed list and prepares verified PRs for you to
 merge. The folder shows the run report and the next action for issues that paused.
 See the [folder design](../plans/issue-folder-strategies.md) for the master issue's
@@ -1179,6 +1183,16 @@ the project; normal checkout setup moves it into the managed issue workspace.
 `context.json` supplies the same complete timeline to skill-driven work and history
 queries. A bounded recent context accompanies each turn, with the full history
 linked for older details. Sent prompts and responses survive navigation and restart.
+
+Opening, reopening or switching conversations starts at the latest retained
+message. A conversation that stays open follows new messages at the bottom and
+preserves the reader’s position when they scroll up.
+
+Project Discuss displays contextual prompts above its composer when the current
+conversation offers them. Clicking a prompt sends its full wording. A local
+note conversation offers actions based on the saved note and its neighbors.
+The combined action keeps the source note until issue creation succeeds, then
+deletes it and opens the next note’s conversation.
 
 The composer offers discussion/history, work in the issue checkout, revision
 feedback and the existing reply-and-continue action. Discussion works before a

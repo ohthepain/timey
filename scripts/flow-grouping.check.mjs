@@ -822,3 +822,73 @@ test('Shared coordination saves a detach under its claim and releases the claim 
   const replay = await flows.action(input);
   assert.equal(replay.flow.revision, detached.flow.revision);
 });
+
+test('Grouped issue moves publish both master reports in one shared transaction', async (t) => {
+  const { newFlows, service } = fixture(t);
+  const stores = await ensureProjectStores(service, { fresh: true });
+  t.after(() => closeProjectStores(service));
+  const flows = newFlows();
+  const first = await group(flows);
+  const source = await flows.action(first.create);
+  const folder = source.flow.folder;
+  const destinationIds = [];
+  for (const description of ['Retain the Save report.', 'Check the Save workflow.']) {
+    const { issue } = await flows.action({
+      action: 'capture',
+      requestId: randomUUID(),
+      description,
+      folder,
+      storageProfile: 'files',
+    });
+    destinationIds.push(issue.id);
+  }
+  const preview = await flows.action({ action: 'folder-group-preview', folder, issueIds: destinationIds });
+  const destination = await flows.action({
+    action: 'folder-group-create',
+    previewId: preview.id,
+    requestId: randomUUID(),
+    wording: preview.wording,
+  });
+  const child = first.issueIds[0];
+  const move = {
+    action: 'move-grouped-issue',
+    issueId: source.issue.id,
+    revision: source.flow.revision,
+    subIssueId: child,
+    destinationMaster: destination.issue.id,
+    destinationRevision: destination.flow.revision,
+  };
+  const expected = async () => Promise.all([source.issue.id, destination.issue.id].map((id) => stores.readIssue(id)));
+  const before = await expected();
+  const owner = {
+    issueId: destination.issue.id,
+    attemptId: randomUUID(),
+    token: randomUUID(),
+    runnerId: 'peer',
+    acquiredAt: new Date().toISOString(),
+  };
+  await stores.coordination.acquire(owner, randomUUID());
+  await assert.rejects(flows.action(move), /owns this issue/);
+  const refused = await expected();
+  assert.deepEqual(
+    refused.map(({ revision }) => revision),
+    before.map(({ revision }) => revision)
+  );
+  await stores.release(owner, randomUUID());
+  await flows.action(move);
+  assert.equal(flows.groups.masterId(child), destination.issue.id);
+  const after = await expected();
+  for (const [index, saved] of after.entries()) assert.notEqual(saved.revision, before[index].revision);
+  assert.match(after[0].report, /detachedAt:/);
+  assert.ok(after[1].report.includes(child));
+  await flows.action({ action: 'create-folder', name: 'Moved independently' });
+  await flows.action({
+    action: 'move-grouped-issue',
+    issueId: destination.issue.id,
+    revision: after[1].flow.revision,
+    subIssueId: child,
+    folder: 'Moved independently',
+  });
+  assert.equal(flows.groups.masterId(child), null);
+  assert.equal((await flows.view(child)).flow.folder, 'Moved independently');
+});

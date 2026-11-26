@@ -613,3 +613,10 @@
 .discuss-new-tab:hover {
   background: #3a3c3c;
 }
+
+[data-discuss-recommendations]:not(:empty) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-bottom: 6px;
+}

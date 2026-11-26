@@ -9,7 +9,7 @@
     disclosure.setAttribute('aria-expanded', String(!collapsed));
     disclosure.setAttribute('aria-label', (collapsed ? 'Expand ' : 'Collapse ') + 'Local notes');
   }
-  setCollapsed(window.timeyView.read('local-notes-collapsed', false));
+  setCollapsed(window.timeyView.read('local-notes-collapsed', true));
   disclosure.addEventListener('click', () => {
     setCollapsed(!body.hidden);
     window.timeyView.write('local-notes-collapsed', body.hidden);

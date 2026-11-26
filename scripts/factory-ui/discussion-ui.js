@@ -72,7 +72,10 @@ const discussionUI = (() => {
       const open = toggle.getAttribute('aria-expanded') !== 'true';
       toggle.setAttribute('aria-expanded', String(open));
       body.hidden = !open;
-      if (open) draft.focus();
+      if (open) {
+        draft.focus();
+        log.scrollTop = log.scrollHeight;
+      }
     });
     toggle.className = 'discussion-toggle';
     toggle.setAttribute('aria-label', 'Review decisions');
@@ -302,6 +305,11 @@ const discussionUI = (() => {
       entry.dataset.aiSource = text;
       entry.dataset.aiKey = 'discussion-' + issueId + '-' + log.children.length;
     }
+    function appendMessage(entry) {
+      const following = log.scrollHeight - log.clientHeight - log.scrollTop < 2;
+      log.append(entry);
+      if (following) log.scrollTop = log.scrollHeight;
+    }
     function add(who, text, skills = []) {
       empty.remove();
       const entry = document.createElement('p');
@@ -317,8 +325,7 @@ const discussionUI = (() => {
           entry.append(document.createTextNode(' '), token);
         }
       }
-      log.append(entry);
-      log.scrollTop = log.scrollHeight;
+      appendMessage(entry);
       Promise.resolve(refreshPage?.()).catch((error) => {
         status.textContent = `Conversation refresh failed: ${error.message}`;
       });

@@ -848,7 +848,7 @@ import { reorderedBlocks } from './flow-order.mjs';
     ];
     const { issueGroups, issueBadges } = window.issueGroupUI;
     const row = (issue, subIssue = false) =>
-      `<button class="issue-row${issue.id === state.issueId ? ' selected' : ''}" data-issue="${escape(issue.id)}"${subIssue ? ' data-sub-issue' : ''} draggable="${issue.status !== 'closed' && !issue.readOnly && !issue.activeBlock}" title="${escape(issue.title)}"${issue.id === state.issueId ? ' aria-current="page"' : ''}>${issue.activeBlock ? activeSpinner(issue.activeBlock) : statusIcon(issue.humanInput ? 'needs-input' : issue.status)}<span class="issue-name"><span class="issue-title-text">${issue.issueNumber ? `#${escape(issue.issueNumber)} - ` : ''}${escape(issue.title)}</span> ${issueBadges(issue, true)}${issue.humanInput ? '<span class="issue-input-label">Needs your input</span>' : ''}</span></button>`;
+      `<button class="issue-row${issue.id === state.issueId ? ' selected' : ''}" data-issue="${escape(issue.id)}"${issue.isMaster ? ` data-issue-master-drop="${escape(issue.id)}"` : ''}${subIssue ? ' data-sub-issue' : ''} draggable="${issue.status !== 'closed' && !issue.readOnly && !issue.activeBlock}" title="${escape(issue.title)}"${issue.id === state.issueId ? ' aria-current="page"' : ''}>${issue.activeBlock ? activeSpinner(issue.activeBlock) : statusIcon(issue.humanInput ? 'needs-input' : issue.status)}<span class="issue-name"><span class="issue-title-text">${issue.issueNumber ? `#${escape(issue.issueNumber)} - ` : ''}${escape(issue.title)}</span> ${issueBadges(issue, true)}${issue.humanInput ? '<span class="issue-input-label">Needs your input</span>' : ''}</span></button>`;
     const rows = (items) =>
       issueGroups(items, state.attentionFirst)
         .map(({ issue, children }) => row(issue) + children.map((child) => row(child, true)).join(''))
@@ -902,25 +902,69 @@ import { reorderedBlocks } from './flow-order.mjs';
     );
   }
 
-  function canMoveSidebarIssue(id, folder) {
+  function canMoveSidebarIssue(id, target) {
     const issue = state.index.issues.find((row) => row.id === id);
-    if (state.pending || !issue || issue.status === 'closed' || issue.activeBlock) return false;
-    if (folder === undefined) return true;
-    return Boolean(folder) && issue.folder !== folder && !issue.folderLocked;
+    if (state.pending || !issue || issue.status === 'closed' || issue.activeBlock || issue.readOnly) return false;
+    if (!target) return true;
+    if (target.issueMasterDrop) {
+      const master = state.index.issues.find((row) => row.id === target.issueMasterDrop);
+      return (
+        master?.isMaster &&
+        master.id !== id &&
+        master.id !== issue.masterId &&
+        !master.readOnly &&
+        !master.activeBlock &&
+        !issue.isMaster &&
+        master.folder === issue.folder
+      );
+    }
+    const folder = target.issueFolderDrop;
+    return (
+      Boolean(folder) && (issue.masterId || issue.folder !== folder) && (!issue.folderLocked || issue.folder === folder)
+    );
   }
 
-  async function moveSidebarIssue(issueId, folder) {
+  async function moveSidebarIssue(issueId, target) {
+    if (!canMoveSidebarIssue(issueId, target)) return;
     const issue = state.index.issues.find((row) => row.id === issueId);
-    if (!canMoveSidebarIssue(issueId, folder)) return;
-    const result = await action('folder', { issueId, revision: issue.flowRevision, folder }, { global: true });
+    const master = state.index.issues.find((row) => row.id === target.issueMasterDrop);
+    const source = state.index.issues.find((row) => row.id === issue.masterId);
+    const folder = target.issueFolderDrop;
+    let result;
+    if (source) {
+      result = await action(
+        'move-grouped-issue',
+        {
+          issueId: source.id,
+          subIssueId: issue.id,
+          revision: source.flowRevision,
+          folder,
+          destinationMaster: master?.id,
+          destinationRevision: master?.flowRevision,
+        },
+        { global: true }
+      );
+    } else if (master) {
+      result = await action(
+        'folder-attach',
+        {
+          issueId: master.id,
+          subIssueId: issue.id,
+          revision: master.flowRevision,
+        },
+        { global: true }
+      );
+    } else {
+      result = await action('folder', { issueId, revision: issue.flowRevision, folder }, { global: true });
+    }
     if (!result) return;
     if (folder) sidebarCollapsedFolders().delete(folder);
-    applyView(result);
-    toast(`Moved issue to ${folder}.`);
+    await load(true);
+    toast(master ? `Attached issue to ${master.title}.` : `Moved issue to ${folder}.`);
   }
 
   window.createIssueFolderDrag({
-    list: $('issue-list'),
+    list: $('app'),
     canMove: canMoveSidebarIssue,
     move: moveSidebarIssue,
     dragging: (id) => {
@@ -979,7 +1023,7 @@ import { reorderedBlocks } from './flow-order.mjs';
   }
 
   function issueLink(issue) {
-    return `<a href="?issue=${encodeURIComponent(issue.id)}" data-open-folder-issue="${escape(issue.id)}">${escape(issueLabel(issue))}</a>`;
+    return `<a href="?issue=${encodeURIComponent(issue.id)}" data-open-folder-issue="${escape(issue.id)}" data-issue="${escape(issue.id)}" draggable="true">${escape(issueLabel(issue))}</a>`;
   }
 
   const folderMarkup = new WeakMap();
@@ -1344,6 +1388,9 @@ import { reorderedBlocks } from './flow-order.mjs';
   function renderIssueGrouping() {
     const panel = $('issue-grouping');
     const grouping = state.view?.grouping;
+    const masterDrop = document.querySelector('.flow-main');
+    if (state.view?.issue?.isMaster) masterDrop.dataset.issueMasterDrop = state.view.issue.id;
+    else delete masterDrop.dataset.issueMasterDrop;
     renderIssueAttachment(grouping);
     const { master, children, reasoning, formerMasters, detachedChildren, canReattach } = grouping || {};
     const masterRow = $('issue-master');
@@ -2305,8 +2352,11 @@ import { reorderedBlocks } from './flow-order.mjs';
     return { investigationRunId: investigationRunSelection.get(investigationRunKey(block)) || undefined };
   }
 
+  const mergeHiddenDetails = ['title', 'type', 'request.type', 'goal', 'requestedProof', 'knownFacts', 'delivery'];
+
   function declaredDetails(block, editable = false) {
-    const fields = (block.details || []).filter((detail) => !detail.derived);
+    const hidden = block.kind === 'merge' ? mergeHiddenDetails : [];
+    const fields = (block.details || []).filter((detail) => !detail.derived && !hidden.includes(detail.key));
     if (!fields.length) return '';
     const request = fields.find((detail) => detail.requestId)?.requestId;
     return `<section class="detail-section"><div class="section-label">Inputs${request ? `<button type="button" class="small-button" data-block="${escape(request)}">Open Request</button>` : ''}</div>${fields
@@ -2346,7 +2396,10 @@ import { reorderedBlocks } from './flow-order.mjs';
     const blocks = (state.view.flow.retiredBlocks || []).filter((block) => block.attempts.length);
     if (!blocks.length) return '';
     return `<section class="detail-section"><details><summary>Blocks from earlier routes</summary>${blocks
-      .map((block) => `<h3>${escape(block.label)}</h3>${block.attempts.map(attemptCard).join('')}`)
+      .map(
+        (block) =>
+          `<h3>${escape(block.label)}</h3>${block.attempts.map((attempt, index) => attemptCard(attempt, index)).join('')}`
+      )
       .join('')}</details></section>`;
   }
 
@@ -2364,7 +2417,18 @@ import { reorderedBlocks } from './flow-order.mjs';
     const open = state.view.issue.status !== 'closed';
     const disabled = open ? '' : ' disabled';
     const settings = `<label><input type="checkbox" id="retro-setting"${values.runRetro ? ' checked' : ''}${disabled}> Run a retro</label>${state.view.issue.state === 'needs-approval' ? '' : `<label><input type="checkbox" id="auto-close-setting"${flow.autoClose ? ' checked' : ''}${disabled}> Close as Fixed and remove the worktree after Factory Merge</label>`}`;
-    return `<section class="detail-section"><div class="section-label">Inputs</div><form id="request-form">${formField('wording', 'Your words', values.wording, 'The original request.', 4)}${saveRow()}</form>${settings}</section>${requestMergeBranch()}${outputsSection(block)}${definition?.prompt ? `<details class="detail-section system-prompt" data-preserve="system-prompt"><summary>System prompt</summary><div class="prompt-preview">${escape(definition.prompt)}</div></details>` : ''}${last ? `<section class="detail-section">${attemptCard(last, block.attempts.length - 1)}${block.attempts.length > 1 ? `<details class="attempt-history" data-preserve="attempt-history"><summary>Earlier requests</summary>${block.attempts.slice(0, -1).map(attemptCard).join('')}</details>` : ''}</section>` : ''}${retiredHistory()}<section class="detail-section"><div class="section-label">Organization</div><form id="issue-folder-form"><label class="field">Folder<select id="issue-folder" name="folder" data-field="folder" required>${folders.map((folder) => `<option value="${escape(folder)}"${(values.folder ?? flow.folder) === folder ? ' selected' : ''}${flow.folderLocked && folder !== flow.folder ? ' disabled' : ''}>${escape(folder)}</option>`).join('')}</select></label><button type="submit" class="small-button" data-action="folder">Move issue</button></form><label class="folder-check"><input id="issue-folder-locked" type="checkbox"${flow.folderLocked ? ' checked' : ''} /> Prevent moves into folders</label></section>`;
+    return `<section class="detail-section"><div class="section-label">Inputs</div><form id="request-form">${formField('wording', 'Your words', values.wording, 'The original request.', 4)}${saveRow()}</form>${settings}</section>${requestMergeBranch()}${outputsSection(block)}${definition?.prompt ? `<details class="detail-section system-prompt" data-preserve="system-prompt"><summary>System prompt</summary><div class="prompt-preview">${escape(definition.prompt)}</div></details>` : ''}${
+      last
+        ? `<section class="detail-section">${attemptCard(last, block.attempts.length - 1)}${
+            block.attempts.length > 1
+              ? `<details class="attempt-history" data-preserve="attempt-history"><summary>Earlier requests</summary>${block.attempts
+                  .slice(0, -1)
+                  .map((attempt, index) => attemptCard(attempt, index))
+                  .join('')}</details>`
+              : ''
+          }</section>`
+        : ''
+    }${retiredHistory()}<section class="detail-section"><div class="section-label">Organization</div><form id="issue-folder-form"><label class="field">Folder<select id="issue-folder" name="folder" data-field="folder" required>${folders.map((folder) => `<option value="${escape(folder)}"${(values.folder ?? flow.folder) === folder ? ' selected' : ''}${flow.folderLocked && folder !== flow.folder ? ' disabled' : ''}>${escape(folder)}</option>`).join('')}</select></label><button type="submit" class="small-button" data-action="folder">Move issue</button></form><label class="folder-check"><input id="issue-folder-locked" type="checkbox"${flow.folderLocked ? ' checked' : ''} /> Prevent moves into folders</label></section>`;
   }
 
   function requestMergeBranch() {
@@ -2406,7 +2470,7 @@ import { reorderedBlocks } from './flow-order.mjs';
       .join('');
   }
 
-  function attemptCard(attempt, index) {
+  function attemptCard(attempt, index, merge = false) {
     const summary =
       attempt.summary ||
       (runningStatuses.has(attempt.status)
@@ -2415,7 +2479,7 @@ import { reorderedBlocks } from './flow-order.mjs';
     let result = '';
     if (attempt.result)
       result = typeof attempt.result === 'string' ? attempt.result : JSON.stringify(attempt.result, null, 2);
-    return `<div class="block-progress" data-attempt-id="${escape(attempt.id)}"><div class="progress-heading"><span>${statusIcon(attempt.status)} ${escape(statusText(attempt.status, attempt))}${attempt.invalidatedAt ? ' · Invalidated' : ''}</span><span class="progress-meta">Attempt ${index + 1}</span></div><p class="detail-copy" data-ai-text data-ai-key="summary-${escape(attempt.id)}" data-ai-source="${escape(summary)}">${escape(summary)}</p>${attempt.result?.pr ? prLink({ number: attempt.result.pr, url: attempt.result.url }) : ''}<p class="progress-meta" style="margin-top:9px">${escape(date(attempt.startedAt))}${attempt.modelSettings?.model ? ` · ${attempt.modelSettings.conditional ? 'Repair model (if needed)' : 'Model'}: ${escape(attempt.modelSettings.model)}` : ''}${attempt.endedAt ? ` · ended ${escape(date(attempt.endedAt))}` : ''}</p>${attempt.output ? `<pre class="attempt-output" data-ai-text data-ai-key="live-${escape(attempt.id)}" data-ai-source="${escape(attempt.output)}">${escape(attempt.output)}</pre>` : ''}${result && result !== summary ? `<pre class="attempt-output" data-ai-text data-ai-key="result-${escape(attempt.id)}" data-ai-source="${escape(result)}">${escape(result)}</pre>` : ''}${attempt.details?.length ? `<details data-preserve="details-${escape(attempt.id)}"><summary>Details used</summary><pre class="attempt-output">${escape(JSON.stringify(attempt.details, null, 2))}</pre></details>` : ''}${attempt.systemPrompt ? `<details data-preserve="prompt-${escape(attempt.id)}"><summary>System prompt used</summary><pre class="attempt-output">${escape(attempt.systemPrompt)}</pre></details>` : ''}${evidenceLinks(attempt)}</div>`;
+    return `<div class="block-progress" data-attempt-id="${escape(attempt.id)}"><div class="progress-heading"><span>${statusIcon(attempt.status)} ${escape(statusText(attempt.status, attempt))}${attempt.invalidatedAt ? ' · Invalidated' : ''}</span><span class="progress-meta">Attempt ${index + 1}</span></div><p class="detail-copy" data-ai-text data-ai-key="summary-${escape(attempt.id)}" data-ai-source="${escape(summary)}">${escape(summary)}</p>${attempt.result?.pr ? prLink({ number: attempt.result.pr, url: attempt.result.url }) : ''}<p class="progress-meta" style="margin-top:9px">${escape(date(attempt.startedAt))}${attempt.modelSettings?.model ? ` · ${attempt.modelSettings.conditional ? 'Repair model (if needed)' : 'Model'}: ${escape(attempt.modelSettings.model)}` : ''}${attempt.endedAt ? ` · ended ${escape(date(attempt.endedAt))}` : ''}</p>${attempt.output ? `<pre class="attempt-output" data-ai-text data-ai-key="live-${escape(attempt.id)}" data-ai-source="${escape(attempt.output)}">${escape(attempt.output)}</pre>` : ''}${result && result !== summary ? `<pre class="attempt-output" data-ai-text data-ai-key="result-${escape(attempt.id)}" data-ai-source="${escape(result)}">${escape(result)}</pre>` : ''}${!merge && attempt.details?.length ? `<details data-preserve="details-${escape(attempt.id)}"><summary>Details used</summary><pre class="attempt-output">${escape(JSON.stringify(attempt.details, null, 2))}</pre></details>` : ''}${attempt.systemPrompt ? `<details data-preserve="prompt-${escape(attempt.id)}"><summary>System prompt used</summary><pre class="attempt-output">${escape(attempt.systemPrompt)}</pre></details>` : ''}${merge ? '' : evidenceLinks(attempt)}</div>`;
   }
 
   function comments(block) {
@@ -2454,26 +2518,7 @@ import { reorderedBlocks } from './flow-order.mjs';
       else element.removeAttribute('data-ui-source');
       element.querySelector('.block-description').textContent = blockDescription(block, blockStyle(key));
     }
-    const block = activeBlock();
-    const entry = blockContent(block);
-    const prose = $('inspector-body').querySelector('.block-content');
-    if (prose && !entry) prose.remove();
-    else if (prose && entry && prose.innerHTML !== entry.inspectorHtml) {
-      prose.dataset.uiSource = entry.id;
-      const scope = JSON.stringify([state.issueId, block.id, 'content']);
-      view.track(prose, scope);
-      view.render(prose, entry.inspectorHtml, scope);
-    } else if (state.tab === 'details' && block && !block.readOnly && !prose && entry) {
-      renderInspector();
-    }
   });
-
-  function contentSection(block) {
-    const entry = blockContent(block);
-    return entry
-      ? `<section class="detail-section block-content" data-ui-source="${escape(entry.id)}">${entry.inspectorHtml}</section>`
-      : '';
-  }
 
   function cleanupResults(attempt) {
     return (attempt?.result?.results || [])
@@ -2515,22 +2560,27 @@ import { reorderedBlocks } from './flow-order.mjs';
     return `<section class="detail-section" data-agent-approval="${escape(request.requestId)}" data-attempt-id="${escape(request.attemptId)}"><p>Agent input required</p>${content}</section>`;
   }
   function blockProgress(block, last, attempts, published) {
-    if (last) return attemptCard(last, attempts.length - 1);
+    if (last) return attemptCard(last, attempts.length - 1, block.kind === 'merge');
     if (block.historicallyCompleted) return historicalOutputProgress(block);
     return `<p class="inline-empty">${published ? `PR #${escape(published)} has been published. Run Merge to check it.` : 'This block has not run yet. Review its inputs before starting.'}</p>`;
+  }
+
+  function mergeProofSummary(block, attempt) {
+    if (block.kind !== 'merge') return '';
+    const count = (state.view.artifacts || []).filter(
+      (artifact) => artifact.blockId === block.id && artifact.attemptId === attempt?.id
+    ).length;
+    return `<section class="detail-section" aria-label="Merge proof"><p>${count} proof ${count === 1 ? 'artifact' : 'artifacts'} from the latest run. <a href="#tab-artifacts" data-open-merge-artifacts>Open Artifacts</a></p></section>`;
   }
 
   function blockDetails(block) {
     if (state.view.flow.request)
       return '<section class="detail-section"><p class="detail-copy">Restart the Factory server to edit this flow. Your saved issue is available.</p></section>';
     if (block.readOnly)
-      return `<section class="detail-section"><p class="detail-copy">This operation started through the existing issue controls. Inspect or stop it there before starting a new flow block.</p><a href="/classic?issue=${encodeURIComponent(state.issueId)}">Open its original controls</a>${block.attempts.map(attemptCard).join('')}</section>`;
+      return `<section class="detail-section"><p class="detail-copy">This operation started through the existing issue controls. Inspect or stop it there before starting a new flow block.</p><a href="/classic?issue=${encodeURIComponent(state.issueId)}">Open its original controls</a>${block.attempts.map((attempt, index) => attemptCard(attempt, index)).join('')}</section>`;
     if (block.kind === 'request')
       return (
-        window.factoryBlockModel(state.view.blockModels?.[block.id]) +
-        definitionActions(block) +
-        requestDetails(block) +
-        contentSection(block)
+        window.factoryBlockModel(state.view.blockModels?.[block.id]) + definitionActions(block) + requestDetails(block)
       );
     const changes = draft();
     const values = { ...block, ...changes };
@@ -2542,20 +2592,27 @@ import { reorderedBlocks } from './flow-order.mjs';
     const progress = blockProgress(block, last, attempts, published);
     const running = isRunning(block);
     if (['retro', 'cleanup'].includes(block.kind))
-      return `${window.factoryBlockModel(state.view.blockModels?.[block.id])}<section class="detail-section">${last ? attemptCard(last, attempts.length - 1) : '<p>This block runs during Close.</p>'}${block.kind === 'cleanup' ? cleanupResults(last) : ''}${attempts.length > 1 ? `<details><summary>Earlier attempts</summary>${attempts.slice(0, -1).map(attemptCard).join('')}</details>` : ''}</section>`;
+      return `${window.factoryBlockModel(state.view.blockModels?.[block.id])}<section class="detail-section">${last ? attemptCard(last, attempts.length - 1) : '<p>This block runs during Close.</p>'}${block.kind === 'cleanup' ? cleanupResults(last) : ''}${
+        attempts.length > 1
+          ? `<details><summary>Earlier attempts</summary>${attempts
+              .slice(0, -1)
+              .map((attempt, index) => attemptCard(attempt, index))
+              .join('')}</details>`
+          : ''
+      }</section>`;
     const locked = state.pending ? ' disabled' : '';
     const sections = {
       settings: `<form id="block-form">${window.factoryBlockModel(state.view.blockModels?.[block.id], values.model || '')}${investigationSourcePicker(block)}${declaredDetails(block, true)}${outputsSection(block)}${systemPromptEditor(block, values, locked)}${editChecklist(block, changes)}<section class="detail-section"><div class="section-label">Block settings</div><label class="field">Name<input name="label" data-field="label" value="${escape(values.label || '')}" /></label><div class="field-row"><label class="field">Parallel lane<select name="lane" data-field="lane">${[0, 1, 2, 3].map((lane) => `<option value="${lane}"${Number(values.lane || 0) === lane ? ' selected' : ''}>${lane === 0 ? 'Main lane' : `Parallel lane ${lane + 1}`}</option>`).join('')}</select></label>${block.kind === 'sol' ? `<label class="field">Iterations<input type="number" name="iterations" data-field="iterations" min="1" max="20" value="${escape(values.iterations || 1)}" /></label>` : ''}</div></section>${saveRow()}</form>`,
-      progress: `<section class="detail-section"><div class="section-label">${running ? 'Current progress' : 'Progress'}<span data-ui-value="Status comes from the saved block.">${escape(statusText(status(block), last))}</span></div>${progress}${previousAttempts.length ? `<details class="attempt-history" data-preserve="attempt-history"><summary>${previousAttempts.length} earlier ${previousAttempts.length === 1 ? 'attempt' : 'attempts'}</summary>${previousAttempts.map(attemptCard).join('')}</details>` : ''}</section>`,
+      progress: `<section class="detail-section"><div class="section-label">${running ? 'Current progress' : 'Progress'}<span data-ui-value="Status comes from the saved block.">${escape(statusText(status(block), last))}</span></div>${progress}${previousAttempts.length ? `<details class="attempt-history" data-preserve="attempt-history"><summary>${previousAttempts.length} earlier ${previousAttempts.length === 1 ? 'attempt' : 'attempts'}</summary>${previousAttempts.map((attempt, index) => attemptCard(attempt, index, block.kind === 'merge')).join('')}</details>` : ''}</section>`,
       notes: comments(block),
     };
     return (
       permissions.map(agentApprovalCard).join('') +
       investigationActions(block) +
       definitionActions(block) +
+      mergeProofSummary(block, last) +
       workScopePicker(block) +
-      Object.values(sections).join('') +
-      contentSection(block)
+      Object.values(sections).join('')
     );
   }
 
@@ -2581,6 +2638,13 @@ import { reorderedBlocks } from './flow-order.mjs';
     if (!excluded?.size || !children.length) return;
     return children.filter(({ id }) => !excluded.has(id)).map(({ id }) => id);
   }
+
+  $('inspector-body').addEventListener('click', (event) => {
+    if (!event.target.closest('[data-open-merge-artifacts]')) return;
+    event.preventDefault();
+    $('tab-artifacts').click();
+    $('tab-artifacts').focus({ preventScroll: true });
+  });
 
   $('inspector-body').addEventListener('change', (event) => {
     const id = event.target.dataset.workChild;
@@ -2724,7 +2788,7 @@ import { reorderedBlocks } from './flow-order.mjs';
     setBusy(state.pending);
     const artifacts = (state.view?.artifacts || []).filter((artifact) => artifact.blockId === block?.id);
     $('artifact-count').textContent = artifacts.length || '';
-    for (const button of document.querySelectorAll('[data-tab]'))
+    for (const button of document.querySelectorAll('[role="tab"][data-tab]'))
       button.setAttribute('aria-selected', String(button.dataset.tab === state.tab));
     const body = $('inspector-body');
     body.setAttribute('aria-labelledby', `tab-${state.tab}`);
@@ -2739,7 +2803,15 @@ import { reorderedBlocks } from './flow-order.mjs';
             ? blockDetails(block)
             : '<p class="inline-empty">Add a block to begin this issue.</p>';
     if (inspectorRender?.scope === scope && inspectorRender.html === html) return;
+    const conversation = state.tab === 'conversation';
+    const opening = inspectorRender?.scope !== scope;
     view.render(body, html, scope);
+    if (conversation) {
+      body.dataset.chatScroll = '';
+      if (opening) body.scrollTop = body.scrollHeight;
+    } else {
+      delete body.dataset.chatScroll;
+    }
     if (block) view.write('flow-selection:' + state.issueId, { blockId: state.blockId, tab: state.tab });
     inspectorRender = { scope, html };
   }
@@ -2762,6 +2834,11 @@ import { reorderedBlocks } from './flow-order.mjs';
     $('issue-playback').setAttribute('aria-label', (labels[mode] || 'Start') + ' issue');
   }
 
+  function playbackSpinner(blocks, playback, playing) {
+    if (playback?.userPaused || state.view?.humanInput || playback?.mode === 'waiting') return '';
+    return playing || issueWorking() ? activeSpinner(blocks.find(blockWorking) || { kind: 'issue' }) : '';
+  }
+
   function renderPlayback(blocks) {
     const playback = state.view?.autoplay;
     const playing = playback?.mode === 'playing' || playback?.mode === 'waiting';
@@ -2773,13 +2850,7 @@ import { reorderedBlocks } from './flow-order.mjs';
     waitingButton.textContent = waiting ? waiting.label + ' needs confirmation' : '';
     waitingButton.dataset.block = waiting?.id || '';
     const input = state.view?.humanInput;
-    $('playback-status').textContent = input
-      ? 'Needs your input'
-      : waiting
-        ? 'Waiting for confirmation'
-        : playing
-          ? 'Running'
-          : 'Paused';
+    $('playback-status').innerHTML = playbackSpinner(blocks, playback, playing);
     const result = state.view?.flow?.closing?.error || input?.message || playback?.reason || '';
     $('issue-results').hidden = !state.view?.issue || !result;
     $('issue-results-title').textContent = input ? 'Needs your input' : 'Results';

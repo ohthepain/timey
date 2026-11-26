@@ -1,5 +1,5 @@
 import { groupChildren, wasDetachedByMasterRun } from './issue-group.mjs';
-import { flowHumanInput } from './flow-human-input.mjs';
+import { flowHumanInput, reviewApprovalObserved } from './flow-human-input.mjs';
 import { latestCurrentAttempt } from './flow-block-data.mjs';
 import { isInvestigation } from './investigation-records.mjs';
 
@@ -22,20 +22,24 @@ function pendingMerge(block) {
   return attempt?.status === 'blocked' && Boolean(attempt.result?.mergeConfirmation);
 }
 
-function gitApproval({ blocks }) {
-  return blocks.some(pendingMerge) || flowHumanInput({ blocks })?.kind === 'pr-review';
+function gitApproval(flow, root) {
+  if (flow.blocks.some(pendingMerge)) return true;
+  const review = flowHumanInput(flow);
+  if (review?.kind !== 'pr-review') return false;
+  const block = flow.blocks.find(({ id }) => id === review.blockId);
+  return !reviewApprovalObserved(root, flow, latestCurrentAttempt(block));
 }
 
 function presentBadges(facts) {
   return Object.keys(facts).filter((badge) => facts[badge]);
 }
 
-function approvalBadges(issue, approvals, flow = { blocks: [] }) {
+function approvalBadges(issue, approvals, root, flow = { blocks: [] }) {
   return presentBadges({
     'needs-approval':
       issue.state === 'needs-approval' ||
       approvals.some(({ operation, options }) => options?.length && operation !== 'git'),
-    'needs-git-approval': gitApproval(flow) || approvals.some(({ operation }) => operation === 'git'),
+    'needs-git-approval': gitApproval(flow, root) || approvals.some(({ operation }) => operation === 'git'),
   });
 }
 
@@ -48,11 +52,11 @@ function groupingBadges(issue, masterId, formerMasters) {
   });
 }
 
-export function issueBadges(issue, index, { masterId, approvals = [], flow } = {}) {
+export function issueBadges(issue, index, { masterId, approvals = [], flow, root } = {}) {
   const labels = (index.activeLabels.get(issue.id) ?? []).map(({ label }) => label);
   return [
     ...new Set([...labels, ...(isInvestigation(issue, flow) ? ['investigate'] : [])]),
-    ...approvalBadges(issue, approvals, flow),
+    ...approvalBadges(issue, approvals, root, flow),
     ...groupingBadges(issue, masterId, index.formerMasters.get(issue.id) ?? []),
   ];
 }

@@ -81,9 +81,9 @@
 
   function follows(element, selected) {
     return (
-      element.getAttribute('role') === 'log' &&
+      element.matches('[role="log"], [data-chat-scroll]') &&
       !selected &&
-      element.scrollHeight - element.scrollTop - element.clientHeight < 40
+      element.scrollHeight - element.scrollTop - element.clientHeight < 2
     );
   }
 

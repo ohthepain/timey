@@ -65,7 +65,7 @@ export async function nativeAgentBrowserChecks({ page, service, project, poll, s
       await poll(() => Boolean(pending), Boolean, 'The native input fixture started.');
       await page.goto('/?issue=' + id + '&block=' + block.id);
       await page.getByRole('button', { name: 'Open request', exact: true }).click();
-      assert.equal(await page.locator('#playback-status').innerText(), 'Needs your input');
+      assert.equal(await page.locator('#issue-results-title').innerText(), 'Needs your input');
       const card = page.locator('[data-agent-approval="native-request"]');
       await card.waitFor();
       if (kind === 'question') {

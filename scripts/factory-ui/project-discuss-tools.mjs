@@ -141,10 +141,10 @@ export function createProjectDiscussTools(service, options = {}) {
         .strict(),
       path: '/api/flow-action',
       run: async (input) => {
-        const storageProfile = input.storageProfile ?? inheritedIssueCaptureProfile(service);
-        const capture = capturedIssue(input, options);
-        if (storageProfile !== undefined) capture.storageProfile = storageProfile;
-        return receipt(await flows().capture(capture), 'created');
+        const prepared = options.prepareIssueCreation?.(input) ?? input;
+        const capture = capturedIssue(prepared, options);
+        capture.storageProfile = prepared.storageProfile ?? inheritedIssueCaptureProfile(service);
+        return issueCreationReceipt(await flows().capture(capture), options.issueCreated);
       },
     },
     issue_move_folder: {
@@ -310,6 +310,12 @@ async function openIssueList(service, issueId, flows) {
   if (!issueId || !issues.length) return { folders, issues: issues.map(listedIssue) };
   const annotations = await issueAnnotations(service).view();
   return { folders, issues: issues.map((issue) => issueControlSnapshot(issue, flows().read(issue), annotations)) };
+}
+
+async function issueCreationReceipt({ deleted, issue, ...result } = {}, created) {
+  requireThat(!deleted, 'This issue creation was removed. Use a new request to create it again.');
+  if (issue) await created?.(issue.id);
+  return receipt({ ...result, issue }, 'created');
 }
 
 function receipt(result, action) {

@@ -8,6 +8,11 @@ import { randomUUID } from 'node:crypto';
 import { requireThat, writeJson } from './common.mjs';
 import { readModelSettings } from './model-settings.mjs';
 import { createProjectDiscussProvider } from './project-discuss-provider.mjs';
+import {
+  currentNoteRecommendation,
+  discussionRecommendations,
+  executeNoteRecommendation,
+} from './discuss-recommendations.mjs';
 import { LocalNotes } from './local-notes.mjs';
 import { agentRecovery, recoverAgentSession } from './agent-recovery.mjs';
 import { retainReportConversation } from './report-conversation.mjs';
@@ -105,6 +110,15 @@ function setCompletedPreview(response, { item }) {
   if (item?.type !== 'agentMessage') return;
   delete response.stream;
   response.text = isChatCommentary(item) ? '' : item.text;
+}
+
+function retainRecommendations(session, response, result) {
+  response.recommendations = result.recommendations ?? [];
+  if (session.noteContext && result.grillingComplete === true) session.noteContext.grilled = true;
+}
+
+function isNoteCreation(message) {
+  return ['create', 'create-delete-next'].includes(message.recommendation?.id);
 }
 
 export class ProjectDiscuss {
@@ -221,12 +235,14 @@ export class ProjectDiscuss {
   }
   publicSession(session) {
     const result = copy(session);
+    result.recommendations = this.recommendations(session);
     delete result.threadId;
     delete result.startup;
     delete result.turnId;
     delete result.toolReceipts;
     const expose = (message) => {
-      if (message.role === 'assistant') message.text = message.text.replace(/\n?```timey-suggestion[\s\S]*$/, '');
+      if (message.role === 'assistant')
+        message.text = message.text.replace(/\n?```timey-(?:suggestion|recommendations)[\s\S]*$/, '');
       if (isCodexWriterConflict(message.error))
         message.error =
           'Another Codex session held the conversation lock. Retry to check whether it has been released.';
@@ -245,6 +261,15 @@ export class ProjectDiscuss {
       delete result.threadLock;
     }
     return result;
+  }
+  recommendations(session) {
+    return discussionRecommendations(this.service.root, session, readClarificationSkills(this.service.root));
+  }
+  recommendedMessage(session, input) {
+    if (!input.recommendationId) return input;
+    const recommendation = this.recommendations(session).find(({ id }) => id === input.recommendationId);
+    requireThat(recommendation?.prompt === input.text, 'This recommendation changed. Choose a current prompt.');
+    return { ...input, text: recommendation.prompt, recommendation };
   }
   readOwned(id, ownership) {
     const session = this.read(id);
@@ -283,6 +308,7 @@ export class ProjectDiscuss {
       attachments: this.attachments(session.id, input.attachments || []),
       status: 'queued',
       ...reportMessageContext(input),
+      recommendation: input.recommendation,
       createdAt: stamp(),
     };
   }
@@ -402,7 +428,11 @@ export class ProjectDiscuss {
     else if (operation === 'send') {
       const clientId = checkedId(input.clientId || randomUUID());
       if (!containsMessage(session, clientId)) {
-        const message = this.envelope(session, { ...input, clientId, reportContext: context.reportContext });
+        const message = this.envelope(session, {
+          ...this.recommendedMessage(session, input),
+          clientId,
+          reportContext: context.reportContext,
+        });
         this.change(id, (s) => {
           if (s.title === 'New conversation') s.title = message.text.slice(0, 80) || 'Attached files';
           const failed =
@@ -512,6 +542,45 @@ export class ProjectDiscuss {
     });
     active.task.catch(() => {});
   }
+  async visitNote(from, message, target) {
+    const { selected } = await this.prepareNote(target);
+    this.change(from, (session) => {
+      session.noteNavigation = { id: selected.id, messageId: message.id };
+    });
+  }
+  prepareNoteIssue(message, input) {
+    if (!isNoteCreation(message)) return input;
+    this.requireUnconvertedNote(message);
+    return { ...input, requestId: message.id };
+  }
+  requireUnconvertedNote(message) {
+    const { source } = currentNoteRecommendation(this.service.root, message);
+    requireThat(!source.issueId, 'The note is already linked to an issue.');
+  }
+  async noteIssueCreated(id, message, issueId) {
+    if (!isNoteCreation(message)) return;
+    const { operation, notes, basis, source, target } = currentNoteRecommendation(this.service.root, message);
+    requireThat(!source.issueId, 'The note is already linked to an issue.');
+    if (operation.id === 'create-delete-next') {
+      notes.action({ action: 'delete', id: source.id, basis });
+      await this.visitNote(id, message, target);
+    } else {
+      notes.link(source.id, issueId, basis);
+      await this.prepareNote(notes.get(source.id));
+    }
+  }
+  runTurn(id, message, context) {
+    const visit = (note) => this.visitNote(id, message, note);
+    return executeNoteRecommendation(this.service.root, message, visit).then((outcome) => {
+      if (outcome) return outcome;
+      if (isNoteCreation(message)) this.requireUnconvertedNote(message);
+      return this.provider(id).turn(this.read(id), message, {
+        ...context,
+        prepareIssueCreation: (input) => this.prepareNoteIssue(message, input),
+        issueCreated: (issueId) => this.noteIssueCreated(id, message, issueId),
+      });
+    });
+  }
   async run(id, controller) {
     let message, responseId;
     this.change(id, (s) => {
@@ -536,7 +605,7 @@ export class ProjectDiscuss {
     });
     try {
       this.service.serverControl?.allow('/api/project-discuss-action', { action: 'send' });
-      const result = await this.provider(id).turn(this.read(id), message, {
+      const result = await this.runTurn(id, message, {
         signal: controller.signal,
         retain: (patch) => this.change(id, (s) => Object.assign(s, patch)),
         event: (event) =>
@@ -560,6 +629,7 @@ export class ProjectDiscuss {
         response.text = stripChatProgress(result.text);
         delete response.stream;
         response.suggestion = result.suggestion || '';
+        retainRecommendations(s, response, result);
         response.status = controller.signal.aborted ? 'stopped' : 'completed';
       });
     } catch (error) {

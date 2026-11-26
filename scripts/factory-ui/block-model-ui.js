@@ -5,6 +5,14 @@
       /[&<>"']/g,
       (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]
     );
+  function fixedModel(model, error) {
+    const reason = esc(model.reason);
+    const name = esc(model.model || 'Unknown');
+    const display = model.reasonInTooltip
+      ? `<p>${name} <span data-model-help><button type="button" class="icon-button" aria-label="Repair model information" aria-describedby="block-model-help">ⓘ</button><span id="block-model-help" role="tooltip">${reason}</span></span></p>`
+      : `<p>${name}</p><p class="detail-copy">${reason}</p>`;
+    return `<section class="detail-section"><div class="section-label">${model.reason.includes('repair') ? 'Repair model' : 'Model'}</div>${display}${error}</section>`;
+  }
   window.factoryBlockModel = (model, value) => {
     if (!model || model.kind === 'none') return '';
     const availability =
@@ -17,8 +25,7 @@
     const error = blocked
       ? `<p class="inline-error" role="alert" data-block-model-error>${esc(availability.reason)}</p>`
       : '';
-    if (model.kind === 'fixed')
-      return `<section class="detail-section"><div class="section-label">${model.reason?.includes('repair') ? 'Repair model' : 'Model'}</div><p>${esc(model.model || 'Unknown')}</p><p class="detail-copy">${esc(model.reason)}</p>${error}</section>`;
+    if (model.kind === 'fixed') return fixedModel(model, error);
     const choices = model.choices
       .map(
         (entry) =>

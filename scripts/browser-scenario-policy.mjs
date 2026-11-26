@@ -19,6 +19,7 @@ export const flowBrowserScenarioNames = {
   '--automate-activity': 'Automate me dots follow each active response',
   '--issue-scrollbar': 'Issue flow scrollbar appears only while scrolling',
   '--issue-status-folders': 'Status pseudo-folders track project issues without moving them',
+  '--inbox-group-drag': 'Inbox drag and drop attaches, transfers and detaches sub-issues',
   '--master-issues': 'Master issue hierarchy and badges across the workspace',
   '--manual-sub-issue-removal': 'Manual removal clears the sub-issue master links and badge',
   '--investigative-grouping': 'Master grouping keeps investigative and non-investigative issues separate',
@@ -58,6 +59,8 @@ export const flowBrowserScenarioNames = {
   '--folder-settings': 'Folder settings inherit, repair, search and act on selected open or closed issues',
   '--issue-results': 'Issue results appear below the banner without replacing playback status',
   '--human-input': 'Required PR review is visible and continues only after an explicit action',
+  '--inbox-chat-reading': 'Inbox issue and block chat opening and live scrolling',
+  '--inbox-details': 'Inbox playback and block Details render the requested controls',
   '--merge-settings': 'Request leaves merge checks to GitHub and the block palette hides Verify',
   '--request-save': 'Saving Your words releases issue controls while Request clarification runs',
   '--block-inspection': 'On-demand refresh preserves drafts; Codex popup resets history without moving the sidebar',
@@ -88,7 +91,7 @@ export const flowBrowserScenarioNames = {
   '--delayed-delete': proposalsCheck,
 };
 
-export const flowBrowserCiParts = new Set(['--ci-part=1', '--ci-part=2']);
+export const flowBrowserCiParts = new Set(['--ci-part=1', '--ci-part=1a', '--ci-part=1b', '--ci-part=2']);
 
 export const flowBrowserOrderModifier = '--reverse-fixture-scenarios';
 

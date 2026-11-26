@@ -2627,3 +2627,29 @@ html[data-project-issue-request-embed='true'] .factory-header {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+
+.closure-fields [data-closure-retro-choice] {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+[data-model-help] {
+  position: relative;
+  display: inline-block;
+}
+[data-model-help] [role='tooltip'] {
+  display: none;
+  position: absolute;
+  z-index: 1;
+  inset-inline-end: 0;
+  top: 100%;
+  width: 14rem;
+  padding: 8px;
+  background: var(--panel, #222);
+  border: 1px solid var(--line);
+}
+[data-model-help]:hover [role='tooltip'],
+[data-model-help]:focus-within [role='tooltip'] {
+  display: block;
+}

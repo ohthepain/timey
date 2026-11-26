@@ -14,9 +14,14 @@ import { issueAnnotations } from './issue-annotations.mjs';
 import { groupProofRows } from './flow-group-proof.mjs';
 import { issueHasActiveWork } from './issue-cleanup.mjs';
 import { groupChildren, groupMaster, storedGroups, wasDetachedByMasterRun } from './issue-group.mjs';
-import { issueStorageDirectory, moveStoredIssue, updateStoredIssueMetadata } from './issue-report-storage.mjs';
+import {
+  issueStorageDirectory,
+  moveStoredIssue,
+  updateStoredGroup,
+  updateStoredIssueMetadata,
+} from './issue-report-storage.mjs';
 import { afterReportWrite, registeredProjectStores } from './stores/report-access.mjs';
-import { resolveFolderSettings } from './issue-folder-settings.mjs';
+import { requireIssueFolder, resolveFolderSettings } from './issue-folder-settings.mjs';
 import { isInvestigation } from './investigation-records.mjs';
 
 const previewLifetime = 10 * 60 * 1000;
@@ -282,6 +287,83 @@ export class FlowGrouping {
     }
   }
 
+  assertGroupedMove(issueId, subIssueId) {
+    requireThat(this.service.projectStores, 'This Issue Store does not support an atomic move of a sub-issue.');
+    requireThat(
+      this.masterId(subIssueId) === issueId,
+      'The source master changed. Refresh before moving the sub-issue.'
+    );
+  }
+
+  async moveGroupedIssue(input) {
+    const { issueId, subIssueId, destinationMaster } = input;
+    this.assertGroupedMove(issueId, subIssueId);
+    await this.lockScopeChanges([issueId, subIssueId, destinationMaster].filter(Boolean), () =>
+      this.applyGroupedMove(input)
+    );
+    return this.flows.view(destinationMaster ?? subIssueId);
+  }
+
+  requireMoveMaster(id, revision) {
+    const issue = this.flows.selected(id);
+    const flow = this.flows.read(issue);
+    requireThat(issue.issue_group, 'Choose a master issue.');
+    requireThat(
+      this.openScope(issue, flow) && this.flows.folderSelection.idle(issue, flow),
+      'Wait for the master to be idle before moving a sub-issue.'
+    );
+    requireThat(flow.revision === revision, 'The master changed. Refresh before moving the sub-issue.');
+    return { issue, flow };
+  }
+
+  async applyGroupedMove(input) {
+    const { issueId, subIssueId, revision, destinationMaster } = input;
+    const source = this.requireMoveMaster(issueId, revision);
+    const child = this.flows.selected(subIssueId);
+    const childFlow = this.flows.read(child);
+    const record = groupChildren(source.issue).find(({ id }) => id === subIssueId);
+    requireThat(record, 'Choose an attached sub-issue.');
+    requireThat(this.flows.folderSelection.idle(child, childFlow), 'Choose an open, idle sub-issue.');
+    const changes = detachedGroupMetadata(this.withSavedScope(source.issue, source.flow), record);
+    activeGroupRequest({ ...source.issue, ...changes }, source.flow);
+    const destination = destinationMaster
+      ? this.transferDestination(input, source.issue, changes, child)
+      : this.folderDestination(input.folder, child, childFlow);
+    await this.saveGroupedMove({ ...source, changes }, destination, child);
+
+    this.flows.pause(source.issue.id, 'A sub-issue was moved.');
+    if (destination.flow) this.flows.pause(destination.issue.id, 'A sub-issue was attached.');
+    this.service.flowChanges?.notify('flow', source.issue.id);
+    this.service.flowChanges?.notify('flow', destination.issue.id);
+  }
+
+  async saveGroupedMove(source, destination, child) {
+    const updates = [source, destination];
+    if (destination.issue.id !== child.id) updates.push({ issue: child });
+    for (const { flow } of updates.filter(({ flow }) => flow)) invalidateBlocks(flow, new Set([requestBlock(flow).id]));
+    await updateStoredGroup(this.service.root, updates);
+  }
+
+  transferDestination(input, source, changes, child) {
+    const { destinationMaster, destinationRevision } = input;
+    requireThat(destinationMaster !== source.id, 'Choose a different master.');
+    const { issue, flow } = this.requireMoveMaster(destinationMaster, destinationRevision);
+    const issues = this.flows.issues().map((entry) => (entry.id === source.id ? { ...entry, ...changes } : entry));
+    const existing = issue.issue_group.children.find(({ id }) => id === child.id);
+    const candidate = this.requireCompatibleChild(issue, flow, child.id, 'folder-attach', issues);
+    const next = existing
+      ? this.reattachedMetadata(this.withSavedScope(issue, flow), existing)
+      : this.attachedMetadata(this.withSavedScope(issue, flow), candidate);
+    activeGroupRequest({ ...issue, ...next }, flow);
+    return { issue, flow, changes: next };
+  }
+
+  folderDestination(folder, issue, flow) {
+    requireThat(!flow.folderLocked || flow.folder === folder, 'This issue is protected from moves into folders.');
+    const target = requireIssueFolder(this.service.root, folder);
+    return { issue, changes: { folder_id: target.id } };
+  }
+
   async removeMaster({ issueId, subIssueId, revision, masterId, masterRevision }) {
     requireThat(
       issueId === subIssueId && this.masterId(issueId) === masterId,
@@ -418,8 +500,12 @@ export class FlowGrouping {
     const ids = ['folder-attach', 'folder-reattach'].includes(options.operation)
       ? new Set([input.issueId, input.subIssueId])
       : new Set([input.issueId]);
+    return this.lockScopeChanges(ids, () => this.applyScopeChange(input, options));
+  }
+
+  lockScopeChanges(ids, run) {
     for (const id of ids) this.requireScopeStable(id);
-    const task = Promise.resolve().then(() => this.applyScopeChange(input, options));
+    const task = Promise.resolve().then(run);
     for (const id of ids) this.scopeChanges.set(id, task);
     return task.finally(() => {
       for (const id of ids) this.scopeChanges.delete(id);
@@ -551,8 +637,7 @@ export class FlowGrouping {
     return master.issue_group?.investigative ?? isInvestigation(master, flow);
   }
 
-  requireCompatibleChild(master, flow, subIssueId, operation) {
-    const issues = this.flows.issues();
+  requireCompatibleChild(master, flow, subIssueId, operation, issues = this.flows.issues()) {
     const child = this.flows.selected(subIssueId);
     const childFlow = this.flows.read(child);
     const investigative = this.investigative(master, flow);
