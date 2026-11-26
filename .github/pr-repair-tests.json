@@ -23,11 +23,11 @@
       "command": ["node", "scripts/flow-browser.mjs", "--ci-part=1a", "--project-app"]
     },
     {
-      "name": "Work All Night keeps dependency failures separate and retains the exact handoff",
+      "name": "Work All Night keeps dependency failures separate and records the normal automatic merge",
       "command": [
         "node",
         "--test",
-        "--test-name-pattern=^Work All Night keeps dependency failures separate and retains the exact handoff$",
+        "--test-name-pattern=^Work All Night keeps dependency failures separate and records the normal automatic merge$",
         "scripts/flow.check.mjs"
       ]
     },

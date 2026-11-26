@@ -2764,7 +2764,7 @@ class IssueFlows {
       );
     }
   }
-  async start(issue, flow, input, catalog, publication = null, overnightRunId = null) {
+  async start(issue, flow, input, catalog, publication = null) {
     if (!input.closureId) {
       this.groups.requireChildren(issue);
       await this.requireEditableIssue(issue.id);
@@ -2839,7 +2839,6 @@ class IssueFlows {
       {
         ...input,
         automaticPublication: block.kind === 'publish' && publication === 'play',
-        prepareMerge: block.kind === 'merge' && this.overnight.owns(issue.id, overnightRunId),
       },
       definition
     );

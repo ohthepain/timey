@@ -348,11 +348,11 @@ export class FlowOvernight {
     row.blockId = block.id;
     row.block = block.label;
     this.save(run);
-    await this.runBlock(run, issue, flow, block, entries);
+    await this.runBlock(issue, flow, block, entries);
     if (this.canAdvance(run)) recordAttempt(row, block, this.flows.read(this.flows.selected(row.id), entries));
   }
 
-  async runBlock(run, issue, flow, block, catalog) {
+  async runBlock(issue, flow, block, catalog) {
     requireThat(
       !(await this.flows.checkDefinition(issue, flow, block.id, catalog)),
       `${block.label} changed. Review its definition.`
@@ -361,7 +361,7 @@ export class FlowOvernight {
       await this.flows.refreshRequest(issue, flow, requestBlock(flow).data.wording, catalog, true);
       return;
     }
-    await this.flows.start(issue, flow, { blockId: block.id, action: nextAction(block) }, catalog, 'play', run.id);
+    await this.flows.start(issue, flow, { blockId: block.id, action: nextAction(block) }, catalog, 'play');
     await this.flows.active.get(issue.id)?.task;
   }
 }
