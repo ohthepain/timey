@@ -2419,6 +2419,10 @@ test('a revised request keeps the open PR and requires fresh Work for manual del
         async inspect() {
           return pr;
         },
+        async findIssueBranchPR(source) {
+          assert.equal(source, branch);
+          return pr;
+        },
         async gh() {
           return `dev\t${base}`;
         },

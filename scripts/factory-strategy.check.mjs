@@ -1456,6 +1456,7 @@ function providerFixture() {
     checks: [passingCheck],
     allowMergeCommit: true,
     classicReviews: false,
+    classicProtection: {},
     strict: true,
     ciBypass: 'never',
     reviewBypass: 'always',
@@ -1467,22 +1468,26 @@ function providerFixture() {
       return JSON.stringify([{ data: { repository: { pullRequest: { ...view, commits } } } }]);
     }
     if (args[1] === 'user') return JSON.stringify({ login: 'fixture' });
+    const ciRule = {
+      type: 'required_status_checks',
+      parameters: {
+        strict_required_status_checks_policy: settings.strict,
+        required_status_checks: [{ context: 'verify' }],
+      },
+    };
     if (args[1]?.includes('/rules/branches/'))
-      return JSON.stringify([[{ ruleset_id: 42 }, { type: 'pull_request', ruleset_id: 43 }]]);
+      return JSON.stringify([
+        [
+          { ...ciRule, ruleset_id: 42 },
+          { type: 'pull_request', ruleset_id: 43 },
+        ],
+      ]);
     if (args[1]?.endsWith('/rulesets/42'))
       return JSON.stringify({
         id: 42,
         enforcement: 'active',
         current_user_can_bypass: settings.ciBypass,
-        rules: [
-          {
-            type: 'required_status_checks',
-            parameters: {
-              strict_required_status_checks_policy: settings.strict,
-              required_status_checks: [{ context: 'verify' }],
-            },
-          },
-        ],
+        rules: [ciRule],
       });
     if (args[1]?.endsWith('/rulesets/43'))
       return JSON.stringify({
@@ -1499,7 +1504,10 @@ function providerFixture() {
         allow_rebase_merge: true,
       });
     if (args[1]?.endsWith('/protection'))
-      return JSON.stringify({ required_pull_request_reviews: settings.classicReviews ? {} : null });
+      return JSON.stringify({
+        ...settings.classicProtection,
+        required_pull_request_reviews: settings.classicReviews ? {} : null,
+      });
     return '{}';
   };
   const ready = (options) => provider.ready(pr, pr.head.ref, pr.head.sha, options);
@@ -1654,6 +1662,43 @@ test('Full Send stops before merging when the repository disallows merge commits
   f.settings.allowMergeCommit = false;
   await assert.rejects(() => f.provider.merge(12, 'head'), /enable merge commits/i);
   assert.ok(!f.commands.some((args) => args[1]?.endsWith('/merge')));
+});
+
+test('Flow Full Send needs protected target freshness before the final head check and merge request', async () => {
+  const f = providerFixture();
+  f.provider.inspect = () => ({ ...f.pr, merged_at: 'now', merge_commit_sha: 'merged' });
+  let finalChecks = 0;
+  const merge = () =>
+    f.provider.merge(12, 'head', {
+      requireFreshTarget: true,
+      beforeMerge() {
+        finalChecks++;
+        f.commands.push(['final candidate check']);
+      },
+    });
+  f.settings.strict = false;
+  await assert.rejects(merge, { code: 'target-protection' });
+  f.settings.strict = true;
+  f.settings.ciBypass = 'pull_requests_only';
+  await assert.rejects(merge, { code: 'target-protection' });
+  assert.equal(finalChecks, 0);
+  assert.ok(!f.commands.some((args) => args[1]?.endsWith('/merge')));
+
+  f.settings.ciBypass = 'never';
+  f.commands.length = 0;
+  assert.equal((await merge()).revision, 'merged');
+  assert.deepEqual(
+    f.commands.slice(-3).map((args) => args[1] ?? args[0]),
+    ['repos/fixture/timey/rulesets/42', 'final candidate check', 'repos/fixture/timey/pulls/12/merge']
+  );
+
+  f.settings.strict = false;
+  f.settings.classicProtection = {
+    enforce_admins: { enabled: true },
+    required_status_checks: { strict: true, checks: [{ context: 'verify' }] },
+  };
+  assert.equal((await merge()).revision, 'merged');
+  assert.equal(finalChecks, 2);
 });
 
 test('Full Stop retains its review bypass for handoff and requires independent CI protection', async () => {

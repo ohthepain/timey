@@ -197,8 +197,15 @@ checkout snapshot. Publish requires a committed candidate. Verification for an
 uncommitted tree can be reused after that same tree is committed; a different tree
 requires verification again.
 
-Merge first checks the existing PR and GitHub readiness. Already merged PRs are
-reconciled without local tests; pending checks wait before tests or repair.
+Merge reads the existing PR's identity, fetches its configured target, and
+merges that revision into the issue checkout. The owning issue workflow repairs
+local conflicts and commits the resolution. Merge pushes the reconciled head
+before it asks GitHub to evaluate readiness and required checks for that head.
+If the target advances, Merge updates and checks the new candidate. Approval
+applies to the exact head and target. Before the final exact-head request,
+Merge confirms that GitHub enforces strict up-to-date branch checks for the
+merge credential. GitHub applies those checks if the target advances during the
+request. Already merged PRs are reconciled without local tests.
 Temporary GitHub request failures get at most three retries per operation with
 1, 2 and 4 second backoff, retaining the redacted error reason. Permission,
 authentication and validation failures stop immediately. An uncertain merge

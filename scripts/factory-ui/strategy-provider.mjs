@@ -87,31 +87,13 @@ export class StrategyProvider {
       if (!viewer.login || viewer.login !== owner || pr.user?.login !== viewer.login) return false;
     }
     await this.assertHandoffBypassProtection();
-    // Classic protection may coexist with rulesets; only its absence is optional.
-    try {
-      const protection = JSON.parse(
-        await this.gh([
-          'api',
-          `repos/${this.config.repository}/branches/${encodeURIComponent(this.config.target)}/protection`,
-        ])
-      );
-      if (protection.required_pull_request_reviews) return false;
-    } catch (error) {
-      if (error.githubStatus !== 404 && !/HTTP 404/.test(error.message)) throw error;
-    }
-    const pages = JSON.parse(
-      await this.gh([
-        'api',
-        `repos/${this.config.repository}/rules/branches/${encodeURIComponent(this.config.target)}?per_page=100`,
-        '--paginate',
-        '--slurp',
-      ])
-    );
-    const reviewRules = pages.flat().filter((rule) => rule.type === 'pull_request');
+    // Classic protection may coexist with rulesets.
+    if ((await classicTargetProtection(this))?.required_pull_request_reviews) return false;
+    const reviewRules = (await activeTargetRules(this)).filter((rule) => rule.type === 'pull_request');
     if (!reviewRules.length) return false;
     for (const id of new Set(reviewRules.map((rule) => rule.ruleset_id))) {
       if (!Number.isSafeInteger(id) || id <= 0) return false;
-      const ruleset = JSON.parse(await this.gh(['api', `repos/${this.config.repository}/rulesets/${id}`]));
+      const ruleset = await readRuleset(this, id);
       if (
         ruleset.id !== id ||
         ruleset.enforcement !== 'active' ||
@@ -122,33 +104,13 @@ export class StrategyProvider {
     return true;
   }
   async assertHandoffBypassProtection() {
-    const pages = JSON.parse(
-      await this.gh([
-        'api',
-        `repos/${this.config.repository}/rules/branches/${encodeURIComponent(this.config.target)}?per_page=100`,
-        '--paginate',
-        '--slurp',
-      ])
-    );
-    const rules = pages.flat(),
-      rulesetIds = [...new Set(rules.map((rule) => rule.ruleset_id).filter((id) => Number.isSafeInteger(id)))];
-    const rulesets = await Promise.all(
-      rulesetIds.map(async (id) => JSON.parse(await this.gh(['api', `repos/${this.config.repository}/rulesets/${id}`])))
-    );
+    const rulesets = await targetRulesets(this, await activeTargetRules(this));
     const active = rulesets.filter((ruleset) => ruleset.enforcement === 'active');
     const ciRulesets = active.filter((ruleset) =>
       (ruleset.rules || []).some((rule) => rule.type === 'required_status_checks')
     );
-    const checks = ciRulesets
-      .flatMap((ruleset) => ruleset.rules || [])
-      .filter((rule) => rule.type === 'required_status_checks')
-      .map((rule) => rule.parameters || {});
     requireThat(
-      checks.some(
-        (parameters) =>
-          parameters.strict_required_status_checks_policy === true &&
-          (parameters.required_status_checks?.length || 0) > 0
-      ),
+      ciRulesets.flatMap((ruleset) => ruleset.rules).some(strictStatusRule),
       'Full Stop review bypass needs an active ruleset with strict required checks on the target branch. No merge was attempted.'
     );
     requireThat(
@@ -157,14 +119,15 @@ export class StrategyProvider {
     );
     return true;
   }
-  async merge(number, head, { beforeMerge } = {}) {
+  async merge(number, head, { beforeMerge, requireFreshTarget = false } = {}) {
     const repository = JSON.parse(await this.gh(['api', 'repos/' + this.config.repository]));
     requireThat(
       repository.allow_merge_commit === true,
       'Enable merge commits in the GitHub repository settings before using Full Send.'
     );
-    // REST merges refuse a required merge queue instead of silently enrolling it.
-    // GitHub enforces the expected head and applicable target branch requirements.
+    if (requireFreshTarget) await assertTargetFreshnessProtection(this);
+    // The REST merge compares the head SHA. Strict checks protect the target
+    // even if it advances after this final observation.
     await beforeMerge?.();
     const merged = JSON.parse(
       await this.gh([
@@ -180,12 +143,79 @@ export class StrategyProvider {
     );
     requireThat(merged.merged === true, 'The merge was not confirmed. Inspect the existing PR before retrying.');
     const pr = await this.inspect(number);
-    requireThat(
-      pr.merged_at && pr.head.sha === head && pr.merge_commit_sha === merged.sha,
-      'Merge outcome is uncertain. Inspect the existing PR before any retry.'
-    );
+    requireConfirmedMerge(pr, head, merged.sha);
     return { url: pr.html_url, revision: pr.merge_commit_sha };
   }
+}
+
+function requireConfirmedMerge(pr, head, revision) {
+  requireThat(
+    pr.merged_at && pr.head.sha === head && pr.merge_commit_sha === revision,
+    'Merge outcome is uncertain. Inspect the existing PR before any retry.'
+  );
+}
+
+async function activeTargetRules(provider) {
+  const { repository, target } = provider.config;
+  const pages = JSON.parse(
+    await provider.gh([
+      'api',
+      `repos/${repository}/rules/branches/${encodeURIComponent(target)}?per_page=100`,
+      '--paginate',
+      '--slurp',
+    ])
+  );
+  return pages.flat();
+}
+
+async function readRuleset(provider, id) {
+  return JSON.parse(await provider.gh(['api', `repos/${provider.config.repository}/rulesets/${id}`]));
+}
+
+async function targetRulesets(provider, rules) {
+  const ids = [...new Set(rules.map((rule) => rule.ruleset_id).filter((id) => Number.isSafeInteger(id)))];
+  return Promise.all(ids.map((id) => readRuleset(provider, id)));
+}
+
+function strictStatusRule({ type, parameters = {} }) {
+  const { strict_required_status_checks_policy: strict, required_status_checks: checks = [] } = parameters;
+  return type === 'required_status_checks' && strict === true && checks.length > 0;
+}
+
+async function classicTargetProtection(provider) {
+  const { repository, target } = provider.config;
+  try {
+    return JSON.parse(
+      await provider.gh(['api', `repos/${repository}/branches/${encodeURIComponent(target)}/protection`])
+    );
+  } catch (error) {
+    if (error.githubStatus !== 404 && !/HTTP 404/.test(error.message)) throw error;
+    return {};
+  }
+}
+
+function classicStrictChecks({ enforce_admins: admins = {}, required_status_checks: statuses = {} }) {
+  const { strict, checks = [], contexts = [] } = statuses;
+  return admins.enabled === true && strict === true && checks.length + contexts.length > 0;
+}
+
+async function assertTargetFreshnessProtection(provider) {
+  const target = provider.config.target;
+  try {
+    const rules = (await activeTargetRules(provider)).filter(strictStatusRule);
+    const rulesets = await targetRulesets(provider, rules);
+    if (rulesets.some((rule) => rule.enforcement === 'active' && rule.current_user_can_bypass === 'never')) return;
+    if (classicStrictChecks(await classicTargetProtection(provider))) return;
+  } catch (error) {
+    error.message = `Could not confirm GitHub's up-to-date branch protection for ${target}. ${error.message}`;
+    throw error;
+  }
+  throw Object.assign(
+    Error(
+      `Full Send requires GitHub to enforce up-to-date branches for ${target} without bypass for the merge credential. Configure strict required checks on the target branch.`
+    ),
+    { code: 'target-protection' }
+  );
 }
 
 async function externalDeliveryEvidence(provider, number, pr, requiredChecksOnly) {
