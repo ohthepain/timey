@@ -50,7 +50,9 @@ export async function serverHeapBrowserChecks({ page, output, poll, screenshot }
   assert.equal(refreshed.navigationTime, initial.navigationTime);
   await screenshot('server-heap-live');
 
-  await page.route('**' + heapPath, (route) => route.fulfill({ status: 503, json: { error: 'Heap unavailable' } }));
+  await page.route('**' + heapPath, (route) =>
+    route.fulfill({ status: 503, json: { error: 'The test made the heap reading unavailable.' } })
+  );
   try {
     assert.equal((await nextHeapResponse()).status(), 503);
     await page.locator('header').getByText('Heap unavailable', { exact: true }).waitFor();
@@ -63,8 +65,11 @@ export async function serverHeapBrowserChecks({ page, output, poll, screenshot }
   assert.equal(recovered.navigationTime, initial.navigationTime);
 
   const classicResponse = nextHeapResponse('/classic');
+  const classicQueue = page.waitForResponse((response) => new URL(response.url()).pathname === '/api/queue');
   await page.goto('/classic');
   const classic = await readSample(classicResponse);
+  const queue = await classicQueue;
+  assert.equal(queue.status(), 200, await queue.text());
   writeFileSync(
     join(output, 'server-heap.json'),
     JSON.stringify(

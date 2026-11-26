@@ -1169,7 +1169,10 @@ scrolling and stopped states in the reported evidence directory.
 `node scripts/flow-browser.mjs --server-heap` checks the Flow and Classic header
 readings against the running Factory process. It observes refresh and recovery
 without navigation, and saves `server-heap.json` and screenshots of the live and
-unavailable readings.
+unavailable readings. The scenario configures the fixture queue before opening
+Classic. Run `node scripts/flow-browser.mjs --ci-part=1 --manual-close --server-heap --project-navigation --sidebar-labels --local-notes`
+to check the sidebar console after the intentional Close and heap errors. Each
+expected failed response accounts for one matching console entry.
 
 `node scripts/flow-browser.mjs --manual-sub-issue-removal` removes sub-issues
 from both the master and child pages. It checks active membership, links,

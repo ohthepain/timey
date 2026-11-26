@@ -362,14 +362,13 @@ function unexpectedConsoleErrors(entries) {
     );
   });
 }
-function unexpectedWorkflowConsoleErrors() {
-  const expected = new Map([
-    [400, JSON.stringify({ error: 'Model is disabled in Factory settings.' })],
-    [409, JSON.stringify({ error: 'Request admission rejected.' })],
-  ]);
+function consoleErrorsAfterExpectedResponses(expected) {
   const errors = unexpectedConsoleErrors(logs.console);
-  const responses = logs.responses.filter(
-    ({ path, status, body }) => path === '/api/flow-action' && expected.has(status) && expected.get(status) === body
+  const responses = logs.responses.filter(({ path, status, body }) =>
+    expected.some(
+      ([expectedPath, expectedStatus, error]) =>
+        path === expectedPath && status === expectedStatus && body === JSON.stringify({ error })
+    )
   );
   for (const { path, status } of responses) {
     const index = errors.findIndex(
@@ -381,6 +380,17 @@ function unexpectedWorkflowConsoleErrors() {
     if (index >= 0) errors.splice(index, 1);
   }
   return errors;
+}
+
+async function assertCleanSidebarConsole() {
+  await Promise.all(pendingResponses);
+  assert.deepEqual(
+    consoleErrorsAfterExpectedResponses([
+      ['/api/issue-decision', 400, 'The test rejected the pending close.'],
+      ['/api/server-heap', 503, 'The test made the heap reading unavailable.'],
+    ]),
+    []
+  );
 }
 
 async function connectionRecoveryIssue() {
@@ -686,7 +696,9 @@ try {
   await check('Closed issue selections archive together and issue links open the normal view', () =>
     projectIssuesBrowserChecks({ page, project, root, output, service })
   );
-  await check(serverHeapCheck, () => serverHeapBrowserChecks({ page, output, poll, screenshot }));
+  await check(serverHeapCheck, () =>
+    withQueueConfiguration({ page, project, root }, () => serverHeapBrowserChecks({ page, output, poll, screenshot }))
+  );
   await check(masterIssuesCheck, () => masterIssueBrowserChecks({ page, project, root, output }));
   await check(manualSubIssueRemovalCheck, () => manualSubIssueRemovalBrowserChecks({ page, project, root, output }));
   await check(investigativeGroupingCheck, () =>
@@ -757,12 +769,12 @@ try {
       await page.locator('#project-issues').waitFor();
       const frame = page.frameLocator('#project-issues iframe');
       await frame.getByRole('button', { name: 'Open', exact: true }).waitFor();
-      assert.deepEqual(unexpectedConsoleErrors(logs.console), []);
+      await assertCleanSidebarConsole();
     })
   );
   await check('Local notes capture and handoff preserve flow', async () => {
     await localNotesBrowserChecks({ page, project, service, poll, screenshot, output, candidate });
-    assert.deepEqual(unexpectedConsoleErrors(logs.console), []);
+    await assertCleanSidebarConsole();
   });
   await check('Automate me dots follow each active response', () =>
     automateActivityBrowserChecks({ page, service, screenshot })
@@ -2232,7 +2244,13 @@ try {
       []
     );
     await Promise.all(pendingResponses);
-    assert.deepEqual(unexpectedWorkflowConsoleErrors(), []);
+    assert.deepEqual(
+      consoleErrorsAfterExpectedResponses([
+        ['/api/flow-action', 400, 'Model is disabled in Factory settings.'],
+        ['/api/flow-action', 409, 'Request admission rejected.'],
+      ]),
+      []
+    );
     assert.equal(logs.execution.length, 2);
     assert.equal(logs.modelCalls.length, 0);
   });
