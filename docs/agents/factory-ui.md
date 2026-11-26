@@ -200,6 +200,13 @@ HTML and authenticated queue probes. The in-page restart refuses changed install
 source; the external restart command below can install an already verified checkout.
 Use `--port NUMBER` only when a fixed local port is needed.
 
+When Timey runs locally from the selected project checkout, its header shows a
+**Factory** link to that workspace. The live Factory launcher records its bound
+port and instance ID in the project's `.issues/factory-discovery.json`. Timey
+checks the loopback health response for the matching instance ID and hides the
+link when the instance stops responding. The check also rejects a stale record
+when another Factory takes over its port.
+
 The queue and issue screens read actual reports and the dispatch ledger through
 the existing factory helper. The issue page polls an issue endpoint that returns only the selected report, its assignments, and its runs. The queue page fetches the queue separately. Each queue refresh projects saved run history once
 and reuses that projection for lifecycle availability; dispatch still reads current

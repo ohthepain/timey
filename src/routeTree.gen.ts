@@ -14,6 +14,7 @@ import { Route as MethodsRouteImport } from './routes/methods';
 import { Route as RedirectRouteImport } from './routes/redirect';
 import { Route as UsersRouteRouteImport } from './routes/users.route';
 import { Route as ApiBeatsRouteImport } from './routes/api/beats';
+import { Route as ApiFactoryStatusRouteImport } from './routes/api/factory-status';
 import { Route as ApiGetBeatByNameRouteImport } from './routes/api/getBeatByName';
 import { Route as ApiModulesRouteImport } from './routes/api/modules';
 import { Route as ApiSessionRouteImport } from './routes/api/session';
@@ -52,6 +53,11 @@ const UsersRouteRoute = UsersRouteRouteImport.update({
 const ApiBeatsRoute = ApiBeatsRouteImport.update({
   id: '/api/beats',
   path: '/api/beats',
+  getParentRoute: () => rootRouteImport,
+} as any);
+const ApiFactoryStatusRoute = ApiFactoryStatusRouteImport.update({
+  id: '/api/factory-status',
+  path: '/api/factory-status',
   getParentRoute: () => rootRouteImport,
 } as any);
 const ApiGetBeatByNameRoute = ApiGetBeatByNameRouteImport.update({
@@ -131,6 +137,7 @@ export interface FileRoutesByFullPath {
   '/methods': typeof MethodsRoute;
   '/redirect': typeof RedirectRoute;
   '/api/beats': typeof ApiBeatsRouteWithChildren;
+  '/api/factory-status': typeof ApiFactoryStatusRoute;
   '/api/getBeatByName': typeof ApiGetBeatByNameRoute;
   '/api/modules': typeof ApiModulesRouteWithChildren;
   '/api/session': typeof ApiSessionRoute;
@@ -151,6 +158,7 @@ export interface FileRoutesByTo {
   '/methods': typeof MethodsRoute;
   '/redirect': typeof RedirectRoute;
   '/api/beats': typeof ApiBeatsRouteWithChildren;
+  '/api/factory-status': typeof ApiFactoryStatusRoute;
   '/api/getBeatByName': typeof ApiGetBeatByNameRoute;
   '/api/modules': typeof ApiModulesRouteWithChildren;
   '/api/session': typeof ApiSessionRoute;
@@ -173,6 +181,7 @@ export interface FileRoutesById {
   '/methods': typeof MethodsRoute;
   '/redirect': typeof RedirectRoute;
   '/api/beats': typeof ApiBeatsRouteWithChildren;
+  '/api/factory-status': typeof ApiFactoryStatusRoute;
   '/api/getBeatByName': typeof ApiGetBeatByNameRoute;
   '/api/modules': typeof ApiModulesRouteWithChildren;
   '/api/session': typeof ApiSessionRoute;
@@ -196,6 +205,7 @@ export interface FileRouteTypes {
     | '/methods'
     | '/redirect'
     | '/api/beats'
+    | '/api/factory-status'
     | '/api/getBeatByName'
     | '/api/modules'
     | '/api/session'
@@ -216,6 +226,7 @@ export interface FileRouteTypes {
     | '/methods'
     | '/redirect'
     | '/api/beats'
+    | '/api/factory-status'
     | '/api/getBeatByName'
     | '/api/modules'
     | '/api/session'
@@ -237,6 +248,7 @@ export interface FileRouteTypes {
     | '/methods'
     | '/redirect'
     | '/api/beats'
+    | '/api/factory-status'
     | '/api/getBeatByName'
     | '/api/modules'
     | '/api/session'
@@ -259,6 +271,7 @@ export interface RootRouteChildren {
   MethodsRoute: typeof MethodsRoute;
   RedirectRoute: typeof RedirectRoute;
   ApiBeatsRoute: typeof ApiBeatsRouteWithChildren;
+  ApiFactoryStatusRoute: typeof ApiFactoryStatusRoute;
   ApiGetBeatByNameRoute: typeof ApiGetBeatByNameRoute;
   ApiModulesRoute: typeof ApiModulesRouteWithChildren;
   ApiSessionRoute: typeof ApiSessionRoute;
@@ -305,6 +318,13 @@ declare module '@tanstack/react-router' {
       path: '/api/beats';
       fullPath: '/api/beats';
       preLoaderRoute: typeof ApiBeatsRouteImport;
+      parentRoute: typeof rootRouteImport;
+    };
+    '/api/factory-status': {
+      id: '/api/factory-status';
+      path: '/api/factory-status';
+      fullPath: '/api/factory-status';
+      preLoaderRoute: typeof ApiFactoryStatusRouteImport;
       parentRoute: typeof rootRouteImport;
     };
     '/api/getBeatByName': {
@@ -464,6 +484,7 @@ const rootRouteChildren: RootRouteChildren = {
   MethodsRoute: MethodsRoute,
   RedirectRoute: RedirectRoute,
   ApiBeatsRoute: ApiBeatsRouteWithChildren,
+  ApiFactoryStatusRoute: ApiFactoryStatusRoute,
   ApiGetBeatByNameRoute: ApiGetBeatByNameRoute,
   ApiModulesRoute: ApiModulesRouteWithChildren,
   ApiSessionRoute: ApiSessionRoute,

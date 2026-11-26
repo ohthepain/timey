@@ -1,6 +1,7 @@
 import { Link } from '@tanstack/react-router';
 import { LoginButton } from '~/components/auth/LoginButton';
 import { UserMenu } from '~/components/auth/UserMenu';
+import { FactoryReturnLink } from '~/components/FactoryReturnLink';
 import { usePersistedStore } from '~/state/PersistedStore';
 import { useNavigationStore } from '~/state/NavigationStore';
 
@@ -35,6 +36,7 @@ export function AppHeader({ onOpenMetronome, onOpenMidi }: AppHeaderProps) {
         </Link>
       </div>
       <div className="flex gap-2 items-center">
+        <FactoryReturnLink />
         <button
           className={toggleButtonClass(devMode, 'orange')}
           onClick={() => setDevMode(!devMode)}
