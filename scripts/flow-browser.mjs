@@ -1325,7 +1325,7 @@ try {
     await clickAction(page.getByRole('button', { name: 'Work All Night', exact: true }));
     await page
       .getByRole('region', { name: 'Overnight plan' })
-      .getByText('Pull requests merged after required checks pass')
+      .getByText('Verified, merge-ready pull requests')
       .waitFor();
     await page.locator('[data-folder-command="cancel-night"]').click();
     const groupButton = page.locator('[data-folder-command="group"]');

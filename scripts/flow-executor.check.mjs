@@ -17,7 +17,6 @@ import {
   saveConversationState,
 } from './factory-ui/conversation-store.mjs';
 import { resumeWorkDependencies, runWorkVerification } from './factory-ui/flow-verification.mjs';
-import { mergedDelivery } from './factory-ui/merged-issue.mjs';
 
 function fixture(t, options = {}) {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'timey-flow-executor-')));
@@ -1211,104 +1210,24 @@ test('Merge requires approval of its exact commit and target', async (t) => {
   assert.equal(f.calls.filter((item) => item.method === 'guard').at(-1).args[2], 'merge');
 });
 
-test('Work All Night polls required checks on an unreviewed PR and merges without confirmation', async (t) => {
-  const { StrategyProvider } = await import('./factory-ui/strategy-provider.mjs');
-  const pendingCheck = { name: 'verify', isRequired: true, status: 'IN_PROGRESS' };
-  let check = pendingCheck;
-  const bypass = [];
-  const provider = new StrategyProvider('.', { repository: 'test/fixture', target: 'dev' });
-  provider.canBypassOwnReview = (pr) => {
-    bypass.push(pr.number);
-    return true;
-  };
-  const f = mergeFixture(t, {
-    onReady(pr, branch, head, settings) {
-      provider.gh = () =>
-        JSON.stringify([
-          {
-            data: {
-              repository: {
-                pullRequest: {
-                  headRefOid: head,
-                  baseRefName: 'dev',
-                  baseRefOid: f.git('rev-parse', 'dev'),
-                  mergeStateStatus: 'BLOCKED',
-                  reviewDecision: 'REVIEW_REQUIRED',
-                  commits: { nodes: [{ commit: { statusCheckRollup: { contexts: { nodes: [check] } } } }] },
-                },
-              },
-            },
-          },
-        ]);
-      return provider.ready(pr, branch, head, settings);
-    },
-    onWait() {
-      assert.deepEqual(bypass, []);
-      assert.deepEqual(
-        f.observations.map(({ operation }) => operation),
-        ['ready']
-      );
-      check = { ...pendingCheck, status: 'COMPLETED', conclusion: 'SUCCESS' };
-    },
-  });
-  const id = '20261126-overnight';
-  f.issue.id = id;
-  f.flow.issueId = id;
+test('overnight prepare checks GitHub readiness and stops before automatic merge', async (t) => {
+  const f = mergeFixture(t);
   await f.run('understand');
-  const { createIssueFlows } = await import('./factory-ui/flow-service.mjs');
-  const { initializeFolderSettings } = await import('./factory-ui/issue-folder-settings.mjs');
-  const { setTimeout: delay } = await import('node:timers/promises');
-  writeFileSync(
-    join(f.root, '.issues', id + '.md'),
-    [
-      '---',
-      'id: ' + id,
-      'title: Exercise overnight merge',
-      'state: backlog',
-      'created: 2026-11-26T00:00:00Z',
-      '---',
-      '',
-      '## Original request',
-      '',
-      'Implement an overnight fixture.',
-    ].join('\n')
-  );
-  initializeFolderSettings(f.root);
-  const flows = createIssueFlows(f.service, {
-    clarify: async () => ({ artifacts: { values: { type: 'feature', goal: 'Exercise overnight merge' } } }),
-    observer: { observe: async () => ({}) },
-    executor: {
-      run: (ctx) =>
-        ctx.block.kind === 'merge'
-          ? f.executor.run({ ...ctx, ...humanFirstMerge })
-          : { summary: 'Fixture candidate ready.' },
-      close() {},
-    },
+  const result = await f.run('merge', {
+    definition: { mergeWorkflow: { ...humanFirstMerge.definition.mergeWorkflow, policy: 'automatic' } },
+    input: { prepareMerge: true, confirmed: true },
   });
-  t.after(() => flows.close());
-  const folder = 'Overnight fixture';
-  await flows.action({ action: 'create-folder', name: folder });
-  const flow = flows.read(flows.selected(id));
-  flow.folder = folder;
-  flow.workspace = f.flow.workspace;
-  flows.store.save(flow, flow.revision);
-  const plan = await flows.action({ action: 'folder-night-plan', folder, issueIds: [id] });
-  assert.equal(plan.finishLine, 'Pull requests merged after required checks pass');
-  await flows.action({ action: 'folder-night-start', planId: plan.id });
-  let report = flows.overnight.reports()[folder];
-  for (let tries = 0; report.status !== 'finished' && tries < 200; tries++) {
-    await delay(25);
-    report = flows.overnight.reports()[folder];
-  }
-  assert.equal(report.status, 'finished');
-  assert.equal(report.issues[0].status, 'merged', report.issues[0].summary);
-  assert.equal(mergedDelivery(flows.read(flows.selected(id)))?.revision, 'actual-merge');
-  assert.deepEqual(bypass, [9, 9]);
+  assert.equal(result.status, 'blocked');
+  assert.equal(result.result.mergeConfirmation.pr, 9);
+  assert.equal(result.result.mergeConfirmation.head, result.result.head);
   assert.deepEqual(
     f.observations.map(({ operation }) => operation),
-    ['ready', 'ready', 'ready', 'merge']
+    ['ready']
   );
-  assert.ok(f.calls.some((item) => item.method === 'guard' && item.args[2] === 'merge'));
+  assert.equal(
+    f.calls.some((item) => item.method === 'guard' && item.args[2] === 'merge'),
+    false
+  );
 });
 
 test('Merge pushes each new candidate, then expires approval if the target moves again', async (t) => {
@@ -1369,7 +1288,7 @@ test('Merge repairs a target conflict even when GitHub only reports blocked read
         config: { repository: 'test/fixture', target: 'dev' },
         gh: () => JSON.stringify([{ data: { repository: { pullRequest: live } } }]),
       };
-      await inspectReadiness(provider, pr, branch, head, { waitForChecks });
+      await inspectReadiness(provider, pr, branch, head, undefined, waitForChecks);
     },
   });
   await f.run('understand');
@@ -2602,7 +2521,7 @@ void test('Merge waits for newly published checks to register before merging', a
         config: { repository: 'test/fixture', target: 'dev' },
         gh: async () => JSON.stringify([{ data: { repository: { pullRequest: view } } }]),
       };
-      return inspectReadiness(provider, pr, branch, head, settings);
+      return inspectReadiness(provider, pr, branch, head, undefined, settings?.waitForChecks);
     },
     onWait() {
       waits++;

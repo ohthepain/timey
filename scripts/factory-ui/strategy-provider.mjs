@@ -72,12 +72,9 @@ export class StrategyProvider {
   async findIssueBranchPR(branch) {
     return findIssueBranchPR(this, branch);
   }
-  async ready(pr, branch, head, { handoff = false, waitForChecks = false, overnight = false } = {}) {
-    return inspectReadiness(this, pr, branch, head, {
-      handoff,
-      waitForChecks,
-      canBypassReview: handoff || overnight ? () => this.canBypassOwnReview(pr) : undefined,
-    });
+  async ready(pr, branch, head, { handoff = false, waitForChecks = false } = {}) {
+    const reviewBypass = handoff ? () => this.canBypassOwnReview(pr) : undefined;
+    return inspectReadiness(this, pr, branch, head, reviewBypass, waitForChecks);
   }
   async canBypassOwnReview(pr) {
     const [owner] = this.config.repository.split('/');
@@ -88,7 +85,7 @@ export class StrategyProvider {
       const viewer = JSON.parse(await this.gh(['api', 'user']));
       if (!viewer.login || viewer.login !== owner || pr.user?.login !== viewer.login) return false;
     }
-    await this.assertReviewBypassProtection();
+    await this.assertHandoffBypassProtection();
     // Classic protection may coexist with rulesets; only its absence is optional.
     try {
       const protection = JSON.parse(
@@ -123,7 +120,7 @@ export class StrategyProvider {
     }
     return true;
   }
-  async assertReviewBypassProtection() {
+  async assertHandoffBypassProtection() {
     const pages = JSON.parse(
       await this.gh([
         'api',
@@ -151,11 +148,11 @@ export class StrategyProvider {
           parameters.strict_required_status_checks_policy === true &&
           (parameters.required_status_checks?.length || 0) > 0
       ),
-      'Review bypass needs an active ruleset with strict required checks on the target branch.'
+      'Full Stop review bypass needs an active ruleset with strict required checks on the target branch. No merge was attempted.'
     );
     requireThat(
       ciRulesets.every((ruleset) => ruleset.current_user_can_bypass === 'never'),
-      'Review bypass requires CI rulesets to prevent this credential from bypassing required checks, including administrators.'
+      'Full Stop review bypass requires CI rulesets to prevent this credential from bypassing required checks, including administrators. No merge was attempted.'
     );
     return true;
   }

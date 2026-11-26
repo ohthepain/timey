@@ -99,18 +99,13 @@ An issue with the restriction keeps its current folder.
 
 Show the exact issues and the finish condition before starting. Timey runs the
 selection using its issue runner and pstack's [Autonomous run playbook](../../.agents/skills/poteto-mode/playbooks/autonomous-run.md).
-Starting the run authorizes Factory to merge the selected issues' PRs as their
-required GitHub checks pass. Factory can proceed without a GitHub review on its
-own PRs when its credential can bypass the review rules and a separate active
-ruleset enforces strict required checks that the credential cannot bypass.
-GitHub still enforces the target rules on the exact candidate submitted for merge.
-An issue that needs other human input pauses while independent work continues.
-If the runner exhausts the
+The default finish line is verified, merge-ready PRs. An issue that needs human
+input pauses while independent work continues. If the runner exhausts the
 available repairs for an issue, leave that issue and its dependent work paused.
 Continue with independent issues. A Stop control ends the run. The morning
 report lists what finished and gives the failed check, where applicable, and
-the next action for each issue that needs attention. Issue acceptance uses the
-existing Close controls.
+the next action for each issue that needs attention. Merge and closure remain
+separate actions.
 
 After a target update, closure can reuse a retained passing Work report when
 the delivered candidate descends from the proved commit, preserves the implementation paths

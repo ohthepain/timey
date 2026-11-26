@@ -1084,11 +1084,7 @@ Work All Night fixtures create the folders they assign, so execution reaches the
 injected worker through the same settings validation as a real issue. Start/stop
 checks have a 30-second test deadline and retain per-issue failure explanations.
 The dependency-failure scenario also checks that an independent issue adopts its
-clarified route and records a confirmed merge within the owning run. The focused
-overnight Merge and readiness tests simulate an unreviewed GitHub PR with missing,
-pending, failed, and passing checks. They verify that Factory waits for pending
-checks and submits the merge after they pass, and that a review bypass requires
-independently enforced CI protection.
+clarified route and reaches the Merge confirmation within the owning run.
 Shared-chat DOM fixtures load the production template. Browser discussion
 scenarios close the preceding provider before installing their own fixture.
 Pending publication joins all preceding unfinished lanes even when the standard

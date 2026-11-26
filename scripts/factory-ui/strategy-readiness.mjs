@@ -126,20 +126,14 @@ function checkedObservation(observation, head, target) {
   return observation;
 }
 
-async function assertMergeReview(requiredChecks, canBypassReview) {
-  if (!canBypassReview) throw requiredPRReview();
-  assertChecks(requiredChecks);
-  requireThat(await canBypassReview(), 'The overnight credential cannot bypass GitHub review on this PR.');
-}
-
-function assertBlockedPR(view, checks, waitForChecks, canBypassReview) {
+function assertBlockedPR(view, checks, waitForChecks) {
   if (view.reviewDecision === 'CHANGES_REQUESTED')
     throw repairableBlocker(
       'review-findings',
       'Address the actual requested review changes on this PR, preserving any human decision that cannot be resolved technically.'
     );
+  if (view.reviewDecision === 'REVIEW_REQUIRED') throw requiredPRReview();
   const required = checks.filter((check) => check.isRequired);
-  if (view.reviewDecision === 'REVIEW_REQUIRED') return assertMergeReview(required, canBypassReview);
   assertPassingChecks(required);
   if (waitForChecks && !required.length) throw pendingReadiness('Waiting for required GitHub checks to appear.');
   throw Error('GitHub reports that this PR is blocked. Open the PR to see the outstanding merge requirements.');
@@ -254,10 +248,10 @@ function destinationAdvanced({ baseRef, baseRefOid }) {
   return tip !== baseRefOid;
 }
 
-function assertMergeState(view, checks, waitForChecks, canBypassReview) {
+function assertMergeState(view, checks, waitForChecks) {
   const state = observedMergeState(view);
   if (['CLEAN', 'HAS_HOOKS', 'UNSTABLE'].includes(state)) return assertRequiredChecks(checks);
-  if (state === 'BLOCKED') return assertBlockedPR(view, checks, waitForChecks, canBypassReview);
+  if (state === 'BLOCKED') assertBlockedPR(view, checks, waitForChecks);
   const blocker = mergeStateErrors.get(state);
   throw blocker ? blocker() : Error('GitHub has not reported this PR ready to merge.');
 }
@@ -271,9 +265,9 @@ function readinessResult(pr, head, target, checks) {
   return result;
 }
 
-async function assertMergeReadiness(live, checks, head, waitForChecks, canBypassReview) {
+function assertMergeReadiness(live, checks, head, waitForChecks) {
   try {
-    await assertMergeState(live, checks, waitForChecks, canBypassReview);
+    assertMergeState(live, checks, waitForChecks);
   } catch (error) {
     if (error.code === 'STRATEGY_PENDING' && waitForChecks)
       error.ciProgress = { head, completedSuites: completedVerificationSuites(checks) };
@@ -289,12 +283,12 @@ function completedVerificationSuites(checks) {
     .map(({ name }) => name);
 }
 
-export async function inspectReadiness(provider, pr, branch, head, { handoff, waitForChecks, canBypassReview } = {}) {
+export async function inspectReadiness(provider, pr, branch, head, canBypassHandoffReview, waitForChecks = false) {
   assertIdentity(pr, provider.config, branch, head);
   assertState(pr);
   const { live, checks } = await observeReadiness(provider, pr.number, head);
-  if (handoff) await assertHandoffReadiness(pr, live, checks, canBypassReview);
-  else if (!pr.merged_at) await assertMergeReadiness(live, checks, head, waitForChecks, canBypassReview);
+  if (canBypassHandoffReview) await assertHandoffReadiness(pr, live, checks, canBypassHandoffReview);
+  else if (!pr.merged_at) assertMergeReadiness(live, checks, head, waitForChecks);
   return readinessResult(pr, head, live.baseRefOid, checks);
 }
 

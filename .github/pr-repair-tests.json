@@ -27,33 +27,6 @@
     {
       "name": "Local notes capture and handoff preserve flow",
       "command": ["node", "scripts/flow-browser.mjs", "--ci-part=1", "--local-notes"]
-    },
-    {
-      "name": "Work All Night keeps dependency failures separate and reports independent merges",
-      "command": [
-        "node",
-        "--test",
-        "--test-name-pattern=^Work All Night keeps dependency failures separate and reports independent merges$",
-        "scripts/flow.check.mjs"
-      ]
-    },
-    {
-      "name": "stopping Work All Night cancels the owned block and leaves queued issues untouched",
-      "command": [
-        "node",
-        "--test",
-        "--test-name-pattern=^stopping Work All Night cancels the owned block and leaves queued issues untouched$",
-        "scripts/flow.check.mjs"
-      ]
-    },
-    {
-      "name": "Work All Night polls required checks on an unreviewed PR and merges without confirmation",
-      "command": [
-        "node",
-        "--test",
-        "--test-name-pattern=^Work All Night polls required checks on an unreviewed PR and merges without confirmation$",
-        "scripts/flow-executor.check.mjs"
-      ]
     }
   ]
 }
