@@ -2,8 +2,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { requireThat } from './common.mjs';
 
-export const mergedIssueMessage =
-  'This issue has merged and is read-only. Close it when ready. Reopening is not available yet.';
+export const mergedIssueMessage = 'This issue has merged and is read-only. Close it when ready.';
 
 function confirmedMerge(attempt) {
   if (attempt.status !== 'completed') return false;
@@ -16,7 +15,7 @@ export function mergedDelivery(flow) {
   const attempts = [...flow.blocks, ...(flow.retiredBlocks || [])]
     .filter((block) => block.kind === 'merge')
     .flatMap((block) => block.attempts);
-  const confirmed = attempts.findLast(confirmedMerge);
+  const confirmed = attempts.findLast((attempt) => attempt.reopenId === flow.reopen?.id && confirmedMerge(attempt));
   return confirmed ? confirmed.result : null;
 }
 

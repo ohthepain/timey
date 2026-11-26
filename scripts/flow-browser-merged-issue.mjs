@@ -82,11 +82,7 @@ export async function mergedIssueBrowserChecks({ page, project, service, screens
     after.blocks.find((block) => block.kind === 'merge').attempts,
     saved.blocks.find((block) => block.kind === 'merge').attempts
   );
-  assert.equal(await page.locator('#issue-archive-menu option[value="reopen"]').count(), 1);
-  assert.equal(
-    await page.locator('#issue-archive-menu option[value="reopen"]').evaluate((option) => option.hidden),
-    true
-  );
+  assert.equal(await page.getByRole('button', { name: 'Reopen', exact: true }).isVisible(), true);
   const reopen = await page.request.post('/api/issue-decision', {
     headers: { Origin: new URL(page.url()).origin, 'X-Factory-Action': 'manual' },
     data: { issueId: id, kind: 'reopen' },

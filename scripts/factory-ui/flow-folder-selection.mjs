@@ -139,10 +139,17 @@ export class FlowFolderSelection {
         : members;
     const knownIds = entries.map(({ issue }) => issue.id);
     const details = (row) => candidateData(row, knownIds);
-    const results = candidates.length
-      ? await this.recommend(input.strategy, candidates.map(details), scanning ? members.map(details) : [])
-      : [];
+    const results = await this.recommendCandidates(input, candidates, scanning ? members : [], details);
     return this.savePreview(input, scanning, candidates, results);
+  }
+
+  recommendCandidates({ strategy }, candidates, members, details) {
+    if (!candidates.length) return [];
+    if (strategy === 'sequential')
+      return candidates
+        .filter(({ issue, flow }) => this.eligible(issue, flow))
+        .map(({ issue }) => ({ id: issue.id, reason: 'Work in the displayed order.' }));
+    return this.recommend(strategy, candidates.map(details), members.map(details));
   }
 
   async savePreview(input, scanning, candidates, results) {

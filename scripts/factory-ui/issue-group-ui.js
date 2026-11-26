@@ -16,13 +16,20 @@
     const groups = new Map(issues.map((issue) => [issue.id, { issue, children: [] }]));
     for (const issue of issues) groups.get(issue.masterId)?.children.push(issue);
     const roots = [...groups.values()].filter(({ issue }) => !groups.has(issue.masterId));
+    for (const group of roots) orderChildren(group, attentionFirst);
     if (!attentionFirst) return roots;
-    for (const group of roots) {
-      group.children.sort((left, right) => attentionRank([left]) - attentionRank([right]));
-    }
     return roots
       .map((group) => ({ ...group, rank: attentionRank([group.issue, ...group.children]) }))
       .sort((left, right) => left.rank - right.rank);
+  }
+
+  function orderChildren({ issue, children }, attentionFirst) {
+    if (issue.subIssueOrder) {
+      const priorities = new Map(issue.subIssueOrder.map((id, index) => [id, index]));
+      children.sort((a, b) => priorities.get(a.id) - priorities.get(b.id));
+    } else if (attentionFirst) {
+      children.sort((a, b) => attentionRank([a]) - attentionRank([b]));
+    }
   }
 
   function attentionRank(issues) {

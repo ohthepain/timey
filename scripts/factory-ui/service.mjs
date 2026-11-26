@@ -857,6 +857,7 @@ export class FactoryUI {
     return { answered: true };
   }
   close() {
+    this.projectApp?.close();
     this.projectDiscuss?.close();
     this.projectHome?.close();
     this.sharedIssues?.close();

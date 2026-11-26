@@ -51,7 +51,7 @@ import { mergeFlowPR } from './flow-merge.mjs';
 import { runWorkVerification, resumeWorkDependencies, workVerificationScript } from './flow-verification.mjs';
 import { moveIssueBase, startingBranchUpstream, updateIssueBranch } from './flow-update-branch.mjs';
 import { runRetro } from './flow-retro.mjs';
-import { groupProofRequest, withGroupProof } from './flow-group-proof.mjs';
+import { groupProofRequest, sequentialProofBlocker, withGroupProof } from './flow-group-proof.mjs';
 import { sourceObservation } from './flow-group-scope.mjs';
 import { reportedLiveProofRequirements } from './flow-live-proof.mjs';
 import { isInvestigation } from './investigation-records.mjs';
@@ -255,6 +255,7 @@ function assertIdle(service, issueId) {
 }
 
 async function sharedSourceWorkspace(service, ctx, record) {
+  if (ctx.flow.reopen && !ctx.flow.sourceCheckpoint) return ctx.flow.workspace;
   const legacy =
     service.projectStores && !ctx.flow.sourceCheckpoint
       ? (await service.projectStores.records.get('classic/' + ctx.issue.id))?.value
@@ -317,11 +318,12 @@ async function workspaceFor(service, ctx, prepare = true) {
   };
   const saved = await sharedSourceWorkspace(service, ctx, record);
   requireThat(prepare || saved?.checkout, 'The issue needs a saved checkout before accepting its result.');
+  const suffix = ctx.flow.reopen ? '-follow-up-' + ctx.flow.reopen.id.slice(0, 8) : '';
   const workspace = saved?.checkout
     ? { checkout: saved.checkout, branch: saved.branch, base: saved.base }
     : {
-        checkout: join(service.root, '.issues/issue-work', ctx.issue.id),
-        branch: `codex/issue-${ctx.issue.issueNumber ?? ctx.issue.id}`,
+        checkout: join(service.root, '.issues/issue-work', ctx.issue.id + suffix),
+        branch: `codex/issue-${ctx.issue.issueNumber ?? ctx.issue.id}${suffix}`,
         base: startingRevision(service.root, ctx.flow),
       };
   const managed = realpathSync(join(service.root, '.issues'));
@@ -864,6 +866,9 @@ function modelInstructions(ctx, workspace, outputExecution) {
     executionPermissionInstructions,
     chatProgressInstructions,
     blockInstruction(ctx),
+    ctx.attempt.sequentialVerification
+      ? 'All sub-issues completed implementation. Verify their requested proof against this shared candidate. Do not edit source, rerun implementation or open a PR. Retain proof for every attached sub-issue on the current candidate. Report any unmet proof as a blocker.'
+      : '',
     ctx.block.kind === 'work'
       ? 'Running Work authorizes implementation within the saved issue scope. Treat any generic design or implementation sign-off in prior planning or issue wording as satisfied by this invocation. Make reversible technical decisions within that scope and record material assumptions. Preserve explicit checkpoints for specific operations, such as enabling deletion on existing data, and stop affected work for unresolved product decisions, scope changes, or required permissions. Continue with independent work and proof that the checkpoint or decision does not affect.'
       : '',
@@ -1184,6 +1189,7 @@ async function runModel(service, ctx, owned, options) {
       summary: outputs.at(-1).slice(0, 1200),
       output,
       ...retained,
+      ...sequentialProofBlocker(ctx.attempt, retained, service.root),
       evidence: [
         ...retained.evidence,
         ...(source ? [source.evidence] : []),
@@ -1412,7 +1418,7 @@ async function flowCleanupConfig(service, ctx, workspace, options) {
 }
 
 function usesLegacyDelivery(service, ctx) {
-  const work = service.lifecycleRuns[ctx.issue.id]?.work;
+  const work = ctx.flow.reopen ? null : service.lifecycleRuns[ctx.issue.id]?.work;
   return (
     work &&
     deliveryTarget(ctx.flow).branch === (work.config?.target ?? ctx.flow.target?.branch) &&

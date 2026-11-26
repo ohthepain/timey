@@ -87,6 +87,13 @@
     );
   }
 
+  function keepChatScroll(log, update) {
+    const follow = follows(log, captureSelection(log));
+    const top = log.scrollTop;
+    update();
+    log.scrollTop = follow ? log.scrollHeight : top;
+  }
+
   function captureElement(element, selected) {
     return {
       ...dimensions(element),
@@ -447,6 +454,7 @@
     track,
     dragging,
     follows,
+    keepChatScroll,
     captureSelection,
     restoreSelection,
   };

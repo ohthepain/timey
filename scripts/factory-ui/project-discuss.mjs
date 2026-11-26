@@ -53,6 +53,11 @@ export function readClarificationSkills(root) {
     .concat({ kind: 'value', name: 'none', label: 'No Grilling' });
 }
 
+function conversationTitle(ownership) {
+  if (!ownership) return 'New conversation';
+  return ownership.kind === 'issue' ? 'Issue Discuss' : 'Investigation discussion';
+}
+
 function checkedId(id) {
   requireThat(typeof id === 'string' && idPattern.test(id), 'Choose a valid project conversation or message.');
   return id;
@@ -354,7 +359,7 @@ export class ProjectDiscuss {
       id: randomUUID(),
       requestId,
       ...(ownership ? { ownership } : {}),
-      title: ownership ? 'Investigation discussion' : 'New conversation',
+      title: conversationTitle(ownership),
       createdAt: stamp(),
       updatedAt: stamp(),
       status: 'idle',

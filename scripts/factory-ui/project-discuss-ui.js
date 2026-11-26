@@ -618,18 +618,19 @@
         settings: sentSettings,
         attachments: submitted.attachments,
       });
-      if (result) {
-        if (draftRevision === submitted.revision && draft.value === submitted.text) {
-          draft.value = '';
-          attachments = [];
-          editId = null;
-        }
-        remember();
-        renderAttachments();
-        renderSuggestion();
-        updateControls();
-        void saveDraft();
+      if (result) view.keepChatScroll(log, () => finishSubmission(submitted));
+    }
+    function finishSubmission(submitted) {
+      if (draftRevision === submitted.revision && draft.value === submitted.text) {
+        draft.value = '';
+        attachments = [];
+        editId = null;
       }
+      remember();
+      renderAttachments();
+      renderSuggestion();
+      updateControls();
+      void saveDraft();
     }
     form.addEventListener('submit', (event) => void submit(event));
     draft.addEventListener('input', changedDraft);

@@ -30,8 +30,11 @@ export function flowTarget(root) {
   return { remote: 'origin', branch: 'dev', base: null };
 }
 export function flowWorkspace(service, flow) {
-  const record = service.lifecycleRuns?.[flow.issueId];
-  return flow.workspace || record?.work || record?.chatCheckout || null;
+  const record = flow.reopen ? undefined : service.lifecycleRuns?.[flow.issueId];
+  return flow.workspace ?? legacyWorkspace(record);
+}
+function legacyWorkspace(record = {}) {
+  return record.work || record.chatCheckout || null;
 }
 export function createFlowObserver(service, options = {}) {
   const remote = new Map();

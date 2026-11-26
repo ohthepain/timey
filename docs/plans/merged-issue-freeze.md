@@ -21,7 +21,7 @@ before verification. The retained diagnosis is in
   artifacts and Close. Template discovery and target observations cannot rewrite
   the saved work history.
 - Keep closure, Retro and Cleanup available. Fixed acceptance uses the original
-  merged revision and verifies its retained proof. Defer merged-issue reopening.
+  merged revision and verifies its retained proof. Closing makes the issue eligible for explicit Reopen.
 
 The policy is recorded in [ADR 0020](../adr/0020-freeze-merged-issues.md).
 

@@ -241,12 +241,12 @@ export class FlowStore {
     );
     return migrateFlow(record, target);
   }
-  save(flow, expectedRevision) {
+  save(flow, expectedRevision, options = {}) {
     const stores = registeredProjectStores(this.root);
-    if (stores) return this.saveAuthoritative(stores, flow, expectedRevision);
+    if (stores) return this.saveAuthoritative(stores, flow, expectedRevision, undefined, options);
     return this.saveLocal(flow, expectedRevision);
   }
-  async saveAuthoritative(stores, flow, expectedRevision, owner = this.ownerForIssue?.(flow.issueId)) {
+  async saveAuthoritative(stores, flow, expectedRevision, owner = this.ownerForIssue?.(flow.issueId), options = {}) {
     validateGraph(flow.blocks);
     reconcileMergeAttempts(flow);
     const saved = await stores.saveFlow({
@@ -255,7 +255,7 @@ export class FlowStore {
       expectedRevision,
       operationId: 'flow-' + digest(JSON.stringify([flow, expectedRevision])),
       owner,
-      purpose: flow.closing ? 'closure' : 'edit',
+      purpose: options.purpose ?? (flow.closing ? 'closure' : 'edit'),
     });
     mkdirSync(join(this.directory, flow.issueId), { recursive: true });
     writeJson(this.path(flow.issueId), saved);
