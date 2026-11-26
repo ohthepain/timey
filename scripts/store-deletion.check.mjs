@@ -1,6 +1,14 @@
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { randomUUID } from 'node:crypto';
+import {
+  S3Client,
+  DeleteObjectsCommand,
+  GetBucketVersioningCommand,
+  GetObjectCommand,
+  ListObjectVersionsCommand,
+} from '@aws-sdk/client-s3';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { gitFixture } from './git-fixture.mjs';
@@ -12,7 +20,7 @@ import { registerProjectStores } from './factory-ui/stores/report-access.mjs';
 import { createArtifactRouter } from './factory-ui/stores/coordination.mjs';
 import { InvestigationReports } from './factory-ui/investigation-reports.mjs';
 
-async function fixture(t, kind = 'files', s3Client) {
+async function fixture(t, kind = 'files', s3) {
   const f = gitFixture(t, 'store-delete-');
   if (kind === 'git') {
     const remote = join(f.root, 'remote.git');
@@ -24,22 +32,21 @@ async function fixture(t, kind = 'files', s3Client) {
   }
   const options = { root: f.root, projectId: 'delete-test' };
   const physical = await openArtifactStore(
-    s3Client
-      ? { id: 'artifacts', kind: 's3', bucket: 'disposable-fixture', region: 'us-east-1' }
-      : { id: 'artifacts', kind: 'files' },
-    { ...options, s3Client }
+    s3 ? { id: 'artifacts', kind: 's3', ...s3.config } : { id: 'artifacts', kind: 'files' },
+    { ...options, s3Client: s3?.client }
   );
   const config = { id: 'files', kind, ...(kind === 'git' && { branch: 'issue-queue', remote: 'origin' }) };
   let records;
   const artifacts = createArtifactRouter({ active: physical, stores: new Map(), records: () => records });
   records = await openRecordStore(config, { ...options, artifacts });
   const issues = await openIssueStore(config, { ...options, artifacts });
-  const create = () =>
+  const create = (root = f.root, runnerId = 'deleting-runner') =>
     createProjectStores({
       ...options,
+      root,
       records,
       artifacts,
-      runnerId: 'runner',
+      runnerId,
       issueStores: new Map([['files', issues]]),
       recordStores: new Map([['files', records]]),
       artifactStores: new Map([['artifacts', physical]]),
@@ -159,9 +166,9 @@ test('a live private record payload protects identical public evidence', async (
   assert.equal((await f.physical.get(ref)).toString(), body);
 });
 
-test('checked archive deletion removes only the exclusive disposable S3 object', async (t) => {
+function mockS3() {
   const objects = new Map();
-  const f = await fixture(t, 'files', {
+  return {
     async send(command) {
       const { Key, Body } = command.input;
       assert.equal(command.input.Bucket, 'disposable-fixture');
@@ -170,8 +177,8 @@ test('checked archive deletion removes only the exclusive disposable S3 object',
           objects.set(Key, Buffer.from(Body));
           return {};
         case 'DeleteObjectCommand':
-          objects.delete(Key);
-          return {};
+          assert.fail('Deletion must not remove an object without cross-runner coverage');
+          break;
         case 'GetObjectCommand':
           if (!objects.has(Key)) throw Object.assign(Error('Missing test object'), { name: 'NoSuchKey' });
           return { Body: { transformToByteArray: async () => objects.get(Key) } };
@@ -179,25 +186,88 @@ test('checked archive deletion removes only the exclusive disposable S3 object',
           assert.fail('Unexpected S3 command ' + command.constructor.name);
       }
     },
-  });
+  };
+}
+
+async function removeTestVersions(client, bucket, prefix) {
+  const stored = await client.send(new ListObjectVersionsCommand({ Bucket: bucket, Prefix: prefix + '/' }));
+  const Objects = [...(stored.Versions ?? []), ...(stored.DeleteMarkers ?? [])].map(({ Key, VersionId }) => ({
+    Key,
+    VersionId,
+  }));
+  if (Objects.length) {
+    const result = await client.send(new DeleteObjectsCommand({ Bucket: bucket, Delete: { Objects, Quiet: true } }));
+    assert.deepEqual(result.Errors ?? [], []);
+  }
+}
+
+async function s3Versions(client, bucket, prefix, stores, refs) {
+  const versions = await client.send(new ListObjectVersionsCommand({ Bucket: bucket, Prefix: prefix + '/' }));
+  assert.equal(versions.DeleteMarkers?.length ?? 0, 0);
+  return Promise.all(
+    refs.map(async (ref) => {
+      const Key = stores.objectKey(ref);
+      const version = versions.Versions?.find((entry) => entry.Key === Key && entry.IsLatest);
+      assert.ok(version?.VersionId && version.VersionId !== 'null');
+      const readback = await client.send(new GetObjectCommand({ Bucket: bucket, Key, VersionId: version.VersionId }));
+      const body = Buffer.from(await readback.Body.transformToByteArray());
+      assert.deepEqual(body, await stores.get(ref));
+      return { key: Key, versionId: readback.VersionId, sha256: ref.sha256, bytes: body.length };
+    })
+  );
+}
+
+test('two runners keep retained and unverified S3 evidence and delete verified local evidence after retry', async (t) => {
+  const liveBucket = process.env.TIMEY_DELETION_TEST_BUCKET;
+  if (liveBucket) assert.match(liveBucket, /^timey-store-test-[a-z0-9-]+$/);
+  const bucket = liveBucket || 'disposable-fixture';
+  const prefix = 'factory-deletion-proof/' + randomUUID();
+  const region = liveBucket ? 'eu-central-1' : 'us-east-1';
+  const client = liveBucket ? new S3Client({ region }) : mockS3();
+  const config = { bucket, prefix, region };
+  if (liveBucket) {
+    assert.equal((await client.send(new GetBucketVersioningCommand({ Bucket: bucket }))).Status, 'Enabled');
+    t.after(async () => {
+      await removeTestVersions(client, bucket, prefix);
+      client.destroy();
+    });
+  }
+  const f = await fixture(t, 'files', { config, client });
+  const other = gitFixture(t, 'store-retaining-runner-');
+  const otherRunner = f.create(other.root, 'retaining-runner');
+  assert.notEqual(otherRunner.runnerId, f.project.runnerId);
+  const otherClient = liveBucket ? new S3Client({ region }) : client;
+  if (liveBucket) t.after(() => otherClient.destroy());
+  const otherStore = await openArtifactStore(
+    { id: f.physical.id, kind: 's3', ...config },
+    { root: other.root, projectId: otherRunner.projectId, s3Client: otherClient }
+  );
+  const local = await openArtifactStore(
+    { id: 'private', kind: 'files' },
+    { root: f.root, projectId: f.project.projectId }
+  );
+  f.project.artifactStores.set(local.id, local);
   await f.add('a');
   const exclusive = await f.physical.put({ body: 'exclusive disposable evidence' });
   const published = await f.physical.put({ body: 'published disposable evidence' });
   const chat = await f.physical.put({ body: 'older disposable chat attachment' });
   const unreferenced = await f.physical.put({ body: 'unverified object for review' });
-  await f.evidence('a', [exclusive, published, chat]);
-  const directory = join(f.root, '.issues/factory-ui/project-discuss/closed');
+  const localExclusive = await local.put({ body: 'verified exclusive local evidence' });
+  const sharedRefs = [exclusive, published, chat, unreferenced];
+  const before = liveBucket ? await s3Versions(client, bucket, prefix, f.physical, sharedRefs) : [];
+  await f.evidence('a', [exclusive, published, chat, localExclusive]);
+  const directory = join(other.root, '.issues/factory-ui/project-discuss/closed');
   mkdirSync(join(directory, 'attachments'), { recursive: true });
-  writeFileSync(join(directory, 'attachments/older.bin'), await f.physical.get(chat));
+  writeFileSync(join(directory, 'attachments/older.bin'), await otherStore.get(chat));
   writeFileSync(
     join(directory, 'conversation.json'),
     JSON.stringify({ closedAt: '2026-11-25', messages: [{ attachments: [{ id: 'older', size: chat.bytes }] }, {}] })
   );
-  const reports = new InvestigationReports(f.root);
-  const report = join(f.root, 'report.md');
-  const evidence = join(f.root, 'published.bin');
+  const reports = new InvestigationReports(other.root);
+  const report = join(other.root, 'report.md');
+  const evidence = join(other.root, 'published.bin');
   writeFileSync(report, '# Retained report\n');
-  writeFileSync(evidence, await f.physical.get(published));
+  writeFileSync(evidence, await otherStore.get(published));
   const publication = reports.publish({
     source: { issueId: 'a', blockId: 'findings', attemptId: 'source', revision: 'a'.repeat(40) },
     attemptId: 'publication',
@@ -209,12 +279,30 @@ test('checked archive deletion removes only the exclusive disposable S3 object',
   await f.project.refresh();
   t.after(registerProjectStores(f.root, f.project));
   const issue = await f.project.readIssue('a');
-  const result = await deleteArchivedIssueReport(f.root, 'a', issue.report);
-  assert.equal(result.deleted, true);
-  assert.equal(await f.physical.inspect(exclusive), null);
-  for (const ref of [published, chat, unreferenced]) assert.ok(await f.physical.inspect(ref));
+  const remove = local.remove.bind(local);
+  local.remove = async () => {
+    throw Object.assign(Error('Simulated interruption'), { code: 'STORE_UNAVAILABLE' });
+  };
+  await assert.rejects(deleteArchivedIssueReport(f.root, 'a', issue.report), { code: 'STORE_UNAVAILABLE' });
+  const tombstone = (await f.project.coordination.get('catalog/a')).value;
+  assert.equal(tombstone.state, 'deleted');
+  local.remove = remove;
+  const restartingRunner = f.create(f.root, 'restarted-deleting-runner');
+  restartingRunner.artifactStores.set(local.id, local);
+  const result = await restartingRunner.resumeDelete({ operationId: tombstone.deletionOperation });
+  assert.deepEqual(
+    { deleted: result.deleted, removed: result.removed, retained: result.retained },
+    { deleted: true, removed: 1, retained: 3 }
+  );
+  assert.equal(await local.inspect(localExclusive), null);
+  for (const ref of sharedRefs) assert.ok(await otherStore.inspect(ref));
   assert.equal(reports.read(publication.id).content, '# Retained report\n');
   assert.equal(reports.read(publication.id).evidence[0].status, 'verified');
+  if (liveBucket) {
+    const after = await s3Versions(otherClient, bucket, prefix, otherStore, sharedRefs);
+    assert.deepEqual(after, before);
+    t.diagnostic(JSON.stringify({ bucket, prefix, before, after, result }));
+  }
 });
 
 for (const source of ['local content', 'configured store'])
