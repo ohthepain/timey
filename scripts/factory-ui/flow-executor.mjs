@@ -5,6 +5,7 @@ import { restoreSourceCheckpoint } from './stores/source-checkpoints.mjs';
 import { hydrateProjectEvidence } from './stores/runtime.mjs';
 import { groupChildren } from './issue-group.mjs';
 import { createWorkProgress } from './work-progress.mjs';
+import { chatProgressInstructions } from './chat-progress.mjs';
 import { executionPermissionInstructions } from './execution-permissions.mjs';
 import { BlockCatalog } from './block-catalog.mjs';
 import {
@@ -643,6 +644,7 @@ function recordModelMessage(service, ctx, options, threadId, kind, body) {
     kind: 'flow-block-' + kind,
     body,
     blockId: ctx.block.id,
+    attemptId: ctx.attempt.id,
   });
   if (repair) {
     Object.assign(
@@ -897,6 +899,7 @@ function modelInstructions(ctx, workspace, outputExecution) {
   return [
     ctx.definition.prompt,
     executionPermissionInstructions,
+    chatProgressInstructions,
     blockInstruction(ctx),
     ctx.block.kind === 'work'
       ? 'Running Work authorizes implementation within the saved issue scope. Treat any generic design or implementation sign-off in prior planning or issue wording as satisfied by this invocation. Make reversible technical decisions within that scope and record material assumptions. Preserve explicit checkpoints for specific operations, such as enabling deletion on existing data, and stop affected work for unresolved product decisions, scope changes, or required permissions. Continue with independent work and proof that the checkpoint or decision does not affect.'

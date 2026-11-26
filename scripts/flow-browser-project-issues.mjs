@@ -1,4 +1,4 @@
-import { importBrowserIssue, removeBrowserIssue } from './flow-browser-fixture.mjs';
+import { importBrowserIssue, installBrowserHumanInput, removeBrowserIssue } from './flow-browser-fixture.mjs';
 import assert from 'node:assert/strict';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -8,20 +8,24 @@ async function createFixtures(project, root) {
     const path = join(project, '.issues', file);
     return { path, content: existsSync(path) ? readFileSync(path, 'utf8') : null };
   });
-  const closed = ['20261120-bulk-closed-one', '20261120-bulk-closed-two', '20261120-bulk-closed-untouched'];
+  const titles = {
+    '20261120-bulk-closed-one': 'First completed report',
+    '20261120-bulk-closed-two': 'Second completed report',
+    '20261120-bulk-closed-untouched': 'Unselected report',
+    '20261120-bulk-archive-success': 'Archive the completed report',
+    '20261120-bulk-archive-busy': 'Report with an active operation',
+  };
+  const closed = Object.keys(titles);
   const open = '20261120-bulk-open';
   mkdirSync(join(project, '.issues/closed'), { recursive: true });
   writeFileSync(join(project, '.issues/preferences.json'), '{"commit":true}');
   copyFileSync(join(root, '.issues/triage-labels.md'), join(project, '.issues/triage-labels.md'));
-  const helper = '.agents/skills/issues/scripts';
-  mkdirSync(join(project, helper), { recursive: true });
-  for (const file of ['human-input.mjs', 'human-input-version.json'])
-    copyFileSync(join(root, helper, file), join(project, helper, file));
+  installBrowserHumanInput(project, root);
   for (const id of closed)
     await importBrowserIssue(
       project,
       id,
-      `---\nid: ${id}\ntitle: ${id}\nstate: closed\n---\n\nClosed fixture.\n`,
+      `---\nid: ${id}\ntitle: ${titles[id]}\nstate: closed\n---\n\nClosed fixture.\n`,
       'closed'
     );
   await importBrowserIssue(
@@ -29,7 +33,7 @@ async function createFixtures(project, root) {
     open,
     `---\nid: ${open}\ntitle: Open this normal issue\nstate: backlog\n---\n\nOpen the normal issue view.\n`
   );
-  return { closed, open, configuration };
+  return { closed, titles, open, configuration };
 }
 
 function restoreConfiguration(files) {
@@ -39,8 +43,60 @@ function restoreConfiguration(files) {
   }
 }
 
-export async function projectIssuesBrowserChecks({ page, project, root, output }) {
-  const { closed, open, configuration } = await createFixtures(project, root);
+async function assertArchiveLocations(frame, project, archived, failed) {
+  for (const id of archived) {
+    assert.equal(existsSync(join(project, '.issues/archive', id + '.md')), true);
+    assert.equal(existsSync(join(project, '.issues/closed', id + '.md')), false);
+    await frame.locator(`[data-select-issue="${id}"]`).waitFor({ state: 'detached' });
+  }
+  for (const id of failed) {
+    assert.equal(existsSync(join(project, '.issues/closed', id + '.md')), true);
+    assert.equal(await frame.locator(`[data-select-issue="${id}"]`).isChecked(), true);
+  }
+}
+
+async function observeArchiveBatch({ page, frame, project, output, titles, archived, failed = [] }) {
+  const status = frame.locator('#archive-progress-status');
+  await status.evaluate((node) => {
+    const updates = [];
+    node.progressUpdates = updates;
+    new MutationObserver((records) => {
+      for (const record of records) for (const child of record.addedNodes) updates.push(child.textContent);
+    }).observe(node, { childList: true });
+  });
+  const dialog = frame.getByRole('dialog', { name: 'Archive selected issues' });
+  await frame.getByRole('button', { name: 'Archive selected', exact: true }).click();
+  const summary = `Archived ${archived.length} ${archived.length === 1 ? 'issue' : 'issues'}.`;
+  await dialog.getByText(summary, { exact: true }).waitFor();
+
+  const selected = [...archived, ...failed];
+  const progress = await status.evaluate((node) => node.progressUpdates);
+  const issueUpdates = progress.filter((update) => update.includes('Archiving'));
+  assert.deepEqual(
+    issueUpdates.map((update) => update.split(' processed. ')[0]),
+    selected.map((_, index) => `${index} of ${selected.length}`)
+  );
+  assert.deepEqual(
+    issueUpdates.map((update) => update.split('Archiving ')[1]).sort(),
+    selected.map((id) => titles[id]).sort()
+  );
+  assert.equal(await status.textContent(), `${selected.length} of ${selected.length} processed.`);
+  const failures = await dialog.getByRole('listitem').allTextContents();
+  assert.deepEqual(
+    failures,
+    failed.map((id) => `${titles[id]}: Wait for the current issue operation to finish.`)
+  );
+  await assertArchiveLocations(frame, project, archived, failed);
+  assert.equal(await dialog.isVisible(), true);
+  const screenshot = join(output, failed.length ? 'closed-archive-partial-failure.png' : 'closed-archive-success.png');
+  await page.screenshot({ path: screenshot, fullPage: true });
+  await dialog.getByRole('button', { name: 'Dismiss', exact: true }).click();
+  await dialog.waitFor({ state: 'hidden' });
+  return { progress, summary, failures, screenshot, stayedOpenAfterRefresh: true, dismissed: true };
+}
+
+export async function projectIssuesBrowserChecks({ page, project, root, output, service }) {
+  const { closed, titles, open, configuration } = await createFixtures(project, root);
   try {
     await page.goto('/?projectTab=issues');
     const frame = page.frameLocator('#project-issues iframe');
@@ -79,15 +135,32 @@ export async function projectIssuesBrowserChecks({ page, project, root, output }
       ) + '\n'
     );
     assert.equal(archiveLabel, 'Archive selected');
-    await frame.getByRole('button', { name: 'Archive selected', exact: true }).click();
-    await frame.getByText('Archived 2 issues.', { exact: true }).waitFor();
-    for (const id of closed.slice(0, 2)) {
-      assert.equal(existsSync(join(project, '.issues/archive', id + '.md')), true);
-      assert.equal(existsSync(join(project, '.issues/closed', id + '.md')), false);
-      await frame.locator(`[data-select-issue="${id}"]`).waitFor({ state: 'detached' });
-    }
+    const success = await observeArchiveBatch({ page, frame, project, output, titles, archived: closed.slice(0, 2) });
     assert.equal(existsSync(join(project, '.issues/closed', closed[2] + '.md')), true);
     assert.equal(existsSync(join(project, '.issues', open + '.md')), true);
+    await frame.locator(`[data-select-issue="${closed[3]}"]`).check();
+    await frame.locator(`[data-select-issue="${closed[4]}"]`).check();
+    const cleanup = Promise.withResolvers();
+    service.issueCleanupTasks.set(closed[4], cleanup.promise);
+    let partialFailure;
+    try {
+      partialFailure = await observeArchiveBatch({
+        page,
+        frame,
+        project,
+        output,
+        titles,
+        archived: [closed[3]],
+        failed: [closed[4]],
+      });
+    } finally {
+      service.issueCleanupTasks.delete(closed[4]);
+      cleanup.resolve();
+    }
+    writeFileSync(
+      join(output, 'closed-issues-archive-progress.json'),
+      JSON.stringify({ success, partialFailure }, null, 2) + '\n'
+    );
     await frame.getByRole('button', { name: 'Open', exact: true }).click();
     await frame.locator(`[data-select-issue="${open}"]`).check();
     await frame.getByText('Edit shared fields across the selection.', { exact: true }).waitFor();

@@ -310,7 +310,30 @@ const serverControlUI = (() => {
     const chat = value.chats === 1 ? 'chat' : 'chats';
     return `${value.actions} ${action} running · ${value.chats} open ${chat}`;
   }
+  function formatHeapSize(bytes) {
+    const mib = bytes / 1024 ** 2;
+    return mib < 1024 ? `${Math.round(mib)} MiB` : `${Number((mib / 1024).toFixed(1))} GiB`;
+  }
+  function watchHeap() {
+    const reading = document.querySelector('.server-heap');
+    if (!reading?.getClientRects().length) return;
+    async function refresh() {
+      try {
+        const response = await fetch('/api/server-heap', { signal: AbortSignal.timeout(4000) });
+        if (!response.ok) throw Error('Heap unavailable');
+        const { usedBytes, limitBytes } = await response.json();
+        if (![usedBytes, limitBytes].every((bytes) => Number.isSafeInteger(bytes) && bytes > 0))
+          throw Error('Heap unavailable');
+        reading.textContent = `Heap ${formatHeapSize(usedBytes)} / ${formatHeapSize(limitBytes)}`;
+      } catch {
+        reading.textContent = 'Heap unavailable';
+      }
+      setTimeout(refresh, 2000);
+    }
+    void refresh();
+  }
   function watchConnection(onWaiting) {
+    watchHeap();
     async function probe() {
       const response = await fetch('/api/health', {
         cache: 'no-store',

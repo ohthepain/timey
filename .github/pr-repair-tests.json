@@ -1,7 +1,75 @@
 {
   "version": 1,
-  "sourceRun": "https://github.com/ohthepain/timey/actions/runs/45665598819/job/139391277360",
+  "sourceRun": "https://github.com/ohthepain/timey/actions/runs/45759791677/job/139710760473",
   "tests": [
+    {
+      "name": "The shared Factory header keeps every project tab and relocated control usable",
+      "command": [
+        "node",
+        "scripts/flow-browser.mjs",
+        "--ci-part=1",
+        "--manual-close",
+        "--server-heap",
+        "--project-navigation",
+        "--sidebar-labels",
+        "--local-notes"
+      ]
+    },
+    {
+      "name": "Block clicks preserve visible cards and minimally reveal clipped cards",
+      "command": [
+        "node",
+        "scripts/flow-browser.mjs",
+        "--ci-part=2",
+        "--capture-folder-issue",
+        "--save-request-route",
+        "--block-reveal"
+      ]
+    },
+    {
+      "name": "Flow navigation loads another issue while an earlier block check is pending and rejects stale results",
+      "command": [
+        "node",
+        "--test",
+        "--test-name-pattern=^Flow navigation loads another issue while an earlier block check is pending and rejects stale results$",
+        "scripts/factory-refresh.check.mjs"
+      ]
+    },
+    {
+      "name": "Discuss activity persists through streaming and refresh, and stops for input and terminal states",
+      "command": [
+        "node",
+        "--test",
+        "--test-name-pattern=^Discuss activity persists through streaming and refresh, and stops for input and terminal states$",
+        "scripts/interface-state.check.mjs"
+      ]
+    },
+    {
+      "name": "completed Flow capture replay observes a peer deletion without recreating the issue",
+      "command": [
+        "node",
+        "--test",
+        "--test-name-pattern=^completed Flow capture replay observes a peer deletion without recreating the issue$",
+        "scripts/issue-creation.check.mjs"
+      ]
+    },
+    {
+      "name": "Status pseudo-folders track project issues without moving them",
+      "command": [
+        "node",
+        "scripts/flow-browser.mjs",
+        "--ci-part=1",
+        "--manual-close",
+        "--error-recovery",
+        "--no-changes",
+        "--sidebar-scroll",
+        "--issue-status-folders"
+      ]
+    },
+    {
+      "name": "Polling preserves expanded text and the Closed issues list",
+      "command": ["node", "scripts/flow-browser.mjs", "--ci-part=2", "--polling"]
+    },
     {
       "name": "typecheck (tsc --noEmit)",
       "command": ["pnpm", "run", "typecheck"]
@@ -27,10 +95,6 @@
         "--folder-workspace-grouping",
         "--tab-source"
       ]
-    },
-    {
-      "name": "Issues and Local notes use matching text styles",
-      "command": ["node", "scripts/flow-browser.mjs", "--ci-part=1", "--project-navigation", "--sidebar-labels"]
     },
     {
       "name": "Closed issues open with Destination flush with the bottom, including short flows",

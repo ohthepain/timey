@@ -1,8 +1,10 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { recordActivity } from './activity.mjs';
+import { hasChatProgress, recordChatProgress } from './chat-progress.mjs';
 
 export function retainStreamEvent(run, item) {
   recordActivity(run, item);
+  if (hasChatProgress(item)) recordChatProgress(run, item);
   run.events.push(item);
   if (run.events.length > 150) run.events.shift();
 }

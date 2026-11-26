@@ -2621,3 +2621,9 @@ html[data-project-issue-request-embed='true'] .factory-header {
     width: min(12rem, 40vw);
   }
 }
+.server-heap {
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}

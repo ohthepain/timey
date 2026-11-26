@@ -15,10 +15,12 @@ const proposalsCheck = 'Pending proposals can be approved or deleted after confi
 
 export const flowBrowserScenarioNames = {
   '--activity-indicators': 'Activity dots stay anchored and reflect actual work',
+  '--chat-progress': 'Issue and project chats retain semantic progress',
   '--automate-activity': 'Automate me dots follow each active response',
   '--issue-scrollbar': 'Issue flow scrollbar appears only while scrolling',
   '--issue-status-folders': 'Status pseudo-folders track project issues without moving them',
   '--master-issues': 'Master issue hierarchy and badges across the workspace',
+  '--manual-sub-issue-removal': 'Manual removal clears the sub-issue master links and badge',
   '--investigative-grouping': 'Master grouping keeps investigative and non-investigative issues separate',
   '--issue-annotations': 'Issue annotations retain history and drive badge filters and attention order',
   '--project-issues': 'Closed issue selections archive together and issue links open the normal view',
@@ -36,6 +38,7 @@ export const flowBrowserScenarioNames = {
   '--sidebar-scroll': 'The whole sidebar scrolls over every section',
   '--project-home': 'Project home investigates selected branches and reviews Automate me skills',
   '--project-navigation': 'The shared Factory header keeps every project tab and relocated control usable',
+  '--server-heap': 'The Factory header refreshes live server heap usage and shows an unavailable reading',
   '--project-discuss': 'Project Discuss retains independent conversations, settings and explicit controls',
   '--asset-storage': 'Asset Storage lists project S3 artifacts and retained references in Settings',
   '--project-settings': 'Project Settings addressable pages preserve drafts, sources and explicit saves',
@@ -70,6 +73,7 @@ export const flowBrowserScenarioNames = {
   '--flow-menu': 'The Flow menu saves and switches routes, and the wand rebuilds with results intact',
   '--add-parallel-block': 'Adding and saving a block retains the selected prompt mode and parallel lane',
   '--reorder-saved-blocks': 'Keyboard controls reorder saved blocks',
+  '--block-reveal': 'Block clicks preserve visible cards and minimally reveal clipped cards',
   '--assign-folder': 'Folders can be created and assigned without running work',
   '--save-block-comment': 'Block comments remain attached after reload',
   '--work-markdown': 'Work Markdown reloads headings and lists without changing layout, drafts or actions',

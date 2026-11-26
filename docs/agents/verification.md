@@ -1091,6 +1091,10 @@ Flow-card reveal checks wait for the whole card to be visible in the current
 scroll viewport. Card bounds and viewport bounds are measured together; partial
 scroll movement alone does not mean the reveal has finished. Failures retain
 relative card bounds and viewport height in the polling diagnostic.
+`node scripts/flow-browser.mjs --ci-part=2 --capture-folder-issue --save-request-route --block-reveal`
+also checks that clicking the selected card reveals it without adding a history entry.
+The `--project-navigation` scenario preloads Chromium history so it checks the
+recorded destinations even when the browser evicts older entries.
 
 `node scripts/flow-browser.mjs --error-recovery` triggers a rejected branch update
 and verifies that a successful explicit Refresh clears its old error banner.
@@ -1152,8 +1156,10 @@ report bytes and folder assignments. It saves `issue-status-folders-proof.json` 
 
 `node scripts/flow-browser.mjs --local-notes` checks that collapsed and expanded
 Notes each retain their state after refresh and saves `local-notes-disclosure.json`.
-`node scripts/flow-browser.mjs --project-issues` checks the closed selection action
-reads Archive selected and saves `closed-issues-action.json` beside its screenshot.
+`node scripts/flow-browser.mjs --project-issues` checks the Archive selected dialog
+with a successful batch and a batch with an active issue operation that blocks one archive.
+It saves the title and count changes, final results, and screenshot paths in
+`closed-issues-archive-progress.json`.
 `node scripts/flow-browser.mjs --issue-status-folders` compares the rendered Blocked
 and In progress carets with a regular sidebar folder in both states. It saves
 `issue-status-carets.json` and screenshots of each expanded and collapsed section.
@@ -1163,6 +1169,18 @@ scrollbar. It verifies that wheel scrolling moves the flow and shows its thumb,
 then the thumb hides after scrolling stops. The flow width and scroll position
 remain stable. It saves `issue-scrollbar.json` and screenshots of the idle,
 scrolling and stopped states in the reported evidence directory.
+
+`node scripts/flow-browser.mjs --server-heap` checks the Flow and Classic header
+readings against the running Factory process. It observes refresh and recovery
+without navigation, and saves `server-heap.json` and screenshots of the live and
+unavailable readings. The scenario configures the fixture queue before opening
+Classic. Run `node scripts/flow-browser.mjs --ci-part=1 --manual-close --server-heap --project-navigation --sidebar-labels --local-notes`
+to check the sidebar console after the intentional Close and heap errors. Each
+expected failed response accounts for one matching console entry.
+
+`node scripts/flow-browser.mjs --manual-sub-issue-removal` removes sub-issues
+from both the master and child pages. It checks active membership, links,
+and badges after removal and saves `manual-sub-issue-removal.json`.
 
 `node scripts/flow-browser.mjs --activity-indicators --project-discuss --automate-activity` checks
 three-dot activity during streamed chat output and its removal after Stop or

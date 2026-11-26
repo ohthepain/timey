@@ -817,8 +817,13 @@ See [ADR 0020](../adr/0020-freeze-merged-issues.md).
 `execution-permissions.mjs` supplies native permission guidance for model-run
 checks. `work-progress.mjs` separates bounded unfinished-work continuations from
 check repairs and stops for concrete human, permission or external blockers.
-`flow-repair-evidence.mjs` copies Merge failure records and failed-check logs into
-the issue checkout before its repair worker starts.
+`flow-repair-evidence.mjs` copies Merge failure records into the repair
+checkout for the worker and keeps separate copies in the issue's attempt
+evidence. The repair index records the failing and repaired commits and trees,
+the comparison target, failed and passing CI run identifiers, and the confirmed
+merge commit and its parents. Factory checks the saved attachment digests
+before publishing the delivery result. Retrospection materializes the index
+and linked failure output from retained issue evidence for review.
 `branch-repair.mjs` owns issue-page branch repair runs and approval. It checks
 the selected model against Factory's provider settings before preparing the
 isolated checkout or opening a repair session, and retains setup failures in
@@ -884,10 +889,12 @@ controls share a row with Send. Discuss hides
 the shared Flow footer. The shared skill composer, message envelope, send icon, and dictation handler
 live in `issue-chat-ui.js`. Project, report, and Classic issue chats reuse these
 controls. Flow conversation entries reuse the same message envelope.
-`activity-indicator-ui.js` supplies the shared three-dot activity indicator for
-chat histories, Automate me, Classic decision review, coordinator conversations,
-and active issue work. `project-discuss.css` owns its animation and reduced-motion
-styles. Flow places the issue indicator outside `graph-scroll`, in an overlay
+`chat-progress.mjs` groups provider activity into a live status, milestones,
+and collapsed command details. Flow saves the activity with its attempts,
+including investigation work. Project Discuss and report discussions save it
+with the reply. `activity-indicator-ui.js` renders the shared progress line
+and command groups. `chat-progress.css` animates SparkleText and respects
+reduced motion. Flow places the separate issue indicator outside `graph-scroll`, in an overlay
 anchored to `graph-region`, so blocks scroll behind it. Agent permissions and
 human-input waits suppress activity. Active branch updates and repairs also show
 the issue indicator. The [activity indicator design](../plans/chat-and-issue-activity-indicators.md)

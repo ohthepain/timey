@@ -70,6 +70,14 @@ Opening or refreshing Project home starts neither operation. See the
 [project home design](../plans/project-home.md).
 
 Selecting an issue opens its [explicit flow workspace](../adr/0013-explicit-issue-flows.md).
+The browser's Back and Forward buttons and history menu traverse project pages,
+folders, issues, investigations, and blocks. A block URL opens the same block;
+if the block has been removed, Factory opens its issue. If a folder or issue is
+unavailable, use the browser controls to continue through history. Inspector
+tabs, sidebar filters, and refresh keep the current history entry. Block drafts
+stay in the current browser tab when you leave and return through either
+Factory or the browser controls.
+
 Understand uses a read-only checkout. Factory retains the final response as its
 Block response artifact; the agent does not need filesystem write access to save
 that response. Missing historical evidence remains a reported gap. Retro follow-ups
@@ -1447,6 +1455,10 @@ human acceptance.
 
 ## Header action control and version
 
+The header shows the running Factory server's Node.js heap usage and effective
+heap limit. Both values come from the same server sample. The reading refreshes
+automatically and shows **Heap unavailable** when Factory cannot obtain a reading.
+
 The header counts running actions and open temporary chats. **No new actions** is
 an on/off switch. Turning it on blocks new work and requests that coordinators
 pause after their current action. All chats remain available, including opening
@@ -2069,7 +2081,9 @@ blocked child, or the checkout cannot be reconciled with the Work log, Factory
 keeps the group for review. A reverted change still belongs to the grant under
 which it was made.
 
-A detached child stays open with its annotation history and a link to the former
-master. Work and verification use the remaining children. The original Request
-and earlier attempts remain in history. An empty master pauses. Reattach a
-previously detached child from the master to resume work.
+A child detached by a master run stays open with its annotation history and a
+link to the former master. When you remove a child yourself, the child stops
+linking to the master and the removal adds no badge. Work and verification use
+the remaining children. The original Request and earlier attempts remain in
+history. An empty master pauses. Reattach a previously detached child from the
+master to resume work.

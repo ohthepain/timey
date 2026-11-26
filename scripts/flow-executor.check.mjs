@@ -1031,6 +1031,14 @@ function mergeFixture(
     provider: {
       config: { repository: 'test/fixture', target: 'dev' },
       async gh(args) {
+        if (args[1] === 'repos/test/fixture/git/commits/actual-merge') {
+          const checkout = f.flow.workspace.checkout;
+          return JSON.stringify({
+            sha: 'actual-merge',
+            tree: { sha: f.git('-C', checkout, 'rev-parse', 'HEAD^{tree}') },
+            parents: [f.git('rev-parse', 'dev'), publishedHead].map((sha) => ({ sha })),
+          });
+        }
         if (github) return github(args);
         return JSON.stringify({ data: { repository: { pullRequest: {} } } });
       },
@@ -1046,6 +1054,12 @@ function mergeFixture(
           head,
           merged,
           target: f.git('rev-parse', 'dev'),
+          checks: [
+            {
+              name: 'Verify',
+              detailsUrl: 'https://github.com/test/fixture/actions/runs/90/job/91',
+            },
+          ],
           ...(merged ? { merge: { revision: 'actual-merge', url: 'https://example.invalid/pr/9' } } : {}),
         };
       },
@@ -1389,7 +1403,17 @@ test('Merge preserves each GitHub browser failure and pushes all three repair ca
     assert.equal(digest(bytes), sha256);
     return bytes.toString();
   };
-  const { attempts, attemptId } = JSON.parse(retrieve(index));
+  const { attempts, attemptId, delivery } = JSON.parse(retrieve(index));
+  const checkout = f.flow.workspace.checkout;
+  assert.equal(delivery.candidate.commit, result.result.head);
+  assert.equal(delivery.candidate.tree, f.git('-C', checkout, 'rev-parse', 'HEAD^{tree}'));
+  assert.equal(delivery.target.commit, result.result.target);
+  assert.deepEqual(delivery.merge.parents, [delivery.target.commit, delivery.candidate.commit]);
+  assert.equal(delivery.merge.commit, result.result.revision);
+  assert.deepEqual(
+    delivery.checks.map(({ runId, jobId }) => [runId, jobId]),
+    [['90', '91']]
+  );
   assert.deepEqual(
     attempts.map(({ round }) => round),
     [1, 2, 3]
@@ -1417,6 +1441,10 @@ test('Merge preserves each GitHub browser failure and pushes all three repair ca
     assert.ok(conversation.requestedAt <= conversation.respondedAt);
     assert.ok(conversation.respondedAt <= record.finishedAt);
     assert.equal(candidate, attempts[i + 1]?.failedHead ?? result.result.head);
+    assert.equal(record.failure.revision.commit, record.failedHead);
+    assert.equal(record.failure.revision.comparisonTarget, delivery.target.commit);
+    assert.equal(record.repairedRevision.commit, candidate);
+    assert.match(retrieve(record.failure.checks[0].log), /Only explicit Send starts a reply/);
     assert.ok(f.observations.some(({ operation, head }) => operation === 'push' && head === candidate));
     assert.match(retrieve(record.log), /\$ git fetch /);
     for (const file of record.failure.evidence) {
@@ -1488,6 +1516,15 @@ async function verifyRepairRetrospective(t, f, merge, turn) {
   rmSync(join(checkout, '.issues'), { recursive: true });
 
   const resolver = await hydrateEvidence({ manifest, artifacts, directory: join(f.root, '.issues/hydrated') });
+  const repairIndex = merge.evidence.find(({ label }) => label === 'Merge repair index');
+  const durable = JSON.parse(resolver.read(repairIndex.path, repairIndex.sha256));
+  for (const record of durable.attempts) {
+    const { log } = record.failure.checks[0];
+    assert.match(resolver.read(log.path, log.sha256).toString(), /Only explicit Send starts a reply/);
+    for (const file of record.failure.evidence) rmSync(file.path);
+  }
+  assert.deepEqual(durable.delivery.merge.parents, [merge.result.target, merge.result.head]);
+  rmSync(repairIndex.path);
   t.after(registerEvidenceResolver(f.root, resolver));
   f.service.store.directory = join(f.root, '.issues');
   f.service.codex = {
@@ -1520,6 +1557,12 @@ async function verifyRepairRetrospective(t, f, merge, turn) {
   );
   const index = JSON.parse(readFileSync(outcome.evidence[0].path));
   const repairs = JSON.parse(readFileSync(index.sections.repairs.path));
+  const [mergeRepair] = JSON.parse(readFileSync(index.sections.mergeRepairs.path));
+  assert.deepEqual(mergeRepair.delivery, durable.delivery);
+  for (const record of mergeRepair.attempts) {
+    const { log } = record.failure.checks[0];
+    assert.match(readFileSync(log.path, 'utf8'), /Only explicit Send starts a reply/);
+  }
   const threads = JSON.parse(readFileSync(index.sections.threads.path));
   assert.deepEqual(
     repairs.map(({ logs }) =>
@@ -2322,7 +2365,7 @@ test('GitHub repair retains failed job output when verification artifacts are un
   const provider = {
     config: { repository: 'test/fixture' },
     async gh(args) {
-      if (args[0] === 'api') return JSON.stringify({ head_sha: 'expected' });
+      if (args[0] === 'api') return JSON.stringify({ head_sha: 'expected', run_attempt: 1 });
       if (args[1] === 'download') throw Error('No verification artifact was uploaded.');
       assert.equal(args[1], 'view');
       return 'AssertionError: CI test failed before evidence upload.';
@@ -2333,6 +2376,10 @@ test('GitHub repair retains failed job output when verification artifacts are un
   };
   await retainGitHubFailure(provider, error, 'expected', f.root);
   assert.match(readFileSync(error.evidence[0].path, 'utf8'), /CI test failed before evidence upload/);
+  assert.deepEqual(
+    error.githubRuns.map(({ head, runId, attempt, checks }) => [head, runId, attempt, checks[0].jobId]),
+    [['expected', '77', 1, '88']]
+  );
 });
 
 test('Merge retries temporary readiness failures before merging', async (t) => {

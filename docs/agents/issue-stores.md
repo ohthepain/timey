@@ -201,8 +201,15 @@ acknowledges it, and neither a lost connection nor elapsed time releases a claim
 
 ## Finish an interrupted deletion
 
-Permanent Delete removes the issue and its exclusively owned evidence. Files
-shared with retained issues stay available. Archive retains the report and history.
+Permanent Delete removes the issue and evidence whose exclusive ownership it can
+verify. Files shared with retained issues stay available. Archive retains the
+report and history.
+
+Factory scans publications and Discuss attachments in the current project
+checkout. Other runners can retain their own copies of these references. Until
+Factory can check those references across runners, it keeps candidate artifacts
+in shared stores and file stores outside the current checkout. It also keeps
+copies and routing records for candidates that have a shared storage home.
 
 1. Finish running project work before deleting an issue. Deletion holds shared
    changes while Factory checks retained references and removes unused evidence.
@@ -218,7 +225,14 @@ shared with retained issues stay available. Archive retains the report and histo
 
 Deletion leaves source worktrees to their existing cleanup controls. It does not
 rewrite Git history, purge older S3 object versions, or change provider backups.
-With S3 versioning disabled, removing an unused object deletes its stored bytes.
+This cleanup leaves shared S3 objects and their versions available.
+
+Run `node --test scripts/store-deletion.check.mjs` to exercise interrupted
+deletion and retention with two disposable runner roots. Set
+`TIMEY_DELETION_TEST_BUCKET` to a disposable, version-enabled
+`timey-store-test-*` bucket in `eu-central-1` to check real S3 object versions.
+The check writes to a unique prefix, reads back the exact versions from the
+retaining runner, and removes only the versions under its test prefix.
 
 ## Recover ownership
 

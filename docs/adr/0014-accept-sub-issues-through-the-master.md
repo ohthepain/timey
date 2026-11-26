@@ -12,8 +12,11 @@ acceptance, so one decision can cover the whole fix without closing unfinished w
 Closing the master for any other reason releases its attached sub-issues for
 independent work. Their reports stay open and link to any relevant master
 evidence. A person can also detach an individual sub-issue while the master is idle.
-An ordinary detach invalidates the master's Request and dependent blocks. A fresh
-Request uses the current membership and preserves the original wording and attempt history.
+User-initiated removal clears the child's master links and omits the
+**Removed from master** badge. The master retains its detach history so the
+user can attach the child again. An ordinary detach invalidates the master's
+Request and dependent blocks. A fresh Request uses the current membership
+and preserves the original wording and attempt history.
 
 A master run can detach its own blocked sub-issue during Request or Work when
 its saved Work scope and checkout evidence establish that changes are attributable
