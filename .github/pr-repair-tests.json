@@ -1,10 +1,16 @@
 {
   "version": 1,
-  "sourceRun": "https://github.com/ohthepain/timey/actions/runs/45868864059/job/140082258539",
+  "sourceRun": "https://github.com/ohthepain/timey/actions/runs/45870933190/job/140089737384",
   "tests": [
     {
-      "name": "Folder plus creates an issue directly in that folder and retains typed wording",
-      "command": ["node", "scripts/flow-browser.mjs", "--ci-part=2", "--capture-folder-issue"]
+      "name": "The folder workspace reviews moves and creates a master without starting work",
+      "command": [
+        "node",
+        "scripts/flow-browser.mjs",
+        "--ci-part=2",
+        "--capture-folder-issue",
+        "--folder-workspace-grouping"
+      ]
     },
     {
       "name": "Activity dots stay anchored and reflect actual work",
