@@ -57,6 +57,11 @@ async function browserIssues(service, ctx) {
         title: proposal.title + ' for ' + ctx.attempt.investigationSource.issueId,
         key: 'validation-boundary',
       },
+      {
+        ...proposal,
+        title: 'Explain validation failures for ' + ctx.attempt.investigationSource.issueId,
+        key: 'validation-feedback',
+      },
     ],
   });
   return {
@@ -85,7 +90,7 @@ function configureHome(service, calls) {
     const proof = { path, sha256: digest(findings), label: 'Block response' };
     return {
       output: findings,
-      summary: 'Found one validation improvement.',
+      summary: 'Found validation improvements.',
       evidence: [proof],
       artifacts: { values: {}, files: { response: proof } },
     };
@@ -190,7 +195,7 @@ async function investigate(page, service, calls, screenshot, poll) {
   assert.equal(reports.list().filter((entry) => entry.source.issueId === issueId).length, 2);
   assert.equal(
     service.flows.issues().filter(({ source_issue }) => source_issue === issueId).length,
-    1,
+    2,
     'Matching work remains linked without duplicate issue creation.'
   );
   await screenshot('investigation-run-history');
@@ -206,8 +211,28 @@ async function investigate(page, service, calls, screenshot, poll) {
     2,
     'Archival preserves retained reports.'
   );
+  const secondReport = reports
+    .list()
+    .find(({ source }) => source.issueId === issueId && source.attemptId !== inquiry.id);
+  const createdIssues = issueOutput.artifacts.values.issues.map(({ issueId }) => service.flows.selected(issueId));
+  assert.equal(createdIssues.length, 2);
+  await checkReportIssueLinks(page, reportOutput.artifacts.values.reportId, secondReport.id, createdIssues, screenshot);
   await page.goto('/');
   await page.locator('#project-home:not([hidden])').waitFor();
+}
+async function checkReportIssueLinks(page, firstReport, secondReport, createdIssues, screenshot) {
+  await page.goto('/?projectTab=reports&report=' + firstReport);
+  const section = page.getByRole('region', { name: 'Created issues' });
+  for (const { id, title } of createdIssues) {
+    const link = section.getByRole('link', { name: title, exact: true });
+    await link.waitFor();
+    assert.equal(await link.getAttribute('href'), '/?issue=' + id);
+  }
+  assert.equal(await section.getByRole('link').count(), createdIssues.length);
+  await screenshot('investigation-report-created-issues');
+  await page.locator('[data-report-run]').selectOption(secondReport);
+  await page.waitForURL((url) => url.searchParams.get('report') === secondReport);
+  await section.waitFor({ state: 'hidden' });
 }
 async function prepareHome(page, service) {
   const labels = join(service.root, '.issues/triage-labels.md');

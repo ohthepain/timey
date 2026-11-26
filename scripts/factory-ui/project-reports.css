@@ -142,14 +142,14 @@
   border: 0;
   background: #faf9f5;
 }
-.report-reading-html .report-evidence {
+.report-reading-html .report-resources {
   flex: 0 0 auto;
   max-height: 100px;
   overflow: auto;
   margin: 0;
   padding: 0 16px;
 }
-.report-evidence {
+.report-resources {
   border-top: 1px solid var(--line);
   margin-top: 28px;
 }

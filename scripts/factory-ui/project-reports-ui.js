@@ -3,6 +3,13 @@
   const escape = window.timeyEscapeHTML;
   const template = (id, values) =>
     document.getElementById(id).innerHTML.replace(/{{(\w+)}}/g, (_match, key) => values[key]);
+  function createdIssuesMarkup(issues) {
+    if (!issues.length) return '';
+    const links = issues
+      .map(({ id, title }) => `<li><a href="/?issue=${encodeURIComponent(id)}">${escape(title)}</a></li>`)
+      .join('');
+    return `<section aria-label="Created issues"><h2>Created issues</h2><ul>${links}</ul></section>`;
+  }
   function htmlReport(report) {
     const doc = new DOMParser().parseFromString(report.content, 'text/html');
     const policy = doc.createElement('meta');
@@ -126,7 +133,7 @@
       const saved = state(id);
       url(id);
       const runs = reportRuns(result.reports, id);
-      renderReport(report, saved, runs);
+      renderReport(report, saved, runs, result.createdIssues);
       const reading = root.querySelector('.report-reading');
       reading.scrollTop = saved.scroll;
       reading.addEventListener('scroll', remember, { passive: true });
@@ -137,7 +144,7 @@
       if (saved.discuss) await showDiscussion(true);
       else layoutDiscussion(false);
     }
-    function renderReport(report, saved, runs) {
+    function renderReport(report, saved, runs, createdIssues) {
       const run = runs.get(report.source.attemptId);
       root.innerHTML = template('report-reader-template', {
         investigationHref: '/?issue=' + encodeURIComponent(report.source.issueId),
@@ -155,6 +162,7 @@
         content: /^\s*<!doctype html\b/i.test(report.content)
           ? htmlReport(report)
           : window.timeyChatMarkdown(retainedLinks(report)),
+        createdIssues: createdIssuesMarkup(createdIssues),
         evidence:
           report.evidence.map((item, index) => evidenceMarkup(item, index, report.id)).join('') ||
           '<p class="muted">No separate evidence files were saved.</p>',
