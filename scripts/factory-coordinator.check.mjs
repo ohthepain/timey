@@ -1,8 +1,6 @@
-import { createFactoryServer } from './factory-ui/http.mjs';
-import { once } from 'node:events';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { digest } from './factory-ui/common.mjs';
@@ -210,53 +208,6 @@ test('renewal retains history and current questions; restart pauses without repl
   await restarted.continue();
   assert.equal(restarted.view().paused, false);
   assert.ok(f.calls.some((c) => c[0] === 'continue' && c[1] === 'one'));
-});
-
-test('HTTP coordinator reads start no work, actions require local session and origin, and stale steering fails', async (t) => {
-  const f = fixture(t);
-  Object.assign(f.service, {
-    reviewMode: 'live',
-    discussions: { sessions: new Map() },
-    codex: { requests: new Map() },
-  });
-  const server = createFactoryServer(f.service);
-  server.listen(0, '127.0.0.1');
-  await once(server, 'listening');
-  t.after(() => {
-    server.closeAllConnections();
-    server.close();
-  });
-  const url = 'http://127.0.0.1:' + server.address().port;
-  const page = await fetch(url);
-  const cookie = page.headers.get('set-cookie').split(';')[0];
-  await page.text();
-  assert.equal((await fetch(url + '/api/coordinator')).status, 400);
-  const headers = { cookie, origin: url, 'content-type': 'application/json', 'x-factory-action': 'manual' };
-  assert.equal((await fetch(url + '/api/coordinator', { headers })).status, 200);
-  assert.equal(f.calls.length, 0);
-  assert.equal(
-    (
-      await fetch(url + '/api/coordinator-stop', {
-        method: 'POST',
-        headers: { ...headers, origin: 'https://invalid.example' },
-        body: '{}',
-      })
-    ).status,
-    400
-  );
-  assert.equal(f.owner.paused, false);
-  assert.equal(
-    (
-      await fetch(url + '/api/coordinator-send', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ mode: 'steer', id: 'stale-http', text: 'Approve', turnId: 'old' }),
-      })
-    ).status,
-    400
-  );
-  assert.equal((await fetch(url + '/api/coordinator-stop', { method: 'POST', headers, body: '{}' })).status, 200);
-  assert.equal(f.owner.paused, true);
 });
 
 test('native RPC fixture exercises shared read-only transport, steering and interruption without live models', async (t) => {

@@ -133,44 +133,6 @@ test('public retry applies saved setup and reports progress without duplicate wo
   assert.equal(f.service.store.runs.filter((r) => r.kind === 'assembly').length, 1);
 });
 
-test('the stopped-operation panel gives a visible retry and readable failure details', async () => {
-  const { JSDOM } = await import('jsdom');
-  const html = readFileSync('scripts/factory-ui/index.html', 'utf8');
-  const source = html.slice(
-    html.indexOf('      function assemblyRecoveryPanel('),
-    html.indexOf('      function lifecyclePanel(')
-  );
-  const context = {};
-  vm.runInNewContext(
-    readFileSync('scripts/factory-ui/file-link-ui.js', 'utf8') + '\nglobalThis.fileLinkUI = fileLinkUI;\n',
-    context
-  );
-  const render = new Function('esc', 'busy', 'fileLinkUI', source + ';return assemblyRecoveryPanel;')(
-    (s) => String(s),
-    false,
-    context.fileLinkUI
-  );
-  const dom = new JSDOM(
-    render({
-      id: 'one',
-      assemblyRecovery: {
-        runId: 'saved',
-        updated: 'now',
-        reason: 'A check failed. Fix it separately, then retry.',
-        detail: 'See /project/check.log',
-        checkout: '/project/issue',
-        log: '/project/check.log',
-      },
-    })
-  );
-  assert.equal(dom.window.document.querySelector('[data-assembly-retry]').textContent, 'Retry existing operation');
-  assert.equal(dom.window.document.querySelector('[data-open-file]').dataset.openFile, '/project/check.log');
-  assert.match(dom.window.document.body.textContent, /will not restart implementation or repeat the original merge/);
-  assert.match(dom.window.document.body.textContent, /check.log/);
-  assert.match(html, /Continuing existing work…/);
-  dom.window.close();
-});
-
 for (const field of ['actor', 'issueId', 'repository'])
   test('setup never borrows an answer with a different ' + field, async (t) => {
     const f = fixture(t);

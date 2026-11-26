@@ -183,21 +183,18 @@ const serverControlUI = (() => {
       links.textContent = 'No linked issue';
       return links;
     }
-    const flowWorkspace = Boolean(document.getElementById('project-actions'));
     for (const issue of item.issues) {
       const link = document.createElement('a');
-      link.href = flowWorkspace ? `/?issue=${encodeURIComponent(issue.id)}` : `#/issue/${encodeURIComponent(issue.id)}`;
+      link.href = `/?issue=${encodeURIComponent(issue.id)}`;
       link.textContent = `Issue: ${issue.title}${issue.issueNumber ? ` (#${issue.issueNumber})` : ''}`;
       links.append(link, document.createTextNode(' '));
     }
-    links.append(actionOutputLink(item, flowWorkspace));
+    links.append(actionOutputLink(item.outputHref || `/api/run?id=${encodeURIComponent(item.id)}`));
     return links;
   }
-  function actionOutputLink(item, flowWorkspace) {
+  function actionOutputLink(href) {
     const output = document.createElement('a');
-    output.href =
-      item.outputHref ||
-      `${flowWorkspace ? '/classic' : ''}#/issue/${encodeURIComponent(item.issues[0].id)}?run=${encodeURIComponent(item.id)}`;
+    output.href = href;
     output.textContent = 'Action output';
     return output;
   }

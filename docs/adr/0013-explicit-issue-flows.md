@@ -9,11 +9,11 @@ planned route. A person can run one block or use Start and Resume to run the rou
 This addresses the strategy runner's coupling of work, target synchronization,
 verification, publication, and readiness.
 
-The flow workspace is the factory server's default page. `/classic` retains the
-strategy interface and its historical records. This decision supersedes ADR 0009's
-bundled execution for explicitly started flow blocks. It preserves existing
-strategy assignments, human-input obligations, protected merge checks, and explicit
-acceptance. Reading or refreshing a flow does not migrate or launch old work.
+Flow is the Factory workspace. Legacy `/classic` links route to a saved issue in
+Flow or to Project Home. This decision supersedes ADR 0009’s bundled browser
+execution. Existing records, human-input obligations, protected merge checks,
+and explicit acceptance retain their meaning. Reading or refreshing an issue
+starts no work.
 
 Each issue has one JSON flow under `.issues/flows/ISSUE_ID/flow.json`. The flow stores blocks, dependencies, lanes, comments and attempts. Request owns
 Your words and the agent's clarified fields. It is the required first block.

@@ -4,7 +4,7 @@ const fullFactory = 'test:factory';
 const aggregateScripts = new Set([fullFactory, 'test:browser', 'test:flow', 'test:flow:browser']);
 const localPath = (value) => /^(?![/-])(?!.*(?:^|\/)\.\.(?:\/|$))[\w./-]+$/.test(value);
 const nodeTestFile = (value) => localPath(value) && /\.(?:mjs|cjs|js)$/.test(value);
-const standaloneBrowserPath = /^scripts\/[\w-]+-browser\.mjs$/;
+const standaloneBrowserPath = /^scripts\/(?!factory-browser\.mjs$)[\w-]+-browser\.mjs$/;
 
 function checkTrailingArguments(args, accepts, reject, rule, start = 0) {
   const index = args.slice(start).findIndex((arg) => !accepts(arg));
@@ -31,12 +31,6 @@ function checkFlowBrowserTests(args, reject, { isSelector, isCiPart }) {
   const parts = args.filter(isCiPart);
   if (parts.length > 1) reject(args.lastIndexOf(parts[1]) + 2, 'Select at most one Flow browser CI part.');
   if (!args.some(isSelector)) reject(args.length + 2, 'Provide at least one Flow browser scenario flag.');
-}
-
-function checkFactoryBrowserTests([scenario = '', extra], reject) {
-  if (!/^--scenario=factory-browser-[\w-]+\.mjs$/.test(scenario))
-    reject(2, 'Use --scenario=factory-browser-<name>.mjs.');
-  if (extra !== undefined) reject(3, 'Select exactly one Factory browser scenario.');
 }
 
 function checkPnpmScript([script = '', extra], reject) {
@@ -72,7 +66,6 @@ const focusedCommands = new Map([
     new Map([
       ['--test', checkNodeTests],
       ['scripts/flow-browser.mjs', checkFlowBrowserTests],
-      ['scripts/factory-browser.mjs', checkFactoryBrowserTests],
     ]),
   ],
   [

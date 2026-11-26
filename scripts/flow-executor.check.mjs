@@ -1213,7 +1213,7 @@ test('Merge uses GitHub readiness for a master without starting another verifica
   assert.equal(merged.result.revision, 'actual-merge');
   assert.deepEqual(
     f.observations.map(({ operation }) => operation),
-    ['ready', 'ready', 'merge']
+    ['push', 'ready', 'ready', 'merge']
   );
   assert.ok(!f.calls.slice(callsBeforeMerge).some(({ instructions }) => instructions));
 });
@@ -1597,14 +1597,14 @@ test('Merge requires approval of its exact commit and target', async (t) => {
   assert.equal(first.status, 'blocked');
   assert.deepEqual(
     f.observations.map(({ operation }) => operation),
-    ['ready']
+    ['push', 'ready']
   );
   const result = await approveMerge(f, first);
   assert.equal(result.result.revision, 'actual-merge');
   assert.equal(result.workspace.pr, 9);
   assert.deepEqual(
     f.observations.map(({ operation }) => operation),
-    ['ready', 'ready', 'ready', 'merge']
+    ['push', 'ready', 'push', 'ready', 'ready', 'merge']
   );
   assert.equal(f.calls.filter((item) => item.method === 'guard').at(-1).args[2], 'merge');
 });
@@ -2085,7 +2085,10 @@ for (const thrown of [false, true])
         return true;
       }
     );
-    assert.ok(!f.observations.some(({ operation }) => ['push', 'merge'].includes(operation)));
+    assert.deepEqual(
+      f.observations.map(({ operation }) => operation),
+      ['push', 'ready']
+    );
   });
 
 test('external merge reconciliation records GitHub facts without manufacturing verification or acceptance', async (t) => {
@@ -2564,7 +2567,7 @@ test('Update Branch leaves an unfinished cherry-pick intact', async (t) => {
   assert.equal(f.work('diff', '--name-only', '--diff-filter=U'), 'source.txt');
 });
 
-test('a new Merge run aborts a leftover local merge before synchronizing its target', async (t) => {
+test('a new Merge run preserves and resolves an in-progress merge of the current target', async (t) => {
   const commands = [];
   const f = mergeFixture(t, { onGit: (args) => commands.push(args) });
   await f.run('understand');
@@ -2578,6 +2581,7 @@ test('a new Merge run aborts a leftover local merge before synchronizing its tar
   assert.throws(() => work('merge', '--no-edit', 'dev'));
   const turn = f.connection.turn.bind(f.connection);
   f.connection.turn = async (...args) => {
+    assert.equal(work('rev-parse', 'MERGE_HEAD'), f.git('rev-parse', 'dev'));
     writeFileSync(join(checkout, 'source.txt'), 'Both implementations.\n');
     work('add', 'source.txt');
     work('commit', '--no-edit');
@@ -2587,7 +2591,7 @@ test('a new Merge run aborts a leftover local merge before synchronizing its tar
   assert.equal(result.result.revision, 'actual-merge');
   assert.equal(work('merge-base', 'HEAD', saved), saved);
   assert.equal(work('status', '--porcelain'), '');
-  assert.equal(commands.filter((args) => args.join(' ') === 'merge --abort').length, 1);
+  assert.equal(commands.filter((args) => args.join(' ') === 'merge --abort').length, 0);
 });
 
 test('Update Branch shows the worker decision when its response leaves conflicts unresolved', async (t) => {
@@ -2777,7 +2781,7 @@ test('Merge downloads failed GitHub verification evidence, repairs it, pushes an
   const result = await f.run('merge');
   assert.equal(downloads, 1);
   assert.equal(result.result.revision, 'actual-merge');
-  assert.equal(f.observations.filter(({ operation }) => operation === 'push').length, 1);
+  assert.equal(f.observations.filter(({ operation }) => operation === 'push').length, 2);
 });
 
 test('Merge stops when repairs cycle back to the same failing source tree', async (t) => {
@@ -2854,8 +2858,8 @@ test('Merge retries temporary readiness failures before merging', async (t) => {
   const result = await f.run('merge');
   assert.equal(result.result.revision, 'actual-merge');
   assert.deepEqual(
-    f.observations.slice(0, 4).map(({ operation }) => operation),
-    ['ready', 'ready', 'ready', 'ready']
+    f.observations.map(({ operation }) => operation),
+    ['push', 'ready', 'ready', 'ready', 'ready', 'merge']
   );
   assert.equal(f.calls.filter(({ method }) => method === 'turn').length, 1);
 });
@@ -2886,7 +2890,7 @@ test('Merge Continue checks GitHub again before merging', async (t) => {
   assert.equal(result.result.revision, 'actual-merge');
   assert.deepEqual(
     f.observations.map(({ operation }) => operation),
-    ['ready', 'ready', 'merge']
+    ['push', 'ready', 'ready', 'merge']
   );
 });
 
@@ -3004,7 +3008,7 @@ void test('Merge refreshes the target while waiting for CI and incorporates an a
     },
     onWait(advance) {
       if (!pending) return;
-      assert.equal(fetches, 4 - pending, 'Refresh the target before each readiness request.');
+      assert.equal(fetches, 2 * (4 - pending), 'Refresh the target before and after each pending readiness request.');
       assert.equal(
         f.observations.some(({ operation }) => operation === 'verify'),
         false
@@ -3016,7 +3020,7 @@ void test('Merge refreshes the target while waiting for CI and incorporates an a
   const result = await f.run('merge');
   assert.equal(result.result.revision, 'actual-merge');
   f.git('-C', f.flow.workspace.checkout, 'merge-base', '--is-ancestor', f.git('rev-parse', 'dev'), 'HEAD');
-  assert.equal(f.observations.filter(({ operation }) => operation === 'push').length, 1);
+  assert.equal(f.observations.filter(({ operation }) => operation === 'push').length, 2);
 });
 
 test('Merge waits for pending GitHub tests before merging', async (t) => {

@@ -1,14 +1,9 @@
 import { fixtureRoute } from './flow-browser-routes.mjs';
 import assert from 'node:assert/strict';
-import { readFileSync, existsSync, mkdirSync, copyFileSync, writeFileSync } from 'node:fs';
-import { createCaptures } from './factory-ui/issue-capture.mjs';
-import { proposal } from './factory-capture-fixture.mjs';
-import { factory } from './factory-ledger.mjs';
+import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { withQueueConfiguration } from './flow-browser-queue-configuration.mjs';
 import { randomUUID } from 'node:crypto';
-import { collectEvidence } from './factory-ui/stores/evidence.mjs';
-import { git } from './factory-ui/common.mjs';
 import {
   createIssueFolderSettings,
   readFolderSettings,
@@ -282,51 +277,6 @@ async function checkBulkStoreMove({ page, service, issue, folder, api }) {
   });
 }
 
-async function checkClassicStoreCapture({ page, service, folder, storeId, poll, screenshot }) {
-  return withQueueConfiguration({ page, project: service.root, root: resolve(import.meta.dirname, '..') }, async () => {
-    const helper = '.agents/skills/issues/scripts';
-    mkdirSync(join(service.root, helper), { recursive: true });
-    for (const file of ['human-input.mjs', 'human-input-version.json'])
-      copyFileSync(join(resolve(import.meta.dirname, '..'), helper, file), join(service.root, helper, file));
-    if (!existsSync(join(service.root, '.issues/factory.json'))) factory(service.root).init();
-    const previous = service.captures;
-    service.captures = createCaptures(service, {
-      assess: async (description) => ({ issues: [proposal(description)] }),
-    });
-    try {
-      await page.goto('/classic');
-      await page.getByRole('button', { name: 'Create issue', exact: true }).click();
-      const dialog = page.locator('#create-issue-dialog');
-      await dialog
-        .locator('#capture-description')
-        .fill('Classic capture persists an explicitly selected Issue storage profile.');
-      await poll(() => dialog.locator('#capture-folder').isEnabled(), Boolean, 'Classic capture folders did not load.');
-      await dialog.locator('#capture-folder').selectOption(folder.name);
-      const select = dialog.locator('#capture-issue-store');
-      await poll(() => select.isEnabled(), Boolean, 'Classic capture storage profiles did not load.');
-      await select.selectOption(storeId);
-      assert.equal(await select.getAttribute('required'), '');
-      const saved = page.waitForResponse(
-        (response) => response.url().endsWith('/api/issue-capture') && response.request().method() === 'POST'
-      );
-      await dialog.locator('#capture-save').click();
-      const response = await saved;
-      const result = await response.json();
-      assert.equal(response.status(), 200, JSON.stringify(result));
-      await dialog.waitFor({ state: 'hidden' });
-      await page.locator('#capture-toast').getByText('Issue captured.', { exact: true }).waitFor();
-      const issue = await service.projectStores.readIssue(result.issues[0].id);
-      assert.equal(issue.storeId, storeId);
-      assert.equal(issue.artifactStoreId, 'browser-artifacts');
-      assert.match(issue.report, /Classic capture persists an explicitly selected Issue storage profile/);
-      assert.ok(issue.flow.blocks.every((block) => block.attempts.length === 0));
-      await screenshot('classic-issue-store-capture');
-    } finally {
-      service.captures = previous;
-    }
-  });
-}
-
 async function moveFromIssueSettings(page, storeId) {
   await page.locator('#issue-settings').evaluate((element) => {
     element.open = true;
@@ -460,7 +410,6 @@ export async function issueStoresBrowserChecks({ page, project, service, poll, s
   await screenshot('issue-store-checked-move');
   await checkSharedMigrationResume({ page, service, issue, storeId, poll, api });
   await checkBulkStoreMove({ page, service, issue, folder, api });
-  await checkClassicStoreCapture({ page, service, folder, storeId, poll, screenshot });
   await checkOwnershipRecovery({ page, service, issueId: issue.id, poll, screenshot });
 
   await page.locator('[data-destination-open]').first().click();

@@ -165,19 +165,14 @@ Read [operating rules](operating.md) for ownership, launch and integration polic
 The default browser page opens [Project home](../plans/project-home.md) in the
 [explicit flow workspace](../adr/0013-explicit-issue-flows.md). Its project menu
 offers Investigate and Automate me. Selecting an issue opens its existing flow.
-Its blocks can run individually or through the issue's Start/Resume control. The
-`/classic` page retains the strategy and lifecycle adapter described below.
-Refreshing either page starts no new work.
+Run blocks individually or use the issue’s **Start** and **Resume** controls.
+Refreshing the page reads saved state without starting work. Legacy browser
+links at `/classic` open the selected Flow issue or Project Home.
 
-The [local factory UI](factory-ui.md) is an alternative front door for the same
-queue and ledger. `pnpm run factory:ui -- --project /absolute/project` serves the
-queue and issue screens locally. This adapter uses the installed Codex CLI
-app-server transport instead of native chat creation. Scope, ownership, human
-gates and verification policy remain enforced. The issue screen’s lifecycle
-Progress control continues within an approved issue plan, including workers and
-automatic-policy integration. Human-first integration and final acceptance still
-require explicit decisions. This opt-in UI workflow is described below; native
-chat commands continue to follow the factory skill’s one-iteration contract.
+Run `pnpm run factory:ui -- --project /absolute/project` to serve the workspace
+for a local project. Scope, ownership, human gates and verification still apply
+to the individual blocks. Native chat commands follow the factory skill’s
+one-iteration contract.
 
 Both front doors use [shared progress and completion records](factory-records.md).
 Their selection scope and control loops remain separate.

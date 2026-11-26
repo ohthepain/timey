@@ -216,7 +216,7 @@ test('real restart changes the listener PID and preserves existing chat and prog
   installed.git('add', '.');
   installed.git('commit', '-qm', 'Installed factory');
   mkdirSync(join(root, 'scripts/factory-ui'), { recursive: true });
-  writeFileSync(join(root, 'scripts/factory-ui/index.html'), 'wrong-project-assets');
+  writeFileSync(join(root, 'scripts/factory-ui/flow.html'), 'wrong-project-assets');
   writeFileSync(join(root, 'scripts/factory-ui.mjs'), 'process.exit(42);');
   const child = spawn(
     process.execPath,
@@ -247,7 +247,7 @@ test('real restart changes the listener PID and preserves existing chat and prog
       fail(Error('Fixture server exited before readiness: ' + code + (stderr ? '\n' + stderr : '')))
     );
   });
-  assert.match(await (await fetch(url)).text(), /<div id="app"/);
+  assert.match(await (await fetch(url)).text(), /id="project-home"/);
   const headers = await session(url);
   const denied = await fetch(url + '/api/server-restart', {
     method: 'POST',

@@ -2,9 +2,10 @@ import { importBrowserIssue, installBrowserHumanInput, removeBrowserIssue } from
 import assert from 'node:assert/strict';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { ensureIssueNumbers } from './factory-ui/issue-numbers.mjs';
 
 async function createFixtures(project, root) {
-  const configuration = ['triage-labels.md', 'preferences.json'].map((file) => {
+  const configuration = ['triage-labels.md', 'preferences.json', 'issue-numbers.json'].map((file) => {
     const path = join(project, '.issues', file);
     return { path, content: existsSync(path) ? readFileSync(path, 'utf8') : null };
   });
@@ -110,9 +111,58 @@ async function observeArchiveBatch({ page, frame, project, output, titles, archi
   return { progress, layout, summary, failures, screenshot, stayedOpenAfterRefresh: true, dismissed: true };
 }
 
+async function verifyClassicRedirects(page, open, number) {
+  const legacy = [];
+  for (const [path, expected] of [
+    ['/classic?issue=' + open, open],
+    ['/classic#/issue/' + number + '?stage=backlog', open],
+    ['/classic', null],
+    ['/classic?issue=missing-issue', null],
+  ]) {
+    await page.goto(path);
+    await page.waitForURL((url) => url.pathname === '/' && url.searchParams.get('issue') === expected);
+    if (expected) await page.getByRole('heading', { name: 'Open this normal issue', exact: true }).waitFor();
+    else await page.locator('#project-home-content').waitFor();
+    legacy.push({ path, destination: page.url() });
+  }
+  for (const path of ['/classic#queue', '/classic?embed=project-issues#queue']) {
+    await page.goto(path);
+    await page.waitForURL((url) => url.pathname === '/' && url.searchParams.get('projectTab') === 'issues');
+    await page.locator('#project-issues').waitFor();
+    legacy.push({ path, destination: page.url() });
+  }
+  return legacy;
+}
+
+async function verifyClassicRetirement(page) {
+  const retired = [];
+  for (const path of ['/api/issue-strategy-start', '/api/lifecycle-start', '/api/issue-chat-send', '/api/start']) {
+    const response = await page.evaluate(async (path) => {
+      const response = await fetch(path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Factory-Action': 'manual' },
+        body: '{}',
+      });
+      return { status: response.status, ...(await response.json()) };
+    }, path);
+    assert.match(response.error, /Unknown operation/);
+    retired.push({ path, ...response });
+  }
+  for (const path of ['/index.html', '/coordinator-ui.js', '/issue-capture-ui.js']) {
+    const response = await page.request.get(path);
+    assert.equal(response.status(), 404);
+    retired.push({ path, status: response.status() });
+  }
+  return retired;
+}
+
 export async function projectIssuesBrowserChecks({ page, project, root, output, service }) {
   const { closed, titles, open, configuration } = await createFixtures(project, root);
   try {
+    const numbers = ensureIssueNumbers(project, [open, ...closed]);
+    const legacy = await verifyClassicRedirects(page, open, numbers[open]);
+    const retired = await verifyClassicRetirement(page);
+    writeFileSync(join(output, 'classic-retirement.json'), JSON.stringify({ legacy, retired }, null, 2) + '\n');
     await page.goto('/?projectTab=issues');
     const frame = page.frameLocator('#project-issues iframe');
     await frame.getByRole('button', { name: 'Open', exact: true }).waitFor();

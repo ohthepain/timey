@@ -204,7 +204,7 @@ function flowVerificationCommand() {
 
 function verificationCommands() {
   const commands = {
-    browser: ciSuite ? [process.execPath, 'scripts/factory-browser.mjs'] : ['pnpm', 'run', 'test:browser'],
+    browser: ['pnpm', 'run', 'test:browser'],
     'flow-browser': flowVerificationCommand(),
     factory: factoryVerificationCommand(),
     typecheck: [bin('tsc'), '--noEmit'],

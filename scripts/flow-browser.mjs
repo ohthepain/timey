@@ -150,7 +150,9 @@ const assets = [
   'view-state.js',
   'activity-indicator-ui.js',
   'flow.html',
-  'index.html',
+  'project-issues.html',
+  'project-issues.css',
+  'queue-sort-ui.js',
   'issue-group.css',
   'issue-group-ui.js',
   'flow.css',
@@ -904,7 +906,7 @@ try {
   if (process.argv.includes(flowBrowserOrderModifier)) await noChangesCheck();
   await check(followupsCheck, () => flowFollowupsBrowserChecks({ page, service, logs, screenshot }));
   await check(flowBrowserScenarioNames['--inbox-chat-reading'], () =>
-    inboxChatBrowserChecks({ page, service, project, root, poll, screenshot, output })
+    inboxChatBrowserChecks({ page, service, project, poll, screenshot, output })
   );
   await check(flowBrowserScenarioNames['--inbox-details'], () =>
     inboxDetailsBrowserChecks({ page, service, project, poll, screenshot, output })
@@ -3058,75 +3060,68 @@ try {
     await page.reload();
     await badge.filter({ hasText: /^Disconnected after 00:09$/ }).waitFor();
   });
-  await check(
-    'Flow and Classic reload the selected issue after a lost connection without replaying the click',
-    async () => {
-      issueId = await connectionRecoveryIssue();
-      const helperDir = '.agents/skills/issues/scripts';
-      mkdirSync(join(project, helperDir), { recursive: true });
-      for (const file of ['human-input.mjs', 'human-input-version.json']) {
-        copyFileSync(join(root, helperDir, file), join(project, helperDir, file));
-      }
-      writeFileSync(join(project, '.issues/preferences.json'), '{"commit":true}');
-      const screens = [
-        { path: '/?issue=' + issueId, error: '#error-message', toggle: '#flow-actions-switch input' },
-        { path: '/classic#/issue/' + issueId, error: '#error', toggle: '#server-controls [data-server-toggle]' },
-      ];
-      for (const screen of screens) {
-        await page.goto(screen.path);
-        const toggle = page.locator(screen.toggle);
-        const waiting = page.getByText('Waiting for server…', { exact: true });
-        await toggle.waitFor();
-        const url = page.url();
-
-        await context.clearCookies();
-        if (!screen.path.startsWith('/classic')) await page.locator('#refresh').click();
-        const expired = page.locator(screen.error).filter({ hasText: /session expired.*Reload this page/ });
-        await expired.waitFor();
-        await page.waitForResponse((response) => response.url().endsWith('/api/health') && response.status() === 204);
-        assert.equal(await expired.isVisible(), true);
-        assert.equal(await waiting.isVisible(), false);
-        assert.equal(page.url(), url);
-        await page.reload();
-        await page.locator('#server-actions-dialog').waitFor({ state: 'attached' });
-        if (await toggle.isChecked()) await toggle.uncheck();
-        await page.locator(screen.toggle + ':not(:checked):not(:disabled)').waitFor();
-
-        const release = Promise.withResolvers();
-        const pauseReceived = Promise.withResolvers();
-        const removeHealth = await fixtureRoute(page, '**/api/health', async (route) => {
-          await pauseReceived.promise;
-          if (screen.path.startsWith('/classic')) await release.promise;
-          await route.abort().catch(() => {});
-        });
-        let clicks = 0;
-        const removePause = await fixtureRoute(page, '**/api/server-pause', async (route) => {
-          clicks++;
-          const response = await route.fetch();
-          assert.equal(response.status(), 200);
-          await route.abort();
-          pauseReceived.resolve();
-        });
-        const pauseRequest = page.waitForRequest('**/api/server-pause');
-        await toggle.click();
-        await pauseRequest;
-        await waiting.waitFor();
-        assert.equal(page.url(), url);
-        assert.equal(clicks, 1);
-
-        const reloaded = page.waitForEvent('load');
-        await removeHealth(release.resolve);
-        await reloaded;
-        assert.equal(page.url(), url);
-        await page.locator(screen.toggle + ':checked').waitFor();
-        assert.equal(await waiting.isVisible(), false);
-        assert.equal(clicks, 1);
-        await removePause();
-        await toggle.uncheck();
-        await page.locator(screen.toggle + ':not(:checked):not(:disabled)').waitFor();
-      }
+  await check('Flow reloads the selected issue after a lost connection without replaying the click', async () => {
+    issueId = await connectionRecoveryIssue();
+    const helperDir = '.agents/skills/issues/scripts';
+    mkdirSync(join(project, helperDir), { recursive: true });
+    for (const file of ['human-input.mjs', 'human-input-version.json']) {
+      copyFileSync(join(root, helperDir, file), join(project, helperDir, file));
     }
-  );
+    writeFileSync(join(project, '.issues/preferences.json'), '{"commit":true}');
+    const screens = [{ path: '/?issue=' + issueId, error: '#error-message', toggle: '#flow-actions-switch input' }];
+    for (const screen of screens) {
+      await page.goto(screen.path);
+      const toggle = page.locator(screen.toggle);
+      const waiting = page.getByText('Waiting for server…', { exact: true });
+      await toggle.waitFor();
+      const url = page.url();
+
+      await context.clearCookies();
+      await page.locator('#refresh').click();
+      const expired = page.locator(screen.error).filter({ hasText: /session expired.*Reload this page/ });
+      await expired.waitFor();
+      await page.waitForResponse((response) => response.url().endsWith('/api/health') && response.status() === 204);
+      assert.equal(await expired.isVisible(), true);
+      assert.equal(await waiting.isVisible(), false);
+      assert.equal(page.url(), url);
+      await page.reload();
+      await page.locator('#server-actions-dialog').waitFor({ state: 'attached' });
+      if (await toggle.isChecked()) await toggle.uncheck();
+      await page.locator(screen.toggle + ':not(:checked):not(:disabled)').waitFor();
+
+      const release = Promise.withResolvers();
+      const pauseReceived = Promise.withResolvers();
+      const removeHealth = await fixtureRoute(page, '**/api/health', async (route) => {
+        await pauseReceived.promise;
+        await route.abort().catch(() => {});
+      });
+      let clicks = 0;
+      const removePause = await fixtureRoute(page, '**/api/server-pause', async (route) => {
+        clicks++;
+        const response = await route.fetch();
+        assert.equal(response.status(), 200);
+        await route.abort();
+        pauseReceived.resolve();
+      });
+      const pauseRequest = page.waitForRequest('**/api/server-pause');
+      await toggle.click();
+      await pauseRequest;
+      await waiting.waitFor();
+      assert.equal(page.url(), url);
+      assert.equal(clicks, 1);
+
+      const reloaded = page.waitForEvent('load');
+      await removeHealth(release.resolve);
+      await reloaded;
+      assert.equal(page.url(), url);
+      await page.locator(screen.toggle + ':checked').waitFor();
+      assert.equal(await waiting.isVisible(), false);
+      assert.equal(clicks, 1);
+      await removePause();
+      await toggle.uncheck();
+      await page.locator(screen.toggle + ':not(:checked):not(:disabled)').waitFor();
+    }
+  });
   await check('Starting branch confirmation moves saved work through the real UI', async () => {
     issueId = '20261117-starting-branch-fixture';
     await importBrowserIssue(
