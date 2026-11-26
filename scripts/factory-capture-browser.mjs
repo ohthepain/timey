@@ -39,7 +39,7 @@ for (const name of ['launch', 'startLifecycle', 'progressStart', 'integrate', 'e
 const server = createFactoryServer(service);
 server.listen(0, '127.0.0.1');
 await once(server, 'listening');
-const url = `http://127.0.0.1:${server.address().port}`;
+const url = `http://127.0.0.1:${server.address().port}/classic`;
 const cli = resolve('node_modules/.bin/playwright-cli');
 const session = basename(evidence);
 const commands = [];
@@ -93,7 +93,7 @@ try {
     check(await page.getByLabel('Description',{exact:true}).inputValue()==='retry capture','Draft retained after failure');
     await page.locator('#capture-save').click();
     await page.locator('#capture-toast a').waitFor();
-    check(page.url().endsWith('/'),'Save remains on queue');
+    check(new URL(page.url()).pathname === '/classic' && !page.url().includes('/issue/'),'Save remains on queue');
     await page.locator('#capture-toast a').click();
     await page.locator('h1').filter({hasText:'Capture retry capture'}).waitFor();
     await page.goBack();
@@ -103,8 +103,11 @@ try {
     'polling-multiple-and-preservation',
     `
     await page.locator('#create-issue').waitFor();
-    await page.getByLabel('Search issues',{exact:true}).fill('Existing');
-    await page.locator('[data-role-filter="clarify"]').uncheck();
+    await page.locator('#search').fill('Existing');
+    await page.locator('details:has([data-role-filter]) > summary').click();
+    const roleId = await page.locator('[data-role-filter]:not([data-role-filter="backlog"])').first().getAttribute('data-role-filter');
+    const roleFilter = page.locator('[data-role-filter="' + roleId + '"]');
+    await roleFilter.uncheck();
     await page.evaluate(()=>window.scrollTo(0,700));
     const before=await page.evaluate(()=>window.scrollY);
     await page.locator('#create-issue').evaluate(e=>e.click());
@@ -120,8 +123,8 @@ try {
     check(await page.locator('#create-issue-dialog').evaluate(e=>e.open),'Escape cannot pretend to cancel submitted capture');
     await page.locator('#capture-toast a').nth(1).waitFor();
     await page.waitForFunction(()=>!document.querySelector('#create-issue-dialog').hasAttribute('aria-busy'));
-    check(await page.getByLabel('Search issues',{exact:true}).inputValue()==='Existing','Search preserved');
-    check(!(await page.locator('[data-role-filter="clarify"]').isChecked()),'Role filter preserved');
+    check(await page.locator('#search').inputValue()==='Existing','Search preserved');
+    check(!(await roleFilter.isChecked()),'Role filter preserved');
     check(Math.abs(await page.evaluate(()=>window.scrollY)-before)<5,'Window scroll preserved: '+before+' -> '+await page.evaluate(()=>window.scrollY));
     check(!page.url().includes('/issue/'),'Multiple capture stays on queue');
     await page.screenshot({path:${JSON.stringify(join(output, 'desktop.png'))},fullPage:false});

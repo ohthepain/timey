@@ -2084,7 +2084,7 @@ try {
       traceWorkMarkdown(
         page,
         join(output, file),
-        { revision: git(root, 'rev-parse', 'HEAD') },
+        { revision: candidate.revision, tree: candidate.tree, clean: candidate.clean },
         workOverrideWatcherEvents,
         steps
       );

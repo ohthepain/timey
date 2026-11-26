@@ -156,15 +156,13 @@ export async function localNotesBrowserChecks({ page, service, project, poll, sc
   assert.equal(turns.length, 1);
   await screenshot('local-note-created-issue');
   const issueId = notes.get(second.id).issueId;
-  const sidebarLink = page.locator(`[data-note-id="${second.id}"]`).getByRole('link', {
-    name: 'Open issue #182',
-    exact: true,
-  });
+  const sidebarLink = page.locator(`[data-note-id="${second.id}"] .local-note-issue`);
   await sidebarLink.waitFor();
   const conversationUrl = page.url();
   await page.reload();
   await sidebarLink.waitFor();
   const label = await sidebarLink.textContent();
+  assert.equal(label, 'Open issue #182');
   const href = await sidebarLink.getAttribute('href');
   assert.equal(href, '/?issue=' + encodeURIComponent(issueId));
   await screenshot('local-note-issue-number');
@@ -220,7 +218,8 @@ export async function localNotesBrowserChecks({ page, service, project, poll, sc
   }
   await page.reload();
   for (const note of sentenceNotes) {
-    const button = page.getByRole('button', { name: note.preview, exact: true });
+    const { id } = notes.view().notes.find(({ text }) => text === note.text);
+    const button = page.locator(`[data-note-edit="${id}"]`);
     await button.waitFor();
     assert.equal(await button.textContent(), note.preview);
     await button.click();

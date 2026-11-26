@@ -153,7 +153,8 @@ export async function projectDiscussBrowserChecks({ page, service, project, poll
   assert.equal(calls[2].settings.model, 'model-b');
   assert.equal(calls[2].settings.effort, 'low');
   assert.equal(calls[2].settings.clarificationSkill, 'grill-with-docs');
-  const attachment = page.locator('#discuss-messages').getByRole('link', { name: 'attachment.txt', exact: true });
+  const attachment = page.locator('#discuss-messages .discuss-attachment a');
+  assert.equal(await attachment.textContent(), 'attachment.txt');
   const [download] = await Promise.all([page.waitForEvent('download'), attachment.click()]);
   assert.equal(download.suggestedFilename(), 'attachment.txt');
   assert.equal(readFileSync(await download.path(), 'utf8'), 'Retained attachment');
