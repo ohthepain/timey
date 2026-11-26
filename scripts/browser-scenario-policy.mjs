@@ -74,6 +74,7 @@ export const flowBrowserScenarioNames = {
   '--storage-status': 'Storage startup and recovery messages follow confirmed availability',
   '--polling': 'Polling preserves expanded text and the Closed issues list',
   '--capture-folder-issue': 'Folder plus creates an issue directly in that folder and retains typed wording',
+  '--starting-point-top': 'New issues open with Starting point flush with the viewport top',
   '--starting-point': 'Starting point lists every branch in date order, saves selection and survives polling',
   '--edit-destination': 'Issue title and Destination edits update the saved flow through its controls',
   '--closed-destination': 'Closed issues open with Destination flush with the bottom, including short flows',

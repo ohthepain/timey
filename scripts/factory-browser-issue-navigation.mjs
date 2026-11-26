@@ -2,7 +2,7 @@ export async function verifyIssueScopedNavigation(page) {
   await page.getByRole('heading', { name: 'Older urgent issue', exact: true }).waitFor();
   if (await page.locator('[data-issue-navigation]').count())
     throw Error('Issue-scoped data exposed neighbor controls without queue context.');
-  await page.getByRole('link', { name: '← Issue queue', exact: true }).click();
+  await page.locator('.issue-navigation-row a[href="#/queue"]').click();
   await page.getByText('Please select an issue.', { exact: true }).waitFor();
 }
 

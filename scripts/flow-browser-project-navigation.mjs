@@ -1,4 +1,5 @@
 import { fixtureRoute } from './flow-browser-routes.mjs';
+import { assertControlText, readyControl } from './browser-controls.mjs';
 import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -43,13 +44,18 @@ async function checkHeaderBounds(page, header) {
 }
 
 async function checkTab(page, tablist, { name, route, target }) {
-  await tablist.getByRole('tab', { name, exact: true }).click();
-  await page.getByRole('tabpanel', { name, exact: true }).locator(target).waitFor();
-  const active = (await tablist.getByRole('tab', { selected: true }).allTextContents()).map((label) => label.trim());
+  const selector = '#project-tab-' + (route ?? 'home');
+  const tab = await readyControl(tablist, { selector, action: 'Switch project tab', view: 'Factory header' });
+  await tab.click();
+  await page
+    .locator('[aria-labelledby="' + selector.slice(1) + '"]')
+    .locator(target)
+    .waitFor();
+  assert.equal(await tab.getAttribute('aria-selected'), 'true');
+  assert.equal(await tablist.locator('[data-project-tab][aria-selected="true"]').count(), 1);
   const url = new URL(page.url());
-  assert.deepEqual(active, [name]);
   assert.equal(url.searchParams.get('projectTab'), route);
-  return { tab: name, active: active[0], url: url.pathname + url.search };
+  return { tab: name, active: (await tab.innerText()).trim(), url: url.pathname + url.search };
 }
 
 async function checkProjectControls(page, header, poll) {
@@ -66,19 +72,19 @@ async function checkProjectControls(page, header, poll) {
     controls.push({ trigger, result: `Opened and closed ${panel}` });
   }
   for (const [trigger, dialog, close] of [
-    ['#project-settings', '#project-settings-dialog', 'Close Factory settings'],
-    ['[data-project-home="investigate"]', '#home-investigation-dialog', 'Close investigation'],
-    ['#new-issue', '#capture-dialog', 'Close new issue'],
-    ['#project-actions', '#server-actions-dialog', 'Close'],
+    ['#project-settings', '#project-settings-dialog', '[data-settings-close]'],
+    ['[data-project-home="investigate"]', '#home-investigation-dialog', '[data-home-close="investigation"]'],
+    ['#new-issue', '#capture-dialog', '.icon-button[data-close-dialog="capture-dialog"]'],
+    ['#project-actions', '#server-actions-dialog', '[data-actions-close]'],
   ]) {
     await header.locator(trigger).click();
     const popup = page.locator(dialog);
     await popup.waitFor();
-    await popup.getByRole('button', { name: close, exact: true }).click();
+    await (await readyControl(popup, { selector: close, action: 'Close', view: dialog })).click();
     await popup.waitFor({ state: 'hidden' });
     controls.push({ trigger, result: `Opened and closed ${dialog}` });
   }
-  const search = header.getByRole('searchbox', { name: 'Find an issue' });
+  const search = header.locator('#issue-search');
   const folders = page.locator('#open-issues .issue-folder');
   const count = await poll(() => folders.count(), Boolean, 'Issue folders did not load.');
   await search.fill('no-matching-project-header-issue');
@@ -115,8 +121,8 @@ async function checkServerControls(page, header) {
   }
   try {
     await page.reload();
-    const pause = header.getByRole('switch', { name: 'No new actions' });
-    const restart = header.getByRole('button', { name: 'Restart server' });
+    const pause = header.locator('[data-server-toggle]');
+    const restart = header.locator('#flow-server-restart');
     await restart.waitFor();
     await pause.check();
     await header.getByText('No actions running. New work is paused.', { exact: true }).waitFor();
@@ -142,7 +148,7 @@ async function checkProjectTab(page, tablist, tab, firstVisit) {
     const response = await queue;
     assert.equal(response.status(), 200, await response.text());
   }
-  await page.frameLocator('#project-issues iframe').getByRole('button', { name: 'Open', exact: true }).waitFor();
+  await page.frameLocator('#project-issues iframe').locator('[data-project-issue-mode="open"]').waitFor();
   return destination;
 }
 
@@ -168,15 +174,16 @@ async function checkTabsAtViewport({ page, header, tablist, screenshot }, viewpo
 }
 
 async function checkAutomateAndHome(page, tablist, header) {
-  await tablist.getByRole('tab', { name: 'Automate me', exact: true }).click();
-  const automate = page.getByRole('tabpanel', { name: 'Automate me', exact: true });
-  await automate.getByRole('button', { name: 'Run Automate me', exact: true }).click();
-  await page.getByRole('button', { name: 'Close Automate me' }).click();
+  const tab = tablist.locator('#project-tab-automate');
+  await tab.click();
+  const automate = page.locator('#project-automate');
+  await automate.locator('[data-project-home="automate"]').click();
+  await page.locator('[data-home-close="automate"]').click();
   await page.reload();
   await automate.getByRole('heading', { name: 'Automate me sessions' }).waitFor();
-  assert.equal(await tablist.getByRole('tab', { name: 'Automate me', selected: true }).count(), 1);
-  await header.getByRole('link', { name: 'Project home' }).click();
-  await page.getByRole('tabpanel', { name: 'Home', exact: true }).waitFor();
+  assert.equal(await tab.getAttribute('aria-selected'), 'true');
+  await header.locator('a.brand').click();
+  await page.locator('#project-home-content').waitFor();
   assert.equal(new URL(page.url()).searchParams.has('projectTab'), false);
 }
 
@@ -266,11 +273,12 @@ async function checkNativeHistory({ page, poll, tablist, project, service, root,
   const blockCard = (id) => page.locator(`#graph [data-block="${id}"]`);
   const visit = (open, target, title, locator) => ({ open, check: () => expect(target, title, locator) });
   const byTab = (name, projectTab, title) => {
-    const selected = tablist.getByRole('tab', { name, exact: true, selected: true });
+    const selector = '#project-tab-' + (projectTab ?? 'home');
+    const selected = tablist.locator(selector + '[aria-selected="true"]');
     const open = async () => {
-      await tablist.getByRole('tab', { name, exact: true }).click();
+      await (await readyControl(tablist, { selector, action: 'Switch project tab', view: 'Factory header' })).click();
       if (projectTab === 'issues')
-        await page.frameLocator('#project-issues iframe').getByRole('button', { name: 'Open', exact: true }).waitFor();
+        await page.frameLocator('#project-issues iframe').locator('[data-project-issue-mode="open"]').waitFor();
     };
     return visit(open, { projectTab }, title || name, selected);
   };
@@ -395,15 +403,19 @@ export async function projectNavigationBrowserChecks({
   const desktop = { width: 1440, height: 960 };
   const narrow = { width: 390, height: 844 };
   const header = page.locator('.factory-header');
-  const tablist = header.getByRole('tablist', { name: 'Project workspace' });
+  const tablist = header.locator('.project-workspace-tabs');
   const navigation = { page, header, tablist, screenshot };
   await page.setViewportSize(desktop);
   await page.goto('/');
   await page.locator('#connection-status').filter({ hasText: 'Live' }).waitFor();
   assert.deepEqual(
-    (await tablist.getByRole('tab').allTextContents()).map((name) => name.trim()),
-    projectTabs.map(({ name }) => name)
+    await tablist.locator('[data-project-tab]').evaluateAll((tabs) => tabs.map((tab) => tab.dataset.projectTab)),
+    projectTabs.map(({ route }) => route ?? 'home')
   );
+  for (const { route, name } of projectTabs) {
+    const tab = tablist.locator('#project-tab-' + (route ?? 'home'));
+    await assertControlText(tab, name);
+  }
   try {
     const observations = [
       ...(await checkTabsAtViewport(navigation, desktop)),

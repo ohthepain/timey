@@ -52,7 +52,7 @@ export async function noChangesBrowserChecks({ page, service, project, output, r
         .getByText(/No changes to publish/)
         .waitFor();
       assert.equal(await screen.locator('#confirm-publish').isVisible(), false);
-      await screen.getByRole('button', { name: 'Close as Cannot Reproduce…' }).click();
+      await screen.locator('[data-close-no-changes]').click();
       await screen.locator('#issue-closure-dialog[open]').waitFor();
       assert.equal(await screen.locator('#closure-reason').inputValue(), 'cannot-reproduce');
       assert.ok(!service.flows.selected(id).closed);
@@ -60,7 +60,7 @@ export async function noChangesBrowserChecks({ page, service, project, output, r
       await screen.locator('#cancel-issue-closure').click();
       assert.ok(!service.flows.selected(id).closed);
       await screen.locator('#run-block').click();
-      await screen.getByRole('button', { name: 'Close as Cannot Reproduce…' }).click();
+      await screen.locator('[data-close-no-changes]').click();
       const closureResponse = screen.waitForResponse(
         (response) => response.url().endsWith('/api/issue-decision') && response.request().method() === 'POST'
       );

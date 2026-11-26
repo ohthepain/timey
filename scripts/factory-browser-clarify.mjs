@@ -2,10 +2,10 @@ export default async function clarificationCaptureChecks(page) {
   const errors = [],
     submissions = [];
   page.on('pageerror', (error) => errors.push(error.message));
-  await page.getByRole('button', { name: 'Create issue', exact: true }).click();
-  const toggle = page.getByRole('checkbox', { name: 'Grill me' });
+  await page.locator('#create-issue').click();
+  const toggle = page.locator('#capture-grill');
   if (await toggle.isChecked()) throw Error('Grilling must default off.');
-  await page.getByLabel('Description', { exact: true }).fill('Grill me about Save behavior');
+  await page.locator('#capture-description').fill('Grill me about Save behavior');
   await page.locator('#capture-folder').selectOption('Inbox');
   await page.locator('#capture-issue-store').selectOption('files');
   await toggle.check();
@@ -24,12 +24,12 @@ export default async function clarificationCaptureChecks(page) {
       ),
     });
   });
-  await page.getByRole('button', { name: 'Create issues', exact: true }).click();
+  await page.locator('#capture-save').click();
   await page.locator('#capture-error').filter({ hasText: 'Disposable capture failure' }).waitFor();
   if (!(await toggle.isChecked())) throw Error('A failed save lost the grilling choice.');
-  if ((await page.getByLabel('Description', { exact: true }).inputValue()) !== 'Grill me about Save behavior')
+  if ((await page.locator('#capture-description').inputValue()) !== 'Grill me about Save behavior')
     throw Error('A failed save lost the description.');
-  await page.getByRole('button', { name: 'Create issues', exact: true }).click();
+  await page.locator('#capture-save').click();
   await page.waitForURL('**/#/issue/b');
   if (submissions.length !== 2 || submissions.some((input) => input.grill !== true))
     throw Error('The explicit grilling choice was not submitted.');

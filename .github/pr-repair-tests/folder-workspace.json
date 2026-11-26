@@ -1,0 +1,17 @@
+{
+  "version": 2,
+  "name": "The folder workspace reviews moves and creates a master without starting work",
+  "command": [
+    "node",
+    "scripts/flow-browser.mjs",
+    "--ci-part=2",
+    "--capture-folder-issue",
+    "--folder-workspace-grouping"
+  ],
+  "source": {
+    "runId": "45870933190",
+    "jobId": "140089737384",
+    "checkout": "6ffde375b815d62d02aca507c78c3c8d96a72aba",
+    "tree": "eeedd9c5286d9de9c67185602db0a595e2e9d382"
+  }
+}

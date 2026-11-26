@@ -97,6 +97,17 @@ function factoryCheck(folder, shards) {
   return { ...shards[0], log, command: ['CI', 'non-browser-1', 'non-browser-2'] };
 }
 
+function timeyBrowserCheck([check], candidate) {
+  const artifact = check.artifacts?.find(({ path }) => basename(path) === 'timey-factory-return.json');
+  requireEvidence(artifact, 'Timey browser must retain its return-link measurements.');
+  const { revision, tree } = JSON.parse(readFileSync(artifact.path, 'utf8'));
+  requireEvidence(
+    revision === candidate.revision && tree === candidate.tree,
+    'Timey browser tested a different snapshot.'
+  );
+  return check;
+}
+
 export function assembleCIEvidence(directory, candidate) {
   const folder = realpathSync(directory);
   const reports = readdirSync(folder)
@@ -113,7 +124,13 @@ export function assembleCIEvidence(directory, candidate) {
     browserSuites.flatMap((id) => evidence[id])
   );
   const factory = factoryCheck(folder, [...evidence['non-browser-1'], ...evidence['non-browser-2']]);
-  const checks = [...evidence.early, factory, ...evidence['non-browser-app'], browser];
+  const checks = [
+    ...evidence.early,
+    factory,
+    ...evidence['non-browser-app'],
+    browser,
+    timeyBrowserCheck(evidence['timey-browser'], candidate),
+  ];
   const { ciSuite: _ciSuite, ...summary } = suites.early;
   const path = join(folder, 'ci-verification-summary.json');
   writeFileSync(

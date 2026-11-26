@@ -101,7 +101,7 @@ async function checkIssuesTab(page, output) {
   await frame
     .getByRole('navigation', { name: 'Issues', exact: true })
     .screenshot({ path: join(output, 'master-issue-list.png') });
-  const search = frame.getByRole('searchbox', { name: 'Search issues' });
+  const search = frame.locator('#search');
   await search.fill(titles[children[0]]);
   await search.press('Enter');
   await rows.filter({ hasText: titles[master] }).waitFor({ state: 'detached' });
@@ -169,14 +169,14 @@ async function checkManualRemoval(page, output, { master, children, titles }) {
   const subIssues = page.locator('#issue-heading').getByRole('list', { name: 'Sub-issues', exact: true });
   await page.goto('/?issue=' + master);
   await page.locator('#issue-attach-choice option[value="' + removalCandidate + '"]').waitFor({ state: 'attached' });
-  const detach = subIssues.getByRole('button', { name: new RegExp('Remove .*' + titles[first]) });
+  const detach = subIssues.locator(`[data-detach-sub-issue="${first}"]`);
   await detach.waitFor();
   assert.equal(await detach.textContent(), '×');
   const background = await detach.evaluate((button) => getComputedStyle(button).backgroundColor);
   assert.equal(background, 'rgba(0, 0, 0, 0)');
   await page.locator('#issue-heading').screenshot({ path: join(output, 'compact-master-controls.png') });
   await removeSubIssue(page, detach);
-  await subIssues.getByRole('link', { name: new RegExp(titles[first]) }).waitFor({ state: 'hidden' });
+  await subIssues.locator(`[data-open-folder-issue="${first}"]`).waitFor({ state: 'hidden' });
   const remaining = await subIssues.getByRole('link').allTextContents();
   assert.equal(remaining.length, 1);
   assert.match(remaining[0], new RegExp(titles[second]));
@@ -186,7 +186,7 @@ async function checkManualRemoval(page, output, { master, children, titles }) {
   await page.locator('#open-issues [data-issue="' + second + '"]').click();
   await page.waitForURL((url) => url.searchParams.get('issue') === second);
   const masterRow = page.getByRole('group', { name: 'Master issue', exact: true });
-  await removeSubIssue(page, masterRow.getByRole('button', { name: 'Remove', exact: true }));
+  await removeSubIssue(page, masterRow.locator('#remove-issue-master'));
   await masterRow.waitFor({ state: 'hidden' });
   const removedFromChildPage = await observeIndependentIssue(page, second, titles[second]);
   await page.locator('#issue-heading').screenshot({ path: join(output, 'detached-sub-issue.png') });

@@ -43,7 +43,7 @@ export default async function issueFoldersBrowserChecks(page) {
   }
 
   await page.getByRole('heading', { name: 'Issue queue', exact: true }).waitFor();
-  await page.getByLabel('Sort issues', { exact: true }).selectOption('implementationOrder');
+  await page.locator('#queue-sort').selectOption('implementationOrder');
   const original = await page.evaluate(() => ({
     order: [...data.implementationOrder],
     issues: Object.fromEntries(
@@ -53,9 +53,9 @@ export default async function issueFoldersBrowserChecks(page) {
       })
     ),
   }));
-  await page.getByRole('button', { name: /New folder/ }).click();
-  await page.getByLabel('Folder name', { exact: true }).fill('Sprint');
-  await page.getByRole('button', { name: 'Save folder', exact: true }).click();
+  await page.locator('[data-create-issue-folder]').click();
+  await page.locator('[data-issue-folder-name]').fill('Sprint');
+  await page.locator('[data-issue-folder-form] button[type="submit"]').click();
   await page.locator('[data-issue-folder-drop="folder-1"]').waitFor();
   await dropIssue('a', '[data-issue-folder-drop="folder-1"]');
   await page.waitForFunction(() => data.issues.find((issue) => issue.id === 'a').folderId === 'folder-1');
@@ -72,9 +72,9 @@ export default async function issueFoldersBrowserChecks(page) {
   const reordered = await page
     .locator('.issue-sidebar-item[data-issue-row]')
     .evaluateAll((rows) => rows.map((row) => row.dataset.issueRow));
-  await page.getByRole('button', { name: /New folder/ }).click();
-  await page.getByLabel('Folder name', { exact: true }).fill('Next sprint');
-  await page.getByRole('button', { name: 'Save folder', exact: true }).click();
+  await page.locator('[data-create-issue-folder]').click();
+  await page.locator('[data-issue-folder-name]').fill('Next sprint');
+  await page.locator('[data-issue-folder-form] button[type="submit"]').click();
   await page.locator('[data-issue-folder-drop="folder-2"]').waitFor();
   await dropIssue('b', '[data-issue-folder-drop="folder-2"]');
   await page.waitForFunction(() => data.issues.find((issue) => issue.id === 'b').folderId === 'folder-2');

@@ -1,0 +1,24 @@
+{
+  "version": 2,
+  "name": "The issue header closes with a reason and runs only Cleanup by default",
+  "command": [
+    "node",
+    "scripts/flow-browser.mjs",
+    "--ci-part=2",
+    "--capture-folder-issue",
+    "--starting-point",
+    "--save-request-route",
+    "--stop-work",
+    "--retry-work",
+    "--update-worktree",
+    "--publish-preview",
+    "--issue-playback",
+    "--issue-header-close"
+  ],
+  "source": {
+    "runId": "45897456756",
+    "jobId": "140175798586",
+    "checkout": "ad7e51965eec79e1facc3fcb227d09c85c4c7c79",
+    "tree": "e581acd2667549b25dbebc4119365cb18990c738"
+  }
+}

@@ -60,15 +60,15 @@ export async function issueDiscussWorkspaceChecks({ page, service, project, poll
   const panel = page.getByRole('region', { name: 'Issue Discuss' });
   const composer = panel.locator('[id$="discuss-draft"]');
   await page.goto('/?issue=' + first);
-  await page.getByRole('button', { name: 'Open Issue Discuss' }).click();
+  await page.locator('#issue-discuss-toggle').click();
   await panel.waitFor();
   assert.equal(await page.locator('#graph-region').isVisible(), false);
   assert.equal(await page.getByRole('complementary', { name: 'Block inspector' }).isVisible(), true);
-  await page.getByRole('button', { name: 'Expand Issue Discuss' }).click();
+  await page.locator('#issue-discuss-expand').click();
   assert.equal(await page.getByRole('complementary', { name: 'Block inspector' }).isVisible(), false);
   assert.equal(messages.length, 0);
   await composer.fill('Hold this response');
-  await panel.getByRole('button', { name: 'Send message', exact: true }).click();
+  await panel.locator('[data-discuss-action="send"]').click();
   await poll(
     () => messages.length,
     (count) => count === 1,
@@ -82,7 +82,7 @@ export async function issueDiscussWorkspaceChecks({ page, service, project, poll
   await composer.fill('Remember the first draft');
   await page.locator('#open-issues [data-issue="' + second + '"]').click();
   await page.getByRole('heading', { name: 'Second issue discussion' }).waitFor();
-  await page.getByRole('button', { name: 'Collapse Issue Discuss' }).waitFor();
+  await page.locator('#issue-discuss-expand').waitFor();
   await composer.waitFor();
   assert.equal(await composer.inputValue(), '');
   hold.resolve();
@@ -95,9 +95,9 @@ export async function issueDiscussWorkspaceChecks({ page, service, project, poll
   await panel.getByText('Reply for ' + first, { exact: true }).waitFor();
   assert.equal(await composer.inputValue(), 'Remember the first draft');
   await screenshot('issue-discuss-expanded');
-  await page.getByRole('button', { name: 'Collapse Issue Discuss' }).click();
+  await page.locator('#issue-discuss-expand').click();
   assert.equal(await page.getByRole('complementary', { name: 'Block inspector' }).isVisible(), true);
-  await page.getByRole('button', { name: 'Back to flow' }).click();
+  await page.locator('#issue-discuss-flow').click();
   await page.locator('#graph-region').waitFor();
   assert.equal(messages.length, 1);
   proof(output, 'issue-discuss-workspace', {
@@ -112,7 +112,7 @@ async function reopenInBrowser(page, id, title) {
   const heading = page.getByRole('heading', { name: title, exact: true });
   await heading.waitFor();
   const headingBox = await heading.boundingBox();
-  const reopen = page.getByRole('button', { name: 'Reopen', exact: true });
+  const reopen = page.locator('#reopen-issue');
   assert.ok((await reopen.boundingBox()).y >= headingBox.y + headingBox.height);
   await reopen.click();
   await page.getByRole('region', { name: 'Issue Discuss' }).waitFor();
@@ -131,7 +131,7 @@ async function verifyFollowUpStart({ page, service, issueId, poll }) {
     },
   };
   try {
-    const start = page.getByRole('button', { name: 'Start issue', exact: true });
+    const start = page.locator('#issue-playback[data-playback-mode="start"]');
     const [submitted] = await Promise.all([
       page.waitForResponse(
         (response) =>
@@ -182,8 +182,8 @@ export async function reopenWorkspaceChecks({ page, project, root, service, outp
   await reopenInBrowser(page, archived, 'Archived issue with a merged fix');
   const feedback = 'Keep the previous shortcut and add a keyboard label.';
   await page.getByText('Save agreed follow-up feedback', { exact: true }).click();
-  await page.getByLabel('Requested changes after the previous implementation').fill(feedback);
-  await page.getByRole('button', { name: 'Save feedback', exact: true }).click();
+  await page.locator('#reopen-feedback-text').fill(feedback);
+  await page.locator('#reopen-feedback button[type="submit"]').click();
   await page.getByText('Follow-up feedback saved to Your words.', { exact: true }).waitFor();
   const selected = flows.selected(archived);
   const saved = flows.read(selected);
@@ -345,19 +345,19 @@ async function appStops(poll, url) {
 
 async function verifyAppWorkspace({ page, project, service, output, server, url, poll }) {
   const button = page.locator('#project-app');
-  const menu = page.getByRole('dialog', { name: 'Factory settings' });
+  const menu = page.locator('#project-settings-dialog');
   const settings = { command: 'node start.mjs', url, directory: 'sample-app', expected: '', checkUrl: '' };
   mkdirSync(join(project, settings.directory), { recursive: true });
   service.detectProjectApp = async () => ({ ...settings, sources: 'sample-app/start.mjs', undetermined: 'checkUrl' });
   await page.goto('/');
   await button.click();
-  await menu.getByLabel('Start command').waitFor();
-  await menu.getByRole('button', { name: 'Detect setup' }).click();
+  await menu.locator('input[name="command"]').waitFor();
+  await menu.locator('[data-detect-app]').click();
   await menu.getByText(/sample-app\/start.mjs/).waitFor();
-  assert.equal(await menu.getByLabel('Start command').inputValue(), 'node start.mjs');
+  assert.equal(await menu.locator('input[name="command"]').inputValue(), 'node start.mjs');
   const view = await (await page.request.get('/api/project-app')).json();
   assert.equal(view.settings.command, '');
-  await menu.getByRole('button', { name: 'Save', exact: true }).click();
+  await menu.locator('[data-settings-form] button[type="submit"]').click();
   await menu.getByText('Saved', { exact: true }).waitFor();
   await page.keyboard.press('Escape');
   await button.click();
@@ -404,7 +404,7 @@ async function verifyAppWorkspace({ page, project, service, output, server, url,
   const reused = await openAppTab(page, button);
   await reused.getByText('Previously running app reads a local edit').waitFor();
   await reused.close();
-  await page.getByRole('button', { name: 'Stop app', exact: true }).click();
+  await page.locator('#project-app-stop').click();
   await page.locator('#project-app-status').getByText('App stopped.').waitFor();
   await appStops(poll, url);
   proof(output, 'project-app-workspace', {
@@ -430,11 +430,11 @@ async function createSequentialMaster(page, project, service) {
     await service.flows.moveIssueToFolder(selected, service.flows.read(selected), folder);
   }
   await page.goto('/?folder=' + encodeURIComponent(folder));
-  await page.getByLabel('Selection strategy', { exact: true }).selectOption('sequential');
+  await page.locator('#folder-selection-strategy').selectOption('sequential');
   const members = page.getByRole('list', { name: 'Issues in this folder', exact: true });
   for (const id of children) await members.locator('input[value="' + id + '"]').check();
-  await page.getByRole('button', { name: 'Create master issue', exact: true }).click();
-  await page.getByLabel('Review and edit the master issue request').waitFor();
+  await page.locator('[data-folder-command="group"]').click();
+  await page.locator('#folder-master-wording').waitFor();
   await page.locator('#folder-group-form button[type="submit"]').click();
   await page.locator('#issue-sub-issues [data-ordered-child]').first().waitFor();
   return new URL(page.url()).searchParams.get('issue');
@@ -518,7 +518,7 @@ async function verifySequentialPublication({ page, flows, master, poll }) {
 }
 
 async function exerciseSequentialRun({ page, poll, screenshot, master, rows, calls, first, blocker, order }) {
-  await page.getByRole('button', { name: 'Start issue', exact: true }).click();
+  await page.locator('#issue-playback[data-playback-mode="start"]').click();
   await poll(
     () => calls.length,
     (count) => count === 1,
@@ -536,7 +536,7 @@ async function exerciseSequentialRun({ page, poll, screenshot, master, rows, cal
   );
   await screenshot('sequential-blocked-middle');
   await post(page, 'issue-annotation', { action: 'clear', issueId: order[1], annotationId: blocker.id });
-  await page.getByRole('button', { name: 'Resume issue', exact: true }).click();
+  await page.locator('#issue-playback[data-playback-mode="resume"]').click();
   await poll(
     () => calls.length,
     (count) => count === 4,
@@ -617,20 +617,20 @@ export async function blockerWorkspaceChecks({ page, project, service, output, s
 
 async function exerciseBlockerRetries({ page, issueId, gates, screenshot, poll }) {
   await page.goto('/?issue=' + issueId);
-  await page.getByRole('button', { name: 'Start issue', exact: true }).click();
+  await page.locator('#issue-playback[data-playback-mode="start"]').click();
   await assertBlocker(page, 'First fixture failure');
   await page.reload();
   await page.locator('.block-card[data-block="request"]').click();
   await assertBlocker(page, 'First fixture failure');
-  await page.getByRole('button', { name: 'Open block details' }).click();
+  await page.locator('#issue-blocker-open').click();
   assert.equal(await page.locator('.block-card[data-block="work"]').getAttribute('aria-pressed'), 'true');
-  await page.getByRole('button', { name: 'Resume issue', exact: true }).click();
+  await page.locator('#issue-playback[data-playback-mode="resume"]').click();
   await page.locator('#issue-blocker-retrying').waitFor();
   await assertBlocker(page, 'First fixture failure');
   await screenshot('issue-blocker-retrying');
   gates.fail.resolve();
   await assertBlocker(page, 'Second fixture failure');
-  await page.getByRole('button', { name: 'Resume issue', exact: true }).click();
+  await page.locator('#issue-playback[data-playback-mode="resume"]').click();
   await page.locator('#issue-blocker-retrying').waitFor();
   assert.equal(await page.locator('#issue-results').isVisible(), false);
   gates.succeed.resolve();

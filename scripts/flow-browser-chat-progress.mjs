@@ -135,7 +135,7 @@ export async function chatProgressBrowserChecks({ page, service, project, poll, 
       waitForApproval: async () => {
         needsInput = true;
         await page.locator('#refresh').click();
-        await page.getByRole('button', { name: 'Open request', exact: true }).waitFor();
+        await page.locator('#issue-input-continue').waitFor();
       },
       finish: async () => {
         needsInput = false;

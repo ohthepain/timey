@@ -76,20 +76,20 @@ export default async function strategyBrowserChecks(page) {
   });
   await page.goto(new URL('/#/issue/b', page.url()).href);
   await page.getByRole('heading', { name: 'Issue strategy', exact: true }).waitFor();
-  if ((await page.getByLabel('Strategy', { exact: true }).inputValue()) !== 'full-stop')
+  if ((await page.locator('#issue-strategy').inputValue()) !== 'full-stop')
     throw Error('Full Stop is not the default.');
-  if ((await page.getByLabel('Optional Sol Loop').inputValue()) !== '0') throw Error('Sol review must default off.');
-  const continueButton = page.getByRole('button', { name: 'Continue issue', exact: true });
+  if ((await page.locator('#strategy-sol').inputValue()) !== '0') throw Error('Sol review must default off.');
+  const continueButton = page.locator('[data-strategy-start="b"]');
   await expectEnabled(continueButton, 'Continue must be enabled for blocked issues with no prior work.');
-  await page.getByLabel('Strategy', { exact: true }).selectOption('full-send');
-  await page.getByLabel('Optional Sol Loop').selectOption('3');
+  await page.locator('#issue-strategy').selectOption('full-send');
+  await page.locator('#strategy-sol').selectOption('3');
   await page.locator('#strategy-instruction').fill('Preserve the existing implementation.');
   await page.evaluate(async () => {
     await refresh();
   });
   if (
-    (await page.getByLabel('Strategy', { exact: true }).inputValue()) !== 'full-send' ||
-    (await page.getByLabel('Optional Sol Loop').inputValue()) !== '3'
+    (await page.locator('#issue-strategy').inputValue()) !== 'full-send' ||
+    (await page.locator('#strategy-sol').inputValue()) !== '3'
   )
     throw Error('Polling reset the pending strategy choices.');
   await continueButton.click();
@@ -97,9 +97,9 @@ export default async function strategyBrowserChecks(page) {
   if (!(await page.locator('[data-strategy-start]').isDisabled()))
     throw Error('Duplicate start was not disabled immediately.');
   release();
-  await page.getByRole('button', { name: 'Stop', exact: true }).waitFor();
+  await page.locator('[data-strategy-stop="b"]').waitFor();
   await expectDisabled(page.locator('[data-strategy-start]'), 'Continue remained enabled while the issue was working.');
-  await expectDisabled(page.getByLabel('Strategy', { exact: true }), 'The saved strategy became editable during work.');
+  await expectDisabled(page.locator('#issue-strategy'), 'The saved strategy became editable during work.');
   if (
     submissions.length !== 1 ||
     submissions[0].strategy !== 'full-send' ||
@@ -107,7 +107,7 @@ export default async function strategyBrowserChecks(page) {
     !submissions[0].approved
   )
     throw Error('Strategy consent or review choice was not submitted exactly.');
-  await page.getByRole('tab', { name: 'Issue output', exact: true }).click();
+  await page.locator('#issue-tab-output').click();
   const output = page.getByLabel('Live output for this issue', { exact: true });
   await output.waitFor({ state: 'visible', timeout: 3000 });
   if (!(await output.textContent()).includes('Strategy worker is implementing the issue.'))

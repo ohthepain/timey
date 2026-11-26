@@ -65,17 +65,17 @@ async function addAnnotation(page, kind, message, relatedIssueId) {
   const panel = page.locator('#issue-annotations');
   if ((await panel.getAttribute('open')) === null) await panel.locator(':scope > summary').click();
   const form = panel.locator('form');
-  await form.getByLabel('Annotation type').selectOption(kind);
+  await form.locator('select[name="kind"]').selectOption(kind);
   await form.locator('textarea').fill(message);
-  if (relatedIssueId) await form.getByLabel('Related issue ID (optional)').fill(relatedIssueId);
-  const record = await mutation(page, () => form.getByRole('button', { name: 'Add annotation' }).click());
+  if (relatedIssueId) await form.locator('input[name="relatedIssueId"]').fill(relatedIssueId);
+  const record = await mutation(page, () => form.locator('button[type="submit"]').click());
   await panel.locator(`#active-issue-annotations [data-annotation-id="${record.id}"]`).waitFor();
   return record;
 }
 
 async function clearAnnotation(page, record) {
   const row = page.locator(`#active-issue-annotations [data-annotation-id="${record.id}"]`);
-  const result = await mutation(page, () => row.getByRole('button', { name: 'Clear', exact: true }).click());
+  const result = await mutation(page, () => row.locator('[data-clear-annotation]').click());
   await row.waitFor({ state: 'detached' });
   return result;
 }
@@ -93,7 +93,7 @@ async function badgeCounts(page, expected) {
 
 async function checkListControls(page, output, poll) {
   const sidebar = page.locator('#open-issues');
-  const sidebarFilter = page.locator('#issue-badge-controls').getByRole('combobox', { name: 'Filter by badge' });
+  const sidebarFilter = page.locator('#issue-badge-controls').locator('[data-issue-badge-filter]');
   await sidebarFilter.selectOption('empty');
   assert.equal(await sidebar.locator(`[data-issue="${master}"]`).count(), 0);
   assert.equal(await sidebar.locator(`[data-issue="${standalone}"]`).count(), 0);
@@ -104,7 +104,7 @@ async function checkListControls(page, output, poll) {
   assert.equal(await heading.locator(badge('empty')).count(), 1);
   await page.goto('/?projectTab=issues');
   const frame = page.frameLocator('#project-issues iframe');
-  await frame.getByRole('button', { name: 'Open', exact: true }).waitFor();
+  await frame.locator('[data-project-issue-mode="open"]').waitFor();
   const rows = frame.locator('[data-issue-row]');
   const ids = async () =>
     (await rows.evaluateAll((elements) => elements.map((row) => row.dataset.issueRow))).filter((id) =>
@@ -119,13 +119,13 @@ async function checkListControls(page, output, poll) {
     [approval, 2],
   ]);
   const expected = normal.toSorted((left, right) => (rank.get(left) ?? 3) - (rank.get(right) ?? 3));
-  await frame.getByRole('checkbox', { name: 'Attention first' }).check();
+  await frame.locator('[data-issue-attention-first]').check();
   const ordered = await poll(
     ids,
     (values) => JSON.stringify(values) === JSON.stringify(expected),
     'Attention first preserves ties.'
   );
-  const selects = frame.getByRole('combobox', { name: 'Filter by badge' });
+  const selects = frame.locator('[data-issue-badge-filter]');
   const filterObservations = {};
   for (const [filter, matching] of [
     ['blocked', [child]],

@@ -16,7 +16,7 @@ const completed = (id, evidence = []) => ({
 
 async function selectDetails(page, block) {
   await page.locator('#graph [data-block="' + block + '"]').click();
-  await page.getByRole('tab', { name: 'Details' }).click();
+  await page.locator('#tab-details').click();
 }
 
 async function checkPlayback(page, service, id, work, poll, screenshot) {
@@ -31,13 +31,13 @@ async function checkPlayback(page, service, id, work, poll, screenshot) {
       await page.locator('#inspector-body .system-prompt summary').waitFor();
       assert.equal(await page.locator('#inspector-body .block-content').count(), 0);
     }
-    await page.getByRole('button', { name: 'Start issue', exact: true }).click();
+    await page.locator('#issue-playback[data-playback-mode="start"]').click();
     await poll(() => service.flows.active.has(id), Boolean, 'Fixture Request started');
     const status = page.locator('#playback-status');
     await status.locator('.active-spinner').waitFor();
     assert.equal(await status.textContent(), '');
     await screenshot('inbox-issue-running');
-    await page.getByRole('button', { name: 'Pause issue', exact: true }).click();
+    await page.locator('#issue-playback[data-playback-mode="pause"]').click();
     await status.getByText('Paused', { exact: true }).waitFor();
     assert.equal(await status.locator('.active-spinner').count(), 0);
     const title = await page.locator('#issue-title').boundingBox();
@@ -72,7 +72,7 @@ async function checkMergeDetails(page, block, screenshot) {
   );
   assert.equal(await details.locator('.block-content').count(), 0);
   assert.equal(await details.locator('.evidence-link').count(), 0);
-  const icon = details.getByRole('button', { name: 'Repair model information' });
+  const icon = details.locator('[data-model-help] button');
   const tooltip = details.getByRole('tooltip');
   const help = 'This model is used only if AI conflict repair is needed.';
   assert.equal(await tooltip.isVisible(), false);
@@ -84,8 +84,8 @@ async function checkMergeDetails(page, block, screenshot) {
   await tooltip.waitFor();
   assert.equal(await tooltip.textContent(), help);
   await screenshot('inbox-merge-details');
-  await details.getByRole('link', { name: 'Open Artifacts', exact: true }).click();
-  assert.equal(await page.getByRole('tab', { name: 'Artifacts' }).getAttribute('aria-selected'), 'true');
+  await details.locator('[data-open-merge-artifacts]').click();
+  assert.equal(await page.locator('#tab-artifacts').getAttribute('aria-selected'), 'true');
   await details.getByText('latest-proof-one', { exact: true }).waitFor();
   await details.getByText('latest-proof-two', { exact: true }).waitFor();
   await details.getByText('Previous artifacts · Run 1', { exact: true }).click();

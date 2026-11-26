@@ -34,6 +34,7 @@ const outputRules = [
     'flow',
     (name) => screenshotOrResult(name) || /^[\w-]+-(?:styles|proof)\.json$/.test(name) || flowMeasurements.has(name),
   ],
+  ['timey', (name) => screenshotOrResult(name) || name === 'timey-factory-return.json'],
 ];
 
 export function retainBrowserEvidence(output, retained) {

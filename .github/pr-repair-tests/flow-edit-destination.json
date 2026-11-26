@@ -1,0 +1,21 @@
+{
+  "version": 2,
+  "name": "Issue title and Destination edits update the saved flow through its controls",
+  "command": [
+    "node",
+    "scripts/flow-browser.mjs",
+    "--ci-part=2",
+    "--capture-folder-issue",
+    "--folder-workspace-grouping",
+    "--tab-source",
+    "--starting-point-top",
+    "--starting-point",
+    "--edit-destination"
+  ],
+  "source": {
+    "runId": "45896033627",
+    "jobId": "140170625111",
+    "checkout": "b1fa4c45e35e545149bfe8662557115d02421038",
+    "tree": "d1e3ff0499ef6090e034bd464c503912e67cacdb"
+  }
+}

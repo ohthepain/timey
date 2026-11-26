@@ -65,6 +65,7 @@ function SignedInUserMenu({
     <div className={style.wrapper}>
       <button
         type="button"
+        data-account-menu
         aria-label={displayName}
         aria-expanded={isOpen}
         onClick={() => setIsOpen(!isOpen)}
@@ -98,6 +99,7 @@ function SignedInUserMenu({
             Account
           </a>
           <button
+            data-account-sign-out
             onClick={() => void handleLogout()}
             className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
           >

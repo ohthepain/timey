@@ -64,7 +64,7 @@ export async function nativeAgentBrowserChecks({ page, service, project, poll, s
       await service.flows.action({ action: 'start', issueId: id, blockId: block.id, revision: flow.revision });
       await poll(() => Boolean(pending), Boolean, 'The native input fixture started.');
       await page.goto('/?issue=' + id + '&block=' + block.id);
-      await page.getByRole('button', { name: 'Open request', exact: true }).click();
+      await page.locator('#issue-input-continue').click();
       assert.equal(await page.locator('#issue-results-title').innerText(), 'Needs your input');
       const card = page.locator('[data-agent-approval="native-request"]');
       await card.waitFor();
@@ -73,10 +73,10 @@ export async function nativeAgentBrowserChecks({ page, service, project, poll, s
         await page.locator('#refresh').click();
         assert.equal(await card.locator('[data-agent-question="output"]').inputValue(), 'Summary');
         await screenshot('native-agent-question');
-        await card.getByRole('button', { name: 'Send answers', exact: true }).click();
+        await card.locator('button[data-action="agent-answer"]:not([data-decision])').click();
       } else {
         await screenshot('native-agent-permission');
-        await card.getByRole('button', { name: 'Allow once', exact: true }).click();
+        await card.locator('[data-decision="option:0"]').click();
       }
       await poll(
         () => service.flows.active.has(id),

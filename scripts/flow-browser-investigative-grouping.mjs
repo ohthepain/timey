@@ -10,8 +10,8 @@ const mixedReason = 'A master cannot mix investigative and non-investigative sub
 export async function investigativeGroupingBrowserChecks({ page, project, output, candidate, clickAction, poll }) {
   const saved = [];
   const attachReason = page.locator('#issue-attach-reason');
-  const attachChoice = page.getByLabel('Sub-issue to attach');
-  const attachButton = page.getByRole('button', { name: 'Attach sub-issue', exact: true });
+  const attachChoice = page.locator('#issue-attach-choice');
+  const attachButton = page.locator('#issue-attach-form button[type="submit"]');
   const groupReason = page.locator('#folder-group-reason');
   const groupButton = page.locator('[data-folder-command="group"]');
   const api = async (input, message) => {

@@ -15,7 +15,7 @@ export default async function progressRefreshBrowserChecks(page) {
     window.progressRefreshProbe = true;
   });
   updated = '2026-11-01T10:04:00Z';
-  await page.getByRole('button', { name: 'Refresh progress', exact: true }).click();
+  await page.locator('[data-refresh-progress]').click();
   await page.waitForFunction(
     () => data.issues.find((issue) => issue.id === 'b')?.lifecycle?.updated === '2026-11-01T10:04:00Z'
   );
