@@ -178,12 +178,9 @@ const fingerprint = () =>
 const candidate = { revision: git(root, 'rev-parse', 'HEAD'), assets: fingerprint() };
 const results = [];
 const inboxDiscussCheck = 'Project chat stays at the bottom and accepts prompts while work is paused';
-const inboxFlowCheck = 'Issue flow dates, statuses, folder ordering and block drag';
-Object.assign(flowBrowserScenarioNames, {
-  '--inbox-flow': inboxFlowCheck,
-  '--inbox-discuss': inboxDiscussCheck,
-});
+flowBrowserScenarioNames['--inbox-discuss'] = inboxDiscussCheck;
 const {
+  '--inbox-flow': inboxFlowCheck,
   '--master-issues': masterIssuesCheck,
   '--manual-sub-issue-removal': manualSubIssueRemovalCheck,
   '--investigative-grouping': investigativeGroupingCheck,

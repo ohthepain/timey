@@ -1,7 +1,20 @@
 {
   "version": 1,
-  "sourceRun": "https://github.com/ohthepain/timey/actions/runs/45769105138/job/139737849938",
+  "sourceRun": "https://github.com/ohthepain/timey/actions/runs/45770038336/job/139745776534",
   "tests": [
+    {
+      "name": "Discuss visibly reports a locked conversation while waiting and shows the reason after pausing",
+      "command": [
+        "node",
+        "--test",
+        "--test-name-pattern=^Discuss visibly reports a locked conversation while waiting and shows the reason after pausing$",
+        "scripts/interface-state.check.mjs"
+      ]
+    },
+    {
+      "name": "Issue flow dates, statuses, folder ordering and block drag",
+      "command": ["node", "scripts/flow-browser.mjs", "--ci-part=1", "--inbox-flow"]
+    },
     {
       "name": "Discuss prepares context and a first prompt without running a model, then offers explicit deletion",
       "command": [

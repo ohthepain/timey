@@ -110,9 +110,10 @@ test('Discuss visibly reports a locked conversation while waiting and shows the 
 
   selected.status = 'paused';
   delete selected.threadLock;
+  selected.messages[0].status = 'failed';
   selected.messages[0].error = lock;
   await ui.refresh();
   assert.ok(status.classList.contains('visually-hidden'));
-  assert.equal(window.document.querySelector('#discuss-messages .inline-error').textContent, lock);
+  assert.equal(window.document.querySelector('#discuss-messages [role="alert"]').textContent, lock);
   assert.ok(!window.document.querySelector('[data-discuss-retry]').disabled);
 });
