@@ -102,8 +102,7 @@ remain read-only under [ADR 0020](0020-freeze-merged-issues.md).
 For code delivery, run Work again against the revised Request. Work starts from
 the existing checkout and removes changes the revised request no longer calls
 for. Publish PR and Merge require completed upstream Work for the revised
-request, including when started manually. If their route includes an upstream
-Verify block, it must also complete after Work. Work's focused checks and Merge's
+request, including when started manually. Work's focused checks and Merge's
 checks on the current candidate still apply.
 
 The [user-editable flow design](../plans/user-editable-flows.md) records how
@@ -161,9 +160,9 @@ their own Codex conversations so each receives its declared inputs independently
 Explicit continuation can reuse a block conversation with the same inputs and
 definition. Before the checkout exists, the timeline uses its project fallback. Classic and flow writers cannot own the same issue concurrently.
 Without an explicit insertion point, added blocks go before Publish PR. An
-unattempted Publish PR waits for every preceding lane, including in flows without
-a suggested Verify block. Existing attempted publication dependencies remain
-unchanged.
+unattempted Publish PR waits for every preceding lane. When Flow retires a legacy
+Verify block, its successors inherit its dependencies. Flow keeps the retired
+block's attempts and comments in history.
 
 Parallel graph lanes describe independent branches. The owning Arena or Swarm
 skill can coordinate isolated parallel workers inside its block; ordinary blocks
@@ -176,16 +175,16 @@ later verification, publication, merge, closure, or cleanup blocks.
 
 The standard delivery flow verifies the updated candidate at delivery.
 Merge reuses passing evidence when the issue commit, destination revision,
-verification inputs and retained evidence match. Existing standalone Verify
-blocks remain runnable and are hidden when adding blocks or generating new
-flows. A change to Goal or Requested proof invalidates related flow
-results. Publish PR prepares and
+verification inputs and retained evidence match. Work and Merge own testing and
+can repair failures. Flow retires legacy standalone Verify blocks when reading
+saved flows and omits them from older flow definitions. A change to Goal or
+Requested proof invalidates related flow results. Publish PR prepares and
 rechecks an exact preview before writing to GitHub. New PR descriptions include
 Requested proof when present. Repeat publication updates the title and commit as
 needed and preserves the original PR description. Publish only pushes the existing
 committed candidate and creates or updates its PR. It runs no tests, installs no
 dependencies, and makes no source edits or commits. Failed or missing verification
-evidence does not block publication; Work and Merge own testing and repairs.
+evidence does not block publication.
 When Merge repair stops after a verification failure, the block summary retains
 the failed test or check names and the repair's reason for stopping.
 

@@ -1099,9 +1099,10 @@ The dependency-failure scenario also checks that an independent issue adopts its
 clarified route and records a confirmed automatic merge within the owning run.
 Shared-chat DOM fixtures load the production template. Browser discussion
 scenarios close the preceding provider before installing their own fixture.
-Pending publication joins all preceding unfinished lanes even when the standard
-flow has no suggested Verify block. New blocks default to insertion before
-publication; existing attempted publication dependencies remain unchanged.
+Pending publication joins all preceding unfinished lanes. New blocks default to
+insertion before publication. The Flow tests cover retiring legacy Verify
+blocks, preserving their attempts, and reconnecting their successors. Publish
+pushes a committed Factory change without starting a local test command.
 
 Queue and settings snapshots must not create tracked Inbox or project settings
 files. Startup and explicit setup own initialization. The source-cleanliness

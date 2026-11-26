@@ -306,13 +306,6 @@ function requireRevisedRequestPrerequisites(flow, block) {
     work.every((attempt) => attempt?.status === 'completed'),
     'Complete Work for the revised request before delivery.'
   );
-  for (const verify of upstream.filter(({ kind }) => kind === 'verify')) {
-    const attempt = latestCurrentAttempt(verify);
-    requireThat(
-      attempt?.status === 'completed' && work.every(({ endedAt }) => attempt.startedAt >= endedAt),
-      'Complete Verify after Work for the revised request before delivery.'
-    );
-  }
 }
 
 function capturedFolderMetadata(root, folder) {
@@ -2974,9 +2967,7 @@ class IssueFlows {
           if (changesVerification)
             invalidateBlocks(
               saved,
-              new Set(
-                saved.blocks.filter((item) => ['verify', 'publish', 'merge'].includes(item.kind)).map((item) => item.id)
-              )
+              new Set(saved.blocks.filter((item) => ['publish', 'merge'].includes(item.kind)).map((item) => item.id))
             );
           request.data.fields = result.artifacts.values;
           delete request.data.lastVerificationCriteria;

@@ -369,6 +369,16 @@ test('provider disable lets a protected publication finish but pauses the route 
   assert.equal(saved.blocks.find((block) => block.kind === 'publish').attempts.at(-1).status, 'completed');
 });
 
+function insertLegacyVerify(flow) {
+  const workIndex = flow.blocks.findIndex(({ kind }) => kind === 'work');
+  const work = flow.blocks[workIndex];
+  const verify = makeBlock('verify', [work.id]);
+  flow.blocks.splice(workIndex + 1, 0, verify);
+  for (const block of flow.blocks.slice(workIndex + 2))
+    block.after = block.after.map((id) => (id === work.id ? verify.id : id));
+  return verify;
+}
+
 test('issue route Start runs Update Branch without confirmation and Pause lets the active block finish', async (t) => {
   const { id, service } = fixture(t);
   const started = [];
@@ -390,8 +400,19 @@ test('issue route Start runs Update Branch without confirmation and Pause lets t
   const view = () => flows.view(id);
   assert.deepEqual((await view()).autoplay, { mode: 'paused' });
   assert.deepEqual(started, []);
-  await action('add', { kind: 'verify', afterId: pending('work').id });
-  await action('add', { kind: 'update-branch', afterId: pending('verify').id });
+  const issue = flows.selected(id);
+  await assert.rejects(() => action('add', { kind: 'verify' }), /Run tests in Work or Merge/);
+  const legacy = flows.read(issue);
+  const verify = insertLegacyVerify(legacy);
+  const failed = { id: 'legacy-failure', status: 'blocked', summary: 'Browser test failed.' };
+  verify.attempts.push(failed);
+  const priorRoute = editFlow(legacy, { action: 'add', kind: 'update-branch', afterId: verify.id });
+  priorRoute.blocks.find(({ kind }) => kind === 'update-branch').after = [verify.id];
+  flows.store.save(priorRoute, priorRoute.revision);
+  await assert.rejects(() => action('continue', { blockId: verify.id }), /Choose a saved block/);
+  const migrated = flows.read(issue);
+  assert.deepEqual(migrated.retiredBlocks.find(({ id }) => id === verify.id).attempts, [failed]);
+  assert.deepEqual(migrated.blocks.find(({ kind }) => kind === 'update-branch').after, ['work']);
   await action('play');
   assert.deepEqual(started, ['work']);
   assert.equal(pending('request').attempts.at(-1).status, 'completed');
@@ -402,7 +423,7 @@ test('issue route Start runs Update Branch without confirmation and Pause lets t
   assert.deepEqual(started, ['work']);
   await action('play');
   while (flows.active.get(id)?.task) await flows.active.get(id).task;
-  assert.deepEqual(started, ['work', 'verify', 'update-branch', 'publish', 'merge']);
+  assert.deepEqual(started, ['work', 'update-branch', 'publish', 'merge']);
   assert.deepEqual((await view()).autoplay, { mode: 'paused', reason: 'Close the issue when ready.' });
   for (const kind of ['publish', 'merge', 'close']) await action('remove', { blockId: pending(kind).id });
   assert.equal((await view()).autoplay.mode, 'paused');
@@ -764,17 +785,17 @@ test('the issue pencil preserves results while changing Your words invalidates v
     view = await flows.action({ action, issueId: id, revision: view.flow.revision, ...input });
   };
   await act('request', { wording: 'Fix Save' });
-  await act('add', { kind: 'verify', afterId: 'work' });
-  const verify = view.flow.blocks.find((block) => block.kind === 'verify');
-  await flows.action({ action: 'start', issueId: id, revision: view.flow.revision, blockId: verify.id });
+  await act('add', { kind: 'advice', afterId: 'work' });
+  const advice = view.flow.blocks.find((block) => block.kind === 'advice');
+  await flows.action({ action: 'start', issueId: id, revision: view.flow.revision, blockId: advice.id });
   await flows.active.get(id)?.task;
   view = await flows.view(id);
-  const currentVerify = () => view.flow.blocks.find((block) => block.kind === 'verify').attempts.at(-1);
-  assert.equal(currentVerify().status, 'completed');
+  const currentAdvice = () => view.flow.blocks.find((block) => block.kind === 'advice').attempts.at(-1);
+  assert.equal(currentAdvice().status, 'completed');
   await act('rename-issue', { previousTitle: view.issue.title, title: 'Fix the Save button' });
   assert.equal(view.issue.title, 'Fix the Save button');
   assert.equal(requestData(view.flow).wording, 'Fix Save');
-  assert.equal(currentVerify().invalidatedAt, undefined);
+  assert.equal(currentAdvice().invalidatedAt, undefined);
   const title = view.flow.blocks
     .find((block) => block.kind === 'publish')
     .details.find((detail) => detail.key === 'title');
@@ -784,10 +805,10 @@ test('the issue pencil preserves results while changing Your words invalidates v
   fields = { ...fields, constraints: 'Use test data' };
   await act('request', { wording: 'Fix the Save action' });
   assert.equal(view.issue.title, 'Fix the Save button');
-  assert.ok(currentVerify().invalidatedAt);
+  assert.ok(currentAdvice().invalidatedAt);
   fields = { ...fields, requestedProof: 'Reload twice' };
   await act('request', { wording: 'Fix the Save action' });
-  assert.ok(currentVerify().invalidatedAt);
+  assert.ok(currentAdvice().invalidatedAt);
   const report = readFileSync(join(root, '.issues', id + '.md'), 'utf8');
   assert.match(report, /title: Fix the Save button/);
   assert.match(report, /## Original request\n\nFix the broken save button\./);
@@ -1421,6 +1442,7 @@ blocks:
   - { id: request, block: request }
   - { id: target, block: target, after: [request] }
   - { id: verify, block: verify, after: [target] }
+  - { id: work, block: work, after: [verify] }
 ---
 `
   );
@@ -1444,8 +1466,11 @@ blocks:
   const bug = await capture('bug', 2);
   assert.equal(bug.flow.definition.id, 'quick');
   assert.deepEqual(
-    bug.flow.blocks.map((block) => block.kind),
-    ['request', 'verify']
+    bug.flow.blocks.map(({ id, after }) => [id, after]),
+    [
+      ['request', []],
+      ['work', ['request']],
+    ]
   );
   const [feature, sameCapture] = await Promise.all([capture('feature', 3), capture('feature', 3)]);
   assert.equal(feature.issue.id, sameCapture.issue.id);
@@ -1468,9 +1493,9 @@ blocks:
   const updated = await flows.action({ action: 'rebuild-flow', issueId: featureId, revision: pending.flow.revision });
   assert.equal(updated.flowDefinitions.updated, false);
   assert.equal(prompts.length, 2);
-  const saved = editFlow(flows.read(flows.selected(bug.issue.id)), { action: 'add', kind: 'verify' });
+  const saved = flows.read(flows.selected(bug.issue.id));
   const result = { id: 'prior-verify', status: 'completed', summary: 'Original verification result' };
-  saved.blocks.find((block) => block.kind === 'verify').attempts.push(result);
+  insertLegacyVerify(saved).attempts.push(result);
   const withResult = flows.store.save(saved, saved.revision);
   const switched = await flows.action({
     action: 'select-flow',
@@ -1530,7 +1555,7 @@ Team instructions.
     buildStructure: async ({ definition }) => {
       assert.deepEqual(
         definition.blocks.map(({ id }) => id),
-        ['request', 'verify']
+        ['request']
       );
       assert.equal(definition.prompt, 'Base instructions.\n\nTeam instructions.');
       return [definition.blocks[0], { id: 'design', block: 'design', after: ['request'] }];
@@ -2273,12 +2298,12 @@ test('opening a changed definition stops active work and invalidates only its co
     }),
   });
   const issue = flows.selected(id);
-  const withVerify = editFlow(flows.read(issue), { action: 'add', kind: 'verify', afterId: 'work' });
-  const initial = editFlow(withVerify, { action: 'add', kind: 'design', lane: 1 });
+  const withAdvice = editFlow(flows.read(issue), { action: 'add', kind: 'advice', afterId: 'work' });
+  const initial = editFlow(withAdvice, { action: 'add', kind: 'design', lane: 1 });
   const independent = initial.blocks.find((block) => block.kind === 'design');
   independent.attempts.push({ id: 'independent', status: 'completed', startedAt: new Date().toISOString() });
-  const verify = initial.blocks.find((block) => block.kind === 'verify');
-  verify.attempts.push({ id: 'proof', status: 'completed', startedAt: new Date().toISOString() });
+  const advice = initial.blocks.find((block) => block.kind === 'advice');
+  advice.attempts.push({ id: 'proof', status: 'completed', startedAt: new Date().toISOString() });
   flows.store.save(initial, 0);
   await flows.action({ issueId: id, revision: 1, action: 'start', blockId: 'work' });
   const active = flows.active.get(id);
@@ -2287,7 +2312,7 @@ test('opening a changed definition stops active work and invalidates only its co
     path,
     readFileSync(path, 'utf8').replace('Perform the requested work.', 'Perform the requested repair.')
   );
-  await flows.action({ issueId: id, action: 'open-block', blockId: verify.id });
+  await flows.action({ issueId: id, action: 'open-block', blockId: advice.id });
   assert.equal(active.controller.signal.aborted, false);
   await flows.action({ issueId: id, action: 'open-block', blockId: 'work' });
   await active.task;
@@ -2295,7 +2320,7 @@ test('opening a changed definition stops active work and invalidates only its co
   const attempt = (blockId) => flow.blocks.find((block) => block.id === blockId).attempts.at(-1);
   assert.equal(attempt('work').status, 'stopped');
   assert.ok(attempt('work').invalidatedAt);
-  assert.ok(attempt(verify.id).invalidatedAt);
+  assert.ok(attempt(advice.id).invalidatedAt);
   assert.equal(attempt(independent.id).invalidatedAt, undefined);
   assert.equal(calls, 1);
 });
@@ -2334,7 +2359,7 @@ test('editing Your words invalidates every following block even when clarificati
   }
 });
 
-test('a revised request keeps the open PR and requires fresh Work and Verify for manual delivery', async (t) => {
+test('a revised request keeps the open PR and requires fresh Work for manual delivery', async (t) => {
   const { root, git, id, service } = fixture(t);
   const config = { provider: 'github', repository: 'test/fixture', remote: 'origin', target: 'dev' };
   const checkout = join(root, '.issues', 'checkout');
@@ -2397,8 +2422,8 @@ test('a revised request keeps the open PR and requires fresh Work and Verify for
   const start = (kind) => act('start', { blockId: block(kind).id, confirmed: true });
   const preview = () => act('preview-publish', { blockId: block('publish').id });
   await act('request', { wording: requestData(read()).wording });
-  await act('add', { kind: 'verify', afterId: block('work').id });
   const saved = read();
+  insertLegacyVerify(saved);
   saved.workspace = { checkout, branch, base, pr: pr.number };
   saved.destination = { branch: 'dev', pr: pr.number, url: pr.html_url };
   for (const entry of saved.blocks.filter(({ kind }) => ['work', 'verify'].includes(kind)))
@@ -2416,13 +2441,7 @@ test('a revised request keeps the open PR and requires fresh Work and Verify for
   await assert.rejects(() => start('merge'), /Complete Work for the revised request/);
   assert.deepEqual(ran, []);
 
-  await start('verify');
-  await flows.active.get(id)?.task;
   await start('work');
-  await flows.active.get(id)?.task;
-  await assert.rejects(preview, /Complete Verify after Work for the revised request/);
-  await assert.rejects(() => start('merge'), /Complete Verify after Work for the revised request/);
-  await start('verify');
   await flows.active.get(id)?.task;
   const result = await preview();
   assert.equal(result.publication.status, 'current');
@@ -2431,7 +2450,7 @@ test('a revised request keeps the open PR and requires fresh Work and Verify for
   await flows.active.get(id)?.task;
   await start('merge');
   await flows.active.get(id)?.task;
-  assert.deepEqual(ran, ['verify', 'work', 'verify', 'publish', 'merge']);
+  assert.deepEqual(ran, ['work', 'publish', 'merge']);
 });
 
 test('issue merge status exposes conflicts and Abort merge rejects stale or busy requests', async (t) => {

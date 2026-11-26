@@ -4,7 +4,7 @@ import MarkdownIt from 'markdown-it';
 import { parse, stringify } from 'yaml';
 import { z } from 'zod';
 import { digest, requireThat } from './common.mjs';
-import { withoutTarget } from './flow-block-data.mjs';
+import { withoutBlock } from './flow-block-data.mjs';
 import { systemFlowDirectory } from './ui-source.mjs';
 
 export const issueTypes = ['bug', 'feature', 'investigation'];
@@ -132,6 +132,7 @@ export function validateFlowNodes(value, catalog) {
       'Use unique block keys and list each dependency before its block.'
     );
     requireThat(block.block !== 'target', 'Starting point and Destination belong to the issue flow.');
+    requireThat(block.block !== 'verify', 'Run tests in Work or Merge.');
     requireThat(index === 0 || block.block !== 'request', 'Use Request only once.');
     requireThat(!kinds || kinds.has(block.block), `Block definition "${block.block}" is unavailable.`);
     seen.add(block.id);
@@ -147,8 +148,8 @@ function loadDefinition(path, id, root, catalog) {
   const projectBlocks = appended && projectDefinition.parse(appended.fields ?? {}).blocks;
   const prompts = [promptSection(base), appended && (promptSection(appended) || appended.body.trim())].filter(Boolean);
   let effectiveBlocks = projectBlocks ?? blocks;
-  for (const node of effectiveBlocks.filter((node) => node.block === 'target'))
-    effectiveBlocks = withoutTarget(effectiveBlocks, node);
+  for (const node of effectiveBlocks.filter(({ block }) => ['target', 'verify'].includes(block)).reverse())
+    effectiveBlocks = withoutBlock(effectiveBlocks, node);
   const definition = { id, ...fields, blocks: validateFlowNodes(effectiveBlocks, catalog) };
   return {
     ...definition,
