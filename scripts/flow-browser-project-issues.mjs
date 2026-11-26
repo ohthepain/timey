@@ -1,4 +1,4 @@
-import { importBrowserIssue, removeBrowserIssue } from './flow-browser-fixture.mjs';
+import { importBrowserIssue, installBrowserHumanInput, removeBrowserIssue } from './flow-browser-fixture.mjs';
 import assert from 'node:assert/strict';
 import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -13,10 +13,7 @@ async function createFixtures(project, root) {
   mkdirSync(join(project, '.issues/closed'), { recursive: true });
   writeFileSync(join(project, '.issues/preferences.json'), '{"commit":true}');
   copyFileSync(join(root, '.issues/triage-labels.md'), join(project, '.issues/triage-labels.md'));
-  const helper = '.agents/skills/issues/scripts';
-  mkdirSync(join(project, helper), { recursive: true });
-  for (const file of ['human-input.mjs', 'human-input-version.json'])
-    copyFileSync(join(root, helper, file), join(project, helper, file));
+  installBrowserHumanInput(project, root);
   for (const id of closed)
     await importBrowserIssue(
       project,

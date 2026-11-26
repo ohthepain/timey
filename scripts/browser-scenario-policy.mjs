@@ -15,6 +15,7 @@ const proposalsCheck = 'Pending proposals can be approved or deleted after confi
 
 export const flowBrowserScenarioNames = {
   '--activity-indicators': 'Activity dots stay anchored and reflect actual work',
+  '--chat-progress': 'Issue and project chats retain semantic progress',
   '--automate-activity': 'Automate me dots follow each active response',
   '--issue-scrollbar': 'Issue flow scrollbar appears only while scrolling',
   '--issue-status-folders': 'Status pseudo-folders track project issues without moving them',

@@ -140,29 +140,58 @@ const coordinatorUI = (() => {
       .join('');
     if (history.innerHTML !== options) history.innerHTML = options;
     const thread = state.threads.find((t) => t.id === selected);
+    renderMessages(data, thread);
+    renderProgress(state, thread);
+  }
+  function coordinatorMessage(data, message) {
+    const chat = window.timeyChatProgress;
+    const { progress, text, role, issueId, runId } = message;
+    const related = issueId ? ' · ' + issueLink(data, issueId) : '';
+    const generated = role === 'user' ? '' : ` data-ai-text data-ai-source="${esc(text)}"`;
+    return `<article>${chat.milestones(progress, runId)}<strong>${esc(role)}</strong>${related}<pre${generated}>${esc(text)}</pre>${chat.commands(progress?.commands, runId + '-reply')}</article>`;
+  }
+  function renderMessages(data, thread) {
     window.timeyView.render(
       document.getElementById('coordinator-messages'),
-      (thread?.messages || [])
-        .map(
-          (m) =>
-            `<article><strong>${esc(m.role)}</strong>${m.issueId ? ' · ' + issueLink(data, m.issueId) : ''}<pre${m.role === 'user' ? '' : ` data-ai-text data-ai-source="${esc(m.text)}"`}>${esc(m.text)}</pre></article>`
-        )
-        .join(''),
+      (thread?.messages || []).map((message) => coordinatorMessage(data, message)).join(''),
       'coordinator-messages:' + selected
     );
+  }
+  function selectedCurrentThread(threads) {
+    return selected === threads.at(-1)?.id;
+  }
+  function workingInThread(state) {
+    return selectedCurrentThread(state.threads) && Boolean(!state.paused && (state.active || pendingResponses));
+  }
+  function renderProgress(state, thread) {
     updateOutput(thread);
-    window.timeyActivity.sync(
+    const progress = thread?.progress;
+    const chat = window.timeyChatProgress;
+    window.timeyView.render(
       document.getElementById('coordinator-activity'),
-      selected === state.threads.at(-1)?.id && Boolean(!state.paused && (state.active || pendingResponses))
+      chat.milestones(progress, 'coordinator-live') + chat.live(progress, workingInThread(state)),
+      'coordinator-activity:' + selected
     );
   }
-  function updateOutput(thread) {
-    const output = document.getElementById('coordinator-output');
-    const follow = output.scrollHeight - output.scrollTop - output.clientHeight < 30;
-    const text = (thread?.output || [])
+  function legacyText(thread) {
+    return (thread?.output || [])
       .map((entry) => (entry.command ? entry.command + '\n' + entry.text : entry.text))
       .join('\n\n');
-    window.timeyView.text(output, text);
+  }
+  function hasSemanticProgress(thread) {
+    return Boolean(thread?.progress || thread?.messages.some((message) => message.progress));
+  }
+  function legacyOutput(thread) {
+    const output = document.getElementById('coordinator-output');
+    output.hidden = hasSemanticProgress(thread);
+    document.getElementById('coordinator-follow').hidden = output.hidden;
+    return output.hidden ? null : output;
+  }
+  function updateOutput(thread) {
+    const output = legacyOutput(thread);
+    if (!output) return;
+    const follow = output.scrollHeight - output.scrollTop - output.clientHeight < 30;
+    window.timeyView.text(output, legacyText(thread));
     if (follow) output.scrollTop = output.scrollHeight;
   }
   return { mount, update, onPage };

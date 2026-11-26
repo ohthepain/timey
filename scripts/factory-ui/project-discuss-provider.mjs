@@ -8,6 +8,7 @@ import { digest, requireThat } from './common.mjs';
 import { agentModel, sessionProvider } from './agent-models.mjs';
 import { NativeAgentConnection } from './native-agent.mjs';
 import { agentRecovery } from './agent-recovery.mjs';
+import { chatProgressInstructions } from './chat-progress.mjs';
 
 function conversationPromptKind(message) {
   return message.reportContext ? 'report' : 'project';
@@ -230,6 +231,8 @@ class ProjectDiscussProvider {
       .map(({ name, description, path }) => ({ name, description, path }));
     return (
       effectiveProjectPrompt(this.service.root, kind) +
+      '\n\n' +
+      chatProgressInstructions +
       '\n\nWhen creating an issue from this conversation, write issue_create.description as the future work: the agreed problem or change, scope, product constraints, decisions, acceptance criteria and requested proof. Keep instructions about this creation operation, such as "create the issue only", "leave it idle" or "do not start implementation now", in this conversation and the creation receipt, outside the saved work description. The creation tool already leaves the issue idle. Preserve genuine prerequisites and required human approvals in the description. For example, "Create an idle issue to replace the gear menu with project Settings" becomes "Replace the gear menu with project Settings", followed by the agreed requirements and implementation proof. Report the creation result without starting work unless separately requested.' +
       (clarification
         ? '\nExplicitly chosen clarification skill (invoke only for unresolved ambiguity): ' +

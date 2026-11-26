@@ -58,9 +58,13 @@ async function retroHistory(service, { issue, flow, signal }) {
 
 function retroEvidence(root, history) {
   const directory = join(root, '.issues/factory-ui/flow-evidence', 'retro-' + randomUUID());
-  const safe = redactValue({ ...history, repairs: exportRepairEvidence(root, directory, history.attempts) });
+  const safe = redactValue({
+    ...history,
+    repairs: exportRepairEvidence(root, directory, history.attempts),
+    mergeRepairs: exportMergeRepairs(root, directory, history.attempts),
+  });
   const sections = Object.fromEntries(
-    ['report', 'timeline', 'attempts', 'threads', 'repairs'].map((key) => [
+    ['report', 'timeline', 'attempts', 'threads', 'repairs', 'mergeRepairs'].map((key) => [
       key,
       writeDiscussionEvidence(directory, key + '.json', JSON.stringify(safe[key], null, 2)),
     ])
@@ -82,20 +86,59 @@ function readRepairEvidence(root, { path, sha256 }) {
   return bytes;
 }
 
+function exportMergeRepairs(root, directory, attempts) {
+  const indexes = attempts.flatMap(({ evidence = [] }) =>
+    evidence.filter(({ label }) => label === 'Merge repair index')
+  );
+  return indexes.map((file, index) => exportMergeRepair(root, directory, file, index + 1));
+}
+
+function exportMergeRepair(root, directory, file, repairIndex) {
+  try {
+    const { attemptId, attempts, delivery } = JSON.parse(readRepairEvidence(root, file));
+    const saved = new Map();
+    const copy = (source) => {
+      if (!saved.has(source.path)) {
+        const name = `merge-repair-${repairIndex}-attachment-${saved.size + 1}.log`;
+        saved.set(source.path, exportRepairAttachment(root, directory, source, name));
+      }
+      return saved.get(source.path);
+    };
+    return { attemptId, delivery, attempts: attempts.map((entry) => exportRepairAttempt(entry, copy)) };
+  } catch (error) {
+    return { sha256: file.sha256, unavailable: error.message };
+  }
+}
+
+function exportRepairAttempt({ result, log, failure, ...attempt }, copy) {
+  return {
+    ...attempt,
+    log: log && copy(log),
+    failure: {
+      ...failure,
+      evidence: failure.evidence?.map(copy),
+      checks: failure.checks?.map((check) => ({ ...check, log: check.log && copy(check.log) })),
+    },
+  };
+}
+
+function exportRepairAttachment(root, directory, file, name) {
+  try {
+    return writeDiscussionEvidence(directory, name, readRepairEvidence(root, file));
+  } catch (error) {
+    return { sha256: file.sha256, unavailable: error.message };
+  }
+}
+
 function exportRepair(root, directory, attemptId, file, repairIndex) {
   const linked = { attemptId, ...file.repairTurn };
   try {
     const { logs } = JSON.parse(readRepairEvidence(root, file));
     return {
       ...linked,
-      logs: logs.map((log, index) => {
-        try {
-          const content = readRepairEvidence(root, log);
-          return writeDiscussionEvidence(directory, `repair-${repairIndex}-command-${index + 1}.log`, content);
-        } catch (error) {
-          return { sha256: log.sha256, unavailable: error.message };
-        }
-      }),
+      logs: logs.map((log, index) =>
+        exportRepairAttachment(root, directory, log, `repair-${repairIndex}-command-${index + 1}.log`)
+      ),
     };
   } catch (error) {
     return { ...linked, unavailable: error.message };
@@ -130,7 +173,7 @@ export async function runRetro(service, ctx, create = createDiscussionRuntime) {
         [
           ctx.definition.prompt,
           'Use the issue report, timeline, attempts, and linked Codex turns as evidence. Preserve order within each thread. Use recorded repair attempt and turn IDs to link repairs before using timestamps for other events. State missing history and unclear ordering.',
-          'The evidence index links to complete, untruncated report, timeline, attempts, linked Codex turns, and repair command logs. Search and read relevant ranges across the history, including earlier attempts. Inspect relevant project files and recent Git work when useful. Cite evidence paths/revisions, distinguish observations from claims, and state which evidence was unavailable or not inspected.',
+          'The evidence index links to the report, timeline, attempts, linked Codex turns, repair command logs, and merge repair revisions, CI runs and failure attachments. Search and read relevant ranges across the history, including earlier attempts. Inspect relevant project files and recent Git work when useful. Cite evidence paths/revisions, distinguish observations from claims, and state which evidence was unavailable or not inspected.',
           'Return a concise summary and concrete follow-up issues. An empty recommendation list is valid. Do not claim model descriptions prove actual checks, merge or acceptance.',
         ].join('\n\n')
       );

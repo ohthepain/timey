@@ -2,6 +2,7 @@
 <html lang="en">
   <head>
     <link rel="stylesheet" href="/project-discuss.css" />
+    <link rel="stylesheet" href="/chat-progress.css" />
     <link rel="stylesheet" href="/project-settings.css" />
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
@@ -3261,8 +3262,8 @@
       }
       function updateProjectIssueRoute() {
         const selected = [...selectedProjectIssueIds];
-        if (selected.length === 1) location.hash = `#/issue/${encodeURIComponent(selected[0])}`;
-        else location.hash = '#queue';
+        const hash = selected.length === 1 ? `#/issue/${encodeURIComponent(selected[0])}` : '#queue';
+        history.replaceState(history.state, '', hash);
         render();
       }
       function setProjectIssueDetailWidth(workspace, separator, width) {

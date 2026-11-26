@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import {
+  importBrowserIssue,
+  installBrowserHumanInput,
+  removeBrowserIssue,
+  writeBrowserIssue,
+} from './flow-browser-fixture.mjs';
 
 const projectTabs = [
   { name: 'Home', route: null, target: '#home-title', screenshot: 'project-navigation' },
@@ -170,7 +176,209 @@ async function checkAutomateAndHome(page, tablist, header) {
   assert.equal(new URL(page.url()).searchParams.has('projectTab'), false);
 }
 
-export async function projectNavigationBrowserChecks({ page, poll, screenshot, output, candidate }) {
+async function navigationFixtures(project, service, root) {
+  installBrowserHumanInput(project, root);
+  const first = '20261125-navigation-first';
+  const second = '20261125-navigation-second';
+  const investigation = '20261125-navigation-investigation';
+  await writeBrowserIssue(project, { id: first, title: 'Fix login', body: '## Original request\n\nFix login.' });
+  await writeBrowserIssue(project, { id: second, title: 'Fix search', body: '## Original request\n\nFix search.' });
+  await importBrowserIssue(
+    project,
+    investigation,
+    `---\nid: ${investigation}\ntitle: Trace navigation\nstate: backlog\nrequest_type: investigation\n---\n\n## Original request\n\nInvestigate navigation.\n`
+  );
+  const issue = service.flows.selected(first);
+  const flow = service.flows.read(issue);
+  const request = flow.blocks.find(({ kind }) => kind === 'request');
+  const work = flow.blocks.find(({ kind }) => kind === 'work');
+  assert.ok(request && work, 'The fixture must have Request and Work blocks.');
+  return { first, second, investigation, request, work };
+}
+
+function observeNavigation(page, poll) {
+  const observations = [];
+  const expect = async (target, title, locator) => {
+    await page.waitForURL((url) =>
+      ['projectTab', 'folder', 'issue', 'block'].every((key) => url.searchParams.get(key) === (target[key] || null))
+    );
+    await locator.waitFor();
+    await poll(
+      () => page.title(),
+      (value) => value === title + ' · Factory',
+      'Unexpected browser history title'
+    );
+    observations.push({ url: page.url(), title: await page.title() });
+  };
+  return { expect, observations };
+}
+
+async function checkFreshBlock(page, copiedURL, block) {
+  const fresh = await page.context().newPage();
+  try {
+    const card = fresh.locator(`#graph [data-block="${block}"][aria-pressed="true"]`);
+    await fresh.goto(copiedURL);
+    await card.waitFor();
+    const length = await fresh.evaluate(() => history.length);
+    await fresh.reload();
+    await card.waitFor();
+    assert.equal(await fresh.evaluate(() => history.length), length, 'Reload must not add history.');
+    return { url: fresh.url(), selected: block, reloadLength: length };
+  } finally {
+    await fresh.close();
+  }
+}
+
+async function checkHistoryDraft(page, destinations, wording) {
+  const draft = 'Unsaved login request entered before navigating';
+  await page.locator('#tab-details').click();
+  await wording.fill(draft);
+  await destinations.work.open();
+  await destinations.request.open();
+  await wording.waitFor();
+  const inApp = await wording.inputValue();
+  await page.goBack();
+  await destinations.work.check();
+  await page.goBack();
+  await destinations.request.check();
+  await page.locator('#tab-details').click();
+  const browser = await wording.inputValue();
+  assert.deepEqual({ inApp, browser }, { inApp: draft, browser: draft });
+  return { inApp, browser };
+}
+
+async function checkNativeHistory({ page, poll, tablist, project, service, root, screenshot }) {
+  const fixtures = await navigationFixtures(project, service, root);
+  const { first, second, investigation, request, work } = fixtures;
+  await page.goto('/');
+  const { expect, observations } = observeNavigation(page, poll);
+  const openIssue = (id) => page.locator(`#open-issues [data-issue="${id}"]`).click();
+  const blockCard = (id) => page.locator(`#graph [data-block="${id}"]`);
+  const visit = (open, target, title, locator) => ({ open, check: () => expect(target, title, locator) });
+  const byTab = (name, projectTab, title) => {
+    const selected = tablist.getByRole('tab', { name, exact: true, selected: true });
+    const open = async () => {
+      await tablist.getByRole('tab', { name, exact: true }).click();
+      if (projectTab === 'issues')
+        await page.frameLocator('#project-issues iframe').getByRole('button', { name: 'Open', exact: true }).waitFor();
+    };
+    return visit(open, { projectTab }, title || name, selected);
+  };
+  const folderButton = page.locator('#open-issues [data-folder]').first();
+  await folderButton.waitFor();
+  const folder = await folderButton.getAttribute('data-folder');
+  const issueHeading = (title) => page.locator('#issue-title').filter({ hasText: title });
+  const entries = {
+    home: byTab('Home', undefined, 'Project Home'),
+    issues: byTab('Issues', 'issues'),
+    reports: byTab('Reports', 'reports'),
+    discuss: byTab('Discuss', 'discuss'),
+    folder: visit(() => folderButton.click(), { folder }, folder, page.locator('#folder-workspace-title')),
+    first: visit(() => openIssue(first), { issue: first }, 'Fix login', issueHeading('Fix login')),
+    request: visit(
+      () => blockCard(request.id).click(),
+      { issue: first, block: request.id },
+      'Fix login / Request',
+      page.locator(`#graph [data-block="${request.id}"][aria-pressed="true"]`)
+    ),
+    work: visit(
+      () => blockCard(work.id).click(),
+      { issue: first, block: work.id },
+      'Fix login / Work',
+      page.locator(`#graph [data-block="${work.id}"][aria-pressed="true"]`)
+    ),
+    second: visit(() => openIssue(second), { issue: second }, 'Fix search', issueHeading('Fix search')),
+    investigation: visit(
+      () => openIssue(investigation),
+      { issue: investigation },
+      'Trace navigation',
+      issueHeading('Trace navigation')
+    ),
+  };
+  const history = await page.context().newCDPSession(page);
+  try {
+    await entries.home.check();
+    const initial = await history.send('Page.getNavigationHistory');
+    for (const entry of Object.values(entries).slice(1)) {
+      await entry.open();
+      await entry.check();
+    }
+    const final = await history.send('Page.getNavigationHistory');
+    const recorded = final.entries.slice(initial.currentIndex, final.currentIndex + 1);
+    assert.deepEqual(
+      recorded.map(({ title }) => title),
+      observations.map(({ title }) => title)
+    );
+    const order = Object.values(entries);
+    for (const entry of order.slice(0, -1).reverse()) {
+      await page.goBack();
+      await entry.check();
+    }
+    for (const entry of order.slice(1)) {
+      await page.goForward();
+      await entry.check();
+    }
+    const workEntry = recorded.find(({ url }) => new URL(url).searchParams.get('block') === work.id);
+    await history.send('Page.navigateToHistoryEntry', { entryId: workEntry.id });
+    await entries.work.check();
+    const copied = await checkFreshBlock(page, page.url(), work.id);
+    const beforeRefresh = await history.send('Page.getNavigationHistory');
+    await page.locator('#tab-artifacts').click();
+    await page.locator('#issue-search').fill('filter-navigation-proof');
+    await page.locator('#open-issues').getByText('No matching issues.').waitFor();
+    await page.locator('#issue-search').clear();
+    const badges = page.locator('#issue-badge-controls [data-issue-badge-filter]');
+    await badges.selectOption({ index: 1 });
+    await badges.selectOption('');
+    const refreshed = page.waitForResponse(
+      (response) => new URL(response.url()).searchParams.get('refresh') === 'true'
+    );
+    await page.locator('#refresh').click();
+    assert.ok((await refreshed).ok());
+    const afterRefresh = await history.send('Page.getNavigationHistory');
+    assert.deepEqual(afterRefresh, beforeRefresh, 'Inspector tabs, filters and refresh must retain native history.');
+    await page.goBack();
+    await entries.request.check();
+    const drafts = await checkHistoryDraft(page, entries, page.locator('[data-field="wording"]'));
+    await screenshot('project-native-history');
+
+    await entries.work.open();
+    await entries.work.check();
+    await entries.second.open();
+    await entries.second.check();
+    await entries.home.open();
+    await entries.home.check();
+    const flow = service.flows.read(service.flows.selected(first));
+    await service.flows.action({ action: 'remove', issueId: first, revision: flow.revision, blockId: work.id });
+    await removeBrowserIssue(project, second);
+    const unavailable = () =>
+      expect({ issue: second }, 'Issue unavailable', page.getByText('This issue is unavailable.', { exact: false }));
+    await page.goBack();
+    await unavailable();
+    await page.goBack();
+    await entries.first.check();
+    await page.goForward();
+    await unavailable();
+    await page.goForward();
+    await entries.home.check();
+    return { recorded, observations, copied, drafts, historyIndexAfterRefresh: afterRefresh.currentIndex };
+  } finally {
+    await history.detach();
+    await removeBrowserIssue(project, first);
+    await removeBrowserIssue(project, investigation);
+  }
+}
+
+export async function projectNavigationBrowserChecks({
+  page,
+  poll,
+  screenshot,
+  output,
+  candidate,
+  project,
+  service,
+  root,
+}) {
   const desktop = { width: 1440, height: 960 };
   const narrow = { width: 390, height: 844 };
   const header = page.locator('.factory-header');
@@ -197,6 +405,8 @@ export async function projectNavigationBrowserChecks({ page, poll, screenshot, o
       join(output, 'project-header-proof.json'),
       JSON.stringify({ candidate, observations, controls }, null, 2)
     );
+    const native = await checkNativeHistory({ page, poll, tablist, project, service, root, screenshot });
+    writeFileSync(join(output, 'project-native-history.json'), JSON.stringify({ candidate, ...native }, null, 2));
   } finally {
     await page.setViewportSize(desktop);
   }

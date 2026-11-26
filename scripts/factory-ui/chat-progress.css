@@ -1,0 +1,41 @@
+[data-chat-live] {
+  display: block;
+  width: auto;
+  color: inherit;
+}
+[data-sparkle-text] {
+  animation: sparkle-text 2s ease-in-out infinite;
+}
+@keyframes sparkle-text {
+  50% {
+    text-shadow: 0 0 0.7em currentColor;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-sparkle-text] {
+    animation: none;
+  }
+}
+[data-chat-milestone] {
+  padding: 8px 16px;
+}
+[data-chat-milestone] p {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+[data-chat-milestone][role='alert'] {
+  border-inline-start: 2px solid currentColor;
+}
+[data-chat-commands] li {
+  margin-block: 6px;
+  overflow-wrap: anywhere;
+}
+[data-chat-commands] small {
+  margin-inline-start: 8px;
+}
+[data-chat-commands] pre {
+  max-height: 12rem;
+  overflow: auto;
+  white-space: pre-wrap;
+}

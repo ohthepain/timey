@@ -5,21 +5,35 @@ import { reorderedBlocks } from './flow-order.mjs';
 
   const $ = (id) => document.getElementById(id);
   const view = window.timeyView;
-  const initialSelection = new URL(location.href).searchParams;
+  function readFileFolder(root, path) {
+    const selector = `[data-file-root="${CSS.escape(root)}"][data-file-path="${CSS.escape(path)}"]`;
+    const label = document.querySelector(selector)?.textContent;
+    return { root, path, name: label || path.split('/').at(-1) || root.replace('system-', '') };
+  }
+
+  function readDestination() {
+    const params = new URL(location.href).searchParams;
+    const issue = params.get('issue');
+    const root = params.get('fileRoot');
+    const path = params.get('filePath') || '';
+    return {
+      issue,
+      block: issue && params.get('block'),
+      folder: !issue && !root ? params.get('folder') : null,
+      fileFolder: !issue && root ? readFileFolder(root, path) : null,
+      projectTab: params.get('projectTab'),
+    };
+  }
+
+  const initialDestination = readDestination();
   const state = {
     index: { issues: [], folders: [], catalog: [] },
     view: null,
-    issueId: initialSelection.get('issue'),
-    folder: initialSelection.get('issue') ? null : initialSelection.get('folder'),
-    fileFolder: initialSelection.get('fileRoot')
-      ? {
-          root: initialSelection.get('fileRoot'),
-          path: initialSelection.get('filePath') || '',
-          name:
-            initialSelection.get('filePath')?.split('/').at(-1) ||
-            initialSelection.get('fileRoot').replace('system-', ''),
-        }
-      : null,
+    issueId: initialDestination.issue,
+    folder: initialDestination.folder,
+    fileFolder: initialDestination.fileFolder,
+    requestedBlock: initialDestination.block,
+    issueUnavailable: false,
     blockId: null,
     deleteBlockId: null,
     graphScrollIntent: null,
@@ -293,6 +307,8 @@ import { reorderedBlocks } from './flow-order.mjs';
     const message = waiting
       ? 'Waiting for server…'
       : state.error ||
+        (state.issueUnavailable ? 'This issue is unavailable. Use Back or choose a saved issue.' : '') ||
+        (missingFolder() ? 'This folder is unavailable. Use Back or choose a saved folder.' : '') ||
         state.connectionError ||
         (storeUnavailable() && storage?.phase !== 'refreshing'
           ? 'Shared storage is unavailable. Browse cached history and keep local drafts; shared changes and new runs are paused.'
@@ -304,7 +320,7 @@ import { reorderedBlocks } from './flow-order.mjs';
     }
     $('error-banner').hidden = !message;
     view.text($('error-message'), message);
-    $('dismiss-error').hidden = waiting || storeUnavailable();
+    $('dismiss-error').hidden = waiting || storeUnavailable() || state.issueUnavailable || missingFolder();
   }
 
   function storeUnavailable() {
@@ -356,7 +372,11 @@ import { reorderedBlocks } from './flow-order.mjs';
     } catch {
       throw new Error(`The server returned an unreadable response (${response.status}). Your saved flow is unchanged.`);
     }
-    if (!response.ok) throw new Error(result.error || result.message || `The request failed (${response.status}).`);
+    if (!response.ok) {
+      throw Object.assign(new Error(result.error || result.message || `The request failed (${response.status}).`), {
+        status: response.status,
+      });
+    }
     return result;
   }
 
@@ -378,7 +398,8 @@ import { reorderedBlocks } from './flow-order.mjs';
   const projectHome = window.createProjectHomeUI({
     request: json,
     post,
-    navigateHome: () => selectWorkspace({}),
+    navigateHome: (projectTab) => navigateWorkspace({ projectTab }),
+    navigateIssue: selectIssue,
     changed: () => load(true),
   });
   const investigationUI = window.createInvestigationIssueUI({ request: json, post, changed: () => load(true) });
@@ -394,43 +415,76 @@ import { reorderedBlocks } from './flow-order.mjs';
     return `<section class="detail-section"><div class="section-label">Findings</div><p class="detail-copy">Turn these findings into concrete work.</p><button class="small-button" data-investigation-followups="${escape(block.id)}" data-source-issue="${escape(state.issueId)}"${state.newActionsPaused ? ' disabled' : ''}>Create follow-up issues</button></section>`;
   }
 
-  function applyView(result) {
+  function restoreBlock() {
+    const { flow, issue } = state.view;
+    const blocks = flow.blocks;
+    const request = blocks.find((block) => block.kind === 'request');
+    if (document.documentElement.dataset.projectIssueRequestEmbed === 'true') {
+      state.blockId = request?.id || null;
+      state.tab = 'details';
+      return;
+    }
+    state.deleteBlockId = null;
+    const saved = view.read('flow-selection:' + state.issueId, {});
+    const requested = blocks.find((block) => block.id === state.requestedBlock);
+    const missing = state.requestedBlock && !requested;
+    if (missing) {
+      const url = new URL(location.href);
+      url.searchParams.delete('block');
+      history.replaceState(history.state, '', url);
+      state.requestedBlock = null;
+    }
+    const attempted = blocks
+      .filter((block) => latest(block))
+      .sort((a, b) =>
+        String(latest(b).endedAt || latest(b).startedAt || '').localeCompare(
+          String(latest(a).endedAt || latest(a).startedAt || '')
+        )
+      );
+    const selected = requested || blocks.find((block) => isRunning(block)) || attempted[0] || request || blocks[0];
+    state.blockId = selected?.id || null;
+    if (selected?.id === saved.blockId && ['details', 'conversation', 'artifacts'].includes(saved.tab))
+      state.tab = saved.tab;
+    state.graphScrollIntent = requested
+      ? { nodeId: requested.id, mode: 'center' }
+      : issue.status === 'closed'
+        ? { nodeId: '__destination', mode: 'end' }
+        : attempted.length === 0
+          ? { nodeId: '__base', mode: 'start' }
+          : { nodeId: state.blockId, mode: 'center' };
+  }
+
+  function applyView(result, { issueUnavailable = false } = {}) {
     state.index = { ...state.index, ...result };
-    if (result.flow && result.issue && result.issue.id === state.issueId) {
+    state.issueUnavailable = issueUnavailable;
+    if (issueUnavailable) {
+      state.view = null;
+      state.blockId = null;
+    } else if (result.flow && result.issue && result.issue.id === state.issueId) {
       state.view = result;
-      if (document.documentElement.dataset.projectIssueRequestEmbed === 'true') {
-        state.blockId = result.flow.blocks.find((block) => block.kind === 'request')?.id || null;
-        state.tab = 'details';
-      } else if (!result.flow.blocks.some((block) => block.id === state.blockId)) {
-        state.deleteBlockId = null;
-        const attempted = result.flow.blocks
-          .filter((block) => latest(block))
-          .sort((a, b) =>
-            String(latest(b).endedAt || latest(b).startedAt || '').localeCompare(
-              String(latest(a).endedAt || latest(a).startedAt || '')
-            )
-          );
-        const savedSelection = view.read('flow-selection:' + state.issueId, {});
-        const savedBlock = result.flow.blocks.find((block) => block.id === savedSelection.blockId);
-        if (savedBlock && ['details', 'conversation', 'artifacts'].includes(savedSelection.tab))
-          state.tab = savedSelection.tab;
-        state.blockId =
-          savedBlock?.id ||
-          result.flow.blocks.find((block) => isRunning(block))?.id ||
-          attempted[0]?.id ||
-          result.flow.blocks.find((block) => block.kind === 'request')?.id ||
-          result.flow.blocks[0]?.id ||
-          null;
-        state.graphScrollIntent =
-          result.issue.status === 'closed'
-            ? { nodeId: '__destination', mode: 'end' }
-            : attempted.length === 0
-              ? { nodeId: '__base', mode: 'start' }
-              : { nodeId: state.blockId, mode: 'center' };
-      }
+      if (!activeBlock()) restoreBlock();
     }
     if (result.error) state.error = result.error;
     render();
+  }
+
+  async function readFlowSnapshot(issue, refresh, signal) {
+    const query = new URLSearchParams();
+    if (issue) query.set('issue', issue);
+    if (refresh) query.set('refresh', 'true');
+    if (document.documentElement.dataset.projectIssueRequestEmbed === 'true') query.set('view', 'request');
+    const read = () => {
+      const params = query.toString();
+      return json(params ? '/api/flow?' + params : '/api/flow', { signal });
+    };
+    try {
+      return { result: await read(), issueUnavailable: false };
+    } catch (error) {
+      if (!issue || ![400, 404].includes(error.status) || !/no longer exists|valid saved issue/i.test(error.message))
+        throw error;
+      query.delete('issue');
+      return { result: await read(), issueUnavailable: true };
+    }
   }
 
   async function load(force = false, announce = false, remote = false) {
@@ -446,14 +500,7 @@ import { reorderedBlocks } from './flow-order.mjs';
     const selected = state.issueId;
     state.loading = true;
     try {
-      const query = new URLSearchParams();
-      if (selected) query.set('issue', selected);
-      if (announce || remote) query.set('refresh', 'true');
-      if (document.documentElement.dataset.projectIssueRequestEmbed === 'true') query.set('view', 'request');
-      const params = query.toString();
-      const result = await json(`/api/flow${params ? `?${params}` : ''}`, {
-        signal: controller.signal,
-      });
+      const { result, issueUnavailable } = await readFlowSnapshot(selected, announce || remote, controller.signal);
       if (sequence !== state.sequence || selected !== state.issueId || serverControlUI.isWaitingForServer()) return;
       const recovering = Boolean(state.connectionError);
       state.connectionError = '';
@@ -468,7 +515,7 @@ import { reorderedBlocks } from './flow-order.mjs';
       const fingerprint = JSON.stringify({ ...result, environment, storeStatus });
       if (force || recovering || state.snapshotFingerprint !== fingerprint) {
         state.snapshotFingerprint = fingerprint;
-        applyView(result);
+        applyView(result, { issueUnavailable });
         void refreshIssueStore();
       }
       if (announce)
@@ -696,29 +743,61 @@ import { reorderedBlocks } from './flow-order.mjs';
   }
 
   function selectIssue(id) {
-    if (!state.folder && !state.fileFolder && state.issueId === id && state.view) return;
-    selectWorkspace({ issue: id });
+    navigateWorkspace({ issue: id });
   }
 
   function selectFolder(folder) {
-    if (state.folder === folder) return;
-    selectWorkspace({ folder });
+    navigateWorkspace({ folder });
   }
 
   window.addEventListener('factory-open-issue-folder', (event) => selectFolder(event.detail));
 
-  window.addEventListener('factory-open-file-folder', (event) => selectWorkspace({ fileFolder: event.detail }));
+  window.addEventListener('factory-open-file-folder', (event) => navigateWorkspace({ fileFolder: event.detail }));
   window.addEventListener('factory-file-folder-ready', (event) => {
     if (state.fileFolder?.root !== event.detail.root || state.fileFolder.path !== event.detail.path) return;
     state.fileFolder = event.detail;
     renderFolderWorkspace();
+    renderWorkspaceTitle();
   });
 
   function sidebarCollapsedFolders() {
     return state.search || state.badgeFilter ? state.collapsedSearchFolders : state.collapsedFolders;
   }
 
-  function selectWorkspace({ issue = null, folder = null, fileFolder = null }) {
+  function navigateWorkspace({ issue, block, folder, fileFolder, projectTab }, options) {
+    const url = new URL(location.href);
+    for (const [key, value] of Object.entries({
+      issue,
+      block,
+      folder,
+      fileRoot: fileFolder?.root,
+      filePath: fileFolder?.path,
+      projectTab: projectTab === 'home' ? null : projectTab,
+    })) {
+      if (value) url.searchParams.set(key, value);
+      else url.searchParams.delete(key);
+    }
+    if (url.href === location.href) return;
+    history.pushState(null, '', url);
+    restoreWorkspace(options);
+  }
+
+  function restoreWorkspace({ reveal = false } = {}) {
+    const { issue, block, folder, fileFolder, projectTab } = readDestination();
+    projectHome.selectTab(projectTab);
+    if (issue && issue === state.issueId && state.view) {
+      if (block !== state.requestedBlock) {
+        state.requestedBlock = block;
+        restoreBlock();
+      }
+      if (reveal) state.graphScrollIntent = { nodeId: block, mode: 'reveal' };
+      render();
+      return;
+    }
+    if (!issue && !folder && !fileFolder && projectHome.isVisible()) {
+      render();
+      return;
+    }
     state.folder = folder;
     state.fileFolder = fileFolder;
     folderSelection = emptyFolderSelection();
@@ -730,25 +809,29 @@ import { reorderedBlocks } from './flow-order.mjs';
     $('folder-issue-view').value = 'open';
     state.issueId = issue;
     state.blockId = null;
+    state.requestedBlock = block;
+    state.issueUnavailable = false;
+    state.tab = 'details';
     state.deleteBlockId = null;
     state.graphScrollIntent = null;
     state.graphScrollAnchor = null;
     state.view = null;
     state.error = '';
-    const url = new URL(location.href);
-    for (const [key, value] of Object.entries({
-      issue,
-      folder,
-      fileRoot: fileFolder?.root,
-      filePath: fileFolder?.path,
-    })) {
-      if (value) url.searchParams.set(key, value);
-      else url.searchParams.delete(key);
-    }
-    history.replaceState(null, '', url);
     window.dispatchEvent(new CustomEvent('factory-workspace-changed'));
     render();
     void load(true);
+  }
+
+  window.addEventListener('popstate', restoreWorkspace);
+  document.querySelector('.brand').addEventListener('click', (event) => {
+    if (event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    navigateWorkspace({});
+  });
+
+  function selectBlock(id, { armDeletion = false } = {}) {
+    navigateWorkspace({ issue: state.issueId, block: id }, { reveal: true });
+    if (armDeletion) state.deleteBlockId = state.blockId;
   }
 
   function renderSidebar() {
@@ -856,7 +939,7 @@ import { reorderedBlocks } from './flow-order.mjs';
       if (!confirm(`Move “${preview.name}” and all its contents to Trash?${installed}`)) return;
       await post('folder-delete', { ...selected, basis: preview.basis });
       window.dispatchEvent(new CustomEvent('factory-folder-deleted', { detail: selected }));
-      selectWorkspace({});
+      navigateWorkspace({});
       toast('Moved folder to Trash.');
     } catch (error) {
       showError(error.message);
@@ -1166,6 +1249,10 @@ import { reorderedBlocks } from './flow-order.mjs';
     window.factoryAgentOptions($('issue-settings-fields'));
   }
 
+  function missingFolder() {
+    return state.folder && !state.fileFolder && state.index.project && !state.index.folders.includes(state.folder);
+  }
+
   function renderFolderWorkspace() {
     const workspace = $('folder-workspace');
     const selected = Boolean(state.folder || state.fileFolder);
@@ -1175,9 +1262,10 @@ import { reorderedBlocks } from './flow-order.mjs';
     $('graph-scroll').hidden = selected;
     $('graph-region').hidden = selected;
     $('flow-view-title').textContent = selected ? 'Folder' : 'Issue flow';
-    $('issue-folder-content').hidden = !state.folder;
+    $('issue-folder-content').hidden = !state.folder || missingFolder();
     if (!selected) return;
     $('folder-workspace-title').textContent = folderConfig?.folder?.label || state.fileFolder?.name || state.folder;
+    if (missingFolder()) return;
     folderSettingsUI.setLocation(folderLocation());
     $('issue-folder-content').hidden = !state.folder || folderConfig?.kind === 'plain';
     if (!state.folder || folderConfig?.kind === 'plain') return;
@@ -2505,20 +2593,38 @@ import { reorderedBlocks } from './flow-order.mjs';
 
   function conversationMessage(message) {
     const producer = state.view.flow.blocks.find((entry) => entry.id === message.blockId);
-    return window.chatMessageMarkup({
-      id: message.id,
-      user: message.actor === 'human',
-      label: message.role || message.actor,
-      meta: [producer?.label, date(message.at)].filter(Boolean).join(' · '),
-      content: `<p class="message-body">${escape(message.body)}</p>`,
-      aiSource: message.body,
-      aiKey: 'flow-conversation-' + message.id,
-    });
+    const chat = window.timeyChatProgress;
+    return (
+      chat.milestones(message.progress, message.id) +
+      window.chatMessageMarkup({
+        id: message.id,
+        user: message.actor === 'human',
+        label: message.role || message.actor,
+        meta: [producer?.label, date(message.at)].filter(Boolean).join(' · '),
+        content: `<p class="message-body">${escape(message.body)}</p>`,
+        aiSource: message.body,
+        aiKey: 'flow-conversation-' + message.id,
+        tail: chat.commands(message.progress?.commands, message.id + '-reply'),
+      })
+    );
   }
 
   function renderConversation(block) {
-    const messages = state.view?.conversation || [];
-    return `<p class="conversation-context">This issue's conversation shows notes and responses from its blocks.</p>${messages.length ? `<div class="timeline">${messages.map(conversationMessage).join('')}</div>` : '<p class="inline-empty">No conversation entries yet. Starting a block will retain its activity here.</p>'}${window.timeyActivity.markup(issueWorking())}${block ? commentForm(block) : ''}`;
+    const { conversation: messages = [], conversationProgress, humanInput, lastBlockingError } = state.view || {};
+    const chat = window.timeyChatProgress;
+    const notice = humanInput ? humanInput.message || 'Needs your input' : lastBlockingError?.message;
+    const activity =
+      chat.milestones(conversationProgress, 'flow-live') +
+      (notice ? `<p class="chat-milestone" role="alert">${escape(notice)}</p>` : '') +
+      chat.live(conversationProgress, issueWorking());
+    const history = conversationHistory(messages, activity);
+    return `<p class="conversation-context">This issue's conversation shows notes and responses from its blocks.</p>${history}${block ? commentForm(block) : ''}`;
+  }
+
+  function conversationHistory(messages, activity) {
+    if (!messages.length && !activity)
+      return '<p class="inline-empty">No conversation entries yet. Starting a block will retain its activity here.</p>';
+    return `<div class="timeline">${messages.map(conversationMessage).join('')}${activity}</div>`;
   }
 
   function renderArtifacts(block, artifacts) {
@@ -2633,7 +2739,7 @@ import { reorderedBlocks } from './flow-order.mjs';
             : '<p class="inline-empty">Add a block to begin this issue.</p>';
     if (inspectorRender?.scope === scope && inspectorRender.html === html) return;
     view.render(body, html, scope);
-    view.write('flow-selection:' + state.issueId, { blockId: state.blockId, tab: state.tab });
+    if (block) view.write('flow-selection:' + state.issueId, { blockId: state.blockId, tab: state.tab });
     inspectorRender = { scope, html };
   }
 
@@ -2698,10 +2804,8 @@ import { reorderedBlocks } from './flow-order.mjs';
   $('last-blocking-error-open').addEventListener('click', () => {
     const error = state.view?.lastBlockingError;
     if (!error?.blockId) return;
-    state.blockId = error.blockId;
     state.tab = 'details';
-    state.graphScrollIntent = { nodeId: state.blockId, mode: 'reveal' };
-    renderGraph();
+    selectBlock(error.blockId);
     renderInspector();
     $('inspector-body')
       .querySelector('[data-block-model-error], [name="model"], .block-progress')
@@ -2729,6 +2833,21 @@ import { reorderedBlocks } from './flow-order.mjs';
         'discuss-hidden',
         showHome && ['discuss', 'reports'].includes($('project-home').dataset.projectTab)
       );
+  }
+
+  function renderWorkspaceTitle() {
+    const issue = state.view?.issue || state.index.issues.find(({ id }) => id === state.issueId);
+    const block = state.requestedBlock && activeBlock();
+    const title = state.issueUnavailable
+      ? 'Issue unavailable'
+      : issue
+        ? [issue.title, block?.label].filter(Boolean).join(' / ')
+        : state.issueId
+          ? 'Issue'
+          : missingFolder()
+            ? 'Folder unavailable'
+            : folderConfig?.folder?.label || state.fileFolder?.name || state.folder || projectHome.title();
+    document.title = title + ' · Factory';
   }
 
   function render() {
@@ -2777,6 +2896,7 @@ import { reorderedBlocks } from './flow-order.mjs';
     renderIssueTimestamps(issue);
     const showHome = !state.issueId && !state.folder && !state.fileFolder;
     projectHome.setVisible(showHome);
+    renderWorkspaceTitle();
     renderFooterVisibility(showHome);
     $('app').dataset.homeView = showHome ? 'open' : 'closed';
     if (showHome) {
@@ -3657,15 +3777,7 @@ import { reorderedBlocks } from './flow-order.mjs';
     if (button.dataset.createFolderIssue) return openCapture(button.dataset.createFolderIssue);
     if (button.hasAttribute('data-open-project-issues')) return projectHome.openIssuesTab();
     if (button.dataset.issue) return selectIssue(button.dataset.issue);
-    if (button.dataset.block) {
-      state.blockId = button.dataset.block;
-      if ($('graph').contains(button)) state.deleteBlockId = state.blockId;
-      state.graphScrollIntent = { nodeId: state.blockId, mode: 'reveal' };
-      renderGraph();
-      renderInspector();
-      setBusy(state.pending);
-      return;
-    }
+    if (button.dataset.block) return selectBlock(button.dataset.block, { armDeletion: $('graph').contains(button) });
     if (button.dataset.tab) {
       state.tab = button.dataset.tab;
       renderInspector();
@@ -4191,13 +4303,13 @@ import { reorderedBlocks } from './flow-order.mjs';
   $('issue-input-continue').addEventListener('click', () => {
     const block = state.view?.flow.blocks.find((block) => block.id === state.view.humanInput?.blockId);
     if (!block) return;
-    state.blockId = block.id;
     if (state.view.humanInput.kind === 'agent') {
       state.tab = 'details';
+      selectBlock(block.id);
       render();
       return;
     }
-    render();
+    selectBlock(block.id);
     void startBlock('continue', block);
   });
   $('refresh').addEventListener('click', () => {

@@ -964,6 +964,7 @@ function readResource(service, request, response, owner) {
     '/project-reports.css': 'project-reports.css',
     '/skill-select.js': 'skill-select.js',
     '/project-discuss.css': 'project-discuss.css',
+    '/chat-progress.css': 'chat-progress.css',
     '/flow-ui.js': 'flow-ui.js',
     '/flow-order.mjs': 'flow-order.mjs',
     '/flow-interactions.css': 'flow-interactions.css',

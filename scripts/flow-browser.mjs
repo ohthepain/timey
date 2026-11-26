@@ -4,6 +4,7 @@ import { issueAnnotationBrowserChecks } from './flow-browser-issue-annotations.m
 import { blockModelsBrowserChecks } from './flow-browser-block-models.mjs';
 import { providerSettingsBrowserChecks } from './flow-browser-provider-settings.mjs';
 import { activityBrowserChecks } from './flow-browser-activity.mjs';
+import { chatProgressBrowserChecks } from './flow-browser-chat-progress.mjs';
 import { inboxDiscussBrowserChecks, inboxFlowBrowserChecks } from './flow-browser-inbox.mjs';
 import { investigationReportsBrowserChecks } from './flow-browser-investigation-reports.mjs';
 import { issueStatusFoldersBrowserChecks } from './flow-browser-issue-status-folders.mjs';
@@ -150,6 +151,7 @@ const assets = [
   'project-reports-ui.js',
   'project-reports.css',
   'project-discuss.css',
+  'chat-progress.css',
   'local-notes-ui.js',
   'local-notes.css',
   'issue-chat-ui.js',
@@ -690,7 +692,7 @@ try {
   await check(issueAnnotationsCheck, () => issueAnnotationBrowserChecks({ page, project, root, output, poll }));
   await check(navigationCheck, () =>
     withQueueConfiguration({ page, project, root }, () =>
-      projectNavigationBrowserChecks({ page, poll, screenshot, output, candidate })
+      projectNavigationBrowserChecks({ page, poll, screenshot, output, candidate, project, service, root })
     )
   );
   await check(inboxFlowCheck, () => inboxFlowBrowserChecks({ page, service, project, poll, screenshot, output }));
@@ -764,6 +766,9 @@ try {
   );
   await check('Activity dots stay anchored and reflect actual work', () =>
     activityBrowserChecks({ page, project, service, poll, screenshot, output })
+  );
+  await check('Issue and project chats retain semantic progress', () =>
+    chatProgressBrowserChecks({ page, project, service, poll, screenshot, output })
   );
   await check('Issue flow scrollbar appears only while scrolling', async () => {
     const id = '20261122-issue-scrollbar-fixture';
