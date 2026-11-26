@@ -176,7 +176,8 @@ async function checkManualRemoval(page, output, { master, children, titles }) {
   assert.match(remaining[0], new RegExp(titles[second]));
   const removedFromMasterPage = await observeIndependentIssue(page, first, titles[first]);
 
-  await page.goto('/?issue=' + second);
+  await page.locator('#open-issues [data-issue="' + second + '"]').click();
+  await page.waitForURL((url) => url.searchParams.get('issue') === second);
   const masterRow = page.getByRole('group', { name: 'Master issue', exact: true });
   await removeSubIssue(page, masterRow.getByRole('button', { name: 'Remove', exact: true }));
   await masterRow.waitFor({ state: 'hidden' });
@@ -271,7 +272,6 @@ async function exerciseMasterDrags({ page, service, values, output, poll }) {
   await waitOwner(sidebar, to);
   await page.getByText('Attached issue to ' + to + '.', { exact: true }).waitFor();
   await page.setViewportSize({ width: 1440, height: 960 });
-  await page.goto('/?issue=' + from);
   const childLink = page.locator('#issue-sub-issues [data-issue="' + child + '"]');
   service.flows.autoplay.set(to, { mode: 'playing' });
   await dragIssue(childLink, destination);
