@@ -148,7 +148,7 @@ async function runInvestigationBlock(page, service, issueId, kind, poll) {
   );
 }
 async function investigate(page, service, calls, screenshot, poll) {
-  await page.getByRole('button', { name: 'Start an investigation', exact: true }).click();
+  await page.locator('#project-home [data-project-home="investigate"]').click();
   const dialog = page.locator('#home-investigation-dialog');
   await dialog.waitFor({ state: 'visible' });
   assert.equal(await dialog.locator('#home-investigation-branch').inputValue(), 'refs/heads/dev');
@@ -157,7 +157,7 @@ async function investigate(page, service, calls, screenshot, poll) {
   await dialog.locator('#home-investigation-prompt').fill('Investigate validation across the project.');
   await dialog.locator('#home-investigation-instructions').fill('Prioritize clear boundaries.');
   await dialog.locator('#home-investigation-reusable').check();
-  await dialog.getByRole('button', { name: 'Create investigation', exact: true }).click();
+  await dialog.locator('#home-investigation-run').click();
   await page.locator('#graph-scroll:not([hidden])').waitFor();
   await page.locator('#graph [data-block="generate-report"]').waitFor();
   assert.equal(calls.investigations, 0, 'Creation starts no model work.');
@@ -300,7 +300,7 @@ async function prepareLongAutomateChat({ page, service, poll, sessionId }) {
 async function verifyAutomateChatReopening({ page, dialog, poll, output, chat }) {
   const reading = await chat.metrics();
   assert.equal(reading.top, 90, 'An Automate me reply preserves the older reading position.');
-  await dialog.getByRole('button', { name: 'Close Automate me', exact: true }).click();
+  await dialog.locator('[data-home-close="automate"]').click();
   await page.locator(`[data-home-session="automate"][data-session-id="${chat.sessionId}"]`).click();
   await poll(chat.metrics, chat.atLatest, 'Reopened Automate me did not show the latest reply.');
   writeFileSync(
@@ -314,8 +314,8 @@ export async function automateActivityBrowserChecks({ page, service, screenshot,
   let turn = Promise.withResolvers();
   calls.beforeTurn = () => turn.promise;
   try {
-    await page.getByRole('tab', { name: 'Automate me', exact: true }).click();
-    await page.getByRole('button', { name: 'Run Automate me', exact: true }).click();
+    await page.locator('#project-tab-automate').click();
+    await page.locator('[data-project-home="automate"]').click();
     const dialog = page.locator('#home-automate-dialog');
     const indicator = dialog.locator('#home-automate-messages > .chat-live .SparkleText');
     const started = page.waitForResponse(
@@ -323,7 +323,7 @@ export async function automateActivityBrowserChecks({ page, service, screenshot,
         response.url().endsWith('/api/project-home-action') &&
         response.request().postDataJSON()?.action === 'automate-start'
     );
-    await dialog.getByRole('button', { name: 'Start conversation', exact: true }).click();
+    await dialog.locator('#home-automate-start').click();
     await indicator.waitFor();
     await screenshot('automate-activity-running');
     turn.resolve();
@@ -333,13 +333,13 @@ export async function automateActivityBrowserChecks({ page, service, screenshot,
     const chat = await prepareLongAutomateChat({ page, service, poll, sessionId: session.id });
     turn = Promise.withResolvers();
     await dialog.locator('#home-automate-message').fill('Make verification explicit.');
-    await dialog.getByRole('button', { name: 'Send reply', exact: true }).click();
+    await dialog.locator('#home-automate-reply button[type="submit"]').click();
     await indicator.waitFor();
     turn.resolve();
     await dialog.locator('#home-automate-review:not([hidden])').waitFor();
     await indicator.waitFor({ state: 'detached' });
     await verifyAutomateChatReopening({ page, dialog, poll, output, chat });
-    await dialog.getByRole('button', { name: 'Close Automate me', exact: true }).click();
+    await dialog.locator('[data-home-close="automate"]').click();
   } finally {
     turn.resolve();
     calls.beforeTurn = null;
@@ -347,26 +347,26 @@ export async function automateActivityBrowserChecks({ page, service, screenshot,
 }
 
 async function automate(page, service, calls, screenshot) {
-  await page.getByRole('tab', { name: 'Automate me', exact: true }).click();
-  await page.getByRole('button', { name: 'Run Automate me', exact: true }).click();
+  await page.locator('#project-tab-automate').click();
+  await page.locator('[data-project-home="automate"]').click();
   const dialog = page.locator('#home-automate-dialog');
   await dialog.waitFor({ state: 'visible' });
   assert.equal(await dialog.locator('#home-automate-duration').inputValue(), '4');
   assert.equal(await dialog.locator('#home-automate-unit').inputValue(), 'weeks');
   await dialog.locator('#home-automate-duration').fill('10');
   await dialog.locator('#home-automate-unit').selectOption('days');
-  await dialog.getByRole('button', { name: 'Start conversation', exact: true }).click();
+  await dialog.locator('#home-automate-start').click();
   await dialog.getByText('Which working habit matters most?', { exact: true }).waitFor();
   assert.equal(calls.duration.durationValue, 10);
   assert.equal(calls.duration.durationUnit, 'days');
   await dialog.locator('#home-automate-message').fill('Make verification explicit.');
-  await dialog.getByRole('button', { name: 'Send reply', exact: true }).click();
+  await dialog.locator('#home-automate-reply button[type="submit"]').click();
   await dialog.locator('#home-automate-review:not([hidden])').waitFor();
   assert.match(await dialog.locator('#home-automate-path').textContent(), /\.agents\/skills\/fixture-mode\/SKILL.md$/);
-  const apply = dialog.getByRole('button', { name: 'Apply reviewed skill', exact: true });
+  const apply = dialog.locator('#home-automate-apply');
   await dialog.locator('#home-automate-content').fill(draft + '\nKeep evidence with the result.\n');
   assert.equal(await apply.isDisabled(), true);
-  await dialog.getByRole('button', { name: 'Review destination and changes', exact: true }).click();
+  await dialog.locator('#home-automate-preview').click();
   await apply.waitFor({ state: 'visible' });
   await screenshot('project-automate-review');
   await apply.click();
@@ -375,7 +375,7 @@ async function automate(page, service, calls, screenshot) {
     readFileSync(join(service.root, '.agents/skills/fixture-mode/SKILL.md'), 'utf8'),
     /Keep evidence with the result/
   );
-  await dialog.getByRole('button', { name: 'Close Automate me', exact: true }).click();
+  await dialog.locator('[data-home-close="automate"]').click();
   await page.reload();
   await page.locator('[data-home-session="automate"]').first().waitFor();
   assert.equal(calls.automate, 2, 'Reload starts no Automate me turn.');
@@ -415,15 +415,15 @@ async function deleteArchivedReports(page, { root }, screenshot) {
     'archive'
   );
   git(root, 'branch', branch, 'dev');
-  await page.getByRole('tab', { name: 'Admin' }).click();
-  await page.getByRole('button', { name: 'Preview archived issues' }).click();
+  await page.locator('#project-tab-admin').click();
+  await page.locator('#admin-archive-open').click();
   const dialog = page.getByRole('dialog', { name: 'Delete archived issues' });
-  const choice = dialog.getByRole('checkbox', { name: new RegExp('^(?:#\\d+ )?' + title + '$') });
+  const choice = dialog.locator(`[data-archived-issue="${id}"]`);
   await choice.check();
-  const branchChoice = dialog.getByRole('checkbox', { name: `Also delete local branch ${branch}` });
+  const branchChoice = dialog.locator(`[data-branch="${branch}"]`);
   assert.equal(await branchChoice.isChecked(), false);
   await branchChoice.check();
-  await dialog.getByRole('button', { name: 'Review deletion' }).click();
+  await dialog.locator('#admin-archive-review-button, #admin-branches-review-button').click();
   await dialog.getByRole('heading', { name: 'Confirm archive deletion' }).waitFor();
   assert.match(readFileSync(report, 'utf8'), /Disposable archive record/);
   assert.equal(git(root, 'branch', '--format=%(refname:short)', '--list', branch), branch);
@@ -433,7 +433,7 @@ async function deleteArchivedReports(page, { root }, screenshot) {
       new URL(response.url()).pathname === '/api/project-archive-deletion' && response.request().method() === 'POST',
     { timeout: 60_000 }
   );
-  await dialog.getByRole('button', { name: 'Permanently delete 1 archived issue' }).click();
+  await dialog.locator('#admin-archive-apply').click();
   const response = await deletion;
   const result = await response.json();
   assert.equal(response.status(), 200, JSON.stringify(result));
@@ -442,8 +442,8 @@ async function deleteArchivedReports(page, { root }, screenshot) {
   assert.equal(git(root, 'branch', '--list', branch), '');
   assert.throws(() => readFileSync(report), /ENOENT/);
   await screenshot('project-admin-archive-deletion-result');
-  await dialog.getByRole('button', { name: 'Close' }).click();
-  await page.getByRole('tab', { name: 'Home' }).click();
+  await dialog.locator('#admin-archive-close, #admin-branches-close, #admin-prune-close').click();
+  await page.locator('#project-tab-home').click();
 }
 
 async function cleanRemoteBranches(page, screenshot) {
@@ -475,23 +475,23 @@ async function cleanRemoteBranches(page, screenshot) {
       },
     });
   });
-  await page.getByRole('tab', { name: 'Admin' }).click();
-  await page.getByRole('button', { name: 'Preview remote branches' }).click();
+  await page.locator('#project-tab-admin').click();
+  await page.locator('#admin-remote-open').click();
   const dialog = page.getByRole('dialog', { name: 'Clean up remote branches' });
   await dialog.getByText('fixture/timey · merged into dev · 2 eligible').waitFor();
-  assert.equal(await dialog.getByRole('button', { name: 'Review deletion' }).isDisabled(), true);
-  await dialog.getByText('Branches kept (1)').click();
+  assert.equal(await dialog.locator('#admin-archive-review-button, #admin-branches-review-button').isDisabled(), true);
+  await dialog.locator('#admin-branches-kept-title').click();
   await dialog.getByText('still-open · Used by an open pull request.').waitFor();
-  await dialog.getByRole('checkbox', { name: 'Select all eligible branches' }).check();
-  await dialog.getByRole('button', { name: 'Review deletion' }).click();
+  await dialog.locator('#admin-branches-all').check();
+  await dialog.locator('#admin-archive-review-button, #admin-branches-review-button').click();
   await dialog.getByRole('heading', { name: 'Confirm branch deletion' }).waitFor();
   assert.deepEqual(requests, []);
   await screenshot('project-admin-remote-branch-confirmation');
-  await dialog.getByRole('button', { name: 'Delete 2 remote branches' }).click();
+  await dialog.locator('#admin-branches-apply').click();
   await dialog.getByText('merged-two · deleted').waitFor();
   assert.deepEqual(requests, [{ id: 'reviewed-preview', selected: ['merged-one', 'merged-two'] }]);
-  await dialog.getByRole('button', { name: 'Close' }).click();
-  await page.getByRole('tab', { name: 'Home' }).click();
+  await dialog.locator('#admin-archive-close, #admin-branches-close, #admin-prune-close').click();
+  await page.locator('#project-tab-home').click();
   await removeReport();
 }
 
@@ -510,19 +510,19 @@ async function cleanLocalBranches(page, service, screenshot) {
   };
   const branch = 'admin-unused-local';
   git(root, 'branch', branch, 'dev');
-  await page.getByRole('tab', { name: 'Admin' }).click();
-  await page.getByRole('button', { name: 'Preview local branches' }).click();
+  await page.locator('#project-tab-admin').click();
+  await page.locator('#admin-local-open').click();
   const dialog = page.getByRole('dialog', { name: 'Clean up local branches' });
-  await dialog.getByRole('checkbox', { name: branch, exact: true }).check();
-  await dialog.getByRole('button', { name: 'Review deletion' }).click();
+  await dialog.locator(`[data-branch="${branch}"]`).check();
+  await dialog.locator('#admin-archive-review-button, #admin-branches-review-button').click();
   await dialog.getByRole('heading', { name: 'Confirm branch deletion' }).waitFor();
   assert.equal(git(root, 'branch', '--format=%(refname:short)', '--list', branch), branch);
   await screenshot('project-admin-local-branch-confirmation');
-  await dialog.getByRole('button', { name: 'Delete 1 local branch' }).click();
+  await dialog.locator('#admin-branches-apply').click();
   await dialog.getByText(`${branch} · deleted`).waitFor();
   assert.equal(git(root, 'branch', '--list', branch), '');
-  await dialog.getByRole('button', { name: 'Close' }).click();
-  await page.getByRole('tab', { name: 'Home' }).click();
+  await dialog.locator('#admin-archive-close, #admin-branches-close, #admin-prune-close').click();
+  await page.locator('#project-tab-home').click();
 }
 
 async function pruneWorktrees(page, { root }, screenshot) {
@@ -530,20 +530,20 @@ async function pruneWorktrees(page, { root }, screenshot) {
   const branch = 'admin-worktree-fixture';
   git(root, 'worktree', 'add', '-b', branch, checkout, 'dev');
   rmSync(checkout, { recursive: true });
-  await page.getByRole('tab', { name: 'Admin' }).click();
+  await page.locator('#project-tab-admin').click();
   await page.reload();
-  await page.getByRole('button', { name: 'Prune worktrees' }).click();
+  await page.locator('#admin-prune-worktrees').click();
   const dialog = page.getByRole('dialog', { name: 'Prune worktrees' });
-  const branchChoice = dialog.getByRole('checkbox', { name: `Delete local branch ${branch}`, exact: true });
-  await dialog.getByLabel('Comparison branch').selectOption('refs/heads/dev');
+  const branchChoice = dialog.locator(`[data-branch="${branch}"]`);
+  await dialog.locator('#admin-prune-ref').selectOption('refs/heads/dev');
   await branchChoice.waitFor();
   assert.equal(await branchChoice.isChecked(), true);
   assert.match(git(root, 'worktree', 'list', '--porcelain'), /missing checkout/);
   await screenshot('project-admin-worktree-preview');
-  await dialog.getByRole('button', { name: 'Remove 1 worktree record and 1 branch' }).click();
+  await dialog.locator('#admin-prune-apply').click();
   await dialog.getByText(`Worktree record removed. Deleted ${branch}.`).waitFor();
   assert.equal(git(root, 'branch', '--list', branch), '');
   assert.doesNotMatch(git(root, 'worktree', 'list', '--porcelain'), /missing checkout/);
-  await dialog.getByRole('button', { name: 'Close' }).click();
-  await page.getByRole('tab', { name: 'Home' }).click();
+  await dialog.locator('#admin-archive-close, #admin-branches-close, #admin-prune-close').click();
+  await page.locator('#project-tab-home').click();
 }

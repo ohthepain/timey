@@ -9,19 +9,19 @@ import { withBrowserScenarioFixture } from './flow-browser-scenario-fixture.mjs'
 const metadata = (path) => parse(readFileSync(path, 'utf8').match(/^---\r?\n([\s\S]*?)\r?\n---/)[1]);
 
 async function checkProjectSettings({ page, project, poll }) {
-  await page.getByRole('button', { name: 'Factory settings', exact: true }).click();
+  await page.locator('#project-settings').click();
   const settings = page.locator('#project-settings-dialog');
   await settings.locator('[data-settings-page="issues"]').click();
-  const createDefaults = settings.getByRole('button', { name: 'Create project defaults', exact: true });
+  const createDefaults = settings.locator('[data-settings-create]');
   if (!existsSync(join(project, 'folder.md'))) await createDefaults.click();
   await settings.locator('[name="branch"]').waitFor();
   assert.equal(await settings.locator('[data-default-folder]').count(), 0);
   assert.equal(await settings.locator('[name="branch"]').inputValue(), 'dev');
   if (!existsSync(join(project, '.issues/triage-labels.md'))) {
     await settings.locator('[data-settings-page="lifecycle"]').click();
-    await settings.getByRole('button', { name: 'Initialize lifecycle configuration', exact: true }).click();
+    await settings.locator('[data-settings-initialize]').click();
     await poll(
-      () => settings.getByRole('button', { name: 'Open file', exact: true }).isEnabled(),
+      () => settings.locator('[data-settings-action="open-lifecycle"]').isEnabled(),
       Boolean,
       'Lifecycle file did not become available.'
     );
@@ -112,16 +112,16 @@ export async function flowFolderSettingsBrowserChecks({ page, project, service, 
     await page.goto('/');
     await page.locator('#connection-status').filter({ hasText: 'Live' }).waitFor();
     const tree = page.locator('#sidebar-file-tree');
-    await tree.getByRole('button', { name: 'flow', exact: true }).click();
+    await tree.locator('button[data-file-root="system-flow"][data-file-path=""]').click();
     await page.getByText('System folder', { exact: true }).waitFor();
     assert.equal(await page.locator('#issue-folder-content').isVisible(), false);
     assert.equal(await page.locator('#folder-settings-panel [data-settings-create]').count(), 0);
     assert.equal(await page.getByRole('button', { name: 'View assigned issues', exact: true }).count(), 0);
-    assert.equal(await page.getByRole('button', { name: 'Open folder in Finder', exact: true }).count(), 1);
-    assert.equal(await page.getByRole('button', { name: 'Delete folder', exact: true }).count(), 1);
-    await tree.getByRole('button', { name: 'user', exact: true }).click();
+    assert.equal(await page.locator('#open-sidebar-folder').count(), 1);
+    assert.equal(await page.locator('#delete-sidebar-folder').count(), 1);
+    await tree.locator('button[data-file-root="user"][data-file-path=""]').click();
     await page.locator('#folder-settings-panel').getByText('System folder', { exact: true }).waitFor();
-    assert.equal(await page.getByRole('button', { name: 'Create folder.md', exact: true }).isVisible(), true);
+    assert.equal(await page.locator('[data-settings-create]').isVisible(), true);
     assert.equal(await page.locator('#issue-folder-content').isVisible(), false);
 
     await page.locator('#new-folder').click();
@@ -237,10 +237,18 @@ export async function flowFolderSettingsBrowserChecks({ page, project, service, 
     await page.locator('#connection-status').filter({ hasText: 'Live' }).waitFor();
     await page.locator('#new-issue').click();
     assert.equal(await page.locator('#capture-folder').inputValue(), folder);
-    await page.getByRole('button', { name: 'Close new issue', exact: true }).click();
-    await tree.getByRole('button', { name: 'Expand user', exact: true }).click();
-    await tree.getByRole('button', { name: 'Expand ' + folder, exact: true }).click();
-    await tree.getByRole('button', { name: 'New folder in user/' + folder, exact: true }).click();
+    await page.locator('#capture-dialog .icon-button[data-close-dialog="capture-dialog"]').click();
+    await tree.locator('[data-directory-root="user"][data-directory-path=""] > summary > .folder-disclosure').click();
+    await tree
+      .locator(
+        `[data-directory-root="user"][data-directory-path=${JSON.stringify(folder)}] > summary > .folder-disclosure`
+      )
+      .click();
+    await tree
+      .locator(
+        `[data-directory-root="user"][data-directory-path=${JSON.stringify(folder)}] > summary > .sidebar-folder-create`
+      )
+      .click();
     await page.locator('#sidebar-file-path').fill('Child');
     await page.locator('#sidebar-file-submit').click();
     await page.locator('#sidebar-file-dialog').waitFor({ state: 'hidden' });

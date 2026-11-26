@@ -42,7 +42,7 @@ export default async function sortingBrowserChecks(page) {
   await check(['a', 'b', 'c', 'x'], 'polling reorders fresh data');
   await page.locator('#reverse-order').check();
   await page.locator('[data-issue-row="a"] a').click();
-  await page.getByRole('link', { name: 'Factory', exact: true }).click();
+  await page.locator('header a[href="#/queue"]').click();
   await page.locator('#sort-field').waitFor();
   if (
     (await page.locator('#sort-field').inputValue()) !== 'updated' ||

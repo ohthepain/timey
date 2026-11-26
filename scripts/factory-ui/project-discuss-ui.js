@@ -526,8 +526,9 @@
       byId('discuss-resume').disabled = pending;
       const send = byId('discuss-send');
       send.disabled = pending || creating;
-      send.setAttribute('aria-label', active ? 'Stop response' : 'Send message');
+      send.dataset.discussAction = active ? 'stop' : 'send';
       send.title = active ? 'Stop response' : 'Send message';
+      send.setAttribute('aria-label', send.title);
       send.innerHTML = active
         ? '<svg viewBox="0 0 20 20" aria-hidden="true"><rect x="5" y="5" width="10" height="10" rx="2"/></svg>'
         : '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 16V4M5 9l5-5 5 5"/></svg>';

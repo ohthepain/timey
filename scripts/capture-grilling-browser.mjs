@@ -45,17 +45,17 @@ try {
       throw Error('Disposable save failure');
     }, async () => {}, {models:[{id:'test', name:'Test'}], defaults:{model:'test'}});`,
   });
-  await page.getByRole('button', { name: 'Create issue', exact: true }).click();
+  await page.locator('#create-issue').click();
   assert.equal(await page.getByLabel('Grill me', { exact: true }).isChecked(), false);
   await page.getByLabel('Description', { exact: true }).fill('Review the issue before implementation.');
   await page.getByLabel('Grill me', { exact: true }).check();
   await page.getByLabel('Grilling skill', { exact: true }).selectOption('grill-me');
   await page.locator('#capture-grill-skill').scrollIntoViewIfNeeded();
   await page.screenshot({ path: join(output, 'selection.png') });
-  await page.getByRole('button', { name: 'Create issues', exact: true }).click();
+  await page.locator('#capture-save').click();
   await page.getByRole('alert').filter({ hasText: 'Disposable save failure' }).waitFor();
   assert.equal(await page.getByLabel('Grilling skill', { exact: true }).inputValue(), 'grill-me');
-  await page.getByRole('button', { name: 'Create issues', exact: true }).click();
+  await page.locator('#capture-save').click();
   const requests = await page.evaluate(() => window.submissions);
   assert.equal(requests.length, 2);
   assert.ok(requests.every((input) => input.grill && input.grillSkill === 'grill-me'));

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdirSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
@@ -55,4 +55,40 @@ void test('a PR repair plan cannot select an aggregate suite as a focused regres
   const result = spawnSync(process.execPath, [runner], { cwd: root, encoding: 'utf8' });
   assert.equal(result.status, 1);
   assert.match(result.stderr, /Record focused test commands/);
+});
+
+void test('concurrent PR repair checks retain independent source snapshots and replay commands', (t) => {
+  const { root, git } = gitFixture(t, 'pr-repair-concurrent-');
+  mkdirSync(join(root, 'scripts'));
+  writeFileSync(join(root, 'scripts/flow-browser.mjs'), 'console.log(JSON.stringify(process.argv.slice(2)));\n');
+  git('add', '.');
+  git('commit', '-qm', 'Fixture browser records replay arguments');
+  const base = git('rev-parse', 'HEAD');
+  const paths = ['activity-indicators', 'folder-workspace'].map((name) => '.github/pr-repair-tests/' + name + '.json');
+  paths.forEach((path, index) => {
+    git('switch', '-qc', 'repair-' + index, base);
+    mkdirSync(join(root, '.github/pr-repair-tests'), { recursive: true });
+    writeFileSync(join(root, path), readFileSync(new URL('../' + path, import.meta.url)));
+    git('add', path);
+    git('commit', '-qm', 'Record independent repair');
+  });
+  git('merge', '--no-edit', 'repair-0');
+  const records = paths.map((path) => JSON.parse(git('show', 'HEAD:' + path)));
+  assert.deepEqual(
+    records.map(({ source: { runId, jobId } }) => [runId, jobId]),
+    [
+      ['45818424513', '139907129555'],
+      ['45870933190', '140089737384'],
+    ]
+  );
+  assert.ok(records[0].command.includes('--ai-text'));
+  assert.ok(records[0].command.indexOf('--ai-text') < records[0].command.indexOf('--activity-indicators'));
+  const result = spawnSync(process.execPath, [runner, '--base', base], { cwd: root, encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  for (const { name, command, source } of records) {
+    assert.ok(result.stdout.includes('PASS PR repair: ' + name), result.stdout);
+    assert.ok(result.stdout.includes(JSON.stringify(command.slice(2))), result.stdout);
+    assert.ok(result.stdout.includes(`checkout ${source.checkout}, tree ${source.tree}`), result.stdout);
+  }
+  t.diagnostic(JSON.stringify(records));
 });

@@ -220,7 +220,7 @@ export async function aiTextBrowserChecks({ page, service, project, poll, screen
   automate.sessions.set(homeSession.id, homeSession);
   automate.save(homeSession);
   await page.locator('#project-tab-home').click();
-  await page.getByRole('tab', { name: 'Automate me', exact: true }).click();
+  await page.locator('#project-tab-automate').click();
   await page.locator('[data-session-id="ai-text-home"]').click();
   const homeMessage = page.locator('#home-automate-messages [data-ai-text]');
   await homeMessage.hover();

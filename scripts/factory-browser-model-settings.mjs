@@ -2,26 +2,26 @@ export default async function modelSettingsBrowserChecks(page) {
   const errors = [];
   page.on('pageerror', (error) => errors.push(error.message));
   await page.getByRole('heading', { name: 'Issue queue', exact: true }).waitFor();
-  await page.getByRole('button', { name: 'Open model and effort settings' }).click();
+  await page.locator('#model-settings-open').click();
   const dialog = page.getByRole('dialog', { name: 'Default model and effort' });
   await dialog.waitFor();
   if ((await dialog.locator('select').count()) !== 2)
     throw Error('Default settings must contain only model and effort controls.');
-  const defaultModel = dialog.getByLabel('Default model');
-  const defaultEffort = dialog.getByLabel('Default effort');
+  const defaultModel = dialog.locator('#default-model');
+  const defaultEffort = dialog.locator('#default-effort');
   if ((await defaultModel.inputValue()) !== 'gpt-6-luna' || (await defaultEffort.inputValue()) !== 'medium')
     throw Error('The default model or effort is incorrect.');
   await defaultModel.selectOption('gpt-6.1-terra');
   if (!(await dialog.innerText()).includes('Fast visual reasoning, precise computer use, and clear writing.'))
     throw Error('The selected model description is missing.');
   await defaultEffort.selectOption('high');
-  await dialog.getByRole('button', { name: 'Save defaults' }).click();
+  await dialog.locator('#model-settings-save').click();
   await dialog.waitFor({ state: 'hidden' });
 
   await page.goto(new URL('/#/issue/b', page.url()).href);
   await page.getByRole('heading', { name: 'Older urgent issue', exact: true }).waitFor();
-  const model = page.getByLabel('Model for new work on this issue');
-  const effort = page.getByLabel('Effort for new work on this issue');
+  const model = page.locator('[data-issue-model="b"]');
+  const effort = page.locator('[data-issue-effort="b"]');
   if ((await model.inputValue()) !== '' || (await effort.inputValue()) !== '')
     throw Error('An issue without explicit choices should inherit the defaults.');
   if (!(await page.locator('[data-issue-model-settings]').innerText()).includes('work started after you save them'))
@@ -40,7 +40,7 @@ export default async function modelSettingsBrowserChecks(page) {
 
   await page.goto(new URL('/#/issue/a', page.url()).href);
   await page.getByRole('heading', { name: 'Newer low issue', exact: true }).waitFor();
-  if ((await page.getByLabel('Model for new work on this issue').inputValue()) !== '')
+  if ((await page.locator('[data-issue-model="b"]').inputValue()) !== '')
     throw Error('A global change became an explicit per-issue model choice.');
   const options = await page.evaluate(async () => (await (await fetch('/api/queue')).json()).modelSettings.defaults);
   if (options.model !== 'gpt-6.1-terra' || options.effort !== 'high') throw Error('Saved defaults did not persist.');

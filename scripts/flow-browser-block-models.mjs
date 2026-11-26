@@ -6,7 +6,7 @@ import { initializeProviderConfig, readProviderConfig } from './factory-ui/provi
 import { observeProvider, saveProviderSettings } from './factory-ui/provider-runtime.mjs';
 
 async function chooseModel(page, current, next, poll) {
-  const picker = page.getByRole('combobox', { name: 'Choose model' });
+  const picker = page.locator('select[name="model"][data-field="model"]');
   const control = picker.locator('..');
   assert.equal(await control.locator('span').textContent(), current);
   const opened = () => picker.evaluate((select) => select.matches(':open'));
@@ -28,9 +28,9 @@ async function checkRequestControls(page, block, request, screenshot, poll) {
   await block(request.id);
   const title = page.getByRole('heading', { name: 'Choose the next block model', exact: true });
   const flow = page.locator('#issue-flow-menu');
-  const index = page.getByRole('button', { name: 'View index', exact: true });
-  const identify = page.getByRole('button', { name: 'Inspect UI', exact: true });
-  const refresh = page.getByRole('button', { name: '↻ Refresh', exact: true });
+  const index = page.locator('#view-index-open');
+  const identify = page.locator('#view-inspect');
+  const refresh = page.locator('#refresh');
   const [titleBox, flowBox, indexBox] = await Promise.all([
     title.boundingBox(),
     flow.boundingBox(),
@@ -133,7 +133,7 @@ export async function blockModelsBrowserChecks({ page, project, service, poll, s
     await block(work.id);
     const select = await chooseModel(page, 'anthropic:sonnet', 'anthropic:opus', poll);
     assert.match(await select.locator('option[value=""]').textContent(), /Use issue default.*anthropic:sonnet/);
-    const wand = page.getByRole('button', { name: 'Refresh block definition' });
+    const wand = page.locator('[data-action="refresh-definition"]');
     const markdown = page.getByText('.md', { exact: true });
     const [pickerBox, wandBox, markdownBox] = await Promise.all([
       select.boundingBox(),
@@ -143,7 +143,7 @@ export async function blockModelsBrowserChecks({ page, project, service, poll, s
     for (const control of [wandBox, markdownBox])
       assert.ok(Math.abs(control.y + control.height / 2 - (pickerBox.y + pickerBox.height / 2)) < 3);
     await markdown.click();
-    await page.getByRole('button', { name: 'Reveal Markdown in Finder' }).waitFor();
+    await page.locator('[data-action="reveal-definition"]').waitFor();
     await screenshot('compact-work-controls');
     await markdown.click();
     await saveModel('anthropic:opus');

@@ -70,7 +70,7 @@ export async function projectDiscussBrowserChecks({ page, service, project, poll
     };
   });
   await page.goto('/');
-  await page.getByRole('button', { name: 'Start an investigation', exact: true }).waitFor();
+  await page.locator('#project-home [data-project-home="investigate"]').waitFor();
   assert.equal(await page.locator('#project-tab-home').getAttribute('aria-selected'), 'true');
   assert.equal(await page.locator('#error-banner').isVisible(), false, 'Home must load without a selected issue.');
   assert.equal(await page.locator('#fix-branch').isVisible(), false, 'Branch repair needs a selected issue.');
@@ -163,7 +163,7 @@ export async function projectDiscussBrowserChecks({ page, service, project, poll
     'Attached response did not finish.'
   );
   await page.locator('#discuss-draft').fill('Hold response');
-  await page.getByRole('button', { name: 'Send message', exact: true }).click();
+  await page.locator('#discuss-send').click();
   await page.locator('#discuss-messages').getByText('Hold response', { exact: true }).waitFor();
   await page.locator('#discuss-messages').getByText('Live partial response', { exact: true }).waitFor();
   await page.locator('#discuss-messages > .activity-indicator').waitFor();
@@ -180,7 +180,7 @@ export async function projectDiscussBrowserChecks({ page, service, project, poll
     (value) => value === 'Edited queued question',
     'Queued edit was not retained.'
   );
-  await page.getByRole('button', { name: 'Stop response', exact: true }).click();
+  await page.locator('#discuss-send[data-discuss-action="stop"]').click();
   await page.locator('#discuss-resume').waitFor();
   await page.locator('#discuss-messages > .activity-indicator').waitFor({ state: 'detached' });
   assert.equal(calls.length, 4);

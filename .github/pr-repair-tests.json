@@ -1,17 +1,6 @@
 {
   "version": 1,
-  "sourceRun": "https://github.com/ohthepain/timey/actions/runs/45870933190/job/140089737384",
   "tests": [
-    {
-      "name": "The folder workspace reviews moves and creates a master without starting work",
-      "command": [
-        "node",
-        "scripts/flow-browser.mjs",
-        "--ci-part=2",
-        "--capture-folder-issue",
-        "--folder-workspace-grouping"
-      ]
-    },
     {
       "name": "Storage profiles preserve explicit destinations and perform checked moves without workspace updates",
       "command": ["node", "scripts/flow-browser.mjs", "--ci-part=1b", "--stores", "--storage-status"]
@@ -91,18 +80,6 @@
         "--test",
         "--test-name-pattern=^The live proof attachment action persists hashed observations in the shared Artifact store$",
         "scripts/flow-grouping.check.mjs"
-      ]
-    },
-    {
-      "name": "Activity dots stay anchored and reflect actual work",
-      "command": [
-        "node",
-        "scripts/flow-browser.mjs",
-        "--ci-part=1b",
-        "--ai-text",
-        "--automate-activity",
-        "--activity-indicators",
-        "--chat-progress"
       ]
     },
     {

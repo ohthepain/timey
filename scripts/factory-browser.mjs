@@ -18,6 +18,7 @@ import {
   fixtureQueue,
 } from './browser-coordinator-route.mjs';
 import { verifyIssueScopedNavigation } from './factory-browser-issue-navigation.mjs';
+import { assertControlText, readyControl } from './browser-controls.mjs';
 
 const source = dirname(fileURLToPath(import.meta.url));
 const checkoutFlag = process.argv.indexOf('--checkout');
@@ -100,6 +101,8 @@ try {
         const coordinatorIssueRoute = (${coordinatorIssueRoute.toString()});
         const checkCoordinatorHistoryScroll = (${checkCoordinatorHistoryScroll.toString()});
         const verifyIssueScopedNavigation = (${verifyIssueScopedNavigation.toString()});
+        const readyControl = (${readyControl.toString()});
+        const assertControlText = (${assertControlText.toString()});
         return (${check.toString()});
       })({ routeQueueIssue: (${routeQueueIssue.toString()}), updateProgressSnapshot: (${updateProgressSnapshot.toString()}) })`
     );

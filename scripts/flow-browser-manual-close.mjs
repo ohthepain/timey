@@ -57,7 +57,7 @@ export async function manualCloseBrowserChecks({ page, project, service, output,
         name: 'Close as Fixed and remove the worktree after Factory Merge',
       });
       assert.equal(await checkbox.isChecked(), false);
-      const close = page.getByRole('button', { name: 'Close issue…', exact: true });
+      const close = page.locator('[data-close-issue]');
       await close.waitFor();
       if (automatic) {
         await checkbox.check();
@@ -146,15 +146,15 @@ async function checkManualClose({ page, flows, id, close, screenshot }) {
   const removeUnavailable = await fixtureRoute(page, contextRoute, unavailable);
   try {
     await close.click();
-    await dialog.getByRole('combobox', { name: 'Reason' }).waitFor({ timeout: 5000 });
-    assert.equal(await dialog.getByRole('button', { name: 'Close issue', exact: true }).isEnabled(), true);
+    await dialog.locator('#closure-reason').waitFor({ timeout: 5000 });
+    assert.equal(await dialog.locator('#confirm-issue-closure').isEnabled(), true);
   } finally {
     await removeUnavailable();
   }
   assert.equal(flows.selected(id).closed, false);
   const retroAlignment = await checkRetroAlignment(dialog);
   await screenshot('manual-close-confirmation');
-  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await dialog.locator('#cancel-issue-closure').click();
   assert.equal(flows.selected(id).closed, false);
   const confirmation = '**/api/issue-decision';
   const submitted = Promise.withResolvers();
@@ -163,10 +163,10 @@ async function checkManualClose({ page, flows, id, close, screenshot }) {
   };
   const removeConfirmation = await fixtureRoute(page, confirmation, holdConfirmation);
   await close.click();
-  await dialog.getByRole('button', { name: 'Close issue', exact: true }).click();
+  await dialog.locator('#confirm-issue-closure').click();
   const request = await submitted.promise;
   try {
-    await page.getByRole('button', { name: 'Dismiss', exact: true }).click({ timeout: 5000 });
+    await dialog.locator('#cancel-issue-closure').click({ timeout: 5000 });
     await dialog.waitFor({ state: 'hidden' });
     await close.click();
     assert.equal(await dialog.isVisible(), false, 'A pending Close cannot be submitted twice from this page.');
@@ -193,7 +193,7 @@ function prepareClosureProject(service, project, root) {
 }
 
 async function checkRetroAlignment(dialog) {
-  const checkbox = dialog.getByRole('checkbox', { name: 'Run Retro before Cleanup' });
+  const checkbox = dialog.locator('#run-closure-retro');
   const before = await checkbox.isChecked();
   const offset = await checkbox.evaluate((input) => {
     const label = input.labels[0];

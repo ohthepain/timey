@@ -76,20 +76,20 @@ try {
   await scenario(
     'cancel-and-failure',
     `
-    await page.getByRole('button',{name:'Create issue',exact:true}).waitFor();
-    await page.getByRole('button',{name:'Create issue',exact:true}).click();
+    await page.locator('#create-issue').waitFor();
+    await page.locator('#create-issue').click();
     check(await page.getByLabel('Description',{exact:true}).evaluate(e=>e===document.activeElement),'Initial focus');
     await page.getByLabel('Description',{exact:true}).fill('Never saved');
     await page.locator('#capture-folder').selectOption('Inbox');
     await page.keyboard.press('Escape');
     check(await page.locator('#create-issue-dialog').evaluate(e=>!e.open),'Escape closes dialog');
-    await page.getByRole('button',{name:'Create issue',exact:true}).click();
+    await page.locator('#create-issue').click();
     await page.getByLabel('Description',{exact:true}).fill('retry capture');
     await page.locator('#capture-folder').selectOption('Inbox');
-    await page.getByRole('button',{name:'Create issues',exact:true}).click();
+    await page.locator('#capture-save').click();
     await page.locator('#capture-error').filter({hasText:'Disposable provider failure'}).waitFor();
     check(await page.getByLabel('Description',{exact:true}).inputValue()==='retry capture','Draft retained after failure');
-    await page.getByRole('button',{name:'Create issues',exact:true}).click();
+    await page.locator('#capture-save').click();
     await page.locator('#capture-toast a').waitFor();
     check(page.url().endsWith('/'),'Save remains on queue');
     await page.locator('#capture-toast a').click();
@@ -100,9 +100,9 @@ try {
   await scenario(
     'polling-multiple-and-preservation',
     `
-    await page.getByRole('button',{name:'Create issue',exact:true}).waitFor();
+    await page.locator('#create-issue').waitFor();
     await page.getByLabel('Search issues',{exact:true}).fill('Existing');
-    await page.getByRole('checkbox',{name:'Clarify',exact:true}).uncheck();
+    await page.locator('[data-role-filter="clarify"]').uncheck();
     await page.evaluate(()=>window.scrollTo(0,700));
     const before=await page.evaluate(()=>window.scrollY);
     await page.locator('#create-issue').evaluate(e=>e.click());
@@ -110,7 +110,7 @@ try {
     await page.locator('#capture-folder').selectOption('Inbox');
     await page.waitForTimeout(4300);
     check(await page.getByLabel('Description',{exact:true}).inputValue()==='slow two outcomes\\ncopy ID','Polling retains draft');
-    await page.getByRole('button',{name:'Create issues',exact:true}).click();
+    await page.locator('#capture-save').click();
     check(await page.locator('#capture-save').isDisabled(),'Save disabled while pending');
     await page.locator('#capture-form').evaluate(e=>e.dispatchEvent(new Event('submit',{bubbles:true,cancelable:true})));
     check(await page.locator('#capture-cancel').isDisabled(),'Cancel disabled during publication');
@@ -119,7 +119,7 @@ try {
     await page.locator('#capture-toast a').nth(1).waitFor();
     await page.waitForFunction(()=>!document.querySelector('#create-issue-dialog').hasAttribute('aria-busy'));
     check(await page.getByLabel('Search issues',{exact:true}).inputValue()==='Existing','Search preserved');
-    check(!(await page.getByRole('checkbox',{name:'Clarify',exact:true}).isChecked()),'Role filter preserved');
+    check(!(await page.locator('[data-role-filter="clarify"]').isChecked()),'Role filter preserved');
     check(Math.abs(await page.evaluate(()=>window.scrollY)-before)<5,'Window scroll preserved: '+before+' -> '+await page.evaluate(()=>window.scrollY));
     check(!page.url().includes('/issue/'),'Multiple capture stays on queue');
     await page.screenshot({path:${JSON.stringify(join(output, 'desktop.png'))},fullPage:false});
@@ -127,29 +127,29 @@ try {
     await page.locator('h1').filter({hasText:'Capture copy ID'}).waitFor();
     await page.goBack();
     await page.setViewportSize({width:390,height:844});
-    await page.getByRole('button',{name:'Create issue',exact:true}).click();
+    await page.locator('#create-issue').click();
     await page.getByLabel('Description',{exact:true}).fill('<script>data only</script>');
     await page.locator('#capture-folder').selectOption('Inbox');
     await page.screenshot({path:${JSON.stringify(join(output, 'narrow.png'))}});
-    await page.getByRole('button',{name:'Cancel',exact:true}).click();
+    await page.locator('#capture-cancel').click();
   `
   );
   await scenario(
     'lost-response-and-refresh-failure',
     `
     await page.setViewportSize({width:1280,height:900});
-    await page.getByRole('button',{name:'Create issue',exact:true}).click();
+    await page.locator('#create-issue').click();
     await page.getByLabel('Description',{exact:true}).fill('Recover a lost response');
     await page.locator('#capture-folder').selectOption('Inbox');
     await page.route('**/api/issue-capture', async route=>{ await route.fetch(); await route.abort(); });
-    await page.getByRole('button',{name:'Create issues',exact:true}).click();
+    await page.locator('#capture-save').click();
     await page.locator('#capture-error').filter({hasText:'Retry Save'}).waitFor();
     await page.unroute('**/api/issue-capture');
     await page.reload();
-    await page.getByRole('button',{name:'Create issue',exact:true}).click();
+    await page.locator('#create-issue').click();
     check(await page.getByLabel('Description',{exact:true}).inputValue()==='Recover a lost response','Reload retains failed request draft');
     await page.route('**/api/queue*', route=>route.abort());
-    await page.getByRole('button',{name:'Create issues',exact:true}).click();
+    await page.locator('#capture-save').click();
     await page.locator('#capture-toast a').filter({hasText:'Recover a lost response'}).waitFor();
     check(await page.locator('#create-issue-dialog').evaluate(e=>!e.open),'Recovered response closes dialog despite refresh failure');
     await page.unroute('**/api/queue*');

@@ -55,6 +55,7 @@ import { once } from 'node:events';
 import { execFileSync } from 'node:child_process';
 import { FactoryUI } from './factory-ui/service.mjs';
 import { createFactoryServer } from './factory-ui/http.mjs';
+import { traceWorkMarkdown } from './work-markdown-warning-proof.mjs';
 import { deliveryTarget, requestData, startingPoint } from './factory-ui/flow-block-data.mjs';
 import { createIssueFlows } from './factory-ui/flow-service.mjs';
 import { createFlowExecutor } from './factory-ui/flow-executor.mjs';
@@ -363,7 +364,12 @@ service.flows = createIssueFlows(service, {
     return { artifacts: { values: fields }, summary: fields.goal };
   },
 });
-const server = createFactoryServer(service);
+const workOverrideWatcherEvents = [];
+const server = createFactoryServer(service, {
+  onSourceFileChange(name) {
+    if (name === 'flow/overrides/blocks/work.md') workOverrideWatcherEvents.push({ at: Date.now() });
+  },
+});
 const require = createRequire(import.meta.url);
 const playwrightRequire = createRequire(require.resolve('@playwright/cli/package.json'));
 const { chromium } = playwrightRequire('playwright');
@@ -658,7 +664,7 @@ try {
     const ids = await seedSidebarOverflow();
     await page.goto('/');
     await page.locator('#sidebar-file-tree details').first().waitFor();
-    await page.getByRole('button', { name: 'Expand Local notes' }).click();
+    await page.locator('#local-notes-toggle').click();
     await page.evaluate(() => {
       const notes = document.getElementById('local-note-list');
       const files = document.getElementById('sidebar-file-tree');
@@ -825,7 +831,7 @@ try {
       await issues.click();
       await page.locator('#project-issues').waitFor();
       const frame = page.frameLocator('#project-issues iframe');
-      await frame.getByRole('button', { name: 'Open', exact: true }).waitFor();
+      await frame.locator('[data-project-issue-mode="open"]').waitFor();
       await assertCleanSidebarConsole();
     })
   );
@@ -918,14 +924,11 @@ try {
     await page.goto('/?issue=' + id);
     await block(request.id);
     assert.equal(await page.getByRole('checkbox', { name: 'Run full regression suite' }).count(), 0);
-    await page.getByRole('button', { name: 'Add a step' }).click();
+    await page.locator('[data-open-palette]').click();
     const palette = page.locator('#palette-dialog');
-    await palette
-      .getByRole('button', { name: /^Work\b/ })
-      .first()
-      .waitFor();
+    await palette.locator('[data-add-kind="work"]').first().waitFor();
     assert.equal(await palette.locator('[data-add-kind="verify"]').count(), 0);
-    await palette.getByRole('button', { name: 'Close block palette' }).click();
+    await palette.locator('button[data-close-dialog="palette-dialog"]').click();
   });
   await check('Opening the workspace starts no work and loads no skills', async () => {
     await page.goto('/');
@@ -943,7 +946,7 @@ try {
     assert.notEqual(await folder.getAttribute('required'), null);
     assert.equal(await folder.evaluate((select) => select.validity.valid), true);
     await folder.selectOption('Inbox');
-    await page.getByRole('button', { name: 'Close new issue', exact: true }).click();
+    await page.locator('#capture-dialog .icon-button[data-close-dialog="capture-dialog"]').click();
     assert.equal(await page.locator('#issue-list').getByText('Unfiled', { exact: true }).count(), 0);
   });
   await check('The sidebar browses system Markdown and saves project Markdown on disk', async () => {
@@ -953,37 +956,44 @@ try {
       assert.equal(await sidebar.getByText(label, { exact: true }).count(), 0);
     assert.equal(await sidebar.getByRole('button', { name: 'Add Folder…', exact: true }).count(), 0);
     assert.equal(await sidebar.getByRole('button', { name: 'New File', exact: true }).count(), 0);
-    await tree.getByRole('button', { name: 'flow', exact: true }).first().click();
+    await tree.locator('button[data-file-root="system-flow"][data-file-path=""]').first().click();
     await page.getByRole('heading', { name: 'flow', exact: true }).waitFor();
     assert.equal(await page.locator('#issue-folder-content').isVisible(), false);
     assert.equal(await page.locator('#graph-scroll').isVisible(), false);
     assert.equal(await page.locator('#folder-workspace').getByRole('button').count(), 2);
     page.once('dialog', (dialog) => void dialog.dismiss());
-    await page.getByRole('button', { name: 'Delete folder', exact: true }).click();
+    await page.locator('#delete-sidebar-folder').click();
     await page.waitForFunction(() => !document.getElementById('delete-sidebar-folder').disabled);
     assert.ok(existsSync(join(root, 'factory/system/flow')));
-    await tree.getByRole('button', { name: 'Expand flow', exact: true }).first().click();
-    await tree.getByRole('button', { name: 'defaults.md', exact: true }).click();
+    await tree
+      .locator('[data-directory-root="system-flow"][data-directory-path=""] > summary > .folder-disclosure')
+      .first()
+      .click();
+    await tree.locator('.sidebar-file-link[data-file-root="system-flow"][data-file-path="defaults.md"]').click();
     await page.getByRole('dialog', { name: 'defaults.md' }).waitFor();
     assert.ok((await page.locator('#sidebar-file-text').getAttribute('readonly')) !== null);
     await page.locator('#sidebar-file-close').click();
-    await tree.getByRole('button', { name: 'New folder in user', exact: true }).click();
+    await tree
+      .locator('[data-directory-root="user"][data-directory-path=""] > summary > .sidebar-folder-create')
+      .click();
     await page.locator('#sidebar-file-path').fill('Notes');
     await page.locator('#sidebar-file-submit').click();
     await page.locator('#sidebar-file-dialog').waitFor({ state: 'hidden' });
     writeFileSync(join(project, 'user/Notes/checklist.md'), '# Checklist');
-    await tree.getByRole('button', { name: 'Expand Notes', exact: true }).click();
-    await tree.getByRole('button', { name: 'checklist.md' }).click();
+    await tree
+      .locator('[data-directory-root="user"][data-directory-path="Notes"] > summary > .folder-disclosure')
+      .click();
+    await tree.locator('.sidebar-file-link[data-file-root="user"][data-file-path="Notes/checklist.md"]').click();
     await page.getByRole('dialog', { name: 'checklist.md', exact: true }).waitFor();
     assert.equal(await page.locator('#sidebar-file-text').inputValue(), '# Checklist');
     await page.locator('#sidebar-file-text').fill('# Updated checklist');
     await page.locator('#sidebar-file-submit').click();
     await page.locator('#sidebar-file-dialog').waitFor({ state: 'hidden' });
     assert.equal(readFileSync(join(project, 'user/Notes/checklist.md'), 'utf8'), '# Updated checklist');
-    await tree.getByRole('button', { name: 'Notes', exact: true }).click();
+    await tree.locator('button[data-file-root="user"][data-file-path="Notes"]').click();
     await page.getByRole('heading', { name: 'Notes', exact: true }).waitFor();
     page.once('dialog', (dialog) => void dialog.accept());
-    await page.getByRole('button', { name: 'Delete folder', exact: true }).click();
+    await page.locator('#delete-sidebar-folder').click();
     await page.getByText('Moved folder to Trash.', { exact: true }).waitFor();
     assert.equal(existsSync(join(project, 'user/Notes')), false);
     const trashed = readdirSync(join(output, 'Trash'));
@@ -995,12 +1005,12 @@ try {
       transfer.setData('text/uri-list', url);
       element.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: transfer }));
     }, pathToFileURL(external).href);
-    await tree.getByRole('button', { name: 'folder.md', exact: true }).waitFor();
-    await tree.getByRole('button', { name: 'folder.md', exact: true }).click();
+    await tree.locator('.sidebar-file-link[data-file-path="folder.md"]').waitFor();
+    await tree.locator('.sidebar-file-link[data-file-path="folder.md"]').click();
     await page.getByRole('dialog', { name: 'folder.md', exact: true }).waitFor();
     assert.equal(await page.locator('#sidebar-file-text').inputValue(), '# Outside folder');
     assert.notEqual(await page.locator('#sidebar-file-text').getAttribute('readonly'), null);
-    assert.equal(await page.getByRole('button', { name: 'Install project skill' }).isVisible(), false);
+    assert.equal(await page.locator('#sidebar-file-install').isVisible(), false);
     await page.locator('#sidebar-file-close').click();
     rmSync(external, { recursive: true, force: true });
     await screenshot('sidebar-folders');
@@ -1010,11 +1020,11 @@ try {
   await check('Project settings explain missing configuration and initialize it only on request', async () => {
     const labels = join(project, '.issues/triage-labels.md');
     rmSync(labels, { force: true });
-    await page.getByRole('button', { name: 'Factory settings', exact: true }).click();
+    await page.locator('#project-settings').click();
     const settings = page.locator('#project-settings-dialog');
     await settings.locator('[data-settings-page="lifecycle"]').click();
-    const initialize = settings.getByRole('button', { name: 'Initialize lifecycle configuration', exact: true });
-    const openFile = settings.getByRole('button', { name: 'Open file', exact: true });
+    const initialize = settings.locator('[data-settings-initialize]');
+    const openFile = settings.locator('[data-settings-action="open-lifecycle"]');
     await initialize.waitFor();
     assert.equal(await openFile.isDisabled(), true);
     await screenshot('project-settings-missing');
@@ -1022,7 +1032,7 @@ try {
     assert.equal(logs.modelCalls.length, 0);
     await page.keyboard.press('Escape');
     assert.throws(() => readFileSync(labels), /ENOENT/);
-    await page.getByRole('button', { name: 'Factory settings', exact: true }).click();
+    await page.locator('#project-settings').click();
     await settings.locator('[data-settings-page="lifecycle"]').click();
     await initialize.click();
     await poll(() => openFile.isEnabled(), Boolean, 'Initialized lifecycle file did not become available.');
@@ -1033,7 +1043,7 @@ try {
     assert.equal(logs.modelCalls.length, 0);
     await page.keyboard.press('Escape');
     await page.reload();
-    await page.getByRole('button', { name: 'Factory settings', exact: true }).click();
+    await page.locator('#project-settings').click();
     await settings.locator('[data-settings-page="lifecycle"]').click();
     await poll(() => openFile.isEnabled(), Boolean, 'Saved lifecycle file did not remain available.');
     assert.equal(await initialize.count(), 0);
@@ -1042,12 +1052,12 @@ try {
     await page.keyboard.press('Escape');
   });
   await check('The Flow action count opens and closes the shared Action list', async () => {
-    const count = page.getByRole('button', { name: '0 actions running' });
+    const count = page.locator('#project-actions');
     await count.click();
     const dialog = page.getByRole('dialog', { name: 'Action list' });
     await dialog.getByText('No issue-linked actions are running.').waitFor();
     assert.equal(await count.getAttribute('aria-expanded'), 'true');
-    await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+    await dialog.locator('[data-actions-close]').click();
     await dialog.waitFor({ state: 'hidden' });
     await count.and(page.locator('[aria-expanded="false"]')).waitFor();
   });
@@ -1307,8 +1317,8 @@ try {
     const markdownMenu = page.locator('.block-markdown-menu');
     const markdownToggle = markdownMenu.getByText('.md', { exact: true });
     await markdownToggle.click();
-    assert.ok(await markdownMenu.getByRole('button', { name: 'Reveal Markdown in Finder' }).isVisible());
-    assert.ok(await markdownMenu.getByRole('button', { name: 'Create extension' }).isVisible());
+    assert.ok(await markdownMenu.locator('[data-action="reveal-definition"]').isVisible());
+    assert.ok(await markdownMenu.locator('[data-action="open-block-extension"]').isVisible());
     await markdownToggle.click();
     assert.equal(await page.locator('[name="wording"]').inputValue(), description);
     assert.equal(data.flow.routeType, 'feature');
@@ -1349,8 +1359,8 @@ try {
     };
     const scanSource = async () => {
       await openFolder();
-      await page.getByLabel('Search', { exact: true }).selectOption('Scan source');
-      return clickAction(page.getByRole('button', { name: 'Find issues', exact: true }));
+      await page.locator('#folder-scan-source').selectOption('Scan source');
+      return clickAction(page.locator('#folder-scan-form button[type="submit"]'));
     };
     const sidebarIssue = (id) => page.locator(`#open-issues [data-issue="${id}"]`);
     const disclosure = page.locator('#issue-list [data-toggle-folder="Browser folder"]');
@@ -1366,23 +1376,23 @@ try {
     await page.locator('#issue-list [data-create-folder-issue="Scan source"]').click();
     await page.locator('#capture-description').fill('Keep the save button visible after reload.');
     const second = await clickAction(page.locator('#capture-submit'));
-    await clickAction(page.getByLabel('Prevent moves into folders'));
+    await clickAction(page.locator('#issue-folder-locked'));
 
     await scanSource();
     await page.getByText('No matching issues to move.', { exact: true }).waitFor();
     await sidebarIssue(second.issue.id).click();
-    await clickAction(page.getByLabel('Prevent moves into folders'));
+    await clickAction(page.locator('#issue-folder-locked'));
 
     await scanSource();
     await page.getByRole('heading', { name: 'Review suggested moves', exact: true }).waitFor();
-    await clickAction(page.getByRole('button', { name: 'Move selected issues', exact: true }));
+    await clickAction(page.locator('#folder-scan-review button[type="submit"]'));
     const members = page.getByRole('list', { name: 'Issues in this folder', exact: true });
-    await members.getByRole('link', { name: /Keep the save button visible/ }).waitFor();
-    await clickAction(page.getByRole('button', { name: 'Recommend issues', exact: true }));
+    await members.locator(`[data-open-folder-issue="${second.issue.id}"]`).waitFor();
+    await clickAction(page.locator('[data-folder-command="recommend"]'));
     await page.getByText('2 selected', { exact: true }).waitFor();
     assert.equal(await members.getByRole('checkbox', { checked: true }).count(), 2);
 
-    await clickAction(page.getByRole('button', { name: 'Work All Night', exact: true }));
+    await clickAction(page.locator('[data-folder-command="plan-night"]'));
     await page
       .getByRole('region', { name: 'Overnight plan' })
       .getByText('Follow each issue’s configured merge policy', { exact: true })
@@ -1392,7 +1402,7 @@ try {
     assert.equal(await groupButton.innerText(), 'Create master issue');
     assert.equal(await page.locator('[data-folder-command="bulk"] + [data-folder-command="group"]').count(), 1);
     await clickAction(groupButton);
-    const combined = page.getByLabel('Review and edit the master issue request');
+    const combined = page.locator('#folder-master-wording');
     const wording = await combined.inputValue();
     assert.match(wording, /Keep the save button visible/);
     const edited = wording.replace(/^[^\n]*/, 'Keep both save behaviors after reload');
@@ -1416,23 +1426,23 @@ try {
     const subIssues = page.locator('#issue-heading').getByRole('list', { name: 'Sub-issues', exact: true });
     await subIssues.waitFor();
     assert.equal(await subIssues.getByRole('link').count(), 2);
-    assert.equal(await subIssues.getByRole('button', { name: /^Remove / }).count(), 2);
+    assert.equal(await subIssues.locator('[data-detach-sub-issue]').count(), 2);
     assert.ok((await subIssues.boundingBox()).y > (await page.locator('#issue-title').boundingBox()).y);
     assert.ok((await subIssues.boundingBox()).y < (await page.locator('#issue-settings').boundingBox()).y);
     const grouping = page.getByRole('region', { name: 'Grouped issues' });
     await grouping.getByRole('heading', { name: 'Sub-issue proof' }).waitFor();
     assert.equal(await grouping.getByText('The fixture requests share save behavior.').count(), 2);
-    await subIssues.getByRole('link', { name: /Understand why/ }).click();
+    await subIssues.locator(`[data-open-folder-issue="${issueId}"]`).click();
     const masterRow = page.getByRole('group', { name: 'Master issue', exact: true });
-    await masterRow.getByRole('link', { name: /Keep both save behaviors/ }).waitFor();
+    await masterRow.locator(`[data-open-folder-issue="${master.issue.id}"]`).waitFor();
     assert.ok((await masterRow.boundingBox()).y < (await page.locator('#issue-settings').boundingBox()).y);
     assert.equal(await page.locator('#issue-playback').isVisible(), false);
-    await masterRow.getByRole('link', { name: /Keep both save behaviors/ }).click();
+    await masterRow.locator(`[data-open-folder-issue="${master.issue.id}"]`).click();
     assert.equal(await masterRow.isVisible(), false);
-    await subIssues.getByRole('link', { name: /Keep the save button visible/ }).click();
+    await subIssues.locator(`[data-open-folder-issue="${second.issue.id}"]`).click();
     await masterRow.waitFor({ state: 'visible' });
     await screenshot('issue-master-row');
-    await clickAction(masterRow.getByRole('button', { name: 'Remove', exact: true }));
+    await clickAction(masterRow.locator('#remove-issue-master'));
     assert.equal(new URL(page.url()).searchParams.get('issue'), second.issue.id);
     assert.equal(await masterRow.isVisible(), false);
     await page.reload();
@@ -1441,7 +1451,7 @@ try {
     await page.goto('/?issue=' + master.issue.id);
     await subIssues.waitFor();
     assert.equal(await subIssues.getByRole('link').count(), 1);
-    await clickAction(subIssues.getByRole('button', { name: /Remove.*Understand why/ }));
+    await clickAction(subIssues.locator(`[data-detach-sub-issue="${issueId}"]`));
     assert.equal(new URL(page.url()).searchParams.get('issue'), master.issue.id);
     await subIssues.waitFor({ state: 'hidden' });
     await page.goto('/?issue=' + issueId);
@@ -1449,9 +1459,9 @@ try {
     assert.equal(await masterRow.isVisible(), false);
 
     await openFolder();
-    await members.getByRole('checkbox', { name: /Select.*Keep the save button visible/ }).check();
+    await members.locator(`input[value="${second.issue.id}"]`).check();
     assert.equal(await page.getByRole('button', { name: 'Remove from folder', exact: true }).count(), 0);
-    await members.getByRole('link', { name: /Keep the save button visible/ }).waitFor();
+    await members.locator(`[data-open-folder-issue="${second.issue.id}"]`).waitFor();
   });
   await check(tabSourceCheck, async () => {
     const holdSourceEvents = await page.addInitScript(() => {
@@ -1471,27 +1481,30 @@ try {
       logs.requests.filter(({ path, method }) => path === '/api/flow-action' && method === 'POST').length;
     const before = flowPosts();
     await draft.fill('Unsaved UI editing fixture');
-    await page.getByRole('button', { name: 'View index' }).click();
-    await page.getByRole('button', { name: 'Block inspector · Details' }).waitFor();
+    await page.locator('#view-index-open').click();
+    await page.locator('[data-view-source-entry="flow/block-inspector/details-tab"]').waitFor();
     await page.keyboard.press('Escape');
-    await page.getByRole('button', { name: 'Inspect UI' }).click();
+    await page.locator('#view-inspect').click();
     await page.locator('#refresh').click();
     await page.locator('#toast').filter({ hasText: 'Current view refreshed.' }).waitFor();
     await tab.hover();
     await page.getByRole('tooltip').filter({ hasText: 'Inherited' }).waitFor();
     await tab.click({ button: 'right' });
     await page.locator('#view-source-edit').click();
-    await page.getByLabel('Label', { exact: true }).fill('Block notes');
-    await page.getByRole('button', { name: 'Save and reload' }).click();
-    await page.getByRole('tab', { name: 'Block notes' }).waitFor();
+    await page.locator('#view-source-label').fill('Block notes');
+    await page.locator('#view-source-save').click();
+    await page
+      .locator('#tab-details')
+      .filter({ hasText: /^Block notes$/ })
+      .waitFor();
     assert.match(readFileSync(path, 'utf8'), /## details-tab\n\nBlock notes/);
     assert.equal(await draft.inputValue(), 'Unsaved UI editing fixture');
     await tab.focus();
     await page.keyboard.press('Shift+F10');
-    await page.getByRole('button', { name: 'Edit override' }).click();
-    await page.getByLabel('Label', { exact: true }).fill('Stale draft');
+    await page.locator('#view-source-edit').click();
+    await page.locator('#view-source-label').fill('Stale draft');
     writeFileSync(path, '## details-tab\n\nExternal change\n');
-    await page.getByRole('button', { name: 'Save and reload' }).click();
+    await page.locator('#view-source-save').click();
     await page.locator('#view-source-error').filter({ hasText: 'changed on disk' }).waitFor();
     const conflictLog = logs.console.findIndex(
       (entry) =>
@@ -1501,20 +1514,23 @@ try {
     );
     assert.ok(conflictLog >= 0, 'The stale editor should receive a rejected request.');
     logs.console.splice(conflictLog, 1);
-    assert.equal(await page.getByLabel('Label', { exact: true }).inputValue(), 'Stale draft');
+    assert.equal(await page.locator('#view-source-label').inputValue(), 'Stale draft');
     await page.keyboard.press('Escape');
-    await page.getByRole('tab', { name: 'External change' }).waitFor();
+    await page
+      .locator('#tab-details')
+      .filter({ hasText: /^External change$/ })
+      .waitFor();
     await page.evaluate(() => window.dispatchEvent(new Event('release-source-events')));
     await holdSourceEvents.dispose();
     writeFileSync(path, '## missing-tab\n\nInvalid override\n');
     await page.locator('#view-source-status').filter({ hasText: 'unknown section' }).waitFor();
     assert.equal(await tab.innerText(), 'External change');
     rmSync(path);
-    await page.getByRole('tab', { name: 'Details' }).waitFor();
+    await page.locator('#tab-details').waitFor();
     assert.equal(await draft.inputValue(), 'Unsaved UI editing fixture');
     assert.equal(flowPosts(), before);
     assert.equal(logs.execution.length, 0);
-    await page.getByRole('button', { name: 'Inspect UI' }).click();
+    await page.locator('#view-inspect').click();
     await draft.fill(description);
   });
   await check('New issues open with Starting point flush with the viewport top', async () => {
@@ -1571,9 +1587,9 @@ try {
   await check('Issue title and Destination edits update the saved flow through its controls', async () => {
     const original = (await view()).issue.title;
     const rename = async (title) => {
-      await page.getByRole('button', { name: 'Rename issue' }).click();
-      await page.getByRole('textbox', { name: 'Issue title' }).fill(title);
-      await page.locator('#rename-issue-form').getByRole('button', { name: 'Save', exact: true }).click();
+      await page.locator('#rename-issue').click();
+      await page.locator('#rename-issue-title').fill(title);
+      await page.locator('#rename-issue-form button[type="submit"]').click();
       await poll(view, (value) => value.issue.title === title, 'The issue title was not saved.');
     };
     await rename('Edited from the issue heading');
@@ -1583,18 +1599,18 @@ try {
       'The heading did not show the saved issue title.'
     );
     await rename(original);
-    const destination = page.getByRole('button', { name: 'Choose destination branch' });
+    const destination = page.locator('[data-destination-open]');
     const select = page.locator('#destination-branch');
     await destination.click();
     await select.waitFor();
     assert.equal(await select.locator('option').first().textContent(), 'Follow starting branch');
     await select.selectOption('older');
-    await page.getByRole('button', { name: 'Save destination' }).click();
+    await page.locator('#save-destination').click();
     await poll(view, (value) => value.destination.branch === 'older', 'The destination was not pinned.');
     assert.equal((await view()).flow.startingPoint.ref, 'refs/heads/recent');
     await destination.click();
     await select.selectOption('');
-    await page.getByRole('button', { name: 'Save destination' }).click();
+    await page.locator('#save-destination').click();
     await poll(
       view,
       (value) => value.destination.follows && value.destination.branch === 'recent',
@@ -1809,31 +1825,30 @@ try {
     const flows = page.getByRole('group', { name: 'Flows for this issue type' });
     const expected = (await view()).flow.blocks.find((block) => block.kind === 'request').attempts;
     await menu.click();
-    assert.equal(await flows.getByRole('button', { name: 'Investigation', exact: true }).count(), 0);
-    if (process.platform === 'darwin')
-      assert.ok(await page.getByRole('button', { name: 'Reveal in Finder' }).isVisible());
-    await page.getByRole('button', { name: 'Save as user flow', exact: true }).click();
-    assert.equal(await page.getByLabel('File name').inputValue(), 'delivery-2');
+    assert.equal(await flows.locator('[data-flow-id="investigation"]').count(), 0);
+    if (process.platform === 'darwin') assert.ok(await page.locator('[data-action="reveal-flow"]').isVisible());
+    await page.locator('[data-action="open-export-flow"]').click();
+    assert.equal(await page.locator('#export-flow-id').inputValue(), 'delivery-2');
     assert.equal(await page.locator('#export-flow-path').textContent(), 'user/flow/definitions/delivery-2.md');
-    await page.getByLabel('Flow name').fill('Team delivery');
-    await page.getByLabel('File name').fill('team-delivery');
+    await page.locator('#export-flow-form [name="name"]').fill('Team delivery');
+    await page.locator('#export-flow-id').fill('team-delivery');
     assert.equal(await page.locator('#export-flow-path').textContent(), 'user/flow/definitions/team-delivery.md');
-    const result = await clickAction(page.getByRole('button', { name: 'Save and link' }));
+    const result = await clickAction(page.locator('#export-flow-submit'));
     assert.equal(result.flow.definition.id, 'team-delivery');
     assert.equal(result.flow.blocks.find((item) => item.kind === 'work').id, workId);
     await page.locator('#export-flow-dialog').waitFor({ state: 'hidden' });
     await menu.click();
-    const switched = await clickAction(flows.getByRole('button', { name: 'Standard delivery', exact: true }));
+    const switched = await clickAction(flows.locator('[data-flow-id="delivery"]'));
     assert.equal(switched.flow.definition.id, 'delivery');
     await menu.click();
-    const linked = await clickAction(flows.getByRole('button', { name: 'Team delivery', exact: true }));
+    const linked = await clickAction(flows.locator('[data-flow-id="team-delivery"]'));
     assert.equal(linked.flow.definition.id, 'team-delivery');
     const path = join(project, 'user/flow/definitions/team-delivery.md');
     const source = readFileSync(path, 'utf8');
     writeFileSync(path, source.replace('name: Team delivery', 'name: Updated team delivery'));
     const changed = await view();
     assert.equal(changed.flowDefinitions.updated, true);
-    const wand = page.getByRole('button', { name: 'Rebuild flow', exact: true });
+    const wand = page.locator('#rebuild-flow');
     const updated = await clickAction(wand);
     assert.equal(updated.flowDefinitions.updated, false);
     assert.equal(updated.flow.definition.id, 'team-delivery');
@@ -1895,7 +1910,7 @@ try {
     assert.equal(logs.execution.length, 0);
   });
   await check(addParallelBlockCheck, async () => {
-    await page.getByRole('button', { name: 'Add a step', exact: true }).click();
+    await page.locator('[data-open-palette]').click();
     const data = await clickAction(page.locator('[data-add-kind="understand"]'));
     addedId = data.flow.blocks.find((item) => item.kind === 'understand' && item.id !== workId).id;
     await page.locator('#palette-dialog').waitFor({ state: 'hidden' });
@@ -1957,7 +1972,7 @@ try {
       assert.ok(positions[item.id] < positions.__destination);
       for (const parent of item.after) assert.ok(positions[parent] < positions[item.id]);
     }
-    const add = await page.getByRole('button', { name: 'Add a step', exact: true }).boundingBox();
+    const add = await page.locator('[data-open-palette]').boundingBox();
     assert.ok(Math.abs(add.width - add.height) < 1, 'The add-step control is not circular.');
     const paths = await page
       .locator('.graph-lines path')
@@ -2027,7 +2042,7 @@ try {
   });
   const workOverride = join(project, 'user/flow/overrides/blocks/work.md');
   async function addExtraWork() {
-    await page.getByRole('button', { name: 'Add a step', exact: true }).click();
+    await page.locator('[data-open-palette]').click();
     const data = await clickAction(page.locator('[data-add-kind="work"]'));
     return data.flow.blocks.find((item) => item.kind === 'work' && item.id !== workId).id;
   }
@@ -2064,18 +2079,31 @@ try {
     const extension = join(project, 'user/flow/extensions/blocks/work.md');
     mkdirSync(dirname(extension), { recursive: true });
     writeFileSync(extension, '## Local evidence\n\nKeep the command output.\n');
-    writeFileSync(
-      workOverride,
-      '# Project Work\n\nReady when you are.\n\n## Evidence to retain\n\n- Command output\n- Saved artifact\n\n# Skill list\n\n- arena\n- how\n'
-    );
-    assert.equal(await prose.count(), 0);
-    await poll(
-      () => skillOptions.allTextContents(),
-      (labels) => labels.includes('how') && !labels.includes('poteto-mode'),
-      'Skill suggestions did not reload.'
-    );
     const description = card.locator('.block-description');
-    await description.filter({ hasText: /^Ready when you are\.$/ }).waitFor();
+    const trace = (file, steps) =>
+      traceWorkMarkdown(
+        page,
+        join(output, file),
+        { revision: git(root, 'rev-parse', 'HEAD') },
+        workOverrideWatcherEvents,
+        steps
+      );
+    await trace('work-markdown-valid-proof.json', {
+      write: () =>
+        writeFileSync(
+          workOverride,
+          '# Project Work\n\nReady when you are.\n\n## Evidence to retain\n\n- Command output\n- Saved artifact\n\n# Skill list\n\n- arena\n- how\n'
+        ),
+      assertRendered: async () => {
+        assert.equal(await prose.count(), 0);
+        await poll(
+          () => skillOptions.allTextContents(),
+          (labels) => labels.includes('how') && !labels.includes('poteto-mode'),
+          'Skill suggestions did not reload.'
+        );
+        await description.filter({ hasText: /^Ready when you are\.$/ }).waitFor();
+      },
+    });
     assert.equal(await description.innerText(), 'Ready when you are.');
     assert.deepEqual(await layout(), originalLayout);
     assert.equal(await card.locator('.block-label').innerText(), title);
@@ -2083,8 +2111,11 @@ try {
     assert.equal(await draft.inputValue(), 'Unsaved Work draft');
     assert.equal(await page.locator('[data-action="start"]').count(), 1);
     assert.equal(logs.execution.length, 0);
-    writeFileSync(workOverride, '# Empty override\n');
-    await page.locator('#view-source-status').filter({ hasText: 'needs a paragraph' }).waitFor();
+    await trace('work-markdown-warning-proof.json', {
+      invalid: true,
+      write: () => writeFileSync(workOverride, '# Empty override\n'),
+      assertRendered: () => page.locator('#view-source-status').filter({ hasText: 'needs a paragraph' }).waitFor(),
+    });
     assert.equal(await prose.count(), 0);
     rmSync(workOverride);
     rmSync(extension);
@@ -2111,9 +2142,9 @@ try {
     await page.locator('.attempt-output').filter({ hasText: 'explicit attempt 1' }).waitFor();
     assert.equal(logs.execution.length, 1);
     assert.equal(await page.locator('#run-block').innerText(), '■ Stop');
-    await page.getByRole('tab', { name: 'Conversation' }).click();
+    await page.locator('#tab-conversation').click();
     assert.equal(await page.locator('#run-block').innerText(), '■ Stop');
-    await page.getByRole('tab', { name: 'Details' }).click();
+    await page.locator('#tab-details').click();
     assert.equal(
       await page.locator('#starting-branch').isDisabled(),
       true,
@@ -2347,9 +2378,7 @@ try {
   await check(updateWorktreeCheck, async () => {
     await page.goto('/flow?issue=' + issueId);
     await page.locator('[data-node="__base"]').waitFor();
-    const menu = page
-      .locator('#environment .environment-chip')
-      .and(page.getByRole('combobox', { name: 'Worktree', exact: true }));
+    const menu = page.locator('#environment .environment-chip').and(page.locator('#worktree-menu'));
     assert.equal(await menu.isDisabled(), true);
     assert.equal(await menu.getAttribute('title'), 'No worktree has been created for this issue.');
     const checkout = join(project, '.issues/issue-work', issueId);
@@ -2400,7 +2429,7 @@ try {
         assert.fail('Update Branch must not run Verify.');
       },
     });
-    const targetMenu = page.getByRole('combobox', { name: /Starting branch ahead by/ });
+    const targetMenu = page.locator('#target-update-menu');
     await targetMenu.selectOption('add');
     await page.getByText('Update Branch block added.', { exact: true }).waitFor();
     const blocks = (await view()).flow.blocks;
@@ -2444,7 +2473,7 @@ try {
     await page.reload();
     await selectBlock(publish.id);
     assert.equal(await page.locator('#issue-pr-menu').isVisible(), false);
-    await page.getByRole('button', { name: 'Open Request' }).waitFor();
+    await page.locator('#inspector-body button[data-block="request"]').waitFor();
     await clickAction(page.locator('#run-block'));
     const description = page.locator('#publish-description');
     await description.waitFor();
@@ -2474,11 +2503,11 @@ try {
     const menu = page.locator('#issue-pr-menu');
     await menu.waitFor();
     await menu.locator('summary').click({ force: true });
-    const link = menu.getByRole('link', { name: 'Open', exact: true });
+    const link = menu.locator('#issue-pr-link');
     await link.waitFor();
     assert.equal(await link.getAttribute('href'), url);
     assert.equal(await link.getAttribute('target'), '_blank');
-    const approve = menu.getByRole('link', { name: 'Approve', exact: true });
+    const approve = menu.locator('#issue-pr-review');
     assert.equal(await approve.getAttribute('href'), url + '/files');
     assert.equal(await approve.getAttribute('target'), '_blank');
     saved.destination = destination;
@@ -2508,7 +2537,7 @@ try {
     });
     const sync = withUpdate.flow.blocks.find(({ kind }) => kind === 'update-branch');
     await page.goto(new URL('/?issue=' + issueId, page.url()).href);
-    await page.getByRole('button', { name: 'Start issue' }).click();
+    await page.locator('#issue-playback[data-playback-mode="start"]').click();
     await poll(
       view,
       (data) => data.flow.blocks.find(({ id }) => id === 'work').attempts.at(-1)?.status === 'running',
@@ -2518,9 +2547,9 @@ try {
     await page.locator('#issue-title').filter({ hasText: 'A renamed issue' }).waitFor();
     assert.equal((await view()).autoplay.mode, 'playing');
     await page.locator(`#open-issues [data-issue="${issueId}"]`).click();
-    await page.getByRole('button', { name: 'Pause issue' }).click();
+    await page.locator('#issue-playback[data-playback-mode="pause"]').click();
     await poll(view, (data) => data.autoplay.mode === 'paused', 'Pause was not applied.');
-    await page.getByRole('button', { name: 'Resume issue' }).click();
+    await page.locator('#issue-playback[data-playback-mode="resume"]').click();
     await poll(view, (data) => data.autoplay.mode === 'playing', 'Resume did not continue during Work.');
     const noNewActions = page.locator('#flow-actions-switch [data-server-toggle]');
     await noNewActions.check();
@@ -2529,7 +2558,7 @@ try {
       (data) => data.phase === 'paused',
       'No new actions did not pause the server.'
     );
-    assert.equal(await page.getByRole('button', { name: 'Pause issue' }).isEnabled(), true);
+    assert.equal(await page.locator('#issue-playback[data-playback-mode="pause"]').isEnabled(), true);
     playbackWork.resolve();
     const paused = await poll(
       view,
@@ -2544,14 +2573,14 @@ try {
     await noNewActions.uncheck();
     assert.equal((await view()).autoplay.mode, 'paused');
     assert.equal((await view()).flow.blocks.find(({ id }) => id === sync.id).attempts.length, 0);
-    await clickAction(page.getByRole('button', { name: 'Resume issue' }));
+    await clickAction(page.locator('#issue-playback[data-playback-mode="resume"]'));
     await block('request');
     await page.locator('#issue-results-message').filter({ hasText: 'Flow complete' }).waitFor();
-    assert.equal(await page.getByRole('button', { name: 'Close issue' }).textContent(), 'Close');
-    await page.getByRole('button', { name: 'Close issue' }).click();
+    assert.equal(await page.locator('#issue-playback[data-playback-mode="close"]').textContent(), 'Close');
+    await page.locator('#issue-playback[data-playback-mode="close"]').click();
     const closeDialog = page.getByRole('dialog', { name: 'Close this issue' });
     await closeDialog.waitFor();
-    await closeDialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await closeDialog.locator('#cancel-issue-closure').click();
     assert.equal(await page.locator('#issue-results').isVisible(), true);
     assert.equal(await page.locator('#issue-heading ~ #issue-results').count(), 1);
     assert.equal(await page.locator('#playback-status').textContent(), '');
@@ -2562,18 +2591,18 @@ try {
     assert.deepEqual(logs.pageErrors, []);
   });
   await check('The issue header closes with a reason and runs only Cleanup by default', async () => {
-    const close = page.getByRole('button', { name: 'Close issue', exact: true });
+    const close = page.locator('#close-with-reason');
     assert.equal(await page.locator('#worktree-hint + #close-with-reason').count(), 1);
     const dialog = page.getByRole('dialog', { name: 'Close this issue' });
     const executionCount = logs.execution.length;
     await close.click();
-    await dialog.getByLabel('Reason', { exact: true }).locator('option[value="fixed"]').waitFor({ state: 'attached' });
+    await dialog.locator('#closure-reason').locator('option[value="fixed"]').waitFor({ state: 'attached' });
     await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
     assert.equal(logs.requests.filter(({ path }) => path === '/api/issue-decision').length, 0);
     await close.click();
-    await dialog.getByLabel('Reason', { exact: true }).selectOption('duplicate');
-    await dialog.getByLabel('Details or related issue (optional)').fill('Already covered by issue #44');
-    await dialog.getByRole('button', { name: 'Close issue', exact: true }).click();
+    await dialog.locator('#closure-reason').selectOption('duplicate');
+    await dialog.locator('#reopen-reason').fill('Already covered by issue #44');
+    await dialog.locator('#confirm-issue-closure').click();
     await dialog.waitFor({ state: 'hidden' });
     await close.waitFor({ state: 'hidden' });
     await poll(() => !service.flows.closureBusy(issueId), Boolean, 'Close did not finish Cleanup.');
@@ -2669,14 +2698,14 @@ try {
     const runs = logs.execution.length;
     const create = page.locator('#capture-dialog');
     await page.locator('#new-issue').click();
-    assert.equal(await create.getByLabel('Run a retro').isChecked(), false);
-    assert.equal(await create.getByLabel('Needs approval').isChecked(), false);
-    await create.getByLabel('Your request').fill('Review an idle approval proposal');
-    await create.getByLabel('Run a retro').check();
-    await create.getByLabel('Needs approval').check();
-    await create.getByRole('button', { name: 'Create issue', exact: true }).click();
-    const approval = page.getByRole('button', { name: 'Approve', exact: true });
-    const remove = page.getByRole('button', { name: 'Delete', exact: true });
+    assert.equal(await create.locator('#capture-retro').isChecked(), false);
+    assert.equal(await create.locator('#capture-needs-approval').isChecked(), false);
+    await create.locator('#capture-description').fill('Review an idle approval proposal');
+    await create.locator('#capture-retro').check();
+    await create.locator('#capture-needs-approval').check();
+    await create.locator('#capture-submit').click();
+    const approval = page.locator('#approve-issue');
+    const remove = page.locator('#delete-pending-issue');
     await approval.waitFor();
     await remove.waitFor();
     await page.locator('#close-with-reason').waitFor({ state: 'hidden' });
@@ -2752,7 +2781,7 @@ try {
         }
       );
     }
-    const menu = page.getByRole('combobox', { name: 'Worktree', exact: true });
+    const menu = page.locator('#worktree-menu');
     await menu.waitFor();
     const previewPromise = page.waitForEvent('dialog');
     await menu.selectOption('delete');
@@ -2791,17 +2820,17 @@ try {
     }
     issueId = reopenId;
     await page.goto('/?issue=' + issueId);
-    const archive = page.getByRole('combobox', { name: 'Archive', exact: true });
-    const close = page.getByRole('button', { name: 'Close', exact: true });
+    const archive = page.locator('#issue-archive-menu');
+    const close = page.locator('#close-with-reason');
     await archive.waitFor();
     const closedIndicator = page.getByRole('img', { name: 'Issue closed' });
     await closedIndicator.waitFor();
     assert.equal(await page.locator('#issue-playback').isVisible(), false);
     assert.equal(await close.isVisible(), false);
     assert.equal(await archive.locator('option[value="reveal"]').textContent(), 'Reveal in Finder');
-    await page.getByRole('button', { name: 'Reopen', exact: true }).click();
+    await page.locator('#reopen-issue').click();
     await close.waitFor();
-    await page.getByRole('button', { name: 'Start issue' }).waitFor();
+    await page.locator('#issue-playback').waitFor();
     assert.equal(await closedIndicator.isVisible(), false);
     assert.equal(service.flows.selected(issueId).location, 'open');
     assert.equal(await archive.isVisible(), false);
@@ -2833,10 +2862,10 @@ try {
     const added = service.flows.read(issue).blocks.find((item) => item.kind === 'advice');
     await page.goto('/flow?issue=' + issueId);
     await block('request');
-    const remove = page.getByRole('button', { name: 'Delete block', exact: true });
+    const remove = page.locator('#delete-block');
     assert.equal(await remove.isDisabled(), true);
     await block(added.id);
-    await page.getByRole('tab', { name: 'Conversation' }).click();
+    await page.locator('#tab-conversation').click();
     page.once('dialog', (dialog) => void dialog.dismiss());
     await remove.click();
     assert.ok((await view()).flow.blocks.some((item) => item.id === added.id));
@@ -3143,13 +3172,13 @@ try {
     flow.startingPoint = { ref: 'refs/heads/dev', name: 'dev', commit: base };
     await service.flows.store.save(flow, flow.revision);
     await page.goto('/?issue=' + issueId);
-    const selector = page.getByRole('combobox', { name: 'Starting branch', exact: true });
+    const selector = page.locator('#starting-branch');
     const dialog = page.getByRole('dialog', { name: 'Change starting branch' });
     await selector.selectOption('refs/remotes/origin/recent');
-    await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+    await dialog.locator('button[value="cancel"]').click();
     assert.equal(await selector.inputValue(), 'refs/heads/dev');
     await selector.selectOption('refs/remotes/origin/recent');
-    await dialog.getByRole('button', { name: 'Move issue work', exact: true }).click();
+    await dialog.locator('#move-starting-branch').click();
     await page.getByText('Moved the issue to the selected starting branch.', { exact: true }).waitFor();
     assert.equal((await view()).flow.workspace.base, recentBranchCommit);
     assert.equal(git(checkout, 'show', 'HEAD:saved-edit.txt'), 'Keep this local edit.');

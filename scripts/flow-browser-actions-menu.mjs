@@ -41,7 +41,7 @@ export async function actionsMenuBrowserChecks({ page, project, service, poll, s
     );
     assert.equal(service.serverControl.status().actions, 2);
     await page.goto('/');
-    await page.getByRole('button', { name: '2 actions running', exact: true }).click();
+    await page.locator('#project-actions').click();
     const dialog = page.getByRole('dialog', { name: 'Action list', exact: true });
     await dialog.waitFor();
     await screenshot('actions-menu-open');
@@ -91,7 +91,7 @@ export async function actionsMenuBrowserChecks({ page, project, service, poll, s
     );
     assert.match(await dialog.innerText(), /Running action 2/);
     assert.equal((await feedback.boundingBox()).height, feedbackBefore.height);
-    await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+    await dialog.locator('[data-actions-close]').click();
   } finally {
     const tasks = ids.map((id) => service.flows.active.get(id)?.task).filter(Boolean);
     for (const deferred of pending.values()) deferred.resolve();

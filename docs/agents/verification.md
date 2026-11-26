@@ -71,6 +71,26 @@ second non-browser job runs its Factory shard and the app tests and build
 in separate jobs. The aggregate `test` check requires all jobs and combines
 evidence for the same candidate.
 
+The Timey browser job runs `node scripts/verify.mjs --ci-suite timey-browser --base <base>`.
+It opens the matching Factory at a dynamically assigned port, shuts that server
+down, and checks that a different project's Factory cannot make the link return.
+The job retains `timey-factory-return.json` with the tested commit, tree, and browser
+observations. The aggregate check verifies the artifact hash and its commit and tree.
+
+Locate controls by a stable ID or action attribute. Scope repeated controls to
+their view and record ID. Wait for the view to be ready before calling
+`readyControl`, which reports missing, duplicate, hidden, and disabled controls
+with their selector, action, and view. Supply the record ID where applicable.
+Keep an explicit wait for a later state when the control depends on an
+asynchronous transition.
+
+When copy is part of the requirement, set up the fixture in the expected
+locale, locate the control by its stable selector, and assert the exact text
+or accessible name. Include the expected and actual values in the diagnostic.
+Keep assertions for issue wording, notes, and other fixture content. The
+Classic closure scenario exercises an English label change and removes the
+control from an already loaded issue to check the missing-control diagnostic.
+
 `node scripts/flow-browser.mjs --inbox-details --manual-close --local-notes`
 uses a disposable project to exercise playback, block Details, the Close menu,
 and contextual note recommendations.
@@ -515,11 +535,15 @@ Factory preserves the request ID on a GitHub GraphQL query error and marks it
 retryable when GitHub CLI omits the HTTP status. Explicit authentication,
 permission, and validation responses remain terminal.
 
-For a PR repairing failed CI tests or typechecking, record the exact commands in
-`.github/pr-repair-tests.json`. `pnpm run test:pr-repair` runs them by name and
-stops at the first failure. CI runs this plan before broad verification while
-the manifest differs from the PR base; after it merges, unchanged plans are
-skipped. Use `node scripts/flow-browser.mjs --timers` for the isolated attempt
+For a PR repairing failed CI tests or typechecking, add one version 2 JSON file
+per check in `.github/pr-repair-tests/`. Record the check's `name`, the full
+`command` argument array in replay order, and a `source` object with string
+`runId`, `jobId`, `checkout`, and `tree` fields. Use the checkout and tree
+that ran in the failed job. Independent files let branches add checks without
+writing over one another's source details. `pnpm run test:pr-repair` runs checks
+by name and stops at the first failure. CI runs changed records before broad
+verification. The version 1 file remains readable for historic entries.
+Use `node scripts/flow-browser.mjs --timers` for the isolated attempt
 timer scenario. Repair workers reproduce the named failures, include necessary
 predecessor scenarios, and return after focused proof so GitHub can check the repaired commit.
 When the PR repair plan includes the `flow-integration` suite, its named repair
@@ -1363,7 +1387,7 @@ hold the browser event source unopened and execute the real startup scheduler.
 
 ### Interrupted flow recovery and pending CI
 
-Run the focused repair plan in `.github/pr-repair-tests.json` before full delivery
+Run the focused repair records in `.github/pr-repair-tests/` before full delivery
 checks. `flow-executor.check.mjs` covers pending checks without repeated source
 fetching, including the interval before GitHub registers required checks.
 `issue-ownership-ui.check.mjs` holds claim lookup open to verify that recovery

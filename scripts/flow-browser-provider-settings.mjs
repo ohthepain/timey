@@ -56,7 +56,7 @@ async function setupGuidanceScroll({ page, project, screenshot, id }) {
       'Setup keeps the scroll position while pending.'
     );
     release.resolve();
-    const install = card.getByRole('button', { name: 'Install ' + recipe.agent, exact: true });
+    const install = card.locator('[data-provider-action="install"]');
     await install.waitFor();
     assert.ok(
       Math.abs((await body.evaluate((element) => element.scrollTop)) - before) < 5,
@@ -67,7 +67,7 @@ async function setupGuidanceScroll({ page, project, screenshot, id }) {
     await page
       .context()
       .grantPermissions(['clipboard-read', 'clipboard-write'], { origin: new URL(page.url()).origin });
-    await card.getByRole('button', { name: 'Copy install command', exact: true }).click();
+    await card.locator('[data-provider-copy][data-command-kind="install"]').click();
     assert.equal(await page.evaluate(() => navigator.clipboard.readText()), recipe.command);
     await screenshot('factory-provider-install-' + id);
     await install.evaluate((element) => element.scrollIntoView({ block: 'center' }));
@@ -118,7 +118,7 @@ export async function providerSettingsBrowserChecks({ page, project, screenshot 
     await dialog.locator('[data-settings-page="issues"]').click();
     await page.locator('[data-unsaved-choice="cancel"]').click();
     assert.equal(await google.locator('input[name="enabled:google:pro"]').isChecked(), true);
-    await dialog.getByRole('button', { name: 'Save', exact: true }).click();
+    await dialog.locator('[data-settings-form] button[type="submit"]').click();
     await dialog.getByText('Saved', { exact: true }).waitFor();
     assert.deepEqual(readProviderConfig(project).providers.google.enabled, ['google:pro']);
     assert.deepEqual(
@@ -139,7 +139,7 @@ export async function providerSettingsBrowserChecks({ page, project, screenshot 
     assert.ok(bounds.x >= 0 && bounds.x + bounds.width <= 390);
     await screenshot('factory-providers-mobile');
     await page.setViewportSize({ width: 1440, height: 960 });
-    await dialog.getByRole('button', { name: 'Close Factory settings', exact: true }).click();
+    await dialog.locator('[data-settings-close]').click();
     await page.locator('#provider-status-banner').waitFor({ state: 'visible' });
     await page.waitForFunction(() =>
       document.getElementById('provider-status-banner').textContent.includes('warning at 5%')

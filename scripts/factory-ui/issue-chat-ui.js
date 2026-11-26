@@ -132,6 +132,7 @@ window.createSkillComposer = function createSkillComposer(form, draft, load) {
       const chip = document.createElement('button');
       chip.type = 'button';
       chip.className = 'skill-chip';
+      chip.dataset.skill = skill.name;
       chip.setAttribute('aria-label', `Remove ${skill.name} skill`);
       const icon = document.createElement('span');
       icon.textContent = skill.icon || '✦';
@@ -439,6 +440,7 @@ const issueChatUI = (() => {
     };
     stop = node('button', 'Stop');
     stop.type = 'button';
+    stop.dataset.promptStop = '';
     stop.setAttribute('aria-label', 'Stop response');
     stop.onclick = (event) => {
       if (event.isTrusted) void stopResponse();
@@ -691,12 +693,15 @@ const issueChatUI = (() => {
   function appendPromptControls(item, entry, activeTurn) {
     const edit = node('button', 'Edit');
     edit.type = 'button';
+    edit.dataset.promptControl = 'edit';
     edit.onclick = () => editPrompt(entry);
     const remove = node('button', 'Remove');
     remove.type = 'button';
+    remove.dataset.promptControl = 'remove';
     remove.onclick = () => void queueControl({ operation: 'remove', id: entry.id, revision: entry.revision });
     const steer = node('button', 'Steer');
     steer.type = 'button';
+    steer.dataset.promptControl = 'steer';
     steer.disabled = !activeTurn.canSteer;
     steer.title = steer.disabled ? 'No confirmed steerable turn is available.' : 'Send to this exact active turn';
     const turnId = activeTurn.turnId;
