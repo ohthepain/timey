@@ -1078,7 +1078,8 @@ try {
       assert.equal(await page.locator('#run-block').isEnabled(), true);
       await screenshot('storage-status-recovered');
     } finally {
-      await page.unroute('**/api/flow?**', projectStorage);
+      // Let in-flight Flow reads finish before removing the interceptor.
+      await page.unrouteAll({ behavior: 'wait' });
       await page.goto('about:blank');
     }
   });
