@@ -64,6 +64,9 @@ import { moveIssueBase, startingBranchUpstream, updateIssueBranch } from './flow
 import { runRetro } from './flow-retro.mjs';
 import { groupProofRequest, withGroupProof } from './flow-group-proof.mjs';
 import { sourceObservation } from './flow-group-scope.mjs';
+import { captureGroupVerification } from './flow-group-verification.mjs';
+import { writeDiscussionEvidence } from './discussion-evidence.mjs';
+import { reportedLiveProofRequirements } from './flow-live-proof.mjs';
 import { isInvestigation } from './investigation-records.mjs';
 import { investigationSnapshot, removeInvestigationSnapshot } from './investigation-snapshot.mjs';
 import { inquiryKinds, investigationOutputKinds } from './investigation-flow.mjs';
@@ -88,6 +91,7 @@ export function createFlowExecutor(service, options = {}) {
   const executeCommandImpl = options.execute || executeCommand;
   const attach = options.attach || attachIssueChat;
   const catalog = new BlockCatalog(service.root);
+  const { repair, ...runtimeOptions } = options;
   return {
     async run(ctx) {
       requireThat(!closed, 'The block executor is closed. Restart the server before running another block.');
@@ -147,7 +151,7 @@ export function createFlowExecutor(service, options = {}) {
         const runtime = {
           create,
           attach,
-          ...options,
+          ...runtimeOptions,
           execute,
           verifyCandidate,
           verifyWork,
@@ -179,9 +183,10 @@ export function createFlowExecutor(service, options = {}) {
           : await runReconciledCommand(scopedService, context, {
               ...runtime,
               repair:
-                options.repair ??
+                repair ??
                 ((error, round, record) =>
                   runMergeRepair(scopedService, context, owned, runtime, error, round, record)),
+              refreshGroupProof: (candidate) => runMergeGroupProof(scopedService, context, owned, runtime, candidate),
               resolveBranchConflicts: (paths, target, recovery) =>
                 runBranchConflictRepair(scopedService, context, owned, runtime, paths, target, recovery),
             });
@@ -510,7 +515,7 @@ function repairTurnEvidence(folder, repairTurn, logs = []) {
   return { path, label: 'Repair worker turn', sha256: digest(readFileSync(path)), repairTurn };
 }
 
-function trackModelTurns(ctx, options, retain, folder) {
+function trackModelTurns(ctx, options, retain, folder, groupVerification) {
   let turnId;
   let repairTurn;
   let evidence;
@@ -524,6 +529,7 @@ function trackModelTurns(ctx, options, retain, folder) {
         clientId,
         accepted(receipt) {
           turnId = receipt.turnId;
+          groupVerification?.accepted(receipt);
           if (options.repair || options.branchConflictTask) {
             repairTurn = { id: clientId, threadId: receipt.threadId, turnId };
             if (options.repair) options.repair.conversation.turnId = turnId;
@@ -581,6 +587,24 @@ function modelArtifacts(definition, output, workspace, response) {
   };
 }
 
+function retainGroupVerification(ctx, verification, retained, folder, output, proofIds) {
+  const manifest = modelManifest(output);
+  const { subIssueProof } = manifest;
+  retained.liveProofRequirements = reportedLiveProofRequirements(ctx, manifest, proofIds);
+  const file = Array.isArray(subIssueProof)
+    ? {
+        ...writeDiscussionEvidence(folder, 'sub-issue-proof.json', JSON.stringify(subIssueProof, null, 2)),
+        label: 'Sub-issue proof',
+      }
+    : undefined;
+  if (file) retained.artifacts.files.subIssueProof = file;
+  const index = verification.retain(file);
+  if (index) {
+    retained.evidence.push(index);
+    retained.groupProof = { ...index.groupVerification, file, verification: index };
+  }
+}
+
 function commandArtifacts(definition, result) {
   const values = {};
   const files = {};
@@ -601,6 +625,25 @@ function runMergeRepair(service, ctx, owned, options, error, round, record) {
   });
 }
 
+function runMergeGroupProof(service, ctx, owned, options, candidate) {
+  return runMergeModel(
+    service,
+    {
+      ...ctx,
+      block: { ...ctx.block, prompt: '', skill: null },
+      tools: undefined,
+      definition: {
+        ...ctx.definition,
+        artifacts: [],
+        prompt:
+          'Verify the specified sub-issues on the committed candidate in a read-only turn. Factory retains your response, proof rows and observed command output.',
+      },
+    },
+    owned,
+    { ...options, groupProofCandidate: candidate }
+  );
+}
+
 async function runMergeModel(service, ctx, owned, options) {
   try {
     return await runModel(service, ctx, owned, options);
@@ -610,8 +653,9 @@ async function runMergeModel(service, ctx, owned, options) {
   }
 }
 
-function modelRunSuffix({ repair }) {
-  return repair ? `-repair-${repair.round}` : '';
+function modelRunSuffix({ repair, groupProofCandidate }) {
+  if (repair) return `-repair-${repair.round}`;
+  return groupProofCandidate ? `-group-proof-${groupProofCandidate.head}` : '';
 }
 
 function recordModelMessage(service, ctx, options, threadId, kind, body) {
@@ -636,8 +680,13 @@ function recordModelMessage(service, ctx, options, threadId, kind, body) {
   }
 }
 
-function modelEvidenceDirectory(service, ctx, { repair }) {
-  return repair?.folder ?? evidenceDirectory(service, ctx);
+function modelEvidenceDirectory(service, ctx, options) {
+  if (options.repair) return options.repair.folder;
+  const folder = evidenceDirectory(service, ctx);
+  if (!options.groupProofCandidate) return folder;
+  const verification = join(folder, modelRunSuffix(options).slice(1));
+  mkdirSync(verification, { recursive: true, mode: 0o700 });
+  return verification;
 }
 
 async function runBranchConflictRepair(service, ctx, owned, options, paths, target, recovery) {
@@ -720,6 +769,7 @@ function modelCommandProgress(ctx) {
 
 function modelPrompt(ctx, options) {
   if (options.branchConflictTask) return options.branchConflictTask;
+  if (options.groupProofCandidate) return groupVerificationPrompt(ctx, options.groupProofCandidate);
   if (options.workBase)
     return blockInput(ctx, {
       workExecution: {
@@ -728,6 +778,10 @@ function modelPrompt(ctx, options) {
           'Review the existing issue changes against the current request. Remove changes that only served an earlier version of the request and preserve unrelated edits.',
         task: 'Implement the saved issue in this checkout. This Work invocation starts implementation of an already-created issue. Capture-only instructions to create an idle issue belong to its earlier creation and are satisfied; use the underlying requested change and its implementation acceptance criteria as the goal and proof. Preserve all product constraints, required human decisions, permission boundaries and later block guards. Issue creation controls and live idle-status checks are not prerequisites for this implementation. If the saved request contains only capture instructions and no underlying change, report the missing scope as human input.',
       },
+      ...(ctx.issue.issue_group && {
+        liveProofHandoff:
+          'Identify any attached sub-issue whose Requested proof requires a live external write. This Work assignment does not authorize that side effect. Complete independent work and report the exact live check in top-level flow-result liveProofRequirements as [{"id":"attached child ID","check":"required live behavior to observe"}]. Explain the missing authorization and tell the operator to use Factory live-proof on the committed candidate. A fixture result never satisfies live proof. Omit those children from the subIssueProof file unless reporting an actual failure distinct from the pending live check.',
+      }),
       workComparisonBase: options.workBase,
       destinationRevision: options.destinationRevision,
       formatAndAuditCommand: [
@@ -755,6 +809,18 @@ function modelPrompt(ctx, options) {
   });
 }
 
+function groupVerificationPrompt(ctx, { head, tree, proofIds, liveRows }) {
+  return blockInput(ctx, {
+    candidate: { head, tree },
+    focusedTests: upstreamBlocks(ctx.block, ctx.flow.blocks)
+      .filter(({ kind }) => kind === 'work')
+      .flatMap((block) => latestCurrentAttempt(block)?.result?.focusedTests ?? []),
+    subIssues: groupProofRequest(ctx.issue, proofIds)?.attached,
+    retainedLiveProof: liveRows,
+    task: 'Check the listed sub-issues on the committed candidate. Factory already validated the retained live evidence. Do not collect live proof or make any remote changes. If a listed sub-issue also requires a live side-effect check, return that obligation in flow-result liveProofRequirements as [{id, check}] and continue independent verification. Preserve source, tests, commits, the PR, and issue membership. Return a top-level subIssueProof array in flow-result with one {id, status, observation, nextAction?} row per listed issue. Use passed or failed based on actual observations. Report failed and unavailable checks as failures. Factory saves the rows and command output, so this turn requires no file writes.',
+  });
+}
+
 function workScope(ctx, workspace) {
   const { remote, branch } = deliveryTarget(ctx.flow);
   if (!remote || !branch) return { workBase: workspace.base };
@@ -766,6 +832,17 @@ function workScope(ctx, workspace) {
     return { workBase: workspace.base };
   }
   return { workBase: git(workspace.checkout, 'merge-base', 'HEAD', destinationRevision), destinationRevision };
+}
+
+function recordWorkLiveRequirements(ctx, output, requirements) {
+  if (ctx.block.kind !== 'work' || !ctx.issue.issue_group) return;
+  for (const requirement of reportedLiveProofRequirements(ctx, modelManifest(output)))
+    requirements.set(requirement.id, requirement);
+}
+
+function workLiveRequirements(ctx, requirements) {
+  if (ctx.block.kind !== 'work' || !ctx.issue.issue_group) return {};
+  return { liveProofReviewed: true, liveProofRequirements: [...requirements.values()] };
 }
 
 async function checkWorkResponse(ctx, options, workspace, folder, round, output, prompt) {
@@ -936,44 +1013,7 @@ function modelToolRegistry(outputExecution, ctx) {
   return outputExecution?.tools ?? ctx.tools;
 }
 
-async function runModel(service, ctx, owned, options) {
-  ctx = withGroupProof(ctx);
-  ctx = {
-    ...ctx,
-    block: { ...ctx.block, skill: executionBlockSkill(ctx.block, ctx.definition, ctx.flow.executionSettings) },
-  };
-  requireThat(
-    ctx.block.kind !== 'prototype' || ctx.block.prompt?.trim(),
-    'Describe the prototype to create or run before starting this block.'
-  );
-  requireThat(
-    ctx.block.kind !== 'edit' || ctx.block.edits?.some((edit) => edit.enabled),
-    'Enable at least one edit before starting this block.'
-  );
-  assertSharedBlockClaim(service, ctx);
-  const workspace = ctx.snapshot || (await workspaceFor(service, ctx));
-  const outputExecution = investigationOutputExecution(service, ctx, workspace);
-  const tools = modelToolRegistry(outputExecution, ctx);
-  const sandbox = workspace.temporary
-    ? 'workspace-write'
-    : readOnlyBlocks.has(ctx.block.kind)
-      ? 'read-only'
-      : 'workspace-write';
-  if (sandbox === 'workspace-write' && !workspace.temporary) guardBlock(service, ctx, 'implement', workspace.base);
-  const state = conversationState(service.root, ctx.issue.id);
-  const savedBlock = state.flowBlocks?.[ctx.block.id];
-  requireThat(
-    !savedBlock?.startup || savedBlock.startup.status === 'ready',
-    'Chat startup is uncertain. Reconcile the original connection before continuing.'
-  );
-  const basis = modelConversationBasis(ctx, tools);
-  const { previous, recover, binding } = modelConversationBinding(service, ctx, state, savedBlock, basis);
-  service.issueChats?.release(ctx.issue.id);
-  const folder = modelEvidenceDirectory(service, ctx, options);
-  const source = retainSourceIssueEvidence(service.root, ctx.issue.source_issue, folder, ctx.issue.source_attempt);
-  if (source) ctx = { ...ctx, sourceEvidence: source.promptValue };
-  const outputPath = join(folder, 'output.txt');
-  writeFileSync(outputPath, '', { mode: 0o600 });
+function modelNotifications(service, ctx, owned, outputPath, groupVerification) {
   let liveText = '';
   let finished = false;
   const progress = modelCommandProgress(ctx);
@@ -982,14 +1022,21 @@ async function runModel(service, ctx, owned, options) {
     rejectInput = reject;
   });
   inputRequired.catch(() => {});
-  const settings = executionModels(service, ctx);
-  const connection = options.create({
-    root: service.root,
-    ...(ctx.block.kind === 'sol' ? {} : settings),
-    threadId: binding.threadId,
-    experimentalApi: Boolean(tools),
+  return {
+    progress,
+    inputRequired,
+    get liveText() {
+      return liveText;
+    },
+    get finished() {
+      return finished;
+    },
+    close() {
+      finished = true;
+    },
     onEvent(message) {
       if (finished) return;
+      groupVerification?.event(message);
       ctx.onEvent?.(message);
       const params = message.params || {};
       if (message.method === 'item/agentMessage/delta') {
@@ -1012,12 +1059,70 @@ async function runModel(service, ctx, owned, options) {
       }
       service.store?.event?.(message);
     },
+  };
+}
+
+async function runModel(service, ctx, owned, options) {
+  ctx = withGroupProof(ctx);
+  ctx = {
+    ...ctx,
+    block: {
+      ...ctx.block,
+      skill: options.groupProofCandidate
+        ? null
+        : executionBlockSkill(ctx.block, ctx.definition, ctx.flow.executionSettings),
+    },
+  };
+  requireThat(
+    ctx.block.kind !== 'prototype' || ctx.block.prompt?.trim(),
+    'Describe the prototype to create or run before starting this block.'
+  );
+  requireThat(
+    ctx.block.kind !== 'edit' || ctx.block.edits?.some((edit) => edit.enabled),
+    'Enable at least one edit before starting this block.'
+  );
+  assertSharedBlockClaim(service, ctx);
+  const workspace = ctx.snapshot || (await workspaceFor(service, ctx));
+  const outputExecution = investigationOutputExecution(service, ctx, workspace);
+  const tools = modelToolRegistry(outputExecution, ctx);
+  const sandbox = workspace.temporary
+    ? 'workspace-write'
+    : options.groupProofCandidate || readOnlyBlocks.has(ctx.block.kind)
+      ? 'read-only'
+      : 'workspace-write';
+  if (sandbox === 'workspace-write' && !workspace.temporary) guardBlock(service, ctx, 'implement', workspace.base);
+  const state = conversationState(service.root, ctx.issue.id);
+  const savedBlock = state.flowBlocks?.[ctx.block.id];
+  requireThat(
+    !savedBlock?.startup || savedBlock.startup.status === 'ready',
+    'Chat startup is uncertain. Reconcile the original connection before continuing.'
+  );
+  const basis = modelConversationBasis(ctx, tools);
+  const { previous, recover, binding } = modelConversationBinding(service, ctx, state, savedBlock, basis);
+  service.issueChats?.release(ctx.issue.id);
+  const folder = modelEvidenceDirectory(service, ctx, options);
+  const groupVerification =
+    options.groupProofCandidate && captureGroupVerification(folder, options.groupProofCandidate);
+  const source = retainSourceIssueEvidence(service.root, ctx.issue.source_issue, folder, ctx.issue.source_attempt);
+  if (source) ctx = { ...ctx, sourceEvidence: source.promptValue };
+  const outputPath = join(folder, 'output.txt');
+  writeFileSync(outputPath, '', { mode: 0o600 });
+  const notifications = modelNotifications(service, ctx, owned, outputPath, groupVerification);
+  const { progress, inputRequired } = notifications;
+  const settings = executionModels(service, ctx);
+  const connection = options.create({
+    root: service.root,
+    ...(ctx.block.kind === 'sol' ? {} : settings),
+    threadId: binding.threadId,
+    experimentalApi: Boolean(tools),
+    onEvent: notifications.onEvent,
   });
   owned.connection = connection;
   const skills = selectedSkills(
     await listAvailableSkills(connection, workspace.temporary ? service.root : workspace.checkout),
     ctx.block.skill ? [ctx.block.skill] : []
   );
+  const liveRequirements = new Map();
   let rounds = 1;
   if (ctx.block.kind === 'sol') {
     rounds = ctx.block.iterations;
@@ -1048,7 +1153,7 @@ async function runModel(service, ctx, owned, options) {
   let workCheck;
   let repairPrompt;
   let threadId;
-  const turns = trackModelTurns(ctx, options, retain, folder);
+  const turns = trackModelTurns(ctx, options, retain, folder, groupVerification);
   let turnDispatched = false;
   let terminalObserved = false;
   let rejectStopped;
@@ -1071,7 +1176,7 @@ async function runModel(service, ctx, owned, options) {
     }
     Promise.resolve(connection.interrupt(threadId)).then(
       () => {
-        if (!finished) interruptTimer = setTimeout(() => rejectStopped(stopError()), 10000);
+        if (!notifications.finished) interruptTimer = setTimeout(() => rejectStopped(stopError()), 10000);
       },
       (error) => {
         ctx.onProgress('Interruption is uncertain. ' + error.message);
@@ -1103,6 +1208,7 @@ async function runModel(service, ctx, owned, options) {
       skill: ctx.block.skill || null,
     });
     recordModelMessage(service, ctx, options, threadId, 'request', prompt);
+    groupVerification?.begin(threadId);
     for (let round = 1; round <= rounds; round++) {
       ctx.signal.throwIfAborted();
       progress.begin(
@@ -1134,6 +1240,7 @@ async function runModel(service, ctx, owned, options) {
       ctx.signal.throwIfAborted();
       requireThat(typeof text === 'string' && text.trim(), 'The block returned no result. Reconcile its saved turn.');
       outputs.push(redactValue(text));
+      recordWorkLiveRequirements(ctx, outputs.at(-1), liveRequirements);
       writeFileSync(outputPath, outputs.join('\n\n'), { mode: 0o600 });
       const check = await checkWorkResponse(
         ctx,
@@ -1155,6 +1262,15 @@ async function runModel(service, ctx, owned, options) {
     retain({ status: 'idle' });
     const response = { path: outputPath, label: 'Block response', sha256: digest(readFileSync(outputPath)) };
     const retained = modelArtifacts(ctx.definition, outputs.at(-1), workspace, response);
+    if (groupVerification)
+      retainGroupVerification(
+        ctx,
+        groupVerification,
+        retained,
+        folder,
+        outputs.at(-1),
+        options.groupProofCandidate.proofIds
+      );
     retained.evidence.push(...turns.evidence(outputs.at(-1), workspace, retained.artifacts.files.log));
     outputExecution?.complete(modelManifest(outputs.at(-1)), retained);
     const head = git(workspace.checkout, 'rev-parse', 'HEAD');
@@ -1183,46 +1299,70 @@ async function runModel(service, ctx, owned, options) {
         commit: head,
         uncommitted: candidate.uncommitted,
         ...workFocusedResult(ctx.block.kind, outputs.at(-1), workspace.checkout, head),
+        ...workLiveRequirements(ctx, liveRequirements),
       },
       ...(workspace.temporary ? {} : { workspace }),
     };
   } catch (error) {
-    if (
-      turnDispatched &&
-      !error.turnRejected &&
-      !terminalObserved &&
-      !['failed', 'interrupted', 'completed'].includes(error.terminalStatus)
-    )
-      error.uncertain = true;
-    if (error.input) {
-      const requestPath = join(folder, 'input-required.json');
-      writeJson(requestPath, error.input);
-      error.uncertain = true;
-      await connection
-        .interrupt(threadId)
-        .catch((failure) => ctx.onProgress('Interruption is uncertain. ' + failure.message));
-      error.evidence = [{ path: requestPath, label: 'Provider input required' }];
-    }
-    const partial = redactValue(error.partialText || outputs.join('\n\n') || liveText);
-    if (partial) writeFileSync(outputPath, partial, { mode: 0o600 });
-    retain({
-      status:
-        error.turnRejected || ['interrupted', 'completed', 'failed'].includes(error.terminalStatus) || terminalObserved
-          ? 'idle'
-          : 'attention',
+    await retainModelFailure(error, ctx, {
+      turnDispatched,
+      terminalObserved,
+      connection,
+      threadId,
+      folder,
+      outputPath,
+      outputs,
+      liveText: notifications.liveText,
+      retain,
+      failedChecks,
+      turns,
+      groupVerification,
     });
-    error.evidence = [
-      ...failedChecks,
-      ...turns.evidence(),
-      ...(error.evidence || []),
-      ...(partial ? [{ path: outputPath, label: 'Partial block response' }] : []),
-    ];
     throw error;
   } finally {
-    finished = true;
+    notifications.close();
     clearTimeout(interruptTimer);
     ctx.signal.removeEventListener('abort', interrupt);
   }
+}
+
+async function retainModelFailure(error, ctx, activity) {
+  const {
+    turnDispatched,
+    terminalObserved,
+    connection,
+    threadId,
+    folder,
+    outputPath,
+    outputs,
+    liveText,
+    retain,
+    failedChecks,
+    turns,
+    groupVerification,
+  } = activity;
+  const terminal =
+    error.turnRejected || terminalObserved || ['failed', 'interrupted', 'completed'].includes(error.terminalStatus);
+  if (turnDispatched && !terminal) error.uncertain = true;
+  if (error.input) {
+    const requestPath = join(folder, 'input-required.json');
+    writeJson(requestPath, error.input);
+    error.uncertain = true;
+    await connection
+      .interrupt(threadId)
+      .catch((failure) => ctx.onProgress('Interruption is uncertain. ' + failure.message));
+    error.evidence = [{ path: requestPath, label: 'Provider input required' }];
+  }
+  const partial = redactValue(error.partialText || outputs.join('\n\n') || liveText);
+  if (partial) writeFileSync(outputPath, partial, { mode: 0o600 });
+  retain({ status: terminal ? 'idle' : 'attention' });
+  error.evidence = [
+    ...failedChecks,
+    ...turns.evidence(),
+    ...(error.evidence || []),
+    ...(partial ? [{ path: outputPath, label: 'Partial block response' }] : []),
+    ...[groupVerification?.retain()].filter(Boolean),
+  ];
 }
 
 async function runReconciledCommand(service, ctx, options) {

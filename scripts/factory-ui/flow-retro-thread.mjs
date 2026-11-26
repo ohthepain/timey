@@ -20,7 +20,9 @@ const publicItems = new Set([
 
 export function exportRetroThread(id, thread, attempts = [], unavailableReason = null) {
   const linked = attempts.filter(
-    (attempt) => attempt.result?.threadId === id || repairTurns(attempt).some((repair) => repair.threadId === id)
+    (attempt) =>
+      attempt.result?.threadId === id ||
+      [...repairTurns(attempt), ...groupVerificationTurns(attempt)].some(({ threadId }) => threadId === id)
   );
   const base = { id, attemptIds: linked.map((attempt) => attempt.id) };
   if (!Array.isArray(thread?.turns)) return unavailableThread(base, unavailableReason);
@@ -45,11 +47,15 @@ export function repairTurns(attempt) {
   return (attempt.evidence ?? []).flatMap(({ repairTurn }) => (repairTurn ? [repairTurn] : []));
 }
 
+export function groupVerificationTurns(attempt) {
+  return (attempt.evidence ?? []).flatMap(({ groupVerification }) => (groupVerification ? [groupVerification] : []));
+}
+
 function exportTurn(turn, sequence, linked, threadId) {
   const repairsForTurn = (attempt) =>
     repairTurns(attempt).filter((repair) => repair.threadId === threadId && repair.turnId === turn.id);
   const attemptIds = linked
-    .filter((attempt) => matchesTurn(attempt, turn.id) || repairsForTurn(attempt).length)
+    .filter((attempt) => turn.id && recordedTurnIds(attempt, threadId).includes(turn.id))
     .map((attempt) => attempt.id);
   const repairAttemptIds = linked.flatMap((attempt) => repairsForTurn(attempt).map(({ id }) => id));
   const items = (turn.items || []).map(exportItem);
@@ -65,9 +71,11 @@ function exportTurn(turn, sequence, linked, threadId) {
   };
 }
 
-function matchesTurn(attempt, turnId) {
-  const savedId = attempt.result?.turnId || attempt.resultTurnId;
-  return Boolean(turnId) && savedId === turnId;
+function recordedTurnIds(attempt, threadId) {
+  const proofTurns = [...repairTurns(attempt), ...groupVerificationTurns(attempt)];
+  const ids = proofTurns.filter((turn) => turn.threadId === threadId).map(({ turnId }) => turnId);
+  if (attempt.result?.threadId === threadId) ids.push(attempt.result.turnId || attempt.resultTurnId);
+  return ids;
 }
 
 function permissionAvailability(items) {
