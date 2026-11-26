@@ -629,7 +629,7 @@ export function createFactoryServer(service, options = {}) {
     options.projectAccountOrigin ?? process.env.FACTORY_PROJECT_ACCOUNT_ORIGIN
   );
   service.serverControl = serverControl(service, options.restart);
-  service.flowChanges = createFlowChanges(service.root);
+  service.flowChanges = createFlowChanges(service.root, options.onSourceFileChange);
   service.sharedChatToolOptions = { flows: () => flows(service), home: () => projectHome(service) };
   const token = randomBytes(32).toString('hex');
   const server = createServer(async (request, response) => {

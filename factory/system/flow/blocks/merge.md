@@ -54,6 +54,10 @@ record focused commands and results, and return the committed repair promptly
 so Factory can push it for GitHub's required checks. Avoid duplicate full-suite runs and
 unrelated cleanup. Merge promptly once required checks and approvals pass.
 
+When a focused browser scenario writes an observation JSON with a source commit,
+source tree, and environment, return it in `files.result`. Run the check on the
+clean, committed repair candidate.
+
 Keep all work inside the saved issue checkout. Preserve unrelated changes. Report actual evidence and uncertainty. Do not turn advice into execution.
 
 Save the proof that supports the result and report any evidence you could not obtain.

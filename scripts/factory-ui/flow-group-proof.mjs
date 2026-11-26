@@ -81,6 +81,8 @@ export function groupProofRows(flow, tree, block = {}, root) {
   return new Map(groupProofAttempts(flow, tree, block).flatMap((attempt) => groupAttemptRows(attempt, tree, root)));
 }
 
+export { readProof as readSubIssueProof };
+
 export function requireGroupProof(issue, flow, candidateTree, block, root) {
   const proofs = groupProofRows(flow, candidateTree, block, root);
   const children = groupChildren(issue);

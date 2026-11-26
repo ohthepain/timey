@@ -1,3 +1,4 @@
+import { traceWorkMarkdown } from './work-markdown-warning-proof.mjs';
 import { fixtureRoute } from './flow-browser-routes.mjs';
 import {
   masterDragBrowserChecks,
@@ -243,6 +244,7 @@ const {
   '--polling': pollingCheck,
   '--capture-folder-issue': captureFolderIssueCheck,
   '--starting-point': startingPointCheck,
+  '--edit-destination': editDestinationCheck,
   '--closed-destination': closedDestinationCheck,
   '--folder-workspace-grouping': folderWorkspaceGroupingCheck,
   '--tab-source': tabSourceCheck,
@@ -261,6 +263,8 @@ const {
   '--run-extra-work': runExtraWorkCheck,
   '--update-worktree': updateWorktreeCheck,
   '--publish-preview': publishPreviewCheck,
+  '--issue-playback': issuePlaybackCheck,
+  '--issue-header-close': issueHeaderCloseCheck,
   '--timers': timersCheck,
   '--proposals': proposalsCheck,
 } = flowBrowserScenarioNames;
@@ -279,7 +283,8 @@ const logs = {
 };
 const playbackIssueId = '20261116-playback-fixture';
 const playbackWork = Promise.withResolvers();
-const holdFirstWork = (number, block) => number === 1 && block.kind !== 'cleanup';
+const holdFirstWork = (number, block, issue) =>
+  number === 1 && block.kind !== 'cleanup' && issue.id !== playbackIssueId;
 let firstWorkProgress;
 const service = new FactoryUI(project);
 service.projectDiscussOptions = { skills: async () => [] };
@@ -300,7 +305,7 @@ const executor = {
     onStep('pnpm test');
     onProgress('Fixture output for explicit attempt ' + number + '.\n');
     if (issue.id === playbackIssueId && block.kind === 'work') await playbackWork.promise;
-    if (holdFirstWork(number, block)) {
+    if (holdFirstWork(number, block, issue)) {
       firstWorkProgress = { onProgress, onStep };
       await new Promise((_, reject) => {
         if (signal.aborted) return reject(Error('Stopped by the user.'));
@@ -365,7 +370,12 @@ service.flows = createIssueFlows(service, {
     return { artifacts: { values: fields }, summary: fields.goal };
   },
 });
-const server = createFactoryServer(service);
+const workOverrideWatcherEvents = [];
+const server = createFactoryServer(service, {
+  onSourceFileChange(name) {
+    if (name === 'flow/overrides/blocks/work.md') workOverrideWatcherEvents.push({ at: Date.now() });
+  },
+});
 const require = createRequire(import.meta.url);
 const playwrightRequire = createRequire(require.resolve('@playwright/cli/package.json'));
 const { chromium } = playwrightRequire('playwright');
@@ -1570,7 +1580,9 @@ try {
     assert.equal(logs.execution.length, 0);
     await screenshot('starting-branch-selected');
   });
-  await check('Issue title and Destination edits update the saved flow through its controls', async () => {
+  await check(editDestinationCheck, async () => {
+    await ensureBrowserFolderIssue();
+    const initial = await view();
     const original = (await view()).issue.title;
     const rename = async (title) => {
       await page.getByRole('button', { name: 'Rename issue' }).click();
@@ -1585,21 +1597,24 @@ try {
       'The heading did not show the saved issue title.'
     );
     await rename(original);
-    const destination = page.getByRole('button', { name: 'Choose destination branch' });
+    const terminal = page.locator('#graph-scroll [data-node="__destination"]');
+    await terminal.waitFor();
+    const destination = terminal.locator('[data-destination-open]');
+    assert.equal(await destination.count(), 1);
     const select = page.locator('#destination-branch');
     await destination.click();
     await select.waitFor();
     assert.equal(await select.locator('option').first().textContent(), 'Follow starting branch');
     await select.selectOption('older');
-    await page.getByRole('button', { name: 'Save destination' }).click();
+    await page.locator('#save-destination').click();
     await poll(view, (value) => value.destination.branch === 'older', 'The destination was not pinned.');
-    assert.equal((await view()).flow.startingPoint.ref, 'refs/heads/recent');
+    assert.equal((await view()).flow.startingPoint.ref, initial.flow.startingPoint.ref);
     await destination.click();
     await select.selectOption('');
-    await page.getByRole('button', { name: 'Save destination' }).click();
+    await page.locator('#save-destination').click();
     await poll(
       view,
-      (value) => value.destination.follows && value.destination.branch === 'recent',
+      (value) => value.destination.follows && value.destination.branch === initial.destination.branch,
       'Destination did not resume following Starting point.'
     );
   });
@@ -2035,6 +2050,7 @@ try {
   }
   let extraWorkId;
   await check(workMarkdownCheck, async () => {
+    await ensureBrowserFolderIssue();
     const id = await addExtraWork();
     extraWorkId = id;
     await block(id);
@@ -2066,18 +2082,37 @@ try {
     const extension = join(project, 'user/flow/extensions/blocks/work.md');
     mkdirSync(dirname(extension), { recursive: true });
     writeFileSync(extension, '## Local evidence\n\nKeep the command output.\n');
-    writeFileSync(
-      workOverride,
-      '# Project Work\n\nReady when you are.\n\n## Evidence to retain\n\n- Command output\n- Saved artifact\n\n# Skill list\n\n- arena\n- how\n'
-    );
-    assert.equal(await prose.count(), 0);
-    await poll(
-      () => skillOptions.allTextContents(),
-      (labels) => labels.includes('how') && !labels.includes('poteto-mode'),
-      'Skill suggestions did not reload.'
-    );
     const description = card.locator('.block-description');
-    await description.filter({ hasText: /^Ready when you are\.$/ }).waitFor();
+    const trace = (file, steps) =>
+      traceWorkMarkdown(
+        page,
+        join(output, file),
+        {
+          revision: candidate.revision,
+          tree: candidate.tree,
+          clean: candidate.clean,
+          command: ['node', 'scripts/flow-browser.mjs', ...process.argv.slice(2)],
+          predecessors: results.map(({ name }) => name),
+        },
+        workOverrideWatcherEvents,
+        steps
+      );
+    await trace('work-markdown-valid-proof.json', {
+      write: () =>
+        writeFileSync(
+          workOverride,
+          '# Project Work\n\nReady when you are.\n\n## Evidence to retain\n\n- Command output\n- Saved artifact\n\n# Skill list\n\n- arena\n- how\n'
+        ),
+      assertRendered: async () => {
+        assert.equal(await prose.count(), 0);
+        await poll(
+          () => skillOptions.allTextContents(),
+          (labels) => labels.includes('how') && !labels.includes('poteto-mode'),
+          'Skill suggestions did not reload.'
+        );
+        await description.filter({ hasText: /^Ready when you are\.$/ }).waitFor();
+      },
+    });
     assert.equal(await description.innerText(), 'Ready when you are.');
     assert.deepEqual(await layout(), originalLayout);
     assert.equal(await card.locator('.block-label').innerText(), title);
@@ -2085,8 +2120,11 @@ try {
     assert.equal(await draft.inputValue(), 'Unsaved Work draft');
     assert.equal(await page.locator('[data-action="start"]').count(), 1);
     assert.equal(logs.execution.length, 0);
-    writeFileSync(workOverride, '# Empty override\n');
-    await page.locator('#view-source-status').filter({ hasText: 'needs a paragraph' }).waitFor();
+    await trace('work-markdown-warning-proof.json', {
+      invalid: true,
+      write: () => writeFileSync(workOverride, '# Empty override\n'),
+      assertRendered: () => page.locator('#view-source-status').filter({ hasText: 'needs a paragraph' }).waitFor(),
+    });
     assert.equal(await prose.count(), 0);
     rmSync(workOverride);
     rmSync(extension);
@@ -2486,10 +2524,12 @@ try {
     saved.destination = destination;
     await service.flows.store.save(saved, saved.revision);
   });
-  await check('Issue Start and Resume respect No new actions and run Update Branch without confirmation', async () => {
+  await check(issuePlaybackCheck, async () => {
+    await ensureBrowserFolderIssue();
     service.flows.executor.close();
     service.flows.executor = executor;
     const previousIssueId = issueId;
+    const previousTitle = service.flows.selected(previousIssueId).title;
     await importBrowserIssue(
       project,
       playbackIssueId,
@@ -2517,7 +2557,7 @@ try {
       'Work did not start.'
     );
     await page.locator(`#open-issues [data-issue="${previousIssueId}"]`).click();
-    await page.locator('#issue-title').filter({ hasText: 'A renamed issue' }).waitFor();
+    await page.locator('#issue-title').filter({ hasText: previousTitle }).waitFor();
     assert.equal((await view()).autoplay.mode, 'playing');
     await page.locator(`#open-issues [data-issue="${issueId}"]`).click();
     await page.getByRole('button', { name: 'Pause issue' }).click();
@@ -2550,6 +2590,7 @@ try {
     await block('request');
     await page.locator('#issue-results-message').filter({ hasText: 'Flow complete' }).waitFor();
     assert.equal(await page.getByRole('button', { name: 'Close issue' }).textContent(), 'Close');
+    assert.equal(await page.locator('#close-with-reason').isVisible(), false);
     await page.getByRole('button', { name: 'Close issue' }).click();
     const closeDialog = page.getByRole('dialog', { name: 'Close this issue' });
     await closeDialog.waitFor();
@@ -2563,27 +2604,38 @@ try {
     assert.equal((await view()).flow.blocks.find(({ id }) => id === sync.id).attempts.at(-1).status, 'completed');
     assert.deepEqual(logs.pageErrors, []);
   });
-  await check('The issue header closes with a reason and runs only Cleanup by default', async () => {
-    const close = page.getByRole('button', { name: 'Close issue', exact: true });
-    assert.equal(await page.locator('#worktree-hint + #close-with-reason').count(), 1);
+  await check(issueHeaderCloseCheck, async () => {
+    const closureIssueId = '20261116-header-close-fixture';
+    await writeBrowserIssue(project, {
+      id: closureIssueId,
+      title: 'Header closure fixture',
+      body: 'Close this open issue with a reason.',
+    });
+    await page.goto('/?issue=' + closureIssueId);
+    await page.locator('#issue-playback[data-playback-mode="start"]').waitFor();
+    const close = page.locator('#environment #worktree-hint + #close-with-reason');
+    await close.waitFor();
+    assert.equal(await close.count(), 1);
     const dialog = page.getByRole('dialog', { name: 'Close this issue' });
     const executionCount = logs.execution.length;
+    const decisionCount = logs.requests.filter(({ path }) => path === '/api/issue-decision').length;
     await close.click();
     await dialog.getByLabel('Reason', { exact: true }).locator('option[value="fixed"]').waitFor({ state: 'attached' });
     await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
-    assert.equal(logs.requests.filter(({ path }) => path === '/api/issue-decision').length, 0);
+    assert.equal(logs.requests.filter(({ path }) => path === '/api/issue-decision').length, decisionCount);
     await close.click();
     await dialog.getByLabel('Reason', { exact: true }).selectOption('duplicate');
     await dialog.getByLabel('Details or related issue (optional)').fill('Already covered by issue #44');
     await dialog.getByRole('button', { name: 'Close issue', exact: true }).click();
     await dialog.waitFor({ state: 'hidden' });
     await close.waitFor({ state: 'hidden' });
-    await poll(() => !service.flows.closureBusy(issueId), Boolean, 'Close did not finish Cleanup.');
+    await poll(() => !service.flows.closureBusy(closureIssueId), Boolean, 'Close did not finish Cleanup.');
+    const saved = service.flows.selected(closureIssueId);
+    const cleanup = service.flows.read(saved).blocks.find(({ kind }) => kind === 'cleanup');
     assert.deepEqual(
-      logs.execution.slice(executionCount).map(({ blockId }) => blockId),
-      [service.flows.read(service.flows.selected(issueId)).blocks.find(({ kind }) => kind === 'cleanup').id]
+      logs.execution.slice(executionCount).map(({ blockId, issueId }) => [issueId, blockId]),
+      [[closureIssueId, cleanup.id]]
     );
-    const saved = service.flows.selected(issueId);
     assert.equal(saved.location, 'closed');
     assert.equal(saved.closure.reason, 'duplicate');
     assert.equal(saved.closure.details, 'Already covered by issue #44');

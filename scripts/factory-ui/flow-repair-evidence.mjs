@@ -1,7 +1,53 @@
 import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { join, sep } from 'node:path';
+import { z } from 'zod';
 import { digest, requireThat, writeJson } from './common.mjs';
 import { redactValue } from './activity.mjs';
+import { evidencePath } from './stores/evidence.mjs';
+
+function readEvidence(root, file) {
+  if (!file) return;
+  try {
+    const bytes = readFileSync(evidencePath(root, file.path, file.sha256));
+    if (digest(bytes) === file.sha256) return JSON.parse(bytes);
+  } catch {
+    // Historical records may be unavailable on this runner.
+  }
+}
+
+const repairBrowserObservation = z.object({
+  sourceCommit: z.string(),
+  sourceTree: z.string().optional(),
+  sourceDiff: z.literal(''),
+  sourceClean: z.literal(true).optional(),
+  sourceEnvironment: z.record(z.string(), z.string()).optional(),
+  fixture: z.string().min(1),
+  scenarios: z.array(z.object({ result: z.object({ head: z.string().min(1), revision: z.string().min(1) }) })).min(1),
+});
+
+export function repairBrowserProof(file, { commit, tree }, { attemptId, round }) {
+  const parsed = repairBrowserObservation.safeParse(readEvidence(null, file));
+  if (!parsed.success) return;
+  const { sourceCommit, sourceTree = tree, sourceEnvironment, fixture } = parsed.data;
+  if (sourceCommit === commit && sourceTree === tree)
+    return { attemptId, round, sourceCommit, sourceTree, environment: { ...sourceEnvironment, fixture }, file };
+}
+
+function matchingRepairBrowserProof(root, { sourceCommit, sourceTree, file } = {}, { commit, tree }) {
+  return sourceCommit === commit && sourceTree === tree && readEvidence(root, file);
+}
+
+export function priorRepairBrowserProof(root, attempts, candidate) {
+  return (attempts ?? [])
+    .flatMap(({ evidence = [] }) => evidence.filter(({ label }) => label === 'Merge repair index'))
+    .flatMap((index) => readEvidence(root, index)?.attempts ?? [])
+    .findLast(({ browserProof }) => matchingRepairBrowserProof(root, browserProof, candidate))?.browserProof;
+}
+
+export function receiptRepairBrowserProof(root, receipt, candidate) {
+  const proof = readEvidence(root, receipt)?.repairBrowserProof;
+  if (matchingRepairBrowserProof(root, proof, candidate)) return proof;
+}
 
 export function mergeRepairHistory(folder, attemptId, log) {
   const attempts = [];
@@ -45,6 +91,7 @@ export function mergeRepairHistory(folder, attemptId, log) {
           record.failure.checks = outcome.failedChecks;
           record.candidate = outcome.candidate;
           record.repairedRevision = outcome.repairedRevision;
+          record.browserProof = outcome.browserProof;
           record.result = retainRepairFile(
             directory,
             'result.json',
@@ -62,6 +109,11 @@ export function mergeRepairHistory(folder, attemptId, log) {
     },
     get hasRepairs() {
       return attempts.length > 0;
+    },
+    browserProof(candidate) {
+      return attempts
+        .map(({ browserProof }) => browserProof)
+        .findLast((proof) => matchingRepairBrowserProof(null, proof, candidate));
     },
     validateAttachments,
     evidence() {

@@ -34,7 +34,7 @@
       approve.disabled = true;
       dialog.showModal();
       try {
-        const { closureReasons, sharedQueue, subIssues, ...decision } = await getContext();
+        const { closureReasons, sharedQueue, subIssues, groupProof, ...decision } = await getContext();
         if (!showing(session)) return;
         session.decision = decision;
         if (decision.cleanupOnly) {
@@ -42,7 +42,7 @@
           approve.textContent = 'Run Cleanup';
         }
         initializeFields(session, closureReasons, sharedQueue);
-        session.heading.insertAdjacentHTML('afterend', subIssueSummary(subIssues));
+        session.heading.insertAdjacentHTML('afterend', subIssueSummary(subIssues, groupProof));
       } catch (failure) {
         showError(session, failure);
       } finally {
@@ -195,16 +195,33 @@
   };
 
   const sharedExplanation = 'The factory prepares a queue PR for the report. Local work is preserved.';
+  const verdictLabels = { missing: 'Missing', failed: 'Failed', passed: 'Passed' };
 
-  function subIssueSummary(subIssues) {
+  function subIssueSummary(subIssues, groupProof) {
     if (!subIssues?.length) return '';
-    const rows = subIssues
-      .map(({ title, number, removed }) => {
-        const label = number == null ? title : '#' + number + ' ' + title;
-        return `<li>${esc(label)} · ${removed ? 'Removed' : 'Attached'}</li>`;
-      })
-      .join('');
-    return `<section aria-labelledby="closure-sub-issues"><h3 id="closure-sub-issues">Sub-issues</h3><p>Closing as Fixed also closes the attached sub-issues.</p><ul>${rows}</ul></section>`;
+    const proof = new Map(groupProof?.children.map((row) => [row.id, row]));
+    const rows = subIssues.map((child) => subIssueRow(child, proof.get(child.id))).join('');
+    return `<section aria-labelledby="closure-sub-issues"><h3 id="closure-sub-issues">Sub-issues</h3><p>Closing as Fixed also closes the attached sub-issues.</p>${candidateTree(groupProof)}<ul>${rows}</ul></section>`;
+  }
+
+  function candidateTree(groupProof) {
+    if (!groupProof) return '';
+    return `<p>Candidate tree <code>${esc(groupProof.candidate.tree || 'Unavailable')}</code></p>`;
+  }
+
+  function subIssueRow({ title, number, removed }, proof) {
+    const label = number == null ? title : '#' + number + ' ' + title;
+    return `<li>${esc(label)} · ${removed ? 'Removed' : 'Attached'}${proof ? subIssueProof(proof) : ''}</li>`;
+  }
+
+  function proofVerdict({ status, tree } = {}) {
+    const label = verdictLabels[status] ?? verdictLabels.missing;
+    return tree ? `${label} · Proof tree <code>${esc(tree)}</code>` : label;
+  }
+
+  function subIssueProof({ verdict, applicability, outstandingProof }) {
+    const outstanding = outstandingProof ? `<p>Outstanding proof · ${esc(outstandingProof)}</p>` : '';
+    return `<p>Latest verdict · ${proofVerdict(verdict ?? undefined)}</p><p>${esc(applicability)}</p>${outstanding}`;
   }
 
   function reasonOption(choice) {

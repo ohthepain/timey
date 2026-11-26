@@ -25,7 +25,7 @@ function commonGitDirectory(git) {
   }
 }
 
-export function createFlowChanges(root) {
+export function createFlowChanges(root, onSourceFileChange) {
   const streams = new Map();
   const watchers = new Map();
   const pending = new Set();
@@ -102,7 +102,9 @@ export function createFlowChanges(root) {
         if (!name || name.endsWith('.json')) notify('flow', name?.slice(0, -5));
       });
       add(join(root, 'user'), true, (name) => {
-        if (!name || !transient.test(name)) notify('sources');
+        if (name && transient.test(name)) return;
+        onSourceFileChange?.(name);
+        notify('sources');
       });
       add(systemFlowDirectory(), true, (name) => {
         if (!name || !transient.test(name)) notify('sources');
