@@ -53,24 +53,27 @@ export async function openDynamoRecords(config, { projectId, root }) {
     await delay(20 * (attempt + 1));
     return null;
   }
-  async function query(prefix) {
-    const result = [];
+  async function query(prefix, visit) {
     let cursor;
     do {
-      const page = await document.send(
-        new QueryCommand({
-          TableName: config.table,
-          KeyConditionExpression: 'PK = :pk AND begins_with(SK, :prefix)',
-          ExpressionAttributeValues: { ':pk': partition, ':prefix': prefix },
-          ConsistentRead: true,
-          ...(cursor && { ExclusiveStartKey: cursor }),
-        })
-      );
-      result.push(...(page.Items || []));
+      const page = await document
+        .send(
+          new QueryCommand({
+            TableName: config.table,
+            KeyConditionExpression: 'PK = :pk AND begins_with(SK, :prefix)',
+            ExpressionAttributeValues: { ':pk': partition, ':prefix': prefix },
+            ConsistentRead: true,
+            ExclusiveStartKey: cursor,
+          })
+        )
+        .catch(() => {
+          throw unavailable();
+        });
+      for (const item of page.Items ?? []) await visit(item);
       cursor = page.LastEvaluatedKey;
     } while (cursor);
-    return result;
   }
+  const receiptEntry = (item) => ({ id: item.SK.slice(2), receipt: item.receipt });
   const retainedOperationKey = (id) => {
     assertStore(/^[a-f0-9]{64}$/.test(id), 'Choose a retained DynamoDB operation identity.');
     return 'O#' + id;
@@ -109,16 +112,14 @@ export async function openDynamoRecords(config, { projectId, root }) {
         throw unavailable();
       }
     },
-    async retainedPayloads() {
-      try {
-        const [records, operations] = await Promise.all([query('R#'), query('O#')]);
-        return {
-          records: records.map(row),
-          receipts: operations.map((item) => ({ id: item.SK.slice(2), receipt: item.receipt })),
-        };
-      } catch {
-        throw unavailable();
-      }
+    async retainedPayloads({ visitRecord, visitReceipt } = {}) {
+      const records = [];
+      const receipts = [];
+      const recordVisitor = visitRecord ?? ((record) => records.push(record));
+      const receiptVisitor = visitReceipt ?? ((receipt) => receipts.push(receipt));
+      await query('R#', (item) => recordVisitor(row(item)));
+      await query('O#', (item) => receiptVisitor(receiptEntry(item)));
+      return { records, receipts };
     },
     retireReceipts(request) {
       return writeOperation(request, () =>
@@ -149,11 +150,12 @@ export async function openDynamoRecords(config, { projectId, root }) {
       }
     },
     async list(prefix) {
-      try {
-        return (await query(recordKey(prefix))).map(row);
-      } catch {
-        throw unavailable();
-      }
+      const records = [];
+      await query(recordKey(prefix), (item) => records.push(row(item)));
+      return records;
+    },
+    async visit(prefix, visit) {
+      await query(recordKey(prefix), (item) => visit(row(item)));
     },
     commit(request) {
       return writeOperation(request, () => {

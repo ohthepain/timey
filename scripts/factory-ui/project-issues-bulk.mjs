@@ -150,12 +150,14 @@ async function moveSelectedStores(service, issueIds, storage, operationId) {
     entry.value.kind === 'move-issue' &&
     sameStorage(entry.value.input, storage) &&
     JSON.stringify([...entry.value.input.ids].sort()) === JSON.stringify([...issueIds].sort());
-  const pending = (await service.projectStores.coordination.list('operations/')).find(matching);
+  const [pendingId] = await service.projectStores.coordination.list('operations/', (entry) =>
+    matching(entry) ? entry.value.id : undefined
+  );
   await service.projectStores.moveIssue({
     issueIds,
     storeId: storage.storeId,
     artifactStoreId: storage.artifactStoreId,
-    operationId: pending?.value.id || operationId,
+    operationId: pendingId || operationId,
   });
   await service.projectStores.refresh({ issueIds });
 }

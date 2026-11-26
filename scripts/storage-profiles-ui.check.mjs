@@ -434,12 +434,12 @@ test('explicit storage recovery discovers a pending receipt created before the i
   const projectStores = {
     records: {
       get: async (key) => (key === 'catalog/one' ? { value: catalog } : null),
-      list: async (prefix) =>
+      list: async (prefix, select) =>
         prefix === 'operations/'
           ? [
               { value: pending },
               { value: { id: 'unfinished-save', kind: 'save-flow', status: 'pending', input: { issueId: 'one' } } },
-            ]
+            ].map(select)
           : [],
     },
   };

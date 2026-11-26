@@ -232,28 +232,31 @@ async function readRetainedReceipt(entry, decode, unpackPayload, onUnreadable) {
   return receipt ?? unreadableReceipt(entry);
 }
 
-async function visitRetained(backend, referencesOnly, visitRecord, visitReceipt) {
-  const raw = await backend.retainedPayloads(referencesOnly ? { visitRecord, visitReceipt } : undefined);
+async function visitRetained(backend, stream, visitRecord, visitReceipt) {
+  const raw = await backend.retainedPayloads(stream ? { visitRecord, visitReceipt } : undefined);
   for (const record of raw.records) await visitRecord(record);
   for (const entry of raw.receipts) await visitReceipt(entry);
 }
 
 async function collectRetained(backend, decode, unpackPayload, settings) {
-  const { excludeArtifactInventory, storeId, onUnreadable, referencesOnly } = settings;
+  const { excludeArtifactInventory, storeId, onUnreadable, referencesOnly, onRecord, onReceipt } = settings;
   const records = [];
   const receipts = [];
   const projectRecord = referencesOnly ? referenceDetails : unchanged;
   const projectReceipt = referencesOnly ? referenceReceiptDetails : unchanged;
   const visitRecord = async (record) => {
     const decoded = await decodedWithRefs(record, decode, onUnreadable);
-    if (!excludeArtifactInventory || !inventoryRecord(decoded, storeId)) records.push(projectRecord(decoded));
+    if (excludeArtifactInventory && inventoryRecord(decoded, storeId)) return;
+    if (onRecord) await onRecord(decoded);
+    else records.push(projectRecord(decoded));
   };
   const visitReceipt = async (entry) => {
     const receipt = await readRetainedReceipt(entry, decode, unpackPayload, onUnreadable);
-    if (receipt && (!excludeArtifactInventory || !isInventoryReceipt(receipt, storeId)))
-      receipts.push(projectReceipt(receipt));
+    if (!receipt || (excludeArtifactInventory && isInventoryReceipt(receipt, storeId))) return;
+    if (onReceipt) await onReceipt(receipt);
+    else receipts.push(projectReceipt(receipt));
   };
-  await visitRetained(backend, referencesOnly, visitRecord, visitReceipt);
+  await visitRetained(backend, referencesOnly || onRecord || onReceipt, visitRecord, visitReceipt);
   return { records, receipts };
 }
 
@@ -302,6 +305,17 @@ export function recordStore(backend, artifacts, { allowInlineLarge = false, stor
     );
   };
   const decode = async (record) => record && { ...record, value: await unpackPayload(record.value) };
+  async function listDecoded(pinned, prefix, select) {
+    if (!select) return Promise.all((await pinned.list(prefix)).map(decode));
+    const selected = [];
+    const visit = async (record) => {
+      const value = select(await decode(record));
+      if (value !== undefined) selected.push(value);
+    };
+    if (pinned.visit) await pinned.visit(prefix, visit);
+    else for (const record of await pinned.list(prefix)) await visit(record);
+    return selected;
+  }
   function reader() {
     const scope = readScopes.getStore();
     const selected = scope?.decoding && scope.readers?.get(identity);
@@ -329,7 +343,7 @@ export function recordStore(backend, artifacts, { allowInlineLarge = false, stor
               return await readScopes.run({ readers, decoding: false }, () =>
                 read({
                   get: async (key) => decode(await pinned.get(key)),
-                  list: async (prefix) => Promise.all((await pinned.list(prefix || '')).map(decode)),
+                  list: (prefix, select) => listDecoded(pinned, prefix || '', select),
                 })
               );
             } finally {
@@ -345,13 +359,11 @@ export function recordStore(backend, artifacts, { allowInlineLarge = false, stor
         observeActivity('stores', 'Read record', { store: storeId }, async () => decode(await reader().get(key)))
       );
     },
-    async list(prefix = '') {
+    async list(prefix = '', select) {
       assertStore(typeof prefix === 'string' && !prefix.includes('\0'), 'A record prefix is required.');
-      if (backend.readSnapshot) return readCurrent(() => this.readSnapshot((pinned) => pinned.list(prefix)));
+      if (backend.readSnapshot) return readCurrent(() => this.readSnapshot((pinned) => pinned.list(prefix, select)));
       return readCurrent(() =>
-        observeActivity('stores', 'List records', { store: storeId }, async () =>
-          Promise.all((await reader().list(prefix)).map(decode))
-        )
+        observeActivity('stores', 'List records', { store: storeId }, () => listDecoded(reader(), prefix, select))
       );
     },
     async removeRecords({ operationId, expected }) {
@@ -362,24 +374,36 @@ export function recordStore(backend, artifacts, { allowInlineLarge = false, stor
         writes: expected.map(({ key }) => ({ key, value: null })),
       });
     },
-    async retainedPayloads({ excludeArtifactInventory = false, onUnreadable, referencesOnly = false } = {}) {
+    async retainedPayloads({
+      excludeArtifactInventory = false,
+      onUnreadable,
+      referencesOnly = false,
+      onRecord,
+      onReceipt,
+    } = {}) {
       return collectRetained(backend, decode, unpackPayload, {
         excludeArtifactInventory,
         storeId,
         onUnreadable,
         referencesOnly,
+        onRecord,
+        onReceipt,
       });
     },
     async artifactReceipts(ref) {
       assertStore(artifactReference(ref) && ref.storeId === storeId, 'Choose an Artifact reference in this store.');
-      const raw = await backend.retainedPayloads();
-      return raw.receipts
-        .filter((entry) => artifactReceipt(entry, ref, storeId))
-        .map(({ id, receipt }) => ({
-          id,
-          inputDigest: receipt.inputDigest,
-          identity: receiptIdentity(receipt),
-        }));
+      const receipts = [];
+      await visitRetained(
+        backend,
+        true,
+        () => {},
+        (entry) => {
+          if (!artifactReceipt(entry, ref, storeId)) return;
+          const { id, receipt } = entry;
+          receipts.push({ id, inputDigest: receipt.inputDigest, identity: receiptIdentity(receipt) });
+        }
+      );
+      return receipts;
     },
     async retireReceipts(input) {
       return readScopes.exit(async () => {
