@@ -457,6 +457,8 @@ async function assertCleanSidebarConsole() {
     consoleErrorsAfterExpectedResponses([
       ['/api/issue-decision', 400, 'The test rejected the pending close.'],
       ['/api/server-heap', 503, 'The test made the heap reading unavailable.'],
+      ['/api/flow-action', 400, 'Approve this issue before starting work.'],
+      ['/api/flow-action', 400, 'A selected issue changed. Review and save the draft again before starting.'],
     ]),
     []
   );
