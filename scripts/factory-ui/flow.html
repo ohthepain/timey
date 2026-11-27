@@ -102,11 +102,22 @@
         color: #ffd1ce;
       }
       .issue-blocker .folder-controls {
-        justify-content: space-between;
         margin-bottom: 6px;
       }
       .issue-blocker h2 {
         margin: 0;
+      }
+      .permission-scope {
+        display: grid;
+        gap: 6px;
+        margin: 6px 0 12px;
+      }
+      .permission-scope p {
+        margin: 0;
+        overflow-wrap: anywhere;
+      }
+      .permission-reason {
+        white-space: pre-wrap;
       }
     </style>
   </head>
@@ -515,9 +526,16 @@
           <div class="folder-controls">
             <h2 id="issue-blocker-context"></h2>
             <span id="issue-blocker-retrying" role="status" hidden>Retrying</span>
-            <button type="button" class="small-button" id="issue-blocker-open">Open block details</button>
           </div>
           <p id="issue-blocker-message" role="alert"></p>
+          <section id="issue-permission" aria-labelledby="issue-permission-title" hidden>
+            <h3 id="issue-permission-title">Permission required</h3>
+            <div id="issue-permission-scope" class="permission-scope"></div>
+          </section>
+          <div class="folder-controls">
+            <button type="button" class="small-button" id="issue-blocker-open">Open block details</button>
+            <button type="button" class="small-button" id="issue-permission-review" hidden>Review permission</button>
+          </div>
         </section>
         <section id="issue-results" class="issue-results" aria-labelledby="issue-results-title" hidden>
           <h2 id="issue-results-title">Results</h2>
@@ -1186,6 +1204,18 @@
           <button class="small-button" value="cancel">Cancel</button>
           <button class="small-button" id="retry-branches" type="button" hidden>Retry</button>
           <button class="primary-button" id="save-destination" value="save" hidden>Save destination</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="permission-review-dialog" class="modal publish-modal" aria-labelledby="permission-review-heading">
+      <form method="dialog">
+        <h2 id="permission-review-heading">Review permission</h2>
+        <div id="permission-review-scope" class="permission-scope"></div>
+        <p id="permission-review-error" role="alert" hidden></p>
+        <div class="block-actions">
+          <button class="small-button" id="permission-review-decline" value="decline" autofocus>Decline</button>
+          <button class="primary-button" id="permission-review-approve" type="button">Allow once</button>
         </div>
       </form>
     </dialog>

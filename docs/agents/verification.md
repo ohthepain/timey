@@ -425,6 +425,11 @@ PR links, sidebar and block indicators, persisted requests, explicit Continue,
 and the distinction between human input and technical failure. The fixture
 injects review readiness and an open PR response for the merged-issue guard; it
 performs no live GitHub review or merge.
+Run `node scripts/flow-browser.mjs --native-agents` to check the issue's
+**Permission required** notice. The browser reviews a fixture command with
+disposable GitHub branches and checks that Decline and Escape keep it paused.
+Only approval of the current command reaches the waiting executor. The fixture
+records simulated writes and makes no GitHub requests.
 Use `pnpm run test:folder-settings:browser` for the isolated folder settings,
 repair, search, grouping eligibility, and selected Open or Closed bulk actions.
 The fixture injects AI responses and execution, and uses disposable reports.
