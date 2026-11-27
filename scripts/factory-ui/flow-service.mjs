@@ -893,6 +893,7 @@ class IssueFlows {
         created: issue.created,
         updated: issue.updated,
         state: issue.state,
+        ...(issue.state === 'needs-approval' && { reportBasis: digest(issue.content) }),
         reusable: issue.reusable === true,
         location: issue.location,
         storeId: issue.storeId,
@@ -3590,13 +3591,14 @@ class IssueFlows {
       return this.view(issue.id);
     }
     requireThat(input.title === issue.title, 'Confirm deletion of the current issue.');
+    requireThat(input.reportBasis === digest(issue.content), 'This proposal changed. Review it before deleting.');
     requireThat(!flowWorkspace(this.service, flow), 'This issue has a workspace that needs cleanup first.');
     if (this.service.sharedIssues) {
       const publication = this.service.sharedIssues.deleteProposal(issue);
       if (publication.status !== 'published') return { publication };
       return this.view();
     }
-    await deletePendingIssueReport(this.service.root, issue);
+    await deletePendingIssueReport(this.service.root, issue, flow.revision);
     this.removePendingFlow(issue.id);
     return this.view();
   }

@@ -69,7 +69,10 @@ class DiscussConnection extends CodexConnection {
         (error) =>
           this.send({
             id: message.id,
-            result: { success: false, contentItems: [{ type: 'inputText', text: error.message }] },
+            result: {
+              success: false,
+              contentItems: [{ type: 'inputText', text: error.message }],
+            },
           })
       );
   }
@@ -95,6 +98,7 @@ class ProjectDiscussProvider {
           requireThat(this.active?.retainPrototypeFiles, 'Open Project Discuss to retain a prototype.');
           return this.active.retainPrototypeFiles(paths);
         },
+        confirmIssueDeletion: (proposal) => this.active.confirmIssueDeletion(proposal),
         beforeNoteChange: (input) => this.beforeNoteChange(input),
         annotationActor: () => ({ kind: 'chat', id: this.active?.session.id }),
       });
@@ -115,7 +119,10 @@ class ProjectDiscussProvider {
   async skills(model, scope) {
     if (!model || agentModel(model).provider === 'codex')
       return listAvailableSkills(this.connection, this.service.root, scope);
-    const connection = new NativeAgentConnection({ root: this.service.root, model });
+    const connection = new NativeAgentConnection({
+      root: this.service.root,
+      model,
+    });
     try {
       return await listAvailableSkills(connection, this.service.root, scope);
     } finally {
@@ -135,10 +142,19 @@ class ProjectDiscussProvider {
       const options =
         request.method === 'item/tool/requestUserInput'
           ? []
-          : approvalOptions(request).map(({ id, label, detail }) => ({ id, label, detail }));
+          : approvalOptions(request).map(({ id, label, detail }) => ({
+              id,
+              label,
+              detail,
+            }));
       active.event({
         method: event.method,
-        params: { requestId: String(event.params.requestId), method: request.method, params: request.params, options },
+        params: {
+          requestId: String(event.params.requestId),
+          method: request.method,
+          params: request.params,
+          options,
+        },
       });
       return;
     }
@@ -198,7 +214,12 @@ class ProjectDiscussProvider {
       wording: flow.blocks.find(({ kind }) => kind === 'request')?.data?.wording,
       blocks: flow.blocks.map(({ id, label, attempts }) => {
         const current = attempts.findLast((attempt) => !attempt.invalidatedAt);
-        return { id, label, status: current?.status || 'idle', summary: current?.summary };
+        return {
+          id,
+          label,
+          status: current?.status || 'idle',
+          summary: current?.summary,
+        };
       }),
     };
   }
@@ -235,7 +256,10 @@ class ProjectDiscussProvider {
     );
     if (sessionProvider(session.threadId) === 'codex') {
       await this.connection.ready();
-      const { thread } = await this.connection.call('thread/read', { threadId: session.threadId, includeTurns: false });
+      const { thread } = await this.connection.call('thread/read', {
+        threadId: session.threadId,
+        includeTurns: false,
+      });
       requireThat(thread.status?.type === 'idle', 'Stop or reconcile the original conversation before handing off.');
     }
   }
@@ -268,7 +292,10 @@ class ProjectDiscussProvider {
     this.connection.close();
     this.connection =
       target === 'codex'
-        ? new DiscussConnection({ experimentalApi: true, root: this.service.root })
+        ? new DiscussConnection({
+            experimentalApi: true,
+            root: this.service.root,
+          })
         : new NativeAgentConnection({
             root: this.service.root,
             model: settings.model,
@@ -314,9 +341,16 @@ class ProjectDiscussProvider {
     };
     if (session.threadId) {
       const resume = () =>
-        connection.call('thread/resume', { ...params, threadId: session.threadId, excludeTurns: true });
+        connection.call('thread/resume', {
+          ...params,
+          threadId: session.threadId,
+          excludeTurns: true,
+        });
       await this.resumeThread(session.threadId, resume);
-      const { thread } = await connection.call('thread/read', { threadId: session.threadId, includeTurns: false });
+      const { thread } = await connection.call('thread/read', {
+        threadId: session.threadId,
+        includeTurns: false,
+      });
       requireThat(
         thread.status?.type === 'idle',
         'The original project conversation is not confirmed idle. Stop or reconcile it before retrying.'
@@ -360,7 +394,9 @@ class ProjectDiscussProvider {
         }
         if (!notice) {
           notice = threadLockedMessage(await this.threadWriterOwner(threadId));
-          this.retain({ threadLock: notice + ' Factory will retry automatically. Use Stop to cancel the wait.' });
+          this.retain({
+            threadLock: notice + ' Factory will retry automatically. Use Stop to cancel the wait.',
+          });
         }
         await this.threadWriterDelay(signal);
       }
@@ -404,32 +440,61 @@ class ProjectDiscussProvider {
       [key]: { fingerprint, status: 'dispatching', tool: params.tool },
     };
     this.retain({ toolReceipts: receipts });
-    active.event({ method: 'ui/projectTool', params: { tool: params.tool, status: 'running', callId: params.callId } });
+    active.event({
+      method: 'ui/projectTool',
+      params: { tool: params.tool, status: 'running', callId: params.callId },
+    });
     try {
       const value = await this.tools.invoke(params.tool, params.arguments);
-      const result = { success: true, contentItems: [{ type: 'inputText', text: JSON.stringify(value) }] };
+      const result = {
+        success: true,
+        contentItems: [{ type: 'inputText', text: JSON.stringify(value) }],
+      };
       this.retain({
         toolReceipts: {
           ...active.session.toolReceipts,
-          [key]: { fingerprint, status: 'completed', result, tool: params.tool },
+          [key]: {
+            fingerprint,
+            status: 'completed',
+            result,
+            tool: params.tool,
+          },
         },
       });
       active.event({
         method: 'ui/projectTool',
-        params: { tool: params.tool, status: 'completed', callId: params.callId, result: value },
+        params: {
+          tool: params.tool,
+          status: 'completed',
+          callId: params.callId,
+          result: value,
+        },
       });
       return result;
     } catch (error) {
-      const result = { success: false, contentItems: [{ type: 'inputText', text: error.message }] };
+      const result = {
+        success: false,
+        contentItems: [{ type: 'inputText', text: error.message }],
+      };
       this.retain({
         toolReceipts: {
           ...active.session.toolReceipts,
-          [key]: { fingerprint, status: 'completed', result, tool: params.tool },
+          [key]: {
+            fingerprint,
+            status: 'completed',
+            result,
+            tool: params.tool,
+          },
         },
       });
       active.event({
         method: 'ui/projectTool',
-        params: { tool: params.tool, status: 'failed', callId: params.callId, error: error.message },
+        params: {
+          tool: params.tool,
+          status: 'failed',
+          callId: params.callId,
+          error: error.message,
+        },
       });
       return result;
     }

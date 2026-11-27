@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { requireThat } from './common.mjs';
+import { digest, requireThat } from './common.mjs';
 import { readQueue } from './data.mjs';
 import { listIssueStorage, moveIssueStorage } from './issue-storage-actions.mjs';
 import { issueTypes } from './flow-definitions.mjs';
@@ -8,6 +8,7 @@ import { requestData } from './flow-block-data.mjs';
 import { LocalNotes, localNoteActionSchema } from './local-notes.mjs';
 import { inheritedIssueCaptureProfile } from './stores/settings.mjs';
 import { annotationToolSchema, annotationTool, annotationTools, issueAnnotations } from './issue-annotations.mjs';
+import { discussIssueDecision } from './project-discuss-issue-decision.mjs';
 
 const text = z.string().max(16000);
 const id = z
@@ -28,6 +29,12 @@ function capturedIssue(input, options) {
       input.description + '\n\n## Source report\n' + report.reportId + '\nOutput attempt: ' + report.outputAttemptId,
   };
 }
+const issueDecisionTarget = {
+  issueId: id,
+  reference: text.min(1),
+  revision: z.number().int().nonnegative(),
+  reportBasis: z.string().regex(/^[a-f0-9]{64}$/),
+};
 const homeActions = {
   project_investigation: {
     description:
@@ -124,7 +131,10 @@ export function createProjectDiscussTools(service, options = {}) {
       description:
         'Query open, closed or archived issue metadata, or one issue control snapshot, when asked or required by a requested command. No issue transcripts or ongoing progress are imported.',
       schema: z
-        .object({ location: z.enum(['open', 'closed', 'archive']).default('open'), issueId: id.optional() })
+        .object({
+          location: z.enum(['open', 'closed', 'archive']).default('open'),
+          issueId: id.optional(),
+        })
         .strict(),
       run: ({ location, issueId }) =>
         location === 'open' ? openIssueList(service, issueId, flows) : storedIssueList(service, location, issueId),
@@ -136,6 +146,25 @@ export function createProjectDiscussTools(service, options = {}) {
         schema: z.object({ paths: z.array(z.string().min(1).max(255)).min(1).max(8) }).strict(),
         path: '/api/project-discuss-action',
         run: ({ paths }) => options.retainPrototypeFiles(paths),
+      },
+    }),
+    ...(options.closeIssue && {
+      issue_dispose: {
+        description:
+          'Use only for an explicit request to close or permanently delete a named issue. Query issues_list for its current revision, reportBasis and closureReasons. Pass the exact issue reference the person named (full ID, #number or exact title). Ask if the target or configured closure reason is ambiguous. For close, pass the configured reason ID and preserve any details. Closing a proposal offers a separate delete request. Delete waits for the person to confirm the exact proposal in Discuss. Report the actual result, including a recorded reason and link for closure, and do not start a flow or verification.',
+        schema: z.discriminatedUnion('action', [
+          z
+            .object({
+              ...issueDecisionTarget,
+              action: z.literal('close'),
+              resolution: id.optional(),
+              details: z.string().max(4000).optional(),
+            })
+            .strict(),
+          z.object({ ...issueDecisionTarget, action: z.literal('delete') }).strict(),
+        ]),
+        path: '/api/flow-action',
+        run: (input) => discussIssueDecision(service, flows(), options, input),
       },
     }),
     issue_create: {
@@ -162,7 +191,13 @@ export function createProjectDiscussTools(service, options = {}) {
     issue_move_folder: {
       description:
         'Move an open, idle issue to a named issue folder when requested. Read issues_list for the current folders and query the issue for its revision. Moving folders keeps the issue’s saved storage destinations and starts no work.',
-      schema: z.object({ issueId: id, revision: z.number().int().nonnegative(), folder: text.min(1) }).strict(),
+      schema: z
+        .object({
+          issueId: id,
+          revision: z.number().int().nonnegative(),
+          folder: text.min(1),
+        })
+        .strict(),
       path: '/api/flow-action',
       run: async (input) => receipt(await flows().action({ ...input, action: 'folder' }), 'folder'),
     },
@@ -176,7 +211,13 @@ export function createProjectDiscussTools(service, options = {}) {
     issue_group_create: {
       description:
         'Create an idle master issue and attach the sub-issues from a current issue_group_preview when the user requested creation. Use the preview wording, preserving each issue’s scope and requested proof. Use a UUID requestId and reuse it for a retry. The master uses the sub-issues’ shared storage destinations.',
-      schema: z.object({ previewId: id, wording: z.string().min(1).max(24000), requestId: id }).strict(),
+      schema: z
+        .object({
+          previewId: id,
+          wording: z.string().min(1).max(24000),
+          requestId: id,
+        })
+        .strict(),
       path: '/api/flow-action',
       run: async (input) => receipt(await flows().action({ ...input, action: 'folder-group-create' }), 'created'),
     },
@@ -247,7 +288,10 @@ export function createProjectDiscussTools(service, options = {}) {
       ...descriptor,
       path: '/api/project-home-action',
       run: async (input) => {
-        const result = await home().action({ ...input, requestId: input.requestId || randomUUID() });
+        const result = await home().action({
+          ...input,
+          requestId: input.requestId || randomUUID(),
+        });
         if (input.action.startsWith('investigation-')) return receipt(result, input.action);
         return result;
       },
@@ -296,14 +340,19 @@ function listedIssue(issue) {
 
 function issueRequestSummary(flow) {
   const { wording, fields } = requestData(flow);
-  return { originalPrompt: wording || '', issueType: fields?.type || flow.routeType };
+  return {
+    originalPrompt: wording || '',
+    issueType: fields?.type || flow.routeType,
+  };
 }
 
-function issueControlSnapshot(issue, flow, { records, warning }) {
+function issueControlSnapshot(issue, flow, { records, warning }, closureReasons) {
   return {
     ...listedIssue(issue),
     ...issueRequestSummary(flow),
     revision: flow.revision,
+    reportBasis: digest(issue.content),
+    closureReasons: closureReasons.filter(({ id }) => id !== 'fixed-by'),
     folder: flow.folder,
     annotations: records.filter(({ issueId }) => issueId === issue.id),
     annotationsWarning: warning,
@@ -317,11 +366,16 @@ function issueControlSnapshot(issue, flow, { records, warning }) {
 }
 
 async function openIssueList(service, issueId, flows) {
-  const { issues, issueFolders } = readQueue(service.root, { issueId });
+  const { issues, issueFolders, closureReasons } = readQueue(service.root, {
+    issueId,
+  });
   const folders = issueFolders.map(({ id, name }) => ({ id, name }));
   if (!issueId || !issues.length) return { folders, issues: issues.map(listedIssue) };
   const annotations = await issueAnnotations(service).view();
-  return { folders, issues: issues.map((issue) => issueControlSnapshot(issue, flows().read(issue), annotations)) };
+  return {
+    folders,
+    issues: issues.map((issue) => issueControlSnapshot(issue, flows().read(issue), annotations, closureReasons)),
+  };
 }
 
 async function issueCreationReceipt({ deleted, issue, ...result } = {}, created) {

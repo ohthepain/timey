@@ -2,14 +2,15 @@ import { randomUUID } from 'node:crypto';
 import { copyFileSync, existsSync, lstatSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { digest, git, requireThat } from './common.mjs';
-import { latestCurrentAttempt, upstreamBlocks } from './flow-block-data.mjs';
+import { upstreamBlocks } from './flow-block-data.mjs';
 import { candidateBrowserTestPolicy } from './candidate-browser-scenarios.mjs';
 import { normalizeFocusedTests } from '../verify-merge-checks.mjs';
+import { currentGroupAttempts, retainedGroupAttempt } from './flow-group-proof.mjs';
 
 function browserWorkAttempts(ctx) {
   return upstreamBlocks(ctx.block, ctx.flow.blocks)
     .filter(({ kind }) => kind === 'work')
-    .map((block) => latestCurrentAttempt(block))
+    .flatMap(currentGroupAttempts)
     .filter((attempt) => attempt?.status === 'completed');
 }
 
@@ -22,13 +23,7 @@ function browserCommands(ctx, workspace, head) {
     commands.push(['node', 'scripts/flow-browser.mjs', ...folderControls]);
   }
   if (!commands.length) return [];
-  const selectors = [
-    ...new Set(
-      commands.flatMap((command) =>
-        command.slice(2).filter((flag) => !flag.startsWith('--ci-part=') && flag !== '--reverse-fixture-scenarios')
-      )
-    ),
-  ];
+  const selectors = [...new Set(commands.flatMap(browserSelections))];
   return normalizeFocusedTests(
     [['node', 'scripts/flow-browser.mjs', ...selectors]],
     candidateBrowserTestPolicy(workspace.checkout, head)
@@ -117,10 +112,56 @@ async function executeBrowser(ctx, workspace, folder, candidate, [command, ...ar
   };
 }
 
-export async function runCandidateBrowser(ctx, workspace, folder, candidate, execute) {
+function replayChildCommands(ctx, root, replay) {
+  const entries = browserWorkAttempts(ctx).flatMap((attempt) =>
+    replayAttemptCommands(retainedGroupAttempt(root, attempt), attempt.result?.focusedTests ?? [], replay)
+  );
+  return [...new Map(entries.map((entry) => [entry.id, entry])).values()];
+}
+
+function browserSelections(command) {
+  return command.slice(2).filter((flag) => !flag.startsWith('--ci-part=') && flag !== '--reverse-fixture-scenarios');
+}
+
+function replayedCommand(command, replay) {
+  const [tool, script] = command;
+  if (tool !== 'node' || script !== 'scripts/flow-browser.mjs') return false;
+  const flags = browserSelections(command);
+  return flags.length && flags.every((flag) => replay.includes(flag));
+}
+
+function replayAttemptCommands({ attemptId, scope, verdicts }, commands, replay) {
+  const available = commands.filter((command) => replayedCommand(command, replay));
+  return verdicts
+    .filter(({ id, status }) => scope.includes(id) && status === 'passed')
+    .flatMap((verdict) => replayBinding(verdict, { attemptId, scope, available, replay }));
+}
+
+function replayBinding({ id, focusedTests }, { attemptId, scope, available, replay }) {
+  const declared = Array.isArray(focusedTests);
+  const checks = declared
+    ? available.filter((command) => focusedTests.some((check) => sameCommand(check, command)))
+    : available;
+  if (!checks.length) return [];
+  const shared = !declared && scope.length > 1;
+  return [{ id, attemptId, checks, shared, ...replayScope(checks, replay) }];
+}
+
+function replayScope(checks, replay) {
+  if (checks.some((check) => !sameCommand(check, replay)))
+    return { qualification: 'The replay used the saved scenarios in a combined browser command.' };
+}
+
+function sameCommand(left, right) {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+export async function runCandidateBrowser(ctx, workspace, folder, candidate, execute, root) {
   const [command] = browserCommands(ctx, workspace, candidate.head);
   if (!command) return;
-  return executeBrowser(ctx, workspace, folder, candidate, command, execute);
+  const result = await executeBrowser(ctx, workspace, folder, candidate, command, execute);
+  const children = replayChildCommands(ctx, root, command);
+  return children.length ? { ...result, children } : result;
 }
 
 export function browserFailure(check) {

@@ -17,23 +17,40 @@ export async function traceWorkMarkdown(page, output, candidate, watcherEvents, 
     document.addEventListener('factory-ui-sources', observeWarning ? warning : validSource, options);
     return { listeners, times };
   }, Boolean(invalid));
+  const started = performance.now();
   const writeStarted = Date.now();
-  write();
-  const writeFinished = Date.now();
+  let writeFinished;
   let assertionPassed;
   try {
+    write();
+    writeFinished = Date.now();
     await assertRendered();
     assertionPassed = Date.now();
   } finally {
-    const { browserNotified, warningApplied, validSourceApplied } = await trace.evaluate(({ listeners, times }) => {
-      listeners.abort();
-      return times;
-    });
+    let browserTraceError;
+    const { browserNotified, warningApplied, validSourceApplied } = await trace
+      .evaluate(({ listeners, times }) => {
+        listeners.abort();
+        return times;
+      })
+      .catch((error) => {
+        browserTraceError = error.message;
+        return {};
+      });
     const watcherObserved = watcherEvents.find(({ at }) => at >= writeStarted)?.at;
     const applied = invalid ? { warningApplied } : { validSourceApplied };
     const events = { writeStarted, writeFinished, watcherObserved, browserNotified, ...applied, assertionPassed };
     const firstMissing = Object.keys(events).find((event) => events[event] === undefined);
-    writeFileSync(output, JSON.stringify({ ...candidate, events, firstMissing: firstMissing ?? null }, null, 2) + '\n');
-    await trace.dispose();
+    const recordedEvents = Object.fromEntries(Object.entries(events).map(([event, at]) => [event, at ?? null]));
+    const elapsedMs = Math.round(performance.now() - started);
+    writeFileSync(
+      output,
+      JSON.stringify(
+        { ...candidate, elapsedMs, events: recordedEvents, firstMissing: firstMissing ?? null, browserTraceError },
+        null,
+        2
+      ) + '\n'
+    );
+    await trace.dispose().catch(() => {});
   }
 }

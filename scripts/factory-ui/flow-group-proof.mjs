@@ -17,7 +17,7 @@ export function withGroupProof(ctx) {
 export function groupProofRequest(issue, ids) {
   if (!issue.issue_group?.children?.length) return null;
   return {
-    task: 'Only the currently attached sub-issues are in scope. Check each one against its requested proof. Write a JSON array to the subIssueProof artifact with one entry per checked issue: {"id": "full issue id", "status": "passed" or "failed", "observation": "command or validation performed and its actual outcome", "nextAction": "optional specific action for a failure"}. Report only checks you actually performed. Include relevant supporting output in the normal evidence. If any check fails, also report the issue under the flow-result failure field.',
+    task: 'Only the currently attached sub-issues are in scope. Check each one against its requested proof. Write a JSON array to the subIssueProof artifact with one entry per checked issue: {"id": "full issue id", "status": "passed" or "failed", "observation": "command or validation performed and its actual outcome", "nextAction": "optional specific action for a failure", "focusedTests": "optional array of the focused command argument arrays from flow-result that verified this child"}. Report only checks you actually performed. Include relevant supporting output in the normal evidence. If any check fails, also report the issue under the flow-result failure field.',
     attached: groupChildren(issue)
       .filter(({ id }) => !ids || ids.includes(id))
       .map(({ id, title, requestedProof }) => ({ id, title, requestedProof })),
@@ -60,14 +60,16 @@ export function sequentialProofBlocker(attempt, retained, root) {
 function groupProofAttempts(flow, tree, block) {
   return upstreamBlocks(block, flow.blocks)
     .filter(({ kind }) => supportedBlocks.has(kind))
-    .flatMap((block) =>
-      block.attempts.some(({ sequentialChild }) => sequentialChild)
-        ? block.attempts.filter(({ invalidatedAt }) => !invalidatedAt)
-        : [latestCurrentAttempt(block)]
-    )
+    .flatMap(currentGroupAttempts)
     .filter((attempt) => ['completed', 'failed', 'blocked'].includes(attempt?.status))
     .filter((attempt) => !tree || attempt.result?.tree === tree)
     .sort((left, right) => (left.endedAt ?? '').localeCompare(right.endedAt ?? ''));
+}
+
+export function currentGroupAttempts(block) {
+  return block.attempts.some(({ sequentialChild }) => sequentialChild)
+    ? block.attempts.filter(({ invalidatedAt }) => !invalidatedAt)
+    : [latestCurrentAttempt(block)];
 }
 
 function groupAttemptRows(attempt, tree, root) {
@@ -81,7 +83,23 @@ export function groupProofRows(flow, tree, block = {}, root) {
   return new Map(groupProofAttempts(flow, tree, block).flatMap((attempt) => groupAttemptRows(attempt, tree, root)));
 }
 
-export { readProof as readSubIssueProof };
+export function retainedGroupAttempt(root, attempt) {
+  const file = attempt.artifacts?.files?.subIssueProof;
+  const verdicts = readProof(file, root);
+  const { head, tree, base, uncommitted } = attempt.result ?? {};
+  return {
+    attemptId: attempt.id,
+    blockStatus: attempt.status,
+    invalidatedAt: attempt.invalidatedAt,
+    head,
+    tree,
+    comparisonTarget: base,
+    uncommitted,
+    scope: attempt.groupIssueIds ?? verdicts.map(({ id }) => id),
+    verdicts,
+    file,
+  };
+}
 
 export function requireGroupProof(issue, flow, candidateTree, block, root) {
   const proofs = groupProofRows(flow, candidateTree, block, root);

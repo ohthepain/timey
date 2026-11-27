@@ -42,6 +42,7 @@ export const flowBrowserScenarioNames = {
   '--server-heap': 'The Factory header refreshes live server heap usage and shows an unavailable reading',
   '--project-discuss': 'Project Discuss retains independent conversations, settings and explicit controls',
   '--discuss-ui-design': 'Project Discuss preserves prototype revisions and captures a requested issue idle',
+  '--project-discuss-disposition': 'Discuss closes issues and confirms proposal deletion',
   '--asset-storage': 'Asset Storage lists project S3 artifacts and retained references in Settings',
   '--project-settings': 'Project Settings addressable pages preserve drafts, sources and explicit saves',
   '--ai-providers': 'Factory provider settings save enablement and quota warnings',
