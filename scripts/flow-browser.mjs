@@ -495,7 +495,7 @@ async function check(name, run) {
   }
 }
 async function view() {
-  const response = await page.request.get('/api/flow?issue=' + issueId);
+  const response = await page.request.get('/api/flow?issue=' + issueId, { maxRetries: 1 });
   assert.equal(response.status(), 200);
   const data = await response.json();
   assert.ok(data.flow, JSON.stringify(data));
