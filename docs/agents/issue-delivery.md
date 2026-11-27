@@ -230,14 +230,11 @@ proof still block readiness. Publication and acceptance remain separate decision
 
 ### Focused browser evidence
 
-Publish runs the Flow browser scenarios declared by upstream Work. If Work
-declares either folder capture or folder grouping, Publish runs both. A blocked
-attempt records the first failed scenario, the candidate, and the command log.
-An unchanged retry that repeats the same assertion links the prior log and
-shows the focused command to rerun after a repair.
-
-Merge reruns the declared scenarios on the candidate before pushing an updated
-head. Its delivery receipt links the candidate commit and tree, command results,
+Work runs its focused browser checks. Publish pushes the committed issue branch
+and creates or updates the PR. Merge reruns the declared scenarios on the
+candidate before pushing an updated head. If Work declares either folder
+capture or folder grouping, Merge runs both. The Merge delivery receipt links
+the candidate commit and tree, command results,
 screenshots with SHA-256 hashes, observation files, and available GitHub job
 identifiers. The receipt also links the original Work proof and records when it
 belongs to an earlier tree. The issue's Artifact store retains the referenced

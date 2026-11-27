@@ -1,4 +1,3 @@
-import { browserFailure, priorBrowserFailure, runCandidateBrowser } from './flow-browser-evidence.mjs';
 import { activeGroupRequest } from './flow-group-scope.mjs';
 import { issueTypes } from './flow-definitions.mjs';
 import { mergedDelivery } from './merged-issue.mjs';
@@ -290,53 +289,13 @@ function retainPublicationFailure(error, { ctx, candidate, preview, folder, evid
   });
 }
 
-async function checkPublicationBrowser(ctx, workspace, folder, candidate, options) {
-  const browser = await runCandidateBrowser(ctx, workspace, folder, candidate, options.execute);
-  if (!browser?.exit) return { browser };
-  const { scenario, assertion } = browserFailure(browser);
-  const prior = priorBrowserFailure(ctx.block, ctx.attempt.id, browser);
-  const earlier = prior?.result.browser.log;
-  const repair = prior
-    ? ` The same assertion failed on an earlier attempt. Replay with ${browser.command.join(' ')}.`
-    : '';
-  return {
-    browser,
-    blocked: {
-      status: 'blocked',
-      summary: `Focused browser check failed on ${candidate.head.slice(0, 12)}. ${scenario ?? 'Browser startup'}${assertion ? '. ' + assertion : ''}${repair}`,
-      result: {
-        head: candidate.head,
-        browser,
-        scenario,
-        assertion,
-        priorAttemptId: prior?.id,
-        repairCommand: browser.command,
-      },
-      evidence: [
-        browser.log,
-        browser.results,
-        earlier && { ...earlier, label: 'Earlier attempt’s browser log' },
-      ].filter(Boolean),
-      workspace,
-    },
-  };
-}
-
 export async function publishFlowPR(service, ctx, workspace, folder, options) {
-  const prepared = await preparePublicationAttempt(service, ctx, workspace, options);
-  const { browser, blocked } = await checkPublicationBrowser(ctx, workspace, folder, prepared.candidate, options);
-  if (blocked) return blocked;
-  return publishPreparedPR(service, ctx, workspace, folder, options, { ...prepared, browser });
-}
-
-async function publishPreparedPR(
-  service,
-  ctx,
-  workspace,
-  folder,
-  options,
-  { preview, candidate, provider, pr, remote, browser }
-) {
+  const { preview, candidate, provider, pr, remote } = await preparePublicationAttempt(
+    service,
+    ctx,
+    workspace,
+    options
+  );
   const log = join(folder, 'publish.log');
   const requirePreviewHead = () =>
     requireThat(
@@ -350,7 +309,6 @@ async function publishPreparedPR(
     url: published.html_url,
     title: published.title,
     head: candidate.head,
-    browser,
     target: published.base?.ref ?? preview.target,
   });
   try {

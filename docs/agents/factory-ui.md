@@ -171,10 +171,8 @@ from Request, with empty sections omitted. On later runs, Publish shows pending
 title and commit changes and preserves the existing GitHub description. A
 matching title and commit show **PR is up to date** with the link. **Confirm
 current PR** completes Publish using the existing PR.
-When the candidate changes issue annotations, shared coordination, or grouped issue
-UI, Publish runs the focused Flow integration cases in the early CI repair plan
-before writing the branch or PR. The publication attempt retains the candidate
-commit, commands, results, and logs.
+Work and Merge run focused tests and retain their results. Publish uses the
+committed issue branch to create or update the PR.
 The PR menu beside Worktree and Close shows the PR number. **Open** opens the
 pull request. **Approve** opens the GitHub review page, where you submit the
 approval using the GitHub account signed in to your browser.
