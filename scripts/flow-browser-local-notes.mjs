@@ -1,9 +1,8 @@
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { LocalNotes } from './factory-ui/local-notes.mjs';
 import { resolveIssueStorage } from './factory-ui/stores/settings.mjs';
-import { ensureIssueNumbers } from './factory-ui/issue-numbers.mjs';
 import { listAvailableSkills } from './factory-ui/skills.mjs';
 
 export async function localNotesBrowserChecks({ page, service, project, poll, screenshot, output, candidate }) {
@@ -152,11 +151,6 @@ export async function localNotesBrowserChecks({ page, service, project, poll, sc
   await page.locator('#capture-dialog[open]').waitFor();
   assert.equal(await page.locator('#capture-description').inputValue(), 'Edited second thought');
   await page.locator('#capture-description').fill('An issue from the quick note');
-  const registryPath = join(project, '.issues/issue-numbers.json');
-  ensureIssueNumbers(project, []);
-  const registry = JSON.parse(readFileSync(registryPath, 'utf8'));
-  registry.next = 182;
-  writeFileSync(registryPath, JSON.stringify(registry));
   await page.locator('#capture-form button[type="submit"]').click();
   await page.locator('[data-discuss-delete-note]').waitFor();
   const link = page.locator('#discuss-messages').getByRole('link', { name: 'the new issue', exact: true });
@@ -169,20 +163,23 @@ export async function localNotesBrowserChecks({ page, service, project, poll, sc
   assert.equal(turns.length, 1);
   await screenshot('local-note-created-issue');
   const issueId = notes.get(second.id).issueId;
+  const { issueNumber } = service.flows.selected(issueId);
+  assert.ok(Number.isSafeInteger(issueNumber));
+  assert.ok(issueNumber > 0);
   const sidebarLink = page.locator(`[data-note-id="${second.id}"] .local-note-issue`);
   await sidebarLink.waitFor();
   const conversationUrl = page.url();
   await page.reload();
   await sidebarLink.waitFor();
   const label = await sidebarLink.textContent();
-  assert.equal(label, 'Open issue #182');
+  assert.equal(label, `Open issue #${issueNumber}`);
   const href = await sidebarLink.getAttribute('href');
   assert.equal(href, '/?issue=' + encodeURIComponent(issueId));
   await screenshot('local-note-issue-number');
   await sidebarLink.click();
   await page.locator('#issue-heading:not([hidden])').waitFor();
   assert.equal(new URL(page.url()).searchParams.get('issue'), issueId);
-  assert.equal(await page.locator('#issue-number').textContent(), '#182');
+  assert.equal(await page.locator('#issue-number').textContent(), `#${issueNumber}`);
   assert.equal(await page.locator('#issue-title').innerText(), 'An issue from the quick note');
   writeFileSync(
     join(output, 'local-note-issue-number.json'),
@@ -246,7 +243,7 @@ export async function localNotesBrowserChecks({ page, service, project, poll, sc
     'Edit, completion and order are retained',
     'Discuss prepares quietly and only Send starts a reply',
     'Issue creation is prefilled and links back before optional deletion',
-    'The sidebar retains Open issue #182 after reload and opens that issue',
+    `The sidebar retains Open issue #${issueNumber} after reload and opens that issue`,
     'Unsaved capture draft survives reload',
     'Multi-sentence notes show only their first sentence and retain the full text in the editor',
   ];

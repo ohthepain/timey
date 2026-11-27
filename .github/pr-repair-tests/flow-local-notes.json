@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "name": "Local notes capture and handoff preserve flow",
+  "command": ["node", "scripts/flow-browser.mjs", "--project-discuss", "--project-night", "--local-notes"],
+  "source": {
+    "attemptId": "edc350b8-a111-4a5f-b18c-d052b4c2a891",
+    "checkout": "d3c5363f24222eb36ab64cb9a9d840d71f3ca62e",
+    "tree": "faa9eb7b2921720d6b38c57a4ff1f5cd60329569"
+  }
+}

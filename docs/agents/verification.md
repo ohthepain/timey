@@ -667,6 +667,8 @@ page, and closes its Discuss service before installing its own injected provider
 Its console assertion catches draft saves that cross that fixture boundary. Run
 `node scripts/flow-browser.mjs --project-discuss --local-notes` to verify the
 Discuss-to-Notes transition; combining focused flags runs those scenarios together.
+Include `--project-night` to check the note link and issue header against the
+number assigned by the shared store after Work All Night creates numbered issues.
 
 The capture-start browser scenario waits for active route handlers before removing
 its mocks. Issue refreshes can still be fetching the fixture queue when capture
