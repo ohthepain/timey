@@ -650,12 +650,14 @@ async function exerciseBlockerRetries({ page, issueId, gates, screenshot }) {
   await assertBlocker(page, 'Fixture Work failure 1');
   const issueTitle = await page.title();
   const observations = [];
+  const resume = page.locator('#issue-playback[data-playback-mode="resume"]:enabled');
   const controls = [
-    ['Issue', () => page.locator('#issue-playback[data-playback-mode="resume"]').click()],
+    ['Issue', () => resume.click()],
     ['Block', () => retryInBlock(page)],
     ['Chat', () => retryInChat(page)],
   ];
   for (const [index, [entry, start]] of controls.entries()) {
+    await resume.waitFor();
     await start();
     await assertBlocker(page, 'Unrelated worktree error');
     const during = await page.locator('#issue-blocker-message').innerText();
