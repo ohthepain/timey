@@ -129,6 +129,15 @@ export function createProjectDiscussTools(service, options = {}) {
       run: ({ location, issueId }) =>
         location === 'open' ? openIssueList(service, issueId, flows) : storedIssueList(service, location, issueId),
     },
+    ...(options.retainPrototypeFiles && {
+      discuss_prototype_files: {
+        description:
+          'Retain the files for a user-requested UI prototype in Project Discuss. Pass PNG screenshots and runnable HTML or ZIP paths relative to .cache/discuss-prototypes/. Returns stable download links for the saved version. Use these links in the conversation and in a later user-requested implementation issue.',
+        schema: z.object({ paths: z.array(z.string().min(1).max(255)).min(1).max(8) }).strict(),
+        path: '/api/project-discuss-action',
+        run: ({ paths }) => options.retainPrototypeFiles(paths),
+      },
+    }),
     issue_create: {
       description:
         'Create an idle issue from a user-requested description. Describe the outcome, proof and constraints, including any specific decision or operation the person reserved. Starting Work authorizes in-scope implementation; leave generic design or implementation sign-off out of the description. Set needsApproval only when the person asks to make approval a prerequisite for starting this issue. Use the named folder when specified. Storage defaults to the destination folder’s inherited profile. Pass a profile ID only for a requested override. Creation does not start work. Reuse the same UUID requestId when retrying.',

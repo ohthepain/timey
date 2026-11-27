@@ -49,15 +49,29 @@
   }
 
   function configuredFolderSettings(view, project, prefix, omitFields) {
-    const heading = project
-      ? '<h2>Project defaults</h2>'
-      : `<label class="folder-check"><input type="checkbox" data-default-folder${view.isDefaultFolder ? ' checked' : ''} /> Is default folder</label>`;
     const errors = (view.errors || []).map((entry) => `<li>${escape(entry.message || entry)}</li>`).join('');
-    const fields = (view.fields || [])
-      .filter(({ key }) => !omitFields.includes(key))
-      .map((field) => settingInput(field, view.settings?.[field.key], prefix))
-      .join('');
-    return `<form data-settings-form><div class="folder-settings-heading">${heading}${settingsWand(view)}</div>${errors ? `<ul class="folder-settings-errors">${errors}</ul>` : ''}<div class="folder-settings-fields">${fields}</div><div class="folder-controls"><button class="small-button" type="submit">Save settings</button><span class="muted" data-settings-saved role="status"></span></div></form>`;
+    const validation = errors ? `<ul class="folder-settings-errors">${errors}</ul>` : '';
+    const fields = (view.fields || []).filter(({ key }) => !omitFields.includes(key));
+    const fieldGroup = (group) =>
+      `<div class="folder-settings-fields">${group.map((field) => settingInput(field, view.settings?.[field.key], prefix)).join('')}</div>`;
+    const contents = project
+      ? `<div class="folder-settings-heading"><h2>Project defaults</h2>${settingsWand(view)}</div>${validation}${fieldGroup(fields)}`
+      : folderDefaults(view, fieldGroup, fields, validation);
+    return `<form data-settings-form>${contents}<div class="folder-controls"${project ? '' : ' data-folder-settings-save'}><button class="small-button" type="submit">Save settings</button><span class="muted" data-settings-saved role="status"></span></div></form>`;
+  }
+
+  function folderDefaults(view, fieldGroup, fields, validation) {
+    const checkbox = `<label class="folder-check"><input type="checkbox" data-default-folder${view.isDefaultFolder ? ' checked' : ''} /> Is default folder</label>`;
+    const isIssueDefault = ({ key }) => ['branch', 'skill', 'model', 'effort'].includes(key);
+    return `<details id="folder-issue-defaults" data-folder-defaults>
+      <summary>Issue defaults</summary>
+      ${fieldGroup(fields.filter(isIssueDefault))}
+    </details>
+    <details id="folder-defaults" data-folder-defaults>
+      <summary>Folder defaults</summary>
+      <div class="folder-settings-heading">${checkbox}${settingsWand(view)}</div>
+      ${validation}${fieldGroup(fields.filter((field) => !isIssueDefault(field)))}
+    </details>`;
   }
 
   function plainFolderSettings(view) {
@@ -116,11 +130,13 @@
         body: JSON.stringify({ ...location, action, revision: current?.revision, ...data }),
       });
     function render() {
+      const expanded = new Set([...container.querySelectorAll('details[open]')].map(({ id }) => id));
       container.innerHTML =
         '<p class="inline-error" data-settings-error role="alert" hidden></p>' +
         (current.kind === 'plain'
           ? plainFolderSettings(current)
           : configuredFolderSettings(current, location.project, prefix, omitFields));
+      for (const section of container.querySelectorAll('details')) section.open = expanded.has(section.id);
       window.factoryAgentOptions(container);
     }
     async function refresh() {

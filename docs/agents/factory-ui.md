@@ -146,7 +146,10 @@ locks when the issue has a PR. If GitHub reports a changed base, accept that bas
 in Destination before running Publish or Merge.
 
 The issue number appears in smaller text to the left of the title in the center
-column. Use the pencil next to the title to rename the issue. **Start** or **Resume**
+column. Use the pencil next to the title to rename the issue. The browser tab
+uses a short nickname generated from the current title. Select **Edit nickname**
+to save a custom nickname that stays through title changes. Clear the field and
+save to restore the generated nickname. **Start** or **Resume**
 runs the route; Publish runs when the candidate and destination checks pass. When running Publish directly,
 review the title, source and destination branches, verified commit, and exact PR
 description. The description contains Goal, Requested proof, and Original wording
@@ -344,7 +347,12 @@ Root `folder.md` stores version-controlled project defaults. Each issue folder's
 parent folders, then the project, then Factory's built-in fallback. The page shows
 the resolved value and its source. The reference is excluded from folder discovery.
 
-**Is default folder** appears first and never inherits. Exactly one issue folder
+**Issue defaults** shows target branch, skill, model, and effort. **Folder
+defaults** contains the other settings, including the storage profile and
+repair controls. Both sections start collapsed every time a folder opens.
+Folder views indent sub-issues under their master without divider lines.
+
+**Is default folder** appears first in Folder defaults and never inherits. Exactly one issue folder
 is the default for creation without an explicit destination. Zero or multiple
 defaults show an error. The magic wand lists missing fields and preserves all
 existing fields, comments, and Markdown when adding them. A red wand explains
@@ -385,9 +393,10 @@ Drag a block by its handle to reorder the issue flow. The graph shows the
 proposed position and connections before drop. With a block focused, use
 Alt+Up or Alt+Down to move it.
 
-In Reports, open a report to delete it or select rows in the library and choose
-Delete selected. Select all selects the reports in the library. Deleting a
-report removes its retained copy and evidence from the report library.
+In Reports, the selection controls sit directly above the report rows.
+Select all selects the reports in the library. Open a report to delete it or
+select rows and choose Delete selected. Deleting a report removes its retained
+copy and evidence from the report library. An empty library shows a message.
 
 The sort selector also offers implementation order, latest progress first, lifecycle
 progress, creation time, completion time and required human input. Direction is a

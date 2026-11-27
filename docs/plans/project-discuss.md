@@ -156,6 +156,40 @@ sessions are deliberately limited to drafting reviewed skill changes.
   skills that use them. Do not treat skill instructions alone as callable tools
   or as enforcement of operation rules.
 
+### UI design conversations
+
+The bundled `ui-design` skill applies to UI-change requests and page feedback in
+Project Discuss. Enter `/ui-design` to invoke it explicitly. It uses the existing
+chat, the configured clarification setting, and the available skills.
+
+The first offer appears in the reply. A prototype starts after the person asks
+for one or accepts the offer. Use `discuss_prototype_files` to retain each
+prototype version’s PNG screenshots and runnable HTML or ZIP in the conversation.
+The links point to Factory’s retained copies. Editing the staging files leaves
+the previous links intact. A design approval records the selected links and
+reasoning in chat. An explicit handoff creates the implementation issue through
+the existing idle capture operation. The issue report links to the selected
+version. Prototype downloads are local to the Factory project that retained
+them.
+
+When composer suggestions are available, extend the skill to append an optional
+`timey-recommendations` JSON block after the visible offer. Use
+`{"recommendations":[{"label":"Prototype","prompt":"Prototype the drawer and inline alternatives."}]}`
+for a concrete prototype decision. Use `Refine scope` for a specific open
+question or the available critique skill’s name for a page review. Each prompt
+should express the choice in the person’s voice when they submit it. The
+reply must still carry the offer and wait for an explicit response.
+
+Run `node scripts/flow-browser.mjs --discuss-ui-design` for the local scenario.
+Scripted provider decisions drive the existing Discuss transport, retention tool,
+issue capture, report, and prototype downloads. To evaluate live model routing,
+use a disposable project with no composer suggestions or Impeccable. Try a
+specific existing-pattern change, an unclear goal, explicit skill invocation on
+an open visual choice, and a critique. Decline an offered prototype, then request
+it and refine it over two more turns. Approve the design, check the issue list,
+then explicitly ask for an issue. Open its report, follow the retained links, and
+verify that Work is idle.
+
 ## Implementation shape
 
 On 2026-11-21, the user requested the same chat UI and spoken send behavior

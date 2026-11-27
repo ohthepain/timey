@@ -10,8 +10,8 @@ export function readSavedReport(project, id, location) {
   let descriptor;
   try {
     const root = realpathSync(project);
-    const flat = storedIssuePath(root, id);
-    const selected = location ?? (existsSync(flat) ? 'open' : 'closed');
+    const selected =
+      location ?? ['open', 'closed'].find((place) => existsSync(storedIssuePath(root, id, place))) ?? 'archive';
     const file = storedIssuePath(root, id, selected);
     requireThat(
       realpathSync(file) === file,
