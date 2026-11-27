@@ -84,7 +84,7 @@ import { projectDiscussBrowserChecks } from './flow-browser-project-discuss.mjs'
 import { assetStorageBrowserChecks } from './flow-browser-asset-storage.mjs';
 import { projectSettingsBrowserChecks } from './flow-browser-project-settings.mjs';
 import { aiTextBrowserChecks } from './flow-browser-ai-text.mjs';
-import { interfaceStateBrowserChecks } from './flow-browser-interface-state.mjs';
+import { flowActionTimeoutBrowserChecks, interfaceStateBrowserChecks } from './flow-browser-interface-state.mjs';
 import { inboxChatBrowserChecks } from './flow-browser-inbox-chat.mjs';
 import { inboxDetailsBrowserChecks } from './flow-browser-inbox-details.mjs';
 import { localNotesBrowserChecks } from './flow-browser-local-notes.mjs';
@@ -827,6 +827,9 @@ try {
   await check(storesCheck, () => issueStoresBrowserChecks({ page, project, service, logs, poll, screenshot }));
   await check(aiTextCheck, () => aiTextBrowserChecks({ page, project, service, poll, screenshot }));
   await check(interfaceStateCheck, () => interfaceStateBrowserChecks({ page, project, service, poll, screenshot }));
+  await check(flowBrowserScenarioNames['--stalled-flow-action'], () =>
+    flowActionTimeoutBrowserChecks({ page, project, service })
+  );
   await check('Issues and Local notes use matching text styles', async () => {
     const id = '20261126-sidebar-labels-fixture';
     await writeBrowserIssue(project, {
@@ -1339,6 +1342,7 @@ try {
   const description =
     'Understand why the save button loses text\nDone: The text survives a reload.\nProof: Retained saved text.\nKnown facts: The problem occurs after refresh.\nConstraints: Reproduce before changing code.';
   await check(captureFolderIssueCheck, async () => {
+    const executionCount = logs.execution.length;
     await page.goto('/');
     await page.locator('#new-folder').click();
     await page.locator('#folder-name').fill('Browser folder');
@@ -1369,7 +1373,7 @@ try {
     assert.equal(startingPoint(data.flow).ref, 'refs/heads/dev');
     assert.equal(deliveryTarget(data.flow).branch, 'dev');
     assert.equal(requestData(data.flow).fields, null);
-    assert.equal(logs.execution.length, 0);
+    assert.equal(logs.execution.length, executionCount, 'Folder issue creation should not start workflow execution.');
   });
   async function ensureBrowserFolderIssue() {
     if (!issueId) {

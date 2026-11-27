@@ -369,6 +369,10 @@ state. The fixture uses disposable conversations and issues and starts no model
 work. `node --test scripts/interface-state.check.mjs` reproduces the original
 Discuss collapse and checks selection through growing and replaced activity.
 
+`node scripts/flow-browser.mjs --stalled-flow-action` checks that a withheld Flow
+action response refreshes the issue and re-enables its controls without
+reloading or resubmitting the action.
+
 `node scripts/flow-browser.mjs --project-navigation` checks the full-width header,
 the order and destinations of the Home, Issues, Reports, Discuss, Automate me, and
 Admin tabs, and the relocated Factory controls. It saves desktop and narrow

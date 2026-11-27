@@ -180,3 +180,61 @@ export async function interfaceStateBrowserChecks({ page, service, project, scre
   await screenshot('interface-state');
   await removeFlow();
 }
+
+export async function flowActionTimeoutBrowserChecks({ page, service, project }) {
+  const { issue } = await service.flows.action({
+    action: 'capture',
+    requestId: randomUUID(),
+    description: 'Recover a Flow action whose response never arrives',
+    storageProfile: resolveIssueStorage(project).profileId,
+  });
+  const flow = service.flows.read(service.flows.selected(issue.id));
+  flow.blocks.find(({ kind }) => kind === 'work').attempts.push({ id: randomUUID(), status: 'stopped' });
+  await service.flows.store.save(flow, flow.revision);
+  const fixture = await page.context().newPage();
+  try {
+    await fixture.clock.install();
+    await checkUnconfirmedResume(fixture, issue.id);
+  } finally {
+    await fixture.close();
+  }
+}
+
+async function checkUnconfirmedResume(page, issueId) {
+  await page.goto('/?issue=' + issueId);
+  const resume = page.getByRole('button', { name: 'Resume issue', exact: true });
+  const sent = Promise.withResolvers();
+  const release = Promise.withResolvers();
+  let submissions = 0;
+  let navigations = 0;
+  page.on('framenavigated', (frame) => {
+    if (frame === page.mainFrame()) navigations++;
+  });
+  const removeRoute = await fixtureRoute(page, '**/api/flow-action', async (route) => {
+    submissions++;
+    sent.resolve();
+    await release.promise;
+    await route.abort().catch((error) => {
+      if (!/Route is already handled/.test(error.message)) throw error;
+    });
+  });
+  try {
+    await resume.click();
+    await sent.promise;
+    assert.equal(await resume.isDisabled(), true);
+    const refreshed = page.waitForResponse('**/api/flow?**refresh=true');
+    await page.clock.fastForward(30_000);
+    assert.equal((await refreshed).ok(), true);
+    await page
+      .getByText('Factory did not confirm the action in time. Check the current issue before retrying.', {
+        exact: true,
+      })
+      .waitFor();
+    assert.equal(await resume.isEnabled(), true);
+    assert.equal(submissions, 1, 'A timed-out action must not be sent again automatically.');
+    assert.equal(navigations, 0, 'Recovery must keep the same issue page open.');
+  } finally {
+    release.resolve();
+    await removeRoute();
+  }
+}

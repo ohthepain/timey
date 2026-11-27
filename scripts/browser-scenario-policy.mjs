@@ -50,6 +50,7 @@ export const flowBrowserScenarioNames = {
   '--investigation-flows': 'Investigations use ordinary flows and independent retained outputs',
   '--investigation-toolbar': 'Investigation controls remain above the graph',
   '--interface-state': 'Refresh preserves expanded activity, editor size, drafts and copied selection',
+  '--stalled-flow-action': 'A missing Flow action response recovers the issue controls without resubmitting',
   '--investigation-followups': 'Completed investigations create reviewed follow-ups without another Retro',
   '--branch-repair': 'Branch repair progress survives reload and requires candidate approval',
   '--block-models': 'Block models preserve history and surface persistent blockers',

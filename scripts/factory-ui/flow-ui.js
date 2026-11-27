@@ -425,7 +425,8 @@ import { reorderedBlocks } from './flow-order.mjs';
     try {
       result = await response.json();
     } catch {
-      throw new Error(`The server returned an unreadable response (${response.status}). Your saved flow is unchanged.`);
+      options.signal?.throwIfAborted();
+      throw new Error(`Factory could not read the server response (${response.status}).`);
     }
     if (!response.ok) {
       throw Object.assign(new Error(result.error || result.message || `The request failed (${response.status}).`), {
@@ -433,6 +434,19 @@ import { reorderedBlocks } from './flow-order.mjs';
       });
     }
     return result;
+  }
+
+  async function waitForFlowResponse(request, timeout, signal) {
+    const deadline = new AbortController();
+    const timer = setTimeout(
+      () => deadline.abort(new DOMException('Factory response timed out.', 'TimeoutError')),
+      timeout
+    );
+    try {
+      return await request(signal ? AbortSignal.any([signal, deadline.signal]) : deadline.signal);
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   function post(path, value, signal) {
@@ -626,7 +640,11 @@ import { reorderedBlocks } from './flow-order.mjs';
     const selected = state.issueId;
     state.loading = true;
     try {
-      const { result, issueUnavailable } = await readFlowSnapshot(selected, announce || remote, controller.signal);
+      const { result, issueUnavailable } = await waitForFlowResponse(
+        (signal) => readFlowSnapshot(selected, announce || remote, signal),
+        15_000,
+        controller.signal
+      );
       if (sequence !== state.sequence || selected !== state.issueId || serverControlUI.isWaitingForServer()) return;
       const recovering = Boolean(state.connectionError);
       state.connectionError = '';
@@ -701,26 +719,31 @@ import { reorderedBlocks } from './flow-order.mjs';
     state.sequence += 1;
     state.loading = false;
     state.pending = true;
-    state.error = '';
-    renderErrors();
-    if (!options.global) $('issue-results').hidden = true;
-    setBusy(true);
     try {
-      const result = await post('flow-action', {
+      state.error = '';
+      renderErrors();
+      if (!options.global) $('issue-results').hidden = true;
+      setBusy(true);
+      const input = {
         action: name,
         ...(options.global ? {} : { issueId: selected, revision }),
         ...fields,
-      });
+      };
+      const result = await waitForFlowResponse((signal) => post('flow-action', input, signal), 30_000);
       if (result.error) throw new Error(result.error);
       if (selected === state.issueId && result.flow) applyView(result);
       return result;
     } catch (error) {
+      const timedOut = error.name === 'TimeoutError';
+      const message = timedOut
+        ? 'Factory did not confirm the action in time. Check the current issue before retrying.'
+        : error.message;
       if (options.errorId) {
-        $(options.errorId).textContent = error.message;
+        $(options.errorId).textContent = message;
         $(options.errorId).hidden = false;
       }
-      if (!options.global && selected === state.issueId) await load(true);
-      if (state.view?.lastBlockingError?.message !== error.message) showError(error.message);
+      if (!options.global && selected === state.issueId) await load(true, false, timedOut);
+      if (state.view?.lastBlockingError?.message !== message) showError(message);
       return null;
     } finally {
       state.pending = false;
