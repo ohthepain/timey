@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { LocalNotes } from './factory-ui/local-notes.mjs';
 import { resolveIssueStorage } from './factory-ui/stores/settings.mjs';
 import { ensureIssueNumbers } from './factory-ui/issue-numbers.mjs';
+import { listAvailableSkills } from './factory-ui/skills.mjs';
 
 export async function localNotesBrowserChecks({ page, service, project, poll, screenshot, output, candidate }) {
   if (await page.locator('#discuss-draft').isVisible())
@@ -12,13 +13,14 @@ export async function localNotesBrowserChecks({ page, service, project, poll, sc
   service.projectDiscuss?.close();
   service.projectDiscuss = null;
   const turns = [];
+  const connection = { ready: async () => {}, call: async () => ({ data: [] }) };
   service.projectDiscussOptions = {
     modelSettings: () => ({
       defaults: { model: 'test', effort: 'high' },
       models: [{ id: 'test', name: 'Test' }],
       efforts: ['high'],
     }),
-    skills: async () => [],
+    skills: (scope) => listAvailableSkills(connection, project, scope),
     createProvider: () => ({
       async turn(session, message, context) {
         turns.push(message);
@@ -312,6 +314,22 @@ async function checkNoteRecommendations({ page, notes, turns, poll, screenshot, 
     false
   );
   await poll(names, (labels) => labels.length === 0, 'Deleted note recommendations cleared');
+  await page.goto(firstUrl);
+  const [source, target, ...later] = notes.view().notes;
+  assert.equal(source.id, first.id);
+  const before = turns.length;
+  await page.locator('#discuss-draft').fill('/dnext');
+  await page.locator('#discuss-form .skill-option').filter({ hasText: 'dnextnote' }).click();
+  assert.equal(await page.locator('#discuss-draft').inputValue(), '/dnextnote ');
+  assert.equal(notes.get(source.id).id, source.id, 'Autocomplete must leave the note in place until send.');
+  await page.locator('#discuss-send').click();
+  await page.waitForURL((url) => url.href !== firstUrl);
+  await page.getByText(target.text, { exact: false }).first().waitFor();
+  assert.deepEqual(
+    notes.view().notes.map(({ id }) => id),
+    [target.id, ...later.map(({ id }) => id)]
+  );
+  assert.equal(turns.length, before);
   writeFileSync(
     join(output, 'note-recommendations.json'),
     JSON.stringify(
@@ -323,6 +341,7 @@ async function checkNoteRecommendations({ page, notes, turns, poll, screenshot, 
         failureKeptSource: true,
         successDeletedAndNavigated: true,
         standaloneDelete: true,
+        skillDeletedAndNavigated: true,
       },
       null,
       2

@@ -66,8 +66,9 @@ authorizes this documentation update; it does not authorize implementation.
 - Switching tabs, changing conversations, or refreshing leaves existing responses
   running. Restore history and the draft on return. Only explicit Stop interrupts
   a chat response; issue operations remain independent.
-- Skills are searchable during composition and included with a submitted message.
-  Selecting a skill alone starts no operation.
+- Type `/` to search for a skill. Choosing a result inserts its slash command
+  into the editable draft. Sending the draft includes the skills whose commands
+  are still present. Choosing a result alone starts no operation.
 - Home operations become real reusable project skills, available in other chats
   for that project. Cover complete workflows, including configuring and running
   investigations and reviewing and applying Automate me drafts.

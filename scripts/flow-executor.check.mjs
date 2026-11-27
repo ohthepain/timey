@@ -817,11 +817,10 @@ test('provider input stops the block and preserves its request instead of hangin
   assert.equal(conversationState(f.root, f.issue.id).flowBlocks['block-understand'].status, 'attention');
 });
 
-test('native Flow approvals wait for a decision bound to the current block and attempt', async (t) => {
+test('Flow command approvals wait for a decision bound to the current block and attempt', async (t) => {
   const f = fixture(t);
   const requested = Promise.withResolvers();
   const approved = Promise.withResolvers();
-  f.connection.selection = { provider: 'anthropic' };
   f.connection.requests = new Map();
   f.connection.turn = async () => {
     const request = {
@@ -844,12 +843,22 @@ test('native Flow approvals wait for a decision bound to the current block and a
   await requested.promise;
   const [request] = f.executor.approvals(f.issue.id);
   assert.equal(request.blockId, 'block-understand');
-  assert.equal(request.options[0].label, 'Allow once');
+  assert.equal(request.scope.command, 'Edit fixture');
   assert.throws(
     () => f.executor.answer(f.issue.id, request.blockId, 'stale-attempt', request.requestId, {}),
     /no longer belongs/
   );
-  f.executor.answer(f.issue.id, request.blockId, request.attemptId, request.requestId, { decision: 'option:0' });
+  const answer = (response) =>
+    f.executor.answer(f.issue.id, request.blockId, request.attemptId, request.requestId, response);
+  assert.throws(() => answer({ decision: 'option:0' }), /has not been reviewed/);
+  const pending = f.connection.requests.get(request.requestId);
+  pending.params.command = 'Edit a different fixture';
+  assert.throws(
+    () => answer({ decision: request.scope.decision, permissionToken: request.scope.token }),
+    /request changed/
+  );
+  const [changed] = f.executor.approvals(f.issue.id);
+  answer({ decision: changed.scope.decision, permissionToken: changed.scope.token });
   await running;
   assert.deepEqual(f.executor.approvals(f.issue.id), []);
 });

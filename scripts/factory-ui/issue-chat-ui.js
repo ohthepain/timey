@@ -104,63 +104,29 @@ window.createSkillComposer = function createSkillComposer(form, draft, load) {
   selector.className = 'skill-selector';
   selector.setAttribute('role', 'listbox');
   selector.hidden = true;
-  const chips = document.createElement('div');
-  chips.className = 'skill-chips';
-  chips.hidden = true;
   let anchor = draft;
   while (anchor.parentElement !== form) anchor = anchor.parentElement;
   form.insertBefore(selector, anchor);
-  form.insertBefore(chips, anchor);
+  const knownNames = new Set();
   let options = [],
-    selected = [],
     loaded = null,
     query = '',
     start = 0,
     active = 0,
-    allowed = true,
-    busy = false,
     generation = 0;
+  const commands = () => new Set(Array.from(draft.value.matchAll(/(?:^|\s)\/(\S+)/g), ([, name]) => name));
+  const skills = () => [...commands()].filter((name) => knownNames.has(name));
   const matches = () =>
-    options.filter(
-      (skill) =>
-        !selected.some((item) => item.name === skill.name) &&
-        `${skill.name} ${skill.description}`.toLocaleLowerCase().includes(query.toLocaleLowerCase())
+    options.filter((skill) =>
+      `${skill.name} ${skill.description}`.toLocaleLowerCase().includes(query.toLocaleLowerCase())
     );
-  function render() {
-    chips.replaceChildren();
-    for (const skill of selected) {
-      const chip = document.createElement('button');
-      chip.type = 'button';
-      chip.className = 'skill-chip';
-      chip.dataset.skill = skill.name;
-      chip.setAttribute('aria-label', `Remove ${skill.name} skill`);
-      const icon = document.createElement('span');
-      icon.textContent = skill.icon || '✦';
-      const label = document.createElement('span');
-      label.textContent = skill.name;
-      const remove = document.createElement('span');
-      remove.className = 'skill-chip-remove';
-      remove.setAttribute('aria-hidden', 'true');
-      remove.textContent = '×';
-      chip.append(icon, label, remove);
-      chip.addEventListener('click', (event) => {
-        if (!event.isTrusted) return;
-        selected = selected.filter((item) => item.name !== skill.name);
-        render();
-        draft.dispatchEvent(new Event('input', { bubbles: true }));
-        draft.focus();
-      });
-      chips.append(chip);
-    }
-    chips.hidden = selected.length === 0;
-  }
   function close() {
     generation++;
     selector.hidden = true;
     selector.replaceChildren();
   }
   function show() {
-    if (!allowed || !matches().length) {
+    if (!matches().length) {
       close();
       return;
     }
@@ -195,41 +161,36 @@ window.createSkillComposer = function createSkillComposer(form, draft, load) {
     selector.hidden = false;
   }
   function choose(skill) {
-    if (selected.length >= 8 || selected.some((item) => item.name === skill.name)) return;
-    selected.push(skill);
-    draft.setRangeText('', start, draft.selectionStart, 'end');
-    render();
-    close();
+    const selected = skills();
+    if (selected.length >= 8 && !selected.includes(skill.name)) return;
+    const suffix = draft.value.slice(draft.selectionEnd);
+    const end = draft.selectionEnd + suffix.match(/^[^\s]*/)[0].length;
+    const space = /\s/.test(draft.value.charAt(end)) ? '' : ' ';
+    draft.setRangeText(`/${skill.name}${space}`, start, end, 'end');
     draft.focus();
     draft.dispatchEvent(new Event('input', { bubbles: true }));
+    close();
   }
   async function querySkills(value, slashStart) {
     const request = ++generation;
     query = value;
     start = slashStart;
-    if (!loaded) {
-      if (!busy) {
-        busy = true;
-        loaded = Promise.resolve()
-          .then(load)
-          .then((result) => (options = result.skills || result));
-      }
-      try {
-        await loaded;
-      } catch (error) {
-        if (request !== generation) return;
-        loaded = null;
-        selector.replaceChildren();
-        const message = document.createElement('p');
-        message.textContent = `Skills could not load: ${error.message}`;
-        selector.append(message);
-        selector.hidden = false;
-        return;
-      } finally {
-        busy = false;
-      }
+    loaded ||= Promise.resolve().then(load);
+    try {
+      const result = await loaded;
+      if (request !== generation) return;
+      options = result.skills || result;
+      for (const { name } of options) knownNames.add(name);
+    } catch (error) {
+      if (request !== generation) return;
+      loaded = null;
+      selector.replaceChildren();
+      const message = document.createElement('p');
+      message.textContent = `Skills could not load: ${error.message}`;
+      selector.append(message);
+      selector.hidden = false;
+      return;
     }
-    if (request !== generation) return;
     active = 0;
     show();
   }
@@ -241,12 +202,6 @@ window.createSkillComposer = function createSkillComposer(form, draft, load) {
     void querySkills(match[1], slash);
   });
   draft.addEventListener('keydown', (event) => {
-    if (event.key === 'Backspace' && !draft.value && selected.length && allowed) {
-      event.preventDefault();
-      selected.pop();
-      render();
-      return;
-    }
     if (selector.hidden) return;
     const count = matches().length;
     if (event.key === 'ArrowDown' && count) {
@@ -270,23 +225,19 @@ window.createSkillComposer = function createSkillComposer(form, draft, load) {
     refresh: () => {
       loaded = null;
       options = [];
-    },
-    skills: () => selected.map((skill) => skill.name),
-    reset: () => {
-      selected = [];
-      render();
       close();
     },
-    allow: (value) => {
-      allowed = Boolean(value);
-      if (!allowed) close();
-    },
-    canSubmit: (text) => Boolean(text.trim() || (allowed && selected.length)),
+    skills,
+    reset: close,
     restore: (names) => {
-      selected = names.map((name) => options.find((item) => item.name === name) || { name });
-      render();
+      const existing = commands();
+      for (const name of names) knownNames.add(name);
+      const missing = [...new Set(names)].filter((name) => !existing.has(name));
+      if (missing.length) {
+        const space = /\S/.test(draft.value.slice(-1)) ? ' ' : '';
+        draft.value += space + missing.map((name) => `/${name}`).join(' ');
+      }
       close();
     },
-    render,
   };
 };

@@ -735,7 +735,11 @@ async function read(service, request, response, owner) {
       projectDiscuss(service).view(undefined, issueDiscussOwner(service, issue(selectedIssue))),
     '/api/project-discuss': () => projectDiscuss(service).view(url.searchParams.get('conversation')),
     '/api/project-discuss-skills': async () => {
-      const skills = await projectDiscussionSkills(projectDiscuss(service), url.searchParams.get('model') || undefined);
+      const skills = await projectDiscussionSkills(
+        projectDiscuss(service),
+        url.searchParams.get('model') || undefined,
+        url.searchParams.get('conversation')
+      );
       const choices = readClarificationSkills(service.root);
       return {
         skills,

@@ -23,7 +23,7 @@ export async function writeBrowserIssue(project, { id, title, body }) {
   return importBrowserIssue(project, id, report);
 }
 
-export async function importBrowserIssue(project, id, report, location = 'open') {
+export async function importBrowserIssue(project, id, report, location = 'open', number) {
   const stores = registeredProjectStores(project);
   if (!stores) {
     const path = storedIssuePath(project, id, location);
@@ -32,7 +32,7 @@ export async function importBrowserIssue(project, id, report, location = 'open')
     return;
   }
   const { storeId, artifactStoreId } = resolveIssueStorage(project);
-  await stores.importIssue({ id, report, location, storeId, artifactStoreId, operationId: 'fixture-' + id });
+  await stores.importIssue({ id, number, report, location, storeId, artifactStoreId, operationId: 'fixture-' + id });
   await stores.refresh({ issueIds: [id] });
 }
 

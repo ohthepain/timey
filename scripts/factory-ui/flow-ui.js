@@ -2642,10 +2642,14 @@ import { reorderedBlocks } from './flow-order.mjs';
       (runningStatuses.has(attempt.status)
         ? 'This block is running. Its output will appear here.'
         : 'No summary was recorded.');
+    const verification = attempt.verificationOrigin;
+    const originLink = verification
+      ? `<p class="progress-meta">Live verification · <a href="#attempt-${escape(verification.attemptId)}" data-verification-origin>Open originating investigation</a></p>`
+      : '';
     let result = '';
     if (attempt.result)
       result = typeof attempt.result === 'string' ? attempt.result : JSON.stringify(attempt.result, null, 2);
-    return `<div class="block-progress" data-attempt-id="${escape(attempt.id)}"><div class="progress-heading"><span>${statusIcon(attempt.status)} ${escape(statusText(attempt.status, attempt))}${attempt.invalidatedAt ? ' · Invalidated' : ''}</span><span class="progress-meta">Attempt ${index + 1}</span></div><p class="detail-copy" data-ai-text data-ai-key="summary-${escape(attempt.id)}" data-ai-source="${escape(summary)}">${escape(summary)}</p>${attempt.result?.pr ? prLink({ number: attempt.result.pr, url: attempt.result.url }) : ''}<p class="progress-meta" style="margin-top:9px">${escape(date(attempt.startedAt))}${attempt.modelSettings?.model ? ` · ${attempt.modelSettings.conditional ? 'Repair model (if needed)' : 'Model'}: ${escape(attempt.modelSettings.model)}` : ''}${attempt.endedAt ? ` · ended ${escape(date(attempt.endedAt))}` : ''}</p>${attempt.output ? `<pre class="attempt-output" data-ai-text data-ai-key="live-${escape(attempt.id)}" data-ai-source="${escape(attempt.output)}">${escape(attempt.output)}</pre>` : ''}${result && result !== summary ? `<pre class="attempt-output" data-ai-text data-ai-key="result-${escape(attempt.id)}" data-ai-source="${escape(result)}">${escape(result)}</pre>` : ''}${!merge && attempt.details?.length ? `<details data-preserve="details-${escape(attempt.id)}"><summary>Details used</summary><pre class="attempt-output">${escape(JSON.stringify(attempt.details, null, 2))}</pre></details>` : ''}${attempt.systemPrompt ? `<details data-preserve="prompt-${escape(attempt.id)}"><summary>System prompt used</summary><pre class="attempt-output">${escape(attempt.systemPrompt)}</pre></details>` : ''}${attemptEvidence(attempt, merge)}</div>`;
+    return `<div class="block-progress" id="attempt-${escape(attempt.id)}" data-attempt-id="${escape(attempt.id)}">${originLink}<div class="progress-heading"><span>${statusIcon(attempt.status)} ${escape(statusText(attempt.status, attempt))}${attempt.invalidatedAt ? ' · Invalidated' : ''}</span><span class="progress-meta">Attempt ${index + 1}</span></div><p class="detail-copy" data-ai-text data-ai-key="summary-${escape(attempt.id)}" data-ai-source="${escape(summary)}">${escape(summary)}</p>${attempt.result?.pr ? prLink({ number: attempt.result.pr, url: attempt.result.url }) : ''}<p class="progress-meta" style="margin-top:9px">${escape(date(attempt.startedAt))}${attempt.modelSettings?.model ? ` · ${attempt.modelSettings.conditional ? 'Repair model (if needed)' : 'Model'}: ${escape(attempt.modelSettings.model)}` : ''}${attempt.endedAt ? ` · ended ${escape(date(attempt.endedAt))}` : ''}</p>${attempt.output ? `<pre class="attempt-output" data-ai-text data-ai-key="live-${escape(attempt.id)}" data-ai-source="${escape(attempt.output)}">${escape(attempt.output)}</pre>` : ''}${result && result !== summary ? `<pre class="attempt-output" data-ai-text data-ai-key="result-${escape(attempt.id)}" data-ai-source="${escape(result)}">${escape(result)}</pre>` : ''}${!merge && attempt.details?.length ? `<details data-preserve="details-${escape(attempt.id)}"><summary>Details used</summary><pre class="attempt-output">${escape(JSON.stringify(attempt.details, null, 2))}</pre></details>` : ''}${attempt.systemPrompt ? `<details data-preserve="prompt-${escape(attempt.id)}"><summary>System prompt used</summary><pre class="attempt-output">${escape(attempt.systemPrompt)}</pre></details>` : ''}${attemptEvidence(attempt, merge)}</div>`;
   }
 
   function comments(block) {
@@ -2774,7 +2778,10 @@ import { reorderedBlocks } from './flow-order.mjs';
       notes: comments(block),
     };
     return (
-      permissions.map(agentApprovalCard).join('') +
+      permissions
+        .filter((request) => !request.scope)
+        .map(agentApprovalCard)
+        .join('') +
       investigationActions(block) +
       mergeProofSummary(block, last) +
       workScopePicker(block) +
@@ -3037,7 +3044,7 @@ import { reorderedBlocks } from './flow-order.mjs';
     waitingButton.hidden = !waiting;
     waitingButton.textContent = waiting ? waiting.label + ' needs confirmation' : '';
     waitingButton.dataset.block = waiting?.id || '';
-    const input = state.view?.humanInput;
+    const input = state.view?.agentApprovals?.[0]?.scope ? null : state.view?.humanInput;
     $('playback-status').innerHTML = playback?.userPaused ? 'Paused' : playbackSpinner(blocks, playback, playing);
     const blocker = state.view?.lastBlockingError;
     const reason = playback?.reason;
@@ -3059,11 +3066,149 @@ import { reorderedBlocks } from './flow-order.mjs';
     return child ? 'Needs your input · ' + child.title : 'Needs your input';
   }
 
+  let permissionReview;
+
+  function currentPermissions() {
+    const issue = state.view?.issue;
+    if (!issue || issue.id !== state.issueId || issue.readOnly || ['closed', 'archive'].includes(issue.location))
+      return [];
+    const commands = (state.view.agentApprovals || []).filter(({ scope, blockId, attemptId }) => {
+      const block = state.view.flow.blocks.find(({ id }) => id === blockId);
+      return scope && latest(block)?.id === attemptId && status(block) === 'running';
+    });
+    return [...commands, ...(state.view.liveVerificationReviews || []).filter(({ scope }) => scope)];
+  }
+
+  function liveVerificationScopeMarkup({ scope, declined }) {
+    const { reason, repository, branch, target, targetHead, candidate, advance } = scope;
+    const rows = [
+      ['GitHub repository', repository],
+      ['Disposable source branch', branch],
+      ['Protected test target', target],
+      ['Target revision', targetHead],
+      ['Candidate revision', candidate.head],
+      ['Candidate tree', candidate.tree],
+      ['Advance pull request', '#' + advance.number + ' · ' + advance.branch + ' · ' + advance.head],
+    ];
+    return `<p class="permission-reason">${escape(reason)}</p>
+      ${declined ? '<p>Permission was declined. The live check is still blocked.</p>' : ''}
+      ${rows.map(([label, value]) => `<p><strong>${label}</strong> <code>${escape(value)}</code></p>`).join('')}
+      <p><strong>Requested writes</strong></p><ul>
+        <li>Create the disposable source branch at the candidate revision.</li>
+        <li>Open a pull request from that branch to the protected test target.</li>
+        <li>Merge the reviewed advance pull request after the candidate passes required checks.</li>
+        <li>Attempt the stale merge. After GitHub rejects it, update the source from the advanced target, recheck it and merge the verification pull request.</li>
+      </ul><p>Allow once authorizes this live verification. GitHub may run branch checks and apply the repository’s automatic branch deletion setting after a merge.</p>`;
+  }
+
+  function permissionScopeMarkup(request) {
+    if (request.scope.operation) return liveVerificationScopeMarkup(request);
+    const { command, cwd, reason } = request.scope;
+    return `<p class="permission-reason">${escape(reason || 'The command requires permission to run.')}</p>
+      <p>Allow once lets this block continue with the operation below.</p>
+      ${cwd ? `<p><strong>Working directory</strong> <code>${escape(cwd)}</code></p>` : ''}
+      <p><strong>Requested command</strong></p><pre class="attempt-output">${escape(command)}</pre>`;
+  }
+
+  function reviewedPermissionIsCurrent() {
+    return (
+      permissionReview?.issueId === state.issueId &&
+      currentPermissions().some(
+        ({ attemptId, blockId, requestId, scope }) =>
+          attemptId === permissionReview.attemptId &&
+          blockId === permissionReview.blockId &&
+          requestId === permissionReview.requestId &&
+          scope.token === permissionReview.scope.token
+      )
+    );
+  }
+
+  function updatePermissionReview() {
+    if (!$('permission-review-dialog').open) return;
+    const current = reviewedPermissionIsCurrent();
+    $('permission-review-approve').disabled = state.pending || !current;
+    if (!current) {
+      $('permission-review-error').textContent =
+        'This request changed. Close this review and open the current request.';
+      $('permission-review-error').hidden = false;
+    }
+  }
+
+  $('issue-permission-review').addEventListener('click', () => {
+    const [request] = currentPermissions();
+    if (!request || state.pending) return;
+    permissionReview = { ...request, issueId: state.issueId };
+    $('permission-review-scope').innerHTML = permissionScopeMarkup(request);
+    $('permission-review-error').hidden = true;
+    $('permission-review-dialog').showModal();
+    updatePermissionReview();
+  });
+  async function submitPermission(approved) {
+    if (state.pending || !reviewedPermissionIsCurrent()) return;
+    const { blockId, attemptId, requestId, scope } = permissionReview;
+    $('permission-review-approve').disabled = true;
+    const options = { errorId: 'permission-review-error' };
+    const result = scope.operation
+      ? await action(
+          'decide-live-verification',
+          {
+            blockId,
+            attemptId,
+            permissionToken: scope.token,
+            decision: approved ? 'allow-once' : 'decline',
+          },
+          options
+        )
+      : await action(
+          'agent-answer',
+          {
+            blockId,
+            attemptId,
+            requestId,
+            response: { decision: scope.decision, permissionToken: scope.token },
+          },
+          options
+        );
+    if (result) {
+      $('permission-review-dialog').close();
+      if (scope.operation && approved) await load(true);
+    }
+    updatePermissionReview();
+  }
+  $('permission-review-approve').addEventListener('click', () => submitPermission(true));
+  $('permission-review-decline').addEventListener('click', (event) => {
+    if (!permissionReview?.scope.operation || !reviewedPermissionIsCurrent()) return;
+    event.preventDefault();
+    void submitPermission(false);
+  });
+
+  $('inspector-body').addEventListener('click', (event) => {
+    const link = event.target.closest('[data-verification-origin]');
+    if (!link) return;
+    const attempt = document.getElementById(link.hash.slice(1));
+    if (!attempt) return;
+    event.preventDefault();
+    const history = attempt.closest('details.attempt-history');
+    if (history) history.open = true;
+    attempt.scrollIntoView({ block: 'center' });
+  });
+
   function renderBlockingError() {
     const issue = state.view?.issue;
-    const error =
-      issue?.readOnly || ['closed', 'archive'].includes(issue?.location) ? null : state.view?.lastBlockingError;
+    const [permission] = currentPermissions();
+    const unavailable = state.view?.liveVerificationReviews?.find(({ error }) => error);
+    const error = permission
+      ? {
+          blockId: permission.blockId,
+          blockLabel: state.view.flow.blocks.find(({ id }) => id === permission.blockId)?.label,
+        }
+      : issue?.readOnly || ['closed', 'archive'].includes(issue?.location)
+        ? null
+        : unavailable
+          ? { ...unavailable, message: unavailable.error }
+          : state.view?.lastBlockingError;
     $('issue-blocker').hidden = !error;
+    $('issue-blocker-message').hidden = Boolean(permission);
     $('issue-blocker-message').textContent = error?.message || '';
     $('issue-blocker-context').textContent = error
       ? [error.childTitle, error.blockLabel || error.operation || 'Issue', error.model, date(error.at)]
@@ -3073,17 +3218,24 @@ import { reorderedBlocks } from './flow-order.mjs';
     const retrying = error?.blockId
       ? state.view.flow.blocks.some((block) => block.id === error.blockId && isRunning(block))
       : state.view?.autoplay?.mode === 'playing';
-    $('issue-blocker-retrying').hidden = !error || !retrying;
+    $('issue-blocker-retrying').hidden = !error || !retrying || Boolean(permission);
     $('issue-blocker-open').hidden = !error?.blockId;
+    $('issue-permission').hidden = !permission;
+    $('issue-permission-review').hidden = !permission;
+    updateFolderMarkup($('issue-permission-scope'), permission ? permissionScopeMarkup(permission) : '');
+    updatePermissionReview();
     const release = $('release-issue-claim');
-    const precedingAction = $(error ? 'issue-blocker-open' : 'waiting-block');
+    const precedingAction = $(permission ? 'issue-permission-review' : error ? 'issue-blocker-open' : 'waiting-block');
     if (release.previousElementSibling !== precedingAction) precedingAction.after(release);
   }
   $('issue-blocker-open').addEventListener('click', () => {
-    const error = state.view?.lastBlockingError;
-    if (!error?.blockId) return;
+    const blockId =
+      currentPermissions()[0]?.blockId ??
+      state.view?.liveVerificationReviews?.find(({ error }) => error)?.blockId ??
+      state.view?.lastBlockingError?.blockId;
+    if (!blockId) return;
     state.tab = 'details';
-    selectBlock(error.blockId);
+    selectBlock(blockId);
     renderInspector();
     $('inspector-body')
       .querySelector('[data-block-model-error], [name="model"], .block-progress')

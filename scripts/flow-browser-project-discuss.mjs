@@ -110,18 +110,24 @@ export async function projectDiscussBrowserChecks({ page, service, project, poll
     'Dictation was not added to editable input.'
   );
   assert.equal(calls.length, 1, 'Dictation must not send');
-  await page.locator('#discuss-draft').fill('/');
+  await page.locator('#discuss-draft').fill('/grilling');
   await page.locator('#discuss-form .skill-option').filter({ hasText: 'grilling' }).waitFor();
   await page.locator('#discuss-draft').press('Enter');
   assert.equal(calls.length, 1, 'Skill picker Enter must not send');
-  await page.locator('#discuss-draft').fill('With selected skill');
+  assert.equal(await page.locator('#discuss-draft').inputValue(), '/grilling ');
+  await page.locator('#discuss-draft').pressSequentially('/way');
+  await page.locator('#discuss-form .skill-option').filter({ hasText: 'wayfinder' }).click();
+  assert.equal(await page.locator('#discuss-draft').inputValue(), '/grilling /wayfinder ');
+  assert.equal(calls.length, 1, 'Clicking a skill suggestion must not send');
+  await page.locator('#discuss-draft').pressSequentially('With selected skills');
   await page.locator('#discuss-send').click();
   await poll(
     () => calls.length,
     (value) => value === 2,
     'Skill message did not dispatch.'
   );
-  assert.deepEqual(calls[1].settings.skills, ['grilling']);
+  assert.equal(calls[1].text, '/grilling /wayfinder With selected skills');
+  assert.deepEqual(calls[1].settings.skills, ['grilling', 'wayfinder']);
   await poll(
     () => service.projectDiscuss.read(first.id).status,
     (value) => value === 'idle',

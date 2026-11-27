@@ -43,6 +43,14 @@ function noteRecommendations(root, session, skills) {
   return [
     ...creationPrompts(note, next),
     recommendation('delete', 'Delete note', `Delete only the source local note ${note.id}.`),
+    ...(!session.closedAt && note.text === session.noteContext.text
+      ? [
+          {
+            ...recommendation('dnextnote', 'Delete & next', '/dnextnote'),
+            targetId: next?.id,
+          },
+        ]
+      : []),
     ...navigationPrompt('next', 'Next', next),
     ...navigationPrompt('prev', 'Prev', notes[index - 1]),
     ...grillingRecommendation(session, skills),
@@ -89,7 +97,7 @@ function noteDirection(id) {
 }
 
 function currentTarget(notes, index, { id, targetId }) {
-  if (!targetId) return undefined;
+  if (!targetId && id !== 'dnextnote') return undefined;
   const target = notes[index + noteDirection(id)];
   if (target?.id !== targetId) throw Error('The local note order changed. Choose a current prompt.');
   return target;
@@ -109,9 +117,20 @@ export function currentNoteRecommendation(root, { recommendation: operation }) {
   };
 }
 
-export async function executeNoteRecommendation(root, message, visit) {
-  if (!['delete', 'next', 'prev'].includes(message.recommendation?.id)) return null;
+export async function executeNoteRecommendation(root, message, visit, noteContext) {
+  if (!['delete', 'dnextnote', 'next', 'prev'].includes(message.recommendation?.id)) return null;
   const { operation, notes, basis, source, target } = currentNoteRecommendation(root, message);
+  if (operation.id === 'dnextnote') {
+    if (source.id !== noteContext?.id || source.text !== noteContext.text)
+      throw Error('Open the current note again before deleting it.');
+    const remove = () => notes.action({ action: 'delete', id: source.id, basis });
+    if (!target) {
+      remove();
+      return { text: 'Deleted the current note. There is no next note.' };
+    }
+    await visit(target, remove);
+    return { text: 'Deleted the current note and opened the next note discussion.' };
+  }
   if (operation.id === 'delete') {
     notes.action({ action: 'delete', id: source.id, basis });
     return { text: 'Deleted the source note.' };

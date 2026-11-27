@@ -4,7 +4,9 @@ import { test } from 'node:test';
 import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { ProjectDiscuss } from './factory-ui/project-discuss.mjs';
+import { ProjectDiscuss, projectDiscussionSkills } from './factory-ui/project-discuss.mjs';
+import { LocalNotes } from './factory-ui/local-notes.mjs';
+import { listAvailableSkills } from './factory-ui/skills.mjs';
 
 const choices = {
   defaults: { model: 'model-a', effort: 'high' },
@@ -74,6 +76,48 @@ test('project conversations are idle on read, create is idempotent, and historie
     () => f.discuss.action({ action: 'settings', conversationId: '../escape', settings: {} }),
     /valid project/
   );
+});
+
+void test('dnextnote is available only in live note discussions and deletes before opening the next note', async (t) => {
+  const { root, discuss, calls, provider } = fixture(t);
+  const connection = { ready: async () => {}, call: async () => ({ data: [] }) };
+  provider.skills = (_model, scope) => listAvailableSkills(connection, root, scope);
+  const notes = new LocalNotes(root);
+  notes.action({ action: 'create', text: 'Following note' });
+  notes.action({ action: 'create', text: 'Current note' });
+  const [current, following] = notes.view().notes;
+  const project = (await discuss.action({ action: 'create' })).selected;
+  const note = (await discuss.prepareNote(current)).selected;
+  const hasSkill = async (id) =>
+    (await projectDiscussionSkills(discuss, undefined, id)).find(({ name }) => name === 'dnextnote');
+  assert.equal(await hasSkill(project.id), undefined);
+  assert.equal((await hasSkill(note.id)).allowImplicitInvocation, false);
+  const send = (conversationId, clientId, text, settings) =>
+    discuss.action({ action: 'send', conversationId, clientId, text, settings });
+  await assert.rejects(() => send(project.id, 'outside', '/dnextnote'), /Open a current local note/);
+  await send(note.id, 'advance', '/dnextnote');
+  const view = await until(
+    () => discuss.view(note.id).selected,
+    ({ status }) => status === 'idle'
+  );
+  assert.deepEqual(
+    notes.view().notes.map(({ id }) => id),
+    [following.id]
+  );
+  assert.equal(view.noteNavigation.messageId, 'advance');
+  const next = discuss.view(view.noteNavigation.id).selected;
+  assert.equal(next.noteContext.id, following.id);
+  assert.equal(await hasSkill(note.id), undefined);
+  await assert.rejects(() => send(note.id, 'stale', '/dnextnote'), /Open a current local note/);
+  await send(next.id, 'last', '', { skills: ['dnextnote'] });
+  const last = await until(
+    () => discuss.view(next.id).selected,
+    ({ status }) => status === 'idle'
+  );
+  assert.match(last.messages.at(-1).text, /There is no next note/);
+  assert.equal(last.noteNavigation, undefined);
+  assert.deepEqual(notes.view().notes, []);
+  assert.equal(calls.length, 0);
 });
 
 test('queued edits freeze settings, retain attachments, and dispatch one response at a time', async (t) => {

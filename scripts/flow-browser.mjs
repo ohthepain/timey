@@ -26,6 +26,7 @@ import { projectIssuesBrowserChecks } from './flow-browser-project-issues.mjs';
 import { serverHeapBrowserChecks } from './flow-browser-server-heap.mjs';
 import { errorRecoveryBrowserChecks } from './flow-browser-error-recovery.mjs';
 import { mergeStateBrowserChecks } from './flow-browser-merge-state.mjs';
+import { liveVerificationBrowserChecks } from './flow-browser-live-verification.mjs';
 import { mergeTargetUpdateBrowserChecks } from './flow-browser-merge-target-update.mjs';
 import {
   flowBrowserCiParts,
@@ -3229,6 +3230,9 @@ try {
   );
   await check('Merged issues preserve history and expose only closure controls', () =>
     mergedIssueBrowserChecks({ page, project, service, screenshot, output, poll })
+  );
+  await check(flowBrowserScenarioNames['--live-verification'], () =>
+    liveVerificationBrowserChecks({ page, project, service, output, root, poll, screenshot, selectBlock, clickAction })
   );
   await check(mergeTargetUpdateCheck, () =>
     mergeTargetUpdateBrowserChecks({ page, project, service, output, root, poll, screenshot, selectBlock, clickAction })

@@ -109,12 +109,12 @@ class ProjectDiscussProvider {
       'Factory deletes the source note after confirming issue creation.'
     );
   }
-  async skills(model) {
+  async skills(model, scope) {
     if (!model || agentModel(model).provider === 'codex')
-      return listAvailableSkills(this.connection, this.service.root);
+      return listAvailableSkills(this.connection, this.service.root, scope);
     const connection = new NativeAgentConnection({ root: this.service.root, model });
     try {
-      return await listAvailableSkills(connection, this.service.root);
+      return await listAvailableSkills(connection, this.service.root, scope);
     } finally {
       connection.close();
     }

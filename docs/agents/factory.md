@@ -184,6 +184,15 @@ review, publication, recovery and server-enforced merge gates. Default delivery 
 one draft PR per issue and ends at manual handoff, including failed checks and
 unfinished implementation. Explicit verified-delivery routes retain their gates. Historical records retain their original meaning.
 
+## Review a blocked command
+
+When a running issue block waits for permission to execute a specific command,
+its **Permission required** notice shows the reason, command, and working
+directory when available. Choose **Review permission** to inspect the request.
+**Allow once** answers the waiting request for that command. If the command
+changes, open a fresh review. **Decline** or Escape closes the review and leaves
+the command waiting.
+
 ## Attach live proof for a sub-issue
 
 Work reports any requested check that requires a live external write. Before
@@ -219,3 +228,23 @@ to the operator or a separately authorized collector.
    observations under read-only permissions. When a candidate or requirement
    changes, use the Merge message to identify the check to authorize and rerun.
    `live-proof status` still lists the earlier attachments.
+
+## Verify a live check from Investigate
+
+Investigate can propose a live verification from a read-only run. Open **Review
+permission** beside **Open block details** to inspect the repository, disposable
+branches, exact candidate and requested writes. **Allow once** starts a separate
+verification attempt under the issue's existing execution claim. **Decline** keeps
+the check blocked. Enable **Reusable** to rerun a completed investigation and
+request a different scope. Approval is
+bound to the saved investigation attempt and expires when that scope changes.
+
+The Full Send late-target check uses the configured GitHub App and repository.
+Prepare a protected test target, a ready pull request to advance it, and an
+unused source branch name, all under `factory-proof/`. The candidate commit
+must already be present in that repository. Factory confirms strict branch
+protection, creates the verification PR, then merges the reviewed advance PR
+after the candidate passes required checks. It records GitHub's stale merge
+response, branch refresh, new checks and final merge parents. A stopped or
+interrupted run can leave disposable resources on GitHub. Its attempt evidence
+links to the originating investigation. Each run requires its own approval.

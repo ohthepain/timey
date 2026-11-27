@@ -92,6 +92,7 @@ import {
 } from './investigation-execution.mjs';
 import { flowHumanInput } from './flow-human-input.mjs';
 import { liveProofSummary, saveLiveProof } from './flow-live-proof.mjs';
+import { liveVerificationReviews } from './flow-live-verification.mjs';
 import { groupClosureProof } from './flow-group-closure.mjs';
 import { FolderOperations } from './folder-operations.mjs';
 import {
@@ -907,6 +908,7 @@ class IssueFlows {
       lastBlockingError: lastBlockingError(savedFlow),
       humanInput: availableHumanInput(issue, flow, agentApprovals[0]),
       agentApprovals,
+      liveVerificationReviews: liveVerificationReviews(this.service, issue, savedFlow),
       issueSettings: {
         ...issueSettings,
         fields: folderSettingsFields(this.service.root).filter(({ key }) =>
@@ -1750,14 +1752,7 @@ class IssueFlows {
     if (branchActions.has(input.action)) return this.branchOperation(issue, flow, input);
     if (input.action === 'restate-artifact') return this.restateArtifact(flow, input);
     if (input.action === 'stop') return this.stop(flow, input);
-    if (input.action === 'agent-answer') {
-      requireThat(this.active.has(issue.id), 'This issue has no running block on this runner.');
-      this.executor.answer(issue.id, input.blockId, input.attemptId, input.requestId, input.response);
-      this.changeAttempt(issue, input.blockId, input.attemptId, (attempt) => {
-        delete attempt.inputRequestedAt;
-      });
-      return this.view(issue.id);
-    }
+    if (input.action === 'agent-answer') return this.answerAgent(issue, flow, input);
     requireThat(!this.flowBuilds.has(issue.id), 'Wait for the flow structure to finish building.');
     if (input.action === 'destination-branches') return this.destinationBranches(flow);
     if (input.action === 'preview-publish' || input.action === 'confirm-publish')
@@ -1771,10 +1766,9 @@ class IssueFlows {
       }
       return this.view(issue.id);
     }
-    if (!['comment', 'open-block'].includes(input.action))
-      requireThat(input.revision === flow.revision, 'This flow changed. Refresh before saving this edit.');
-    if (['live-proof-authorize', 'live-proof-attach'].includes(input.action))
-      return this.recordLiveProof(issue, flow, input);
+    this.requireActionRevision(input, flow);
+    if (['decide-live-verification', 'live-proof-authorize', 'live-proof-attach'].includes(input.action))
+      return this.liveProofAction(issue, flow, input, catalog);
     if (['edit-request', 'save-reopen-feedback'].includes(input.action))
       return this.changeRequest(issue, flow, input, catalog);
     if (input.action === 'folder' || input.action === 'folder-lock') return await this.editFolder(issue, flow, input);
@@ -1816,6 +1810,62 @@ class IssueFlows {
     if (input.action === 'issue-settings') return await this.editIssueSettings(issue, flow, input);
     if (input.action === 'rename-issue') return this.renameIssue(issue, flow, input);
     return this.dispatchBlockAction(issue, flow, input, catalog);
+  }
+  requireActionRevision(input, flow) {
+    if (!['comment', 'open-block'].includes(input.action))
+      requireThat(input.revision === flow.revision, 'This flow changed. Refresh before saving this edit.');
+  }
+  answerAgent(issue, flow, { blockId, attemptId, requestId, response }) {
+    requireThat(this.active.has(issue.id), 'This issue has no running block on this runner.');
+    if (response?.permissionToken !== undefined) {
+      const block = flow.blocks.find(({ id }) => id === blockId);
+      const attempt = block && latestCurrentAttempt(block);
+      requireThat(
+        attempt?.id === attemptId && attempt.status === 'running',
+        'This block changed or stopped. Review its current permission request.'
+      );
+    }
+    this.executor.answer(issue.id, blockId, attemptId, requestId, response);
+    this.changeAttempt(issue, blockId, attemptId, (attempt) => {
+      delete attempt.inputRequestedAt;
+    });
+    return this.view(issue.id);
+  }
+  liveProofAction(issue, flow, input, catalog) {
+    return input.action === 'decide-live-verification'
+      ? this.decideLiveVerification(issue, flow, input, catalog)
+      : this.recordLiveProof(issue, flow, input);
+  }
+  async decideLiveVerification(issue, flow, input, catalog) {
+    requireThat(
+      !issue.closed && issue.location !== 'archive' && !issueHasActiveWork(this.service, issue.id),
+      'Choose an open issue with no running work.'
+    );
+    this.groups.requireChildren(issue);
+    const review = liveVerificationReviews(this.service, issue, flow).find(
+      ({ blockId, attemptId }) => blockId === input.blockId && attemptId === input.attemptId
+    );
+    requireThat(
+      review?.scope && review.scope.token === input.permissionToken,
+      'The live verification scope changed. Open the current permission review.'
+    );
+    const block = flow.blocks.find(({ id }) => id === review.blockId);
+    if (input.decision === 'decline') {
+      latestCurrentAttempt(block).verificationDeclinedAt = new Date().toISOString();
+      await this.store.save(flow, flow.revision);
+      return this.view(issue.id);
+    }
+    requireThat(input.decision === 'allow-once', 'Choose whether to allow this verification once.');
+    const attempt = this.makeAttempt(flow, issue, block, catalog);
+    delete attempt.modelSettings;
+    attempt.systemPrompt = 'Run the reviewed live verification.';
+    attempt.summary = 'Preparing the reviewed live verification.';
+    attempt.verificationOrigin = { attemptId: review.attemptId, scope: review.scope };
+    const controller = new AbortController();
+    const admitted = await this.admitAttempt(issue, flow, block, attempt, controller);
+    this.pause(issue.id, 'Running the reviewed live verification.');
+    admitted.owned.task = this.execute(issue, admitted.flow, block.id, attempt.id, controller, input);
+    return { accepted: true, issueId: issue.id, blockId: block.id, attemptId: attempt.id };
   }
   async recordLiveProof(issue, flow, input) {
     requireThat(
@@ -2946,11 +2996,7 @@ class IssueFlows {
     let providerGuard;
     const queue = this.service.sharedIssues;
     try {
-      const model = attempt.modelSettings?.model || this.issueSettings(issue, flow).values.model;
-      providerGuard = await guardProviderWork(this.service.root, model, (error) => {
-        this.pause(issue.id, error.message);
-        if (!['publish', 'merge', 'update-branch', 'cleanup'].includes(block.kind)) controller.abort(error);
-      });
+      providerGuard = await this.guardAttemptProvider(issue, flow, block, attempt, controller);
       if (!owner && !['request', 'retro', 'cleanup', 'close'].includes(block.kind))
         claim = queue?.acquireFlowBlock(issue, blockId, input.action === 'continue');
       const tools = issueRunTools(
@@ -3122,8 +3168,20 @@ class IssueFlows {
         this.read(issue).autoClose
       ) {
         await this.autoClose(issue.id);
-      } else if (block.kind !== 'request') this.autoplayFinished(issue.id, block, outcome);
+      } else this.finishAttemptPlayback(issue, block, attempt, outcome);
     }
+  }
+  guardAttemptProvider(issue, flow, block, attempt, controller) {
+    if (attempt.verificationOrigin) return;
+    const model = attempt.modelSettings?.model || this.issueSettings(issue, flow).values.model;
+    return guardProviderWork(this.service.root, model, (error) => {
+      this.pause(issue.id, error.message);
+      if (!['publish', 'merge', 'update-branch', 'cleanup'].includes(block.kind)) controller.abort(error);
+    });
+  }
+  finishAttemptPlayback(issue, block, attempt, outcome) {
+    if (attempt.verificationOrigin) this.pause(issue.id, outcome?.summary);
+    else if (block.kind !== 'request') this.autoplayFinished(issue.id, block, outcome);
   }
   async synchronizeAttempt(issue, owner, controller) {
     const stores = this.service.projectStores;
