@@ -222,7 +222,7 @@ function observeNavigation(page, poll) {
     await page.waitForURL((url) =>
       ['projectTab', 'folder', 'issue', 'block'].every((key) => url.searchParams.get(key) === (target[key] || null))
     );
-    await locator.waitFor();
+    await poll(() => locator.isVisible(), Boolean, `Browser history destination did not show ${locator}.`);
     await poll(
       () => page.title(),
       (value) => value === title,

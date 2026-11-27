@@ -1203,6 +1203,9 @@ relative card bounds and viewport height in the polling diagnostic.
 also checks that clicking the selected card reveals it without adding a history entry.
 The `--project-navigation` scenario preloads Chromium history so it checks the
 recorded destinations even when the browser evicts older entries.
+It checks the destination URL, visible content, and title independently after
+history traversal so Playwright does not need to resolve a pending document
+navigation before it can read the visible destination.
 
 `node scripts/flow-browser.mjs --error-recovery` triggers a rejected branch update
 and verifies that a successful explicit Refresh clears its old error banner.
