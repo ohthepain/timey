@@ -127,13 +127,26 @@ onto a master to attach or transfer it. Drop a sub-issue onto a sidebar folder
 to detach it and move it there. Use **×** beside a sub-issue to detach it from
 the master without moving it to another folder. Transfers require both masters to be idle and
 the Issue and Coordination stores to support the same transaction.
-**Work All Night** starts the reviewed list using each issue’s configured Merge
-policy. Automatic Merge proceeds after GitHub confirms readiness. Human-first
-Merge waits for approval in the issue. A rejected manual action while a block
-is running reports its error without updating the running flow’s revision. The
-folder shows the run report and the next action for issues that paused.
+The moon tab opens **Work All Night**. Add issues from any project folder,
+order them, and save the draft. Use **Same blast radius** to review possible
+master groups or **Different blast radii** to review the overlap among
+independent work items. A master uses the first selected issue's folder and
+target. Its children keep their own folders. The issues must be eligible and
+share compatible stores and a target. Use **Discussion** on a saved draft or
+run to ask why issues might fit together. Apply edits in **Plan**.
+
+**Start overnight run** uses the saved order and each issue's configured Merge
+policy. The ordered list displays the run result and current issue status,
+with children below their master. Automatic Merge proceeds after GitHub
+confirms readiness. Human-first Merge waits for approval in the issue. The
+folder's overnight control also runs its reviewed selection and shows its report.
 See the [folder design](../plans/issue-folder-strategies.md) for the master issue's
 acceptance and detachment rules.
+
+Discussion suggestions come from the latest completed reply. They can propose
+one next prompt, several distinct prompts, or none. Sending a suggestion uses
+the conversation's normal actions and approvals. Note navigation and capture
+controls remain available in the note's action row.
 
 Destination uses the issue's resolved target branch by default. Starting point
 remains a separate choice. Open the destination picker to list

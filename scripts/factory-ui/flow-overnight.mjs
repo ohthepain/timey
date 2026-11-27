@@ -4,13 +4,14 @@ import { basename, join } from 'node:path';
 import { redactValue } from './activity.mjs';
 import { digest, readJson, requireThat, writeJson } from './common.mjs';
 import { issueDependencies } from './data.mjs';
-import { latestCurrentAttempt, requestBlock } from './flow-block-data.mjs';
+import { deliveryTarget, latestCurrentAttempt, requestBlock } from './flow-block-data.mjs';
 import { folderName } from './flow-store.mjs';
 import { issueHasActiveWork } from './issue-cleanup.mjs';
 import { groupChildren } from './issue-group.mjs';
 import { listStoredIssues } from './issue-report-storage.mjs';
 import { mergedDelivery } from './merged-issue.mjs';
 
+const strategies = new Set(['same-blast-radius', 'different-blast-radii']);
 const finishLine = 'Follow each issue’s configured merge policy';
 const protectionOnly = new Set(['close', 'retro', 'cleanup', 'delete-worktree']);
 const inspectionActions = new Set([
@@ -104,10 +105,35 @@ function nextAction(block) {
   return retryableStatuses.has(latestCurrentAttempt(block)?.status) ? 'continue' : 'start';
 }
 
+function runKey(run) {
+  return run.project ? run.id : run.folder;
+}
+
+export function nightDiscussionContext(flows, id) {
+  const run = flows.overnight.projectRun(id);
+  const candidates = flows.folderSelection
+    .entries()
+    .filter(({ issue, flow }) => flows.groupEligible(issue, flow) && issue.state !== 'needs-approval')
+    .map(({ issue, flow }) => ({
+      ...publicIssue(issue),
+      folder: flow.folder,
+      storeId: issue.storeId,
+      target: deliveryTarget(flow).branch,
+      request: requestBlock(flow).data.wording.slice(0, 4000),
+    }));
+  return redactValue({
+    instructions:
+      'Give suggestions and reasons only. The person applies changes through the overnight planner. Explain concrete overlap and target or store restrictions.',
+    run,
+    candidates,
+  });
+}
+
 export class FlowOvernight {
   constructor(flows) {
     this.flows = flows;
     this.path = join(flows.store.directory, 'folder-night-runs.json');
+    this.draftPath = join(flows.store.directory, 'project-night-drafts.json');
     this.plans = new Map();
     this.running = new Map();
     this.owners = new Map();
@@ -124,7 +150,8 @@ export class FlowOvernight {
   save(run) {
     mkdirSync(this.flows.store.directory, { recursive: true });
     run.updatedAt = new Date().toISOString();
-    writeJson(this.path, { ...this.reports(), [run.folder]: run });
+    writeJson(this.path, { ...this.reports(), [runKey(run)]: run });
+    this.flows.service.flowChanges?.notify();
   }
 
   owns(issueId, runId) {
@@ -142,11 +169,17 @@ export class FlowOvernight {
   action(input) {
     if (input.action === 'folder-night-plan') return this.plan(input);
     if (input.action === 'folder-night-start') return this.start(input.planId);
-    return this.stop(folderName(input.folder));
+    if (input.action === 'folder-night-stop') return this.stop(folderName(input.folder));
+    return this.projectAction(input);
   }
 
   roster(folder, ids) {
-    requireThat(folder, 'Choose a folder for Work All Night.');
+    const entries = this.selectRoster(folder, ids);
+    for (const { issue, flow } of entries) this.requireIdle(issue, flow);
+    return entries;
+  }
+
+  selectRoster(folder, ids) {
     requireThat(
       Array.isArray(ids) && ids.length && ids.every((id) => typeof id === 'string') && new Set(ids).size === ids.length,
       'Choose the issues to run overnight.'
@@ -154,8 +187,10 @@ export class FlowOvernight {
     const eligible = new Map(this.flows.folderSelection.entries(folder).map((entry) => [entry.issue.id, entry]));
     return ids.map((id) => {
       const entry = eligible.get(id);
-      requireThat(entry, 'A selected issue is no longer in this folder.');
-      this.requireIdle(entry.issue, entry.flow);
+      requireThat(
+        entry,
+        folder ? 'A selected issue is no longer in this folder.' : 'A selected issue is no longer open.'
+      );
       return entry;
     });
   }
@@ -163,6 +198,7 @@ export class FlowOvernight {
   requireIdle(issue, flow) {
     requireThat(!issue.closed, `“${issue.title}” is closed.`);
     this.flows.groups.requireIndependent(issue.id);
+    this.flows.groups.requireChildren(issue);
     this.flows.requireAvailableAction(issue, flow, 'play');
     requireThat(!this.busy(issue.id), `“${issue.title}” already has work in progress or work to reconcile.`);
   }
@@ -179,6 +215,7 @@ export class FlowOvernight {
 
   plan({ folder: name, issueIds }) {
     const folder = folderName(name);
+    requireThat(folder, 'Choose a folder for Work All Night.');
     requireThat(!this.running.has(folder), 'This folder already has a Work All Night run.');
     const roster = this.roster(folder, issueIds);
     const id = randomUUID();
@@ -199,22 +236,158 @@ export class FlowOvernight {
       roster.every((entry, index) => identity(entry) === plan.basis[index]),
       'The selected issues changed. Preview the selection again.'
     );
+    this.plans.delete(plan.folder);
+    return this.launch(plan, roster);
+  }
+
+  drafts() {
+    return existsSync(this.draftPath) ? readJson(this.draftPath) : {};
+  }
+
+  projectView() {
+    const reports = Object.values(this.reports()).filter((run) => run.project);
+    const started = new Set(reports.map(({ id }) => id));
+    return [...Object.values(this.drafts()).filter(({ id }) => !started.has(id)), ...reports].sort((a, b) =>
+      b.updatedAt.localeCompare(a.updatedAt)
+    );
+  }
+
+  projectRun(id) {
+    const run = this.projectView().find((entry) => entry.id === id);
+    requireThat(run, 'Choose a saved overnight run.');
+    return run;
+  }
+
+  projectAction(input) {
+    const commands = {
+      'project-night-save': () => this.saveDraft(input),
+      'project-night-suggest': () => this.suggest(input),
+      'project-night-start': () => this.startDraft(input.runId, input.revision),
+      'project-night-stop': () => this.stopDraft(input.runId),
+      'project-night-group': () => this.previewGroup(input.issueIds),
+    };
+    return commands[input.action]();
+  }
+
+  stopDraft(id) {
+    this.projectRun(id);
+    return this.stop(id);
+  }
+
+  previewGroup(issueIds) {
+    const roster = this.roster(null, issueIds);
+    return this.flows.groups.preview(
+      {
+        folder: roster[0].flow.folder,
+        issueIds,
+        acrossFolders: true,
+      },
+      []
+    );
+  }
+
+  saveDraft({ runId, revision, issueIds, strategy }) {
+    const drafts = this.drafts();
+    const previous = this.editableDraft(runId, revision) || {};
+    const basis = this.draftBasis(issueIds, strategy);
+    const { id = randomUUID(), revision: savedRevision = 0 } = previous;
+    const draft = {
+      id,
+      project: true,
+      status: 'draft',
+      issueIds,
+      strategy,
+      basis,
+      revision: savedRevision + 1,
+      updatedAt: new Date().toISOString(),
+    };
+    mkdirSync(this.flows.store.directory, { recursive: true });
+    writeJson(this.draftPath, { ...drafts, [id]: draft });
+    this.flows.service.flowChanges?.notify();
+    return draft;
+  }
+
+  editableDraft(id, revision) {
+    if (!id) return null;
+    const run = this.projectRun(id);
+    requireThat(run.status === 'draft' && run.revision === revision, 'This run changed. Reopen it before saving.');
+    return run;
+  }
+
+  draftBasis(issueIds, strategy) {
+    requireThat(strategies.has(strategy), 'Choose a grouping strategy.');
+    requireThat(
+      Array.isArray(issueIds) && issueIds.length <= 100 && new Set(issueIds).size === issueIds.length,
+      'Choose up to 100 distinct issues.'
+    );
+    return issueIds.length ? this.independentBasis(issueIds) : [];
+  }
+
+  independentBasis(issueIds) {
+    return this.selectRoster(null, issueIds).map((entry) => {
+      this.flows.groups.requireIndependent(entry.issue.id);
+      return identity(entry);
+    });
+  }
+
+  async suggest({ issueIds, strategy }) {
+    requireThat(strategies.has(strategy), 'Choose a grouping strategy.');
+    const roster = this.roster(null, issueIds);
+    const candidates = roster.filter(
+      ({ issue, flow }) => strategy === 'different-blast-radii' || this.flows.groupEligible(issue, flow)
+    );
+    const details = candidates.map(({ issue, flow }) => ({
+      ...publicIssue(issue),
+      folder: flow.folder,
+      target: deliveryTarget(flow).branch,
+      storeId: issue.storeId,
+      request: requestBlock(flow).data.wording,
+    }));
+    if (details.length < 2) return [];
+    const output = await this.flows.folderSelection.recommend(strategy, details, []);
+    const ids = new Set(details.map(({ id }) => id));
+    return output
+      .filter(({ id, reason }) => ids.has(id) && typeof reason === 'string')
+      .map(({ id, reason }) => ({
+        id,
+        reason: redactValue(reason.slice(0, 1200)),
+      }));
+  }
+
+  async startDraft(id, revision) {
+    const draft = this.projectRun(id);
+    requireThat(draft.status === 'draft' && draft.revision === revision, 'Review and save the current draft first.');
+    await this.flows.service.projectStores?.refresh({ issueIds: draft.issueIds });
+    const current = this.projectRun(id);
+    requireThat(
+      current.status === 'draft' && current.revision === revision && !this.running.has(id),
+      'Review and save the current draft first.'
+    );
+    const roster = this.roster(null, current.issueIds);
+    requireThat(
+      roster.every((entry, index) => identity(entry) === current.basis[index]),
+      'A selected issue changed. Review and save the draft again before starting.'
+    );
+    return this.launch(current, roster);
+  }
+
+  launch(plan, roster) {
     const run = {
       id: plan.id,
       folder: plan.folder,
+      ...(plan.project && { project: true, strategy: plan.strategy }),
       finishLine,
       status: 'running',
       startedAt: new Date().toISOString(),
       issues: roster.map(({ issue }) => ({ ...publicIssue(issue), status: 'queued' })),
     };
-    this.running.set(run.folder, run);
+    this.running.set(runKey(run), run);
     try {
       this.save(run);
     } catch (error) {
-      this.running.delete(run.folder);
+      this.running.delete(runKey(run));
       throw error;
     }
-    this.plans.delete(run.folder);
     void this.run(run, new Map(roster.map((entry) => [entry.issue.id, identity(entry)]))).catch((error) => {
       console.warn('Could not save the Work All Night report: ' + redactValue(error.message));
     });
@@ -253,7 +426,7 @@ export class FlowOvernight {
       }
       if (!this.closed) this.finish(run);
     } finally {
-      this.running.delete(run.folder);
+      this.running.delete(runKey(run));
     }
   }
 
@@ -358,7 +531,7 @@ export class FlowOvernight {
       `${block.label} changed. Review its definition.`
     );
     if (block.kind === 'request') {
-      await this.flows.refreshRequest(issue, flow, requestBlock(flow).data.wording, catalog, true);
+      await this.flows.refreshRequest(issue, flow, requestBlock(flow).data.wording, catalog, { keepPlaying: true });
       return;
     }
     await this.flows.start(issue, flow, { blockId: block.id, action: nextAction(block) }, catalog, 'play');

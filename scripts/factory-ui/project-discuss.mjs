@@ -61,7 +61,8 @@ export function readClarificationSkills(root) {
 
 function conversationTitle(ownership) {
   if (!ownership) return 'New conversation';
-  return ownership.kind === 'issue' ? 'Issue Discuss' : 'Investigation discussion';
+  if (ownership.kind === 'issue') return 'Issue Discuss';
+  return ownership.kind === 'night' ? 'Work All Night' : 'Investigation discussion';
 }
 
 function checkedId(id) {
@@ -106,10 +107,16 @@ function restoreChatActivity(message) {
   for (const event of message.events || []) recordChatProgress(message, event);
 }
 
+function discussionPreview(text) {
+  return String(text ?? '')
+    .split(/\n?```timey-(?:suggestion|recommendations)/, 1)[0]
+    .trimEnd();
+}
+
 function appendReplyDelta(response, { itemId, delta = '' }) {
   const stream = response.stream || { id: itemId, text: '' };
   response.stream = { id: itemId, text: (stream.id === itemId ? stream.text : '') + delta };
-  response.text = stripChatProgress(response.stream.text);
+  response.text = discussionPreview(stripChatProgress(response.stream.text));
 }
 
 function updateReplyPreview(response, { method, params = {} }) {
@@ -120,7 +127,7 @@ function updateReplyPreview(response, { method, params = {} }) {
 function setCompletedPreview(response, { item }) {
   if (item?.type !== 'agentMessage') return;
   delete response.stream;
-  response.text = isChatCommentary(item) ? '' : item.text;
+  response.text = isChatCommentary(item) ? '' : discussionPreview(item.text);
 }
 
 function retainRecommendations(session, response, result) {

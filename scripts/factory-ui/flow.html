@@ -24,6 +24,7 @@
     <link rel="stylesheet" href="/project-reports.css" />
     <link rel="stylesheet" href="/local-notes.css" />
     <link rel="stylesheet" href="/flow-interactions.css" />
+    <link rel="stylesheet" href="/project-workspace.css" />
     <link rel="stylesheet" href="/issue-group.css" />
     <script src="/issue-group-ui.js" defer></script>
     <script src="/view-state.js" defer></script>
@@ -40,6 +41,7 @@
     <script src="/folder-settings-ui.js" defer></script>
     <script src="/investigation-followups-ui.js" defer></script>
     <script src="/project-admin-ui.js" defer></script>
+    <script src="/project-night-ui.js" defer></script>
     <script src="/project-home-ui.js" defer></script>
     <script src="/investigation-issue-ui.js" defer></script>
     <script src="/investigation-flow-controls-ui.js" defer></script>
@@ -257,6 +259,18 @@
           Discuss
         </button>
         <button
+          id="project-tab-night"
+          type="button"
+          role="tab"
+          aria-selected="false"
+          aria-controls="project-night"
+          aria-label="Work All Night"
+          title="Work All Night"
+          data-project-tab="night"
+        >
+          <span aria-hidden="true">☾</span>
+        </button>
+        <button
           id="project-tab-automate"
           type="button"
           role="tab"
@@ -368,7 +382,14 @@
             <div>
               <div class="issue-title-row">
                 <span class="issue-number" id="issue-number" hidden></span>
-                <h1 id="issue-title"></h1>
+                <h1 id="issue-title">
+                  <button
+                    id="rename-issue"
+                    class="issue-title-button"
+                    type="button"
+                    aria-description="Edit issue title"
+                  ></button>
+                </h1>
               </div>
               <form id="rename-issue-form" class="issue-title-row" hidden>
                 <input id="rename-issue-title" aria-label="Issue title" maxlength="256" required />
@@ -392,16 +413,6 @@
               </div>
             </div>
             <div class="issue-playback">
-              <button
-                class="icon-button"
-                id="rename-issue"
-                type="button"
-                aria-label="Rename issue"
-                title="Rename issue"
-              >
-                ✎
-              </button>
-
               <button
                 class="icon-button"
                 id="issue-discuss-toggle"
@@ -601,7 +612,12 @@
               >
             </div>
           </details>
-          <button class="environment-chip issue-approve-control" id="approve-issue" type="button" hidden>
+          <button
+            class="environment-chip issue-approve-control approval-required"
+            id="approve-issue"
+            type="button"
+            hidden
+          >
             Approve
           </button>
           <button
@@ -833,6 +849,83 @@
             aria-labelledby="project-tab-discuss"
             hidden
           ></section>
+          <section
+            id="project-night"
+            class="night-workspace"
+            role="tabpanel"
+            aria-labelledby="project-tab-night"
+            hidden
+          >
+            <h2>Work All Night</h2>
+            <div class="folder-controls">
+              <label
+                >Saved runs
+                <select id="night-runs"></select
+              ></label>
+              <button type="button" class="small-button" id="night-new">New draft</button>
+            </div>
+            <div role="tablist" aria-label="Overnight run">
+              <button
+                type="button"
+                class="small-button"
+                id="night-plan-tab"
+                role="tab"
+                aria-selected="true"
+                aria-controls="night-plan"
+              >
+                Plan
+              </button>
+              <button
+                type="button"
+                class="small-button"
+                id="night-discuss-tab"
+                role="tab"
+                aria-selected="false"
+                aria-controls="night-discuss"
+              >
+                Discussion
+              </button>
+            </div>
+            <p id="night-error" class="night-error" role="alert" hidden></p>
+            <section id="night-plan" class="night-plan" role="tabpanel" aria-labelledby="night-plan-tab">
+              <div id="night-edit" class="night-edit">
+                <div class="folder-controls">
+                  <label
+                    >Add issue
+                    <select id="night-issue"></select
+                  ></label>
+                  <button type="button" class="small-button" id="night-add">Add</button>
+                </div>
+                <div class="folder-controls">
+                  <label
+                    >Grouping strategy
+                    <select id="night-strategy">
+                      <option value="same-blast-radius">Same blast radius</option>
+                      <option value="different-blast-radii">Different blast radii</option>
+                    </select>
+                  </label>
+                  <button type="button" class="small-button" id="night-suggest">Suggest</button>
+                  <button type="button" class="small-button" id="night-group">Review master</button>
+                </div>
+                <div id="night-reasoning" aria-live="polite"></div>
+                <form id="night-master" class="night-master" hidden>
+                  <label>Combined request <textarea id="night-master-wording" required></textarea></label>
+                  <button type="submit" class="small-button">Create master</button>
+                  <button type="button" class="small-button" id="night-cancel-group">Cancel</button>
+                </form>
+              </div>
+              <ol id="night-order" class="night-order" aria-label="Execution order"></ol>
+              <p id="night-status" role="status"></p>
+              <div class="folder-controls">
+                <button type="button" class="small-button" id="night-save">Save draft</button>
+                <button type="button" class="primary-button" id="night-start">Start overnight run</button>
+                <button type="button" class="small-button" id="night-stop">Stop overnight run</button>
+              </div>
+            </section>
+            <section id="night-discuss" role="tabpanel" aria-labelledby="night-discuss-tab" hidden>
+              <div id="night-conversation" class="project-discuss night-conversation"></div>
+            </section>
+          </section>
           <section
             id="project-automate"
             class="project-home-content"
@@ -1468,6 +1561,7 @@
         aria-label="Automate me conversation"
         aria-live="polite"
       ></div>
+      <div id="home-automate-recommendations" data-discuss-recommendations></div>
       <form id="home-automate-reply" hidden>
         <label
           >Your reply<textarea
@@ -1551,6 +1645,7 @@
         <form id="discuss-form" class="discuss-composer">
           <p id="discuss-editing" class="muted" hidden></p>
           <div id="discuss-draft-attachments" class="discuss-attachments"></div>
+          <div id="discuss-note-actions" data-discuss-recommendations aria-label="Note actions"></div>
           <div id="discuss-recommendations" data-discuss-recommendations aria-label="Recommended prompts"></div>
           <div class="discuss-draft-wrap">
             <textarea

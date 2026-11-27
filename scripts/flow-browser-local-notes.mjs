@@ -24,6 +24,17 @@ export async function localNotesBrowserChecks({ page, service, project, poll, sc
     createProvider: () => ({
       async turn(session, message, context) {
         turns.push(message);
+        if (message.text === 'How can I clarify this note?')
+          return {
+            text: 'Clarify the expected save behavior before capturing the issue.',
+            recommendations: [
+              {
+                id: 'context-0',
+                label: 'Clarify save behavior',
+                prompt: 'What save behavior should the issue describe?',
+              },
+            ],
+          };
         if (message.recommendation?.id === 'create-delete-next')
           return fixtureCreateAndAdvance(service, session, context);
         return { text: 'Let’s discuss this note.' };
@@ -151,7 +162,7 @@ export async function localNotesBrowserChecks({ page, service, project, poll, sc
   const link = page.locator('#discuss-messages').getByRole('link', { name: 'the new issue', exact: true });
   assert.match(await link.getAttribute('href'), /\?issue=/);
   assert.ok(notes.get(second.id).issueId);
-  const createdPrompts = page.locator('[data-discuss-recommendations]');
+  const createdPrompts = page.locator('#discuss-note-actions');
   await createdPrompts.locator('[data-prompt-id="delete"]').waitFor();
   assert.equal(await createdPrompts.locator('[data-prompt-id="create"]').count(), 0);
   assert.equal(await createdPrompts.locator('[data-prompt-id="create-delete-next"]').count(), 0);
@@ -172,7 +183,7 @@ export async function localNotesBrowserChecks({ page, service, project, poll, sc
   await page.locator('#issue-heading:not([hidden])').waitFor();
   assert.equal(new URL(page.url()).searchParams.get('issue'), issueId);
   assert.equal(await page.locator('#issue-number').textContent(), '#182');
-  assert.equal(await page.locator('#issue-title').textContent(), 'An issue from the quick note');
+  assert.equal(await page.locator('#issue-title').innerText(), 'An issue from the quick note');
   writeFileSync(
     join(output, 'local-note-issue-number.json'),
     JSON.stringify(
@@ -187,7 +198,7 @@ export async function localNotesBrowserChecks({ page, service, project, poll, sc
         retainedAfterReload: true,
         openedUrl: page.url(),
         openedIssueNumber: await page.locator('#issue-number').textContent(),
-        openedIssueTitle: await page.locator('#issue-title').textContent(),
+        openedIssueTitle: await page.locator('#issue-title').innerText(),
         screenshot: join(output, 'local-note-issue-number.png'),
       },
       null,
@@ -264,11 +275,13 @@ async function openNoteFromSidebar(page, id) {
 async function checkNoteRecommendations({ page, notes, turns, poll, screenshot, output }) {
   const currentNotes = notes.view().notes;
   const [first, second, third] = currentNotes;
-  const prompts = page.locator('[data-discuss-recommendations]');
+  const prompts = page.locator('#discuss-note-actions');
   const names = () => prompts.getByRole('button').allTextContents();
   await openNoteFromSidebar(page, first.id);
   await prompts.locator('[data-prompt-id="next"]').waitFor();
   const firstUrl = page.url();
+  const noteTabTitle = await page.title();
+  assert.equal(noteTabTitle, 'Note: ' + first.text.split('\n')[0].slice(0, 72));
   const top = await names();
   assert.ok(!top.includes('Prev'));
   const above = await prompts.evaluate((element) => {
@@ -330,11 +343,14 @@ async function checkNoteRecommendations({ page, notes, turns, poll, screenshot, 
     [target.id, ...later.map(({ id }) => id)]
   );
   assert.equal(turns.length, before);
+  const contextual = await checkNotePromptContext(page);
   writeFileSync(
     join(output, 'note-recommendations.json'),
     JSON.stringify(
       {
         aboveComposer: above,
+        noteTabTitle,
+        contextual,
         top,
         nextAndPrev: true,
         sent,
@@ -347,4 +363,18 @@ async function checkNoteRecommendations({ page, notes, turns, poll, screenshot, 
       2
     )
   );
+}
+
+async function checkNotePromptContext(page) {
+  const draft = page.locator('#discuss-draft');
+  const suggestions = page.locator('#discuss-recommendations').getByRole('button');
+  await draft.fill('How can I clarify this note?');
+  await page.locator('#discuss-send').click();
+  await suggestions.filter({ hasText: 'Clarify save behavior' }).waitFor();
+  assert.deepEqual(await suggestions.allTextContents(), ['Clarify save behavior']);
+  await suggestions.first().click();
+  await page.getByText('Let’s discuss this note.', { exact: true }).waitFor();
+  assert.equal(await suggestions.count(), 0);
+  assert.ok(await page.locator('#discuss-note-actions').getByRole('button').count());
+  return { whenOpen: ['Clarify save behavior'], whenFinished: [] };
 }

@@ -4,6 +4,8 @@ import { join } from 'node:path';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
 import { initializeProjectLifecycle, readProjectSettings } from './factory-ui/project-settings.mjs';
+import { createProjectDiscussTools } from './factory-ui/project-discuss-tools.mjs';
+import { retainBlockingError } from './factory-ui/block-errors.mjs';
 import { importBrowserIssue, installBrowserHumanInput } from './flow-browser-fixture.mjs';
 
 const manual = (page) => ({ Origin: new URL(page.url()).origin, 'X-Factory-Action': 'manual' });
@@ -553,31 +555,51 @@ async function exerciseSequentialRun({ page, poll, screenshot, master, rows, cal
 
 function watchBlockerRetries(flowService) {
   const prior = flowService.executor;
-  const fail = Promise.withResolvers();
-  const succeed = Promise.withResolvers();
+  const gates = Array.from({ length: 3 }, () => Promise.withResolvers());
   let attempts = 0;
   flowService.executor = {
     ...prior,
     async run({ block }) {
       if (block.kind !== 'work') return { summary: 'Fixture finished ' + block.label };
-      attempts++;
-      if (attempts === 1) return { status: 'failed', summary: 'First fixture failure' };
-      if (attempts === 2) {
-        await fail.promise;
-        return { status: 'failed', summary: 'Second fixture failure' };
-      }
-      await succeed.promise;
-      return { summary: 'Third attempt completed' };
+      const index = attempts++;
+      if (gates[index - 1]) await gates[index - 1].promise;
+      return { status: 'failed', summary: 'Fixture Work failure ' + (index + 1) };
     },
   };
   return {
-    fail,
-    succeed,
+    gates,
     restore() {
-      fail.resolve();
-      succeed.resolve();
+      for (const gate of gates) gate.resolve();
       flowService.executor = prior;
     },
+  };
+}
+
+function installRetryChat(service, issueId) {
+  service.projectDiscuss?.close();
+  service.projectDiscuss = null;
+  service.projectDiscussOptions = {
+    skills: async () => [],
+    modelSettings: () => ({
+      defaults: { model: 'fixture', effort: 'high' },
+      models: [{ id: 'fixture' }],
+      efforts: ['high'],
+    }),
+    createProvider: () => ({
+      async turn() {
+        const { flows } = service;
+        const flow = flows.read(flows.selected(issueId));
+        const tools = createProjectDiscussTools(service);
+        await tools.invoke('issue_control', { action: 'continue', issueId, blockId: 'work', revision: flow.revision });
+        return {
+          text: 'Work retry started.',
+          recommendations: [
+            { id: 'context-0', label: 'Inspect the retry outcome', prompt: 'Review the current Work outcome.' },
+          ],
+        };
+      },
+      close() {},
+    }),
   };
 }
 
@@ -588,7 +610,7 @@ async function assertBlocker(page, text) {
   assert.equal(await page.locator('#error-banner').getByText(text, { exact: true }).isVisible(), false);
 }
 
-export async function blockerWorkspaceChecks({ page, project, service, output, screenshot, poll }) {
+export async function blockerWorkspaceChecks({ page, project, service, output, screenshot }) {
   const issueId = '20261126-inbox-blocker';
   await fixture(project, issueId, 'Blocker retry proof');
   const flows = service.flows;
@@ -596,48 +618,53 @@ export async function blockerWorkspaceChecks({ page, project, service, output, s
   const flow = flows.read(issue);
   flow.blocks = flow.blocks.filter(({ kind }) => ['request', 'work'].includes(kind));
   flow.blocks[0].data.fields = { type: 'feature', goal: 'Demonstrate the blocker' };
+  retainBlockingError(flow, { action: 'update-worktree', error: Error('Unrelated worktree error') });
   await flows.store.save(flow, flow.revision);
-  const gates = watchBlockerRetries(flows);
+  const retry = watchBlockerRetries(flows);
+  installRetryChat(service, issueId);
   try {
-    await exerciseBlockerRetries({ page, issueId, gates, screenshot, poll });
-    const attempts = flows.read(issue).blocks.find(({ kind }) => kind === 'work').attempts;
-    assert.deepEqual(
-      attempts.map(({ status }) => status),
-      ['failed', 'failed', 'completed']
-    );
-    proof(
-      output,
-      'blocker-retries',
-      attempts.map(({ status, summary }) => ({ status, summary }))
-    );
+    const transitions = await exerciseBlockerRetries({ page, issueId, gates: retry.gates, screenshot });
+    proof(output, 'blocker-retries', transitions);
   } finally {
-    gates.restore();
+    retry.restore();
   }
 }
 
-async function exerciseBlockerRetries({ page, issueId, gates, screenshot, poll }) {
+async function retryInChat(page) {
+  await page.locator('#issue-discuss-toggle').click();
+  await page.locator('#issue-discuss-draft').fill('Retry the Work block.');
+  await page.locator('#issue-discuss-send').click();
+  await page.getByText('Work retry started.', { exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Inspect the retry outcome', exact: true }).waitFor();
+}
+
+async function retryInBlock(page) {
+  await page.locator('#issue-blocker-open').click();
+  await page.locator('#tab-details').click();
+  await page.locator('#run-block[data-action="continue"]').click();
+}
+
+async function exerciseBlockerRetries({ page, issueId, gates, screenshot }) {
   await page.goto('/?issue=' + issueId);
   await page.locator('#issue-playback[data-playback-mode="start"]').click();
-  await assertBlocker(page, 'First fixture failure');
-  await page.reload();
-  await page.locator('.block-card[data-block="request"]').click();
-  await assertBlocker(page, 'First fixture failure');
-  await page.locator('#issue-blocker-open').click();
-  assert.equal(await page.locator('.block-card[data-block="work"]').getAttribute('aria-pressed'), 'true');
-  await page.locator('#issue-playback[data-playback-mode="resume"]').click();
-  await page.locator('#issue-blocker-retrying').waitFor();
-  await assertBlocker(page, 'First fixture failure');
-  await screenshot('issue-blocker-retrying');
-  gates.fail.resolve();
-  await assertBlocker(page, 'Second fixture failure');
-  await page.locator('#issue-playback[data-playback-mode="resume"]').click();
-  await page.locator('#issue-blocker-retrying').waitFor();
-  assert.equal(await page.locator('#issue-results').isVisible(), false);
-  gates.succeed.resolve();
-  await page.locator('#issue-blocker').waitFor({ state: 'hidden' });
-  await poll(
-    () => page.locator('#issue-results-message').textContent(),
-    (value) => value.startsWith('Flow complete'),
-    'The current outcome did not reach Results.'
-  );
+  await assertBlocker(page, 'Fixture Work failure 1');
+  const issueTitle = await page.title();
+  const observations = [];
+  const controls = [
+    ['Issue', () => page.locator('#issue-playback[data-playback-mode="resume"]').click()],
+    ['Block', () => retryInBlock(page)],
+    ['Chat', () => retryInChat(page)],
+  ];
+  for (const [index, [entry, start]] of controls.entries()) {
+    await start();
+    await assertBlocker(page, 'Unrelated worktree error');
+    const during = await page.locator('#issue-blocker-message').innerText();
+    await screenshot('issue-blocker-retrying-' + entry.toLowerCase());
+    gates[index].resolve();
+    await assertBlocker(page, 'Fixture Work failure ' + (index + 2));
+    observations.push({ entry, during, after: await page.locator('#issue-blocker-message').innerText() });
+  }
+  const chatPrompts = await page.locator('#issue-discuss-recommendations button').allTextContents();
+  assert.deepEqual(chatPrompts, ['Inspect the retry outcome']);
+  return { issueTitle, observations, chatPrompts };
 }

@@ -455,6 +455,7 @@ import { reorderedBlocks } from './flow-order.mjs';
     post,
     navigateHome: (projectTab) => navigateWorkspace({ projectTab }),
     navigateIssue: selectIssue,
+    nightIndex: () => ({ ...state.index, newActionsPaused: state.newActionsPaused, statusIcon, issueLink }),
     changed: () => load(true),
   });
   let discussOpen = false;
@@ -3267,16 +3268,21 @@ import { reorderedBlocks } from './flow-order.mjs';
 
   function renderWorkspaceTitle() {
     const issue = state.view?.issue || state.index.issues.find(({ id }) => id === state.issueId);
-    const block = state.requestedBlock && activeBlock();
+    if (issue && !state.issueUnavailable) {
+      document.title = issue.issueNumber == null ? issue.title : `#${issue.issueNumber} - ${issue.title}`;
+      return;
+    }
+    if (!state.issueId && $('project-home').dataset.projectTab === 'discuss') {
+      document.title = projectHome.discussionTitle() || projectHome.title();
+      return;
+    }
     const title = state.issueUnavailable
       ? 'Issue unavailable'
-      : issue
-        ? [issue.title, block?.label].filter(Boolean).join(' / ')
-        : state.issueId
-          ? 'Issue'
-          : missingFolder()
-            ? 'Folder unavailable'
-            : folderConfig?.folder?.label || state.fileFolder?.name || state.folder || projectHome.title();
+      : state.issueId
+        ? 'Issue'
+        : missingFolder()
+          ? 'Folder unavailable'
+          : folderConfig?.folder?.label || state.fileFolder?.name || state.folder || projectHome.title();
     document.title = title + ' · Factory';
   }
 
@@ -3304,7 +3310,7 @@ import { reorderedBlocks } from './flow-order.mjs';
     const issueNumber = $('issue-number');
     issueNumber.hidden = issue?.issueNumber == null;
     issueNumber.textContent = issueNumber.hidden ? '' : `#${issue.issueNumber}`;
-    $('issue-title').textContent = issue?.title || '';
+    $('rename-issue').textContent = issue?.title || '';
     $('issue-master-badge').hidden = !issue?.isMaster;
     const badges = issue?.badges?.filter((badge) => badge !== 'master-issue');
     updateFolderMarkup($('issue-heading-badges'), window.issueGroupUI.issueBadges({ badges }));
@@ -3798,10 +3804,11 @@ import { reorderedBlocks } from './flow-order.mjs';
     openClosure('cannot-reproduce', flowRevision);
   });
 
-  function closeRename() {
+  function closeRename(restoreFocus = false) {
     $('rename-issue-form').hidden = true;
     $('issue-title').parentElement.hidden = false;
     delete $('rename-issue-form').dataset.issue;
+    if (restoreFocus) $('rename-issue').focus();
   }
 
   function mergeApproval(block) {
@@ -4469,13 +4476,20 @@ import { reorderedBlocks } from './flow-order.mjs';
     $('issue-title').parentElement.hidden = true;
     form.hidden = false;
     $('rename-issue-title').value = title;
+    $('rename-issue-title').focus();
     $('rename-issue-title').select();
   });
-  $('cancel-rename').addEventListener('click', closeRename);
+  $('cancel-rename').addEventListener('click', () => closeRename(true));
+  $('rename-issue-form').addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      closeRename(true);
+    }
+  });
   $('rename-issue-form').addEventListener('submit', async (event) => {
     event.preventDefault();
     const title = $('rename-issue-title').value;
-    if (await action('rename-issue', { title, previousTitle: event.currentTarget.dataset.title })) closeRename();
+    if (await action('rename-issue', { title, previousTitle: event.currentTarget.dataset.title })) closeRename(true);
   });
   $('retry-branches').addEventListener('click', loadDestinationBranches);
   const startingBranchDialog = $('starting-branch-dialog');

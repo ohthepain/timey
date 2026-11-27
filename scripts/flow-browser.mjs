@@ -1,3 +1,4 @@
+import { projectNightBrowserChecks } from './flow-browser-project-night-fixture.mjs';
 import { fixtureRoute } from './flow-browser-routes.mjs';
 import { readyControl } from './browser-controls.mjs';
 import {
@@ -180,6 +181,8 @@ const assets = [
   'hotkeys-ui.js',
   'investigation-followups-ui.js',
   'project-home-ui.js',
+  'project-night-ui.js',
+  'project-workspace.css',
   'project-discuss-ui.js',
   'project-reports-ui.js',
   'project-reports.css',
@@ -214,16 +217,13 @@ const candidate = {
   assets: fingerprint(),
 };
 const results = [];
-const inboxDiscussCheck = 'Project chat stays at the bottom and accepts prompts while work is paused';
-Object.assign(flowBrowserScenarioNames, {
-  '--inbox-discuss': inboxDiscussCheck,
-});
 const {
   '--master-issues': masterIssuesCheck,
   '--manual-sub-issue-removal': manualSubIssueRemovalCheck,
   '--investigative-grouping': investigativeGroupingCheck,
   '--issue-annotations': issueAnnotationsCheck,
   '--inbox-flow': inboxFlowCheck,
+  '--inbox-discuss': inboxDiscussCheck,
   '--folder-settings': folderSettingsCheck,
   '--block-deletion': blockDeletionCheck,
   '--investigation-followups': followupsCheck,
@@ -813,6 +813,9 @@ try {
     )
   );
   await check(discussCheck, () => projectDiscussBrowserChecks({ page, project, service, poll, screenshot }));
+  await check(flowBrowserScenarioNames['--project-night'], () =>
+    projectNightBrowserChecks({ page, project, service, poll, screenshot, output })
+  );
   await check(inboxDiscussCheck, () => inboxDiscussBrowserChecks({ page, service, screenshot, output }));
   part = '--ci-part=1b';
   await check('Factory provider settings save enablement and quota warnings', () =>
@@ -1642,7 +1645,7 @@ try {
     };
     await rename('Edited from the issue heading');
     await poll(
-      () => page.locator('#issue-title').textContent(),
+      () => page.locator('#issue-title').innerText(),
       (title) => title === 'Edited from the issue heading',
       'The heading did not show the saved issue title.'
     );
