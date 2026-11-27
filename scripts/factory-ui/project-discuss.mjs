@@ -109,10 +109,7 @@ function restoreChatActivity(message) {
 
 function appendReplyDelta(response, { itemId, delta = '' }) {
   const stream = response.stream || { id: itemId, text: '' };
-  response.stream = {
-    id: itemId,
-    text: (stream.id === itemId ? stream.text : '') + delta,
-  };
+  response.stream = { id: itemId, text: (stream.id === itemId ? stream.text : '') + delta };
   response.text = stripChatProgress(response.stream.text);
 }
 
@@ -177,13 +174,7 @@ export class ProjectDiscuss {
   }
   settings(input = {}, previous = {}) {
     const choices = this.choices();
-    const result = {
-      ...choices.defaults,
-      clarificationSkill: 'none',
-      skills: [],
-      ...previous,
-      ...input,
-    };
+    const result = { ...choices.defaults, clarificationSkill: 'none', skills: [], ...previous, ...input };
     requireThat(
       choices.models.some(({ id }) => id === result.model),
       'Choose an available model.'
@@ -206,10 +197,7 @@ export class ProjectDiscuss {
     const path = join(this.directory, checkedId(sessionId), 'attachments', checkedId(id) + '.json');
     requireThat(existsSync(path), 'This attachment is no longer available.');
     const metadata = JSON.parse(readFileSync(path, 'utf8'));
-    return {
-      ...metadata,
-      path: join(this.directory, sessionId, 'attachments', id + '.bin'),
-    };
+    return { ...metadata, path: join(this.directory, sessionId, 'attachments', id + '.bin') };
   }
   attachments(sessionId, files = []) {
     requireThat(Array.isArray(files) && files.length <= 8, 'Attach up to eight files.');
@@ -241,10 +229,7 @@ export class ProjectDiscuss {
         mime: typeof file.mime === 'string' ? file.mime.slice(0, 120) : 'application/octet-stream',
         size: bytes.length,
       };
-      writeFileSync(join(folder, id + '.bin'), bytes, {
-        mode: 0o600,
-        flag: 'wx',
-      });
+      writeFileSync(join(folder, id + '.bin'), bytes, { mode: 0o600, flag: 'wx' });
       writeJson(join(folder, id + '.json'), metadata);
       return { ...metadata, path: join(folder, id + '.bin') };
     });
@@ -263,9 +248,7 @@ export class ProjectDiscuss {
   retainPrototypeFiles(session, paths) {
     requireThat(!session.ownership, 'Open Project Discuss to retain a prototype.');
     const files = this.attachments(session.id, prototypeAttachmentInputs(this.service.root, paths));
-    return {
-      files: files.map((file) => this.publicAttachment(session.id, file)),
-    };
+    return { files: files.map((file) => this.publicAttachment(session.id, file)) };
   }
   publicSession(session) {
     const result = copy(session);
@@ -333,12 +316,7 @@ export class ProjectDiscuss {
     const requested = id ? this.readOwned(id, ownership) : null;
     const selected = requested && !requested.closedAt ? requested : sessions[0];
     return {
-      conversations: sessions.map(({ id, title, status, updatedAt }) => ({
-        id,
-        title,
-        status,
-        updatedAt,
-      })),
+      conversations: sessions.map(({ id, title, status, updatedAt }) => ({ id, title, status, updatedAt })),
       selected: selected ? this.publicSession(selected) : null,
       ...this.choices(),
       clarificationSkills: readClarificationSkills(this.service.root),
@@ -368,19 +346,12 @@ export class ProjectDiscuss {
     };
   }
   async prepareNote(note) {
-    const value = await this.action({
-      action: 'create',
-      requestId: 'local-note-' + note.id,
-    });
+    const value = await this.action({ action: 'create', requestId: 'local-note-' + note.id });
     const id = value.selected.id;
     this.change(id, (session) => {
       if (!session.noteContext || session.noteContext.text !== note.text) {
         const initial = !session.noteContext;
-        session.noteContext = {
-          ...session.noteContext,
-          id: note.id,
-          text: note.text,
-        };
+        session.noteContext = { ...session.noteContext, id: note.id, text: note.text };
         session.title = 'Note: ' + note.text.split('\n')[0].slice(0, 72);
         session.messages.push({
           ...this.envelope(session, {
@@ -466,11 +437,7 @@ export class ProjectDiscuss {
       const notes = new LocalNotes(this.service.root);
       const current = notes.view();
       if (current.notes.some((note) => note.id === input.noteId))
-        notes.action({
-          action: 'delete',
-          id: input.noteId,
-          basis: current.basis,
-        });
+        notes.action({ action: 'delete', id: input.noteId, basis: current.basis });
       this.change(id, (saved) => {
         for (const message of saved.messages) if (message.localNoteId === input.noteId) message.localNoteDeleted = true;
       });
@@ -641,14 +608,7 @@ export class ProjectDiscuss {
     issueDeletionRequests.set(requestId, resolve);
     signal.addEventListener('abort', cancel, { once: true });
     try {
-      event({
-        method: 'ui/approval',
-        params: {
-          method: 'factory/issueDeletion',
-          requestId,
-          params: proposal,
-        },
-      });
+      event({ method: 'ui/approval', params: { method: 'factory/issueDeletion', requestId, params: proposal } });
       return await promise;
     } finally {
       issueDeletionRequests.delete(requestId);
@@ -721,9 +681,7 @@ export class ProjectDiscuss {
       });
     });
     try {
-      this.service.serverControl?.allow('/api/project-discuss-action', {
-        action: 'send',
-      });
+      this.service.serverControl?.allow('/api/project-discuss-action', { action: 'send' });
       const result = await this.runTurn(id, message, {
         signal: controller.signal,
         retain: (patch) => this.change(id, (s) => Object.assign(s, patch)),
