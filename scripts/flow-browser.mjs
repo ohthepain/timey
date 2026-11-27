@@ -1476,7 +1476,11 @@ try {
     assert.equal(requestData(master.flow).wording, edited);
     await openFolder();
     const nested = members.getByRole('list', { name: 'Sub-issues', exact: true });
-    assert.equal(await nested.getByRole('checkbox').count(), 2);
+    await poll(
+      () => nested.getByRole('checkbox').count(),
+      (count) => count === 2,
+      'The master did not display both sub-issues after reopening the folder.'
+    );
     const masterLink = members.locator(':scope > li > div > a').filter({ hasText: 'Keep both save behaviors' });
     const childLink = nested.getByRole('link').first();
     assert.ok((await childLink.boundingBox()).x > (await masterLink.boundingBox()).x);
@@ -2107,6 +2111,7 @@ try {
     await page.setViewportSize({ width: 1440, height: 960 });
   });
   await check(saveBlockCommentCheck, async () => {
+    const executionCount = logs.execution.length;
     await page.reload();
     await block(addedId);
     const comment = page.locator('#comment-form [name="comment"]');
@@ -2118,7 +2123,7 @@ try {
     await block(addedId);
     await page.locator('.message-body').filter({ hasText: 'Keep every partial attempt for review.' }).waitFor();
     assert.equal((await view()).flow.blocks.find((item) => item.id === addedId).comments.length, 1);
-    assert.equal(logs.execution.length, 0);
+    assert.equal(logs.execution.length, executionCount, 'Saving a block comment should not start workflow execution.');
   });
   async function addExtraWork() {
     await page.locator('[data-open-palette]').click();
@@ -2127,6 +2132,7 @@ try {
   }
   let extraWorkId;
   await check(workMarkdownCheck, async () => {
+    const executionCount = logs.execution.length;
     await ensureBrowserFolderIssue();
     const id = await addExtraWork();
     extraWorkId = id;
@@ -2194,7 +2200,7 @@ try {
     assert.equal(await card.locator('.block-status').innerText(), status);
     assert.equal(await draft.inputValue(), 'Unsaved Work draft');
     assert.equal(await page.locator('[data-action="start"]').count(), 1);
-    assert.equal(logs.execution.length, 0);
+    assert.equal(logs.execution.length, executionCount, 'Editing Work Markdown should not start workflow execution.');
     await trace('work-markdown-warning-proof.json', {
       invalid: true,
       write: () => replaceSourceFile(workOverride, '# Empty override\n'),
