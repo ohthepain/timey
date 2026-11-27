@@ -219,8 +219,15 @@ function expectedTitle(service, destination, title) {
 function observeNavigation(page, poll) {
   const observations = [];
   const expect = async (target, title, locator) => {
-    await page.waitForURL((url) =>
-      ['projectTab', 'folder', 'issue', 'block'].every((key) => url.searchParams.get(key) === (target[key] || null))
+    await poll(
+      () => page.url(),
+      (href) => {
+        const { searchParams } = new URL(href);
+        return ['projectTab', 'folder', 'issue', 'block'].every(
+          (key) => searchParams.get(key) === (target[key] || null)
+        );
+      },
+      `Unexpected browser history URL for ${JSON.stringify(target)}.`
     );
     await poll(() => locator.isVisible(), Boolean, `Browser history destination did not show ${locator}.`);
     await poll(
