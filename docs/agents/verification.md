@@ -580,6 +580,8 @@ branches add checks without writing over one another's source details.
 `pnpm run test:pr-repair` runs checks
 by name and stops at the first failure. CI runs changed records before broad
 verification. The version 1 file remains readable for historic entries.
+For a version 2 record that needs a longer browser replay, set `timeoutMs` to
+an integer from 120000 to 240000. The default is 120000.
 Use `node scripts/flow-browser.mjs --timers` for the isolated attempt
 timer scenario. Repair workers reproduce the named failures, include necessary
 predecessor scenarios, and return after focused proof so GitHub can check the repaired commit.
