@@ -1,0 +1,16 @@
+{
+  "version": 2,
+  "name": "temporary discussion lists enabled skills and invokes selected skills without persisting the transcript",
+  "command": [
+    "node",
+    "--test",
+    "--test-name-pattern=^temporary discussion lists enabled skills and invokes selected skills without persisting the transcript$",
+    "scripts/factory-discussion.check.mjs"
+  ],
+  "source": {
+    "runId": "45999924727",
+    "checkout": "ad4c8a91e5158904d40427b330e39b69ab1dd3cb",
+    "tree": "8e819ee94162771c881afe80faa796df9241beca",
+    "jobId": "140512541418"
+  }
+}

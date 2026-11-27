@@ -206,6 +206,7 @@ test('temporary discussion lists enabled skills and invokes selected skills with
     'local-note',
     'sample',
     'skill-installer',
+    'ui-design',
   ]);
   assert.deepEqual(
     skills.filter(({ source }) => source !== 'Factory'),

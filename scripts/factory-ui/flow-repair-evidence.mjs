@@ -1,15 +1,15 @@
 import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
-import { join, sep } from 'node:path';
+import { dirname, join, sep } from 'node:path';
 import { z } from 'zod';
 import { digest, requireThat, writeJson } from './common.mjs';
 import { redactValue } from './activity.mjs';
-import { evidencePath } from './stores/evidence.mjs';
+import { retainedEvidencePath } from './stores/evidence.mjs';
 
 function readEvidence(root, file) {
   if (!file) return;
   try {
-    const bytes = readFileSync(evidencePath(root, file.path, file.sha256));
-    if (digest(bytes) === file.sha256) return JSON.parse(bytes);
+    const path = retainedEvidencePath(root ?? dirname(file.path), file.path, file.sha256);
+    return JSON.parse(readFileSync(path));
   } catch {
     // Historical records may be unavailable on this runner.
   }
@@ -18,8 +18,8 @@ function readEvidence(root, file) {
 const repairBrowserObservation = z.object({
   sourceCommit: z.string(),
   sourceTree: z.string().optional(),
-  sourceDiff: z.literal(''),
-  sourceClean: z.literal(true).optional(),
+  sourceDiff: z.string(),
+  sourceClean: z.boolean().optional(),
   sourceEnvironment: z.record(z.string(), z.string()).optional(),
   fixture: z.string().min(1),
   scenarios: z.array(z.object({ result: z.object({ head: z.string().min(1), revision: z.string().min(1) }) })).min(1),
@@ -28,13 +28,32 @@ const repairBrowserObservation = z.object({
 export function repairBrowserProof(file, { commit, tree }, { attemptId, round }) {
   const parsed = repairBrowserObservation.safeParse(readEvidence(null, file));
   if (!parsed.success) return;
-  const { sourceCommit, sourceTree = tree, sourceEnvironment, fixture } = parsed.data;
-  if (sourceCommit === commit && sourceTree === tree)
-    return { attemptId, round, sourceCommit, sourceTree, environment: { ...sourceEnvironment, fixture }, file };
+  const { sourceCommit, sourceTree, sourceEnvironment, fixture, sourceDiff, sourceClean } = parsed.data;
+  const proof = {
+    attemptId,
+    round,
+    sourceCommit,
+    sourceTree,
+    environment: { ...sourceEnvironment, fixture },
+    file,
+  };
+  return repairProofForCandidate(proof, { commit, tree }, sourceClean === false || Boolean(sourceDiff));
 }
 
-function matchingRepairBrowserProof(root, { sourceCommit, sourceTree, file } = {}, { commit, tree }) {
-  return sourceCommit === commit && sourceTree === tree && readEvidence(root, file);
+function repairProofForCandidate(proof, { commit, tree }, dirty) {
+  if (dirty)
+    return { ...proof, qualification: 'The browser fixture passed while its parent checkout had uncommitted changes.' };
+  const sourceTree = proof.sourceTree ?? tree;
+  if (receiptMatches({ commit: proof.sourceCommit, tree: sourceTree }, commit, tree)) return { ...proof, sourceTree };
+}
+
+function cleanObservation(observation) {
+  return Boolean(observation) && observation.sourceClean !== false && !observation.sourceDiff;
+}
+
+function matchingRepairBrowserProof(root, proof = {}, { commit, tree }) {
+  if (proof.qualification || proof.sourceCommit !== commit || proof.sourceTree !== tree) return false;
+  return cleanObservation(readEvidence(root, proof.file));
 }
 
 export function priorRepairBrowserProof(root, attempts, candidate) {
@@ -47,6 +66,43 @@ export function priorRepairBrowserProof(root, attempts, candidate) {
 export function receiptRepairBrowserProof(root, receipt, candidate) {
   const proof = readEvidence(root, receipt)?.repairBrowserProof;
   if (matchingRepairBrowserProof(root, proof, candidate)) return proof;
+}
+
+export function receiptBrowserReplay(root, receipt, { head, tree }) {
+  const { browser, candidate } = readEvidence(root, receipt) || {};
+  if (!receiptMatches(candidate, head, tree)) return;
+  if (replayMatches(browser, head, tree)) return verifiedReplay(root, browser, head, tree);
+}
+
+function verifiedReplay(root, browser, head, tree) {
+  const result = readEvidence(root, browser.results);
+  if (observedReplayMatches(result, head, tree) && replayLogRetained(root, browser.log)) return browser;
+}
+
+function receiptMatches(candidate, head, tree) {
+  return tree && candidate?.commit === head && candidate.tree === tree;
+}
+
+function replayMatches(browser = {}, head, tree) {
+  const candidate = browser.candidate;
+  return candidate?.head === head && candidate.tree === tree && browser.exit === 0;
+}
+
+function observedReplayMatches(result = {}, head, tree) {
+  if (result.passed !== true || !result.candidate) return false;
+  return observedCandidateMatches(result.candidate, head, tree);
+}
+
+function observedCandidateMatches(candidate, head, tree) {
+  return candidate.clean !== false && candidate.revision === head && candidate.tree === tree;
+}
+
+function replayLogRetained(root, log) {
+  try {
+    return Boolean(retainedEvidencePath(root, log.path, log.sha256));
+  } catch {
+    return false;
+  }
 }
 
 export function mergeRepairHistory(folder, attemptId, log) {

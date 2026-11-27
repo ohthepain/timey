@@ -1,4 +1,7 @@
 import { randomUUID, createHash } from 'node:crypto';
+import { setTimeout as delay } from 'node:timers/promises';
+import { ownsDeletedRecord } from './deletion-retention.mjs';
+import { metadataTransaction } from './metadata-operation.mjs';
 
 export const cloneRecord = (value) => JSON.parse(JSON.stringify(value));
 
@@ -37,6 +40,44 @@ export function validIdentity(value, label = 'issue') {
 
 export function sameOwner(a, b) {
   return Boolean(a && b && a.token === b.token && a.attemptId === b.attemptId && a.runnerId === b.runnerId);
+}
+
+const isProposalSeal = (gate) => gate?.value.role === 'delete-proposal';
+
+async function retryGate(coordination, error) {
+  if (!['STORE_PROPOSAL_DELETING', 'STORE_CONFLICT'].includes(error.code)) throw error;
+  const gate = await coordination.get('project/migration');
+  if (error.code === 'STORE_CONFLICT' && !isProposalSeal(gate)) throw error;
+  return gate;
+}
+
+async function waitForWritableGate(coordination, error, deadline) {
+  let gate = await retryGate(coordination, error);
+  while (isProposalSeal(gate)) {
+    if (Date.now() >= deadline)
+      throw storeFailure('STORE_MIGRATING', 'Resume the interrupted proposal deletion in Project settings.');
+    await delay(50);
+    gate = await coordination.get('project/migration');
+  }
+}
+
+async function runWhenWritable(coordination, run) {
+  const deadline = Date.now() + 30000;
+  for (;;) {
+    try {
+      return await run();
+    } catch (error) {
+      await waitForWritableGate(coordination, error, deadline);
+    }
+  }
+}
+
+function sealedStoreError(gate) {
+  if (isProposalSeal(gate))
+    return storeFailure('STORE_PROPOSAL_DELETING', 'Project storage is sealed while deleting a proposal.');
+  return storeFailure('STORE_MIGRATING', 'Project storage is sealed for a checked migration.', {
+    migration: gate.value,
+  });
 }
 
 export function createArtifactRouter({ active, stores, records }) {
@@ -150,19 +191,23 @@ export function createCoordination(records, { runnerId = randomUUID(), now = () 
         return this.records.list(prefix, select);
       },
       async commit(operationId, expected, writes, sealToken) {
-        const gate = await this.get('project/migration');
-        this.requireGate(gate, sealToken);
-        const conditions = new Map(expected.map((entry) => [entry.key, entry]));
-        if (!conditions.has('project/migration'))
-          conditions.set('project/migration', { key: 'project/migration', revision: gate?.revision ?? null });
-        return this.records.commit({ operationId, expected: [...conditions.values()], writes: cloneRecord(writes) });
+        const commit = async () => {
+          const gate = await this.get('project/migration');
+          this.requireGate(gate, sealToken);
+          const conditions = new Map(expected.map((entry) => [entry.key, entry]));
+          if (!conditions.has('project/migration'))
+            conditions.set('project/migration', { key: 'project/migration', revision: gate?.revision ?? null });
+          return this.records.commit({ operationId, expected: [...conditions.values()], writes: cloneRecord(writes) });
+        };
+        return sealToken ? commit() : this.withWritableGate(commit);
+      },
+      withWritableGate(run) {
+        return metadataTransaction.getStore() === this.records ? run() : runWhenWritable(this, run);
       },
       requireGate(gate, token) {
         if (!gate?.value) return;
         if (gate.value.token === token) return;
-        throw storeFailure('STORE_MIGRATING', 'Project storage is sealed for a checked migration.', {
-          migration: gate.value,
-        });
+        throw sealedStoreError(gate);
       },
       async operation(id, kind, input, { claimAdmission = false } = {}) {
         assertStoreState(
@@ -299,25 +344,59 @@ export function createCoordination(records, { runnerId = randomUUID(), now = () 
   );
 }
 
-async function otherPendingOperation(coordination, operationId) {
-  const pending = await coordination.list('operations/', ({ value }) =>
-    value.status === 'pending' && value.id !== operationId ? value.id : undefined
-  );
-  return pending.length > 0;
+export async function deletionBlockers(coordination, { issueId, operationId } = {}) {
+  const includes = issueId ? (record) => ownsDeletedRecord(record, issueId) : () => true;
+  const [claims, pending] = await Promise.all([
+    issueId
+      ? coordination.get('claims/' + issueId).then(Boolean)
+      : coordination.list('claims/').then((rows) => rows.length > 0),
+    coordination.list('operations/', (record) =>
+      record.value.status === 'pending' && record.value.id !== operationId && includes(record)
+        ? record.value
+        : undefined
+    ),
+  ]);
+  return { claims, pending: pending[0] };
 }
 
-export async function sealCoordination(coordination, { id, role, storeId, operationId }) {
-  const claims = await coordination.list('claims/');
+async function requireSealAvailable(coordination, scope) {
+  const { claims, pending } = await deletionBlockers(coordination, scope);
   assertStoreState(
-    claims.length === 0,
+    !claims,
     'STORE_BUSY',
-    'Finish or explicitly reconcile all issue claims before moving project storage.'
+    scope.issueId
+      ? 'Finish or explicitly reconcile the proposal’s claim before deleting it.'
+      : 'Finish or explicitly reconcile all issue claims before moving project storage.'
   );
   assertStoreState(
-    !(await otherPendingOperation(coordination, operationId)),
+    !pending,
     'STORE_PENDING',
-    'Reconcile pending operations before moving project storage.'
+    scope.issueId
+      ? 'Reconcile the proposal’s pending operation before deleting it.'
+      : 'Reconcile pending operations before moving project storage.'
   );
+}
+
+async function checkSealRace(coordination, scope, installed) {
+  const { claims, pending } = await deletionBlockers(coordination, scope);
+  if (!claims && !pending) return;
+  const key = 'project/migration';
+  const gate = await coordination.get(key);
+  await coordination.commit(
+    scope.operationId + '/unseal-race/' + installed.token,
+    [{ key, revision: gate.revision }],
+    [{ key, value: null }],
+    installed.token
+  );
+  throw storeFailure(
+    pending ? 'STORE_PENDING' : 'STORE_BUSY',
+    'Issue work or an update started before the storage seal. Reconcile it before continuing.'
+  );
+}
+
+export async function sealCoordination(coordination, { id, role, storeId, operationId, issueId, expected = [] }) {
+  const scope = { issueId, operationId };
+  await requireSealAvailable(coordination, scope);
   const key = 'project/migration';
   const existing = await coordination.get(key);
   if (existing) {
@@ -325,21 +404,12 @@ export async function sealCoordination(coordination, { id, role, storeId, operat
     return existing.value;
   }
   const value = { id, role, storeId, operationId, token: randomUUID(), state: 'sealed', sealedAt: coordination.now() };
-  await coordination.commit(operationId + '/seal', [{ key, revision: null }], [{ key, value }]);
-  const freshClaims = await coordination.list('claims/');
-  const freshPending = await otherPendingOperation(coordination, operationId);
-  if (freshClaims.length || freshPending) {
-    const installed = await coordination.get(key);
-    await coordination.commit(
-      operationId + '/unseal-race',
-      [{ key, revision: installed.revision }],
-      [{ key, value: null }],
-      value.token
-    );
-    throw storeFailure(
-      freshPending ? 'STORE_PENDING' : 'STORE_BUSY',
-      'Issue work or an update started before the migration seal. Reconcile it before continuing.'
-    );
-  }
+  await coordination.commit(
+    operationId + '/seal/' + value.token,
+    [...expected, { key, revision: null }],
+    [{ key, value }],
+    value.token
+  );
+  await checkSealRace(coordination, scope, value);
   return value;
 }

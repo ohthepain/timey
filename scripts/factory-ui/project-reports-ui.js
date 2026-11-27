@@ -110,7 +110,7 @@
       const result = await request('/api/investigation-reports');
       if (current !== generation) return;
       root.innerHTML = template('report-library-template', {
-        controls: result.reports.length ? '' : 'hidden',
+        controls: result.reports.length ? document.getElementById('report-selection-template').innerHTML : '',
         items:
           result.reports
             .map((report) =>

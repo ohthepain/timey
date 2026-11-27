@@ -764,7 +764,10 @@ import { reorderedBlocks } from './flow-order.mjs';
     $('issue-flow-picker').inert = frozenIssue;
     $('issue-settings-form').inert = frozenIssue;
     $('rename-issue-form').inert = frozenIssue;
-    $('rename-issue').disabled = busy || frozenIssue;
+    const nameEditingDisabled = busy || frozenIssue;
+    $('rename-issue').disabled = nameEditingDisabled;
+    $('issue-nickname-form').inert = nameEditingDisabled;
+    $('edit-issue-nickname').disabled = nameEditingDisabled;
     $('issue-grouping').inert = busy;
     $('issue-master').inert = busy;
     $('issue-sub-issues').inert = busy;
@@ -853,6 +856,7 @@ import { reorderedBlocks } from './flow-order.mjs';
     $('reopen-issue').disabled = busy || Boolean(state.view?.closureBusy);
     $('issue-archive-menu').hidden = !closed;
     $('issue-archive-menu').disabled = busy;
+    $('open-issue-report').hidden = !issue;
     const archived = issue?.location === 'archive';
     for (const option of $('issue-archive-menu').options)
       if (['archive', 'reveal'].includes(option.value)) option.hidden = archived;
@@ -1203,7 +1207,7 @@ import { reorderedBlocks } from './flow-order.mjs';
           folderIssueStatus(issue, reasons.get(issue.id)),
           'member',
           children.length
-            ? `<ul class="folder-issues" aria-label="Sub-issues">${children.map((child) => folderIssueRow(child, folderIssueStatus(child, reasons.get(child.id)), 'member')).join('')}</ul>`
+            ? `<ul class="folder-issues" data-folder-sub-issues aria-label="Sub-issues">${children.map((child) => folderIssueRow(child, folderIssueStatus(child, reasons.get(child.id)), 'member')).join('')}</ul>`
             : ''
         )
       )
@@ -1459,7 +1463,7 @@ import { reorderedBlocks } from './flow-order.mjs';
     workspace.closest('.workspace').querySelector('.inspector').hidden = selected;
     $('graph-scroll').hidden = selected;
     $('graph-region').hidden = selected;
-    $('flow-view-title').textContent = selected ? 'Folder' : 'Issue flow';
+    $('flow-view-title').textContent = 'Issue flow';
     $('issue-folder-content').hidden = !state.folder || missingFolder();
     if (!selected) return;
     $('folder-workspace-title').textContent = folderConfig?.folder?.label || state.fileFolder?.name || state.folder;
@@ -3294,7 +3298,7 @@ import { reorderedBlocks } from './flow-order.mjs';
     const title = state.issueUnavailable
       ? 'Issue unavailable'
       : issue
-        ? [issue.title, block?.label].filter(Boolean).join(' / ')
+        ? [issue.nickname || issue.title, block?.label].filter(Boolean).join(' / ')
         : state.issueId
           ? 'Issue'
           : missingFolder()
@@ -3304,7 +3308,7 @@ import { reorderedBlocks } from './flow-order.mjs';
   }
 
   function renderIssueHeadingActions(issue) {
-    $('flow-heading').hidden = Boolean(issue);
+    $('flow-heading').hidden = Boolean(issue || state.folder || state.fileFolder);
     const actions = $('flow-heading-actions');
     const row = $(issue ? 'issue-flow-meta' : 'flow-heading');
     if (actions.parentElement !== row) row.append(actions);
@@ -3334,7 +3338,7 @@ import { reorderedBlocks } from './flow-order.mjs';
     renderIssueAnnotations(issue);
     renderBlockingError();
     renderMergedIssueNotice(issue);
-    if ($('rename-issue-form').dataset.issue !== issue?.id) closeRename();
+    resetIssueNameEditors(issue?.id);
     renderFlowPicker();
     renderIssueSettings();
     const blocks = state.view?.flow?.blocks || [];
@@ -3825,6 +3829,11 @@ import { reorderedBlocks } from './flow-order.mjs';
     $('rename-issue-form').hidden = true;
     $('issue-title').parentElement.hidden = false;
     delete $('rename-issue-form').dataset.issue;
+  }
+
+  function resetIssueNameEditors(issueId) {
+    if ($('rename-issue-form').dataset.issue !== issueId) closeRename();
+    if ($('issue-nickname-form').dataset.issue !== issueId) closeIssueNickname();
   }
 
   function mergeApproval(block) {
@@ -4500,6 +4509,29 @@ import { reorderedBlocks } from './flow-order.mjs';
     const title = $('rename-issue-title').value;
     if (await action('rename-issue', { title, previousTitle: event.currentTarget.dataset.title })) closeRename();
   });
+  function closeIssueNickname() {
+    const form = $('issue-nickname-form');
+    form.hidden = true;
+    delete form.dataset.issue;
+  }
+  $('edit-issue-nickname').addEventListener('click', () => {
+    const form = $('issue-nickname-form');
+    const { id, nickname, customNickname } = state.view.issue;
+    form.dataset.issue = id;
+    form.dataset.previousNickname = customNickname ?? '';
+    form.hidden = false;
+    const input = $('issue-nickname-input');
+    input.value = customNickname ?? '';
+    input.placeholder = nickname;
+    input.select();
+  });
+  $('cancel-issue-nickname').addEventListener('click', closeIssueNickname);
+  $('issue-nickname-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const nickname = $('issue-nickname-input').value;
+    const previousNickname = event.currentTarget.dataset.previousNickname || null;
+    if (await action('edit-issue-nickname', { nickname, previousNickname })) closeIssueNickname();
+  });
   $('retry-branches').addEventListener('click', loadDestinationBranches);
   const startingBranchDialog = $('starting-branch-dialog');
   function openStartingBranchMove(ref) {
@@ -4636,6 +4668,20 @@ import { reorderedBlocks } from './flow-order.mjs';
     }
   });
 
+  $('open-issue-report').addEventListener('click', async () => {
+    const issueId = state.view?.issue?.id;
+    if (!issueId) return;
+    try {
+      const { content } = await json('/api/issue-report?issue=' + encodeURIComponent(issueId));
+      if (state.view?.issue?.id !== issueId) return;
+      const body = content.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, '').replace(/^<!--[^\n]*-->\r?\n/gm, '');
+      $('issue-report-content').innerHTML = window.markdownit({ html: false }).render(body);
+      if (!$('issue-report-dialog').open) $('issue-report-dialog').showModal();
+    } catch (error) {
+      showError(error.message);
+    }
+  });
+
   $('issue-archive-menu').addEventListener('change', async (event) => {
     const menu = event.target;
     const operation = menu.value;
@@ -4700,11 +4746,13 @@ import { reorderedBlocks } from './flow-order.mjs';
   $('delete-pending-issue').addEventListener('click', async (event) => {
     const issue = state.view?.issue;
     if (issue?.state !== 'needs-approval') return;
-    if (!confirm(`Permanently delete “${issue.title}” and its exclusively owned evidence? This cannot be undone.`))
-      return;
+    if (!window.confirmProposalDeletion(issue.title)) return;
     const button = event.currentTarget;
     button.textContent = 'Deleting…';
-    const result = await action('delete-pending-issue', { title: issue.title }).finally(() => {
+    const result = await action('delete-pending-issue', {
+      title: issue.title,
+      reportBasis: issue.reportBasis,
+    }).finally(() => {
       button.textContent = 'Delete';
     });
     if (!result) return;
