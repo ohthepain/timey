@@ -23,7 +23,7 @@ import {
 import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createIssueChatConnection, attachIssueChat } from './issue-chat-runtime.mjs';
-import { approvalOptions } from './approval-options.mjs';
+import { approvalOptions, scopedCommandApproval } from './approval-options.mjs';
 import { conversationState, saveConversationState, appendMessage } from './conversation-store.mjs';
 import { listAvailableSkills, selectedSkills, skillInputs } from './skills.mjs';
 import { executionBlockSkill } from './issue-execution-settings.mjs';
@@ -182,19 +182,26 @@ export function createFlowExecutor(service, options = {}) {
     },
     approvals(issueId) {
       const owned = active.get(issueId);
-      if (!owned?.connection?.selection) return [];
-      return [...owned.connection.requests.values()].map((request) => ({
-        requestId: String(request.id),
-        blockId: owned.blockId,
-        attemptId: owned.attemptId,
-        params: request.params,
-        ...(request.method === 'item/commandExecution/requestApproval' &&
-          /(?:^|\s|[;&|])git\s/.test(String(request.params.command ?? '')) && { operation: 'git' }),
-        options:
-          request.method === 'item/tool/requestUserInput'
-            ? []
-            : approvalOptions(request).map(({ id, label, detail }) => ({ id, label, detail })),
-      }));
+      if (!owned?.connection?.requests || owned.controller.signal.aborted) return [];
+      return [...owned.connection.requests.values()].flatMap((request) => {
+        const scope = scopedCommandApproval(request);
+        if (!scope && !owned.connection.selection) return [];
+        return [
+          {
+            requestId: String(request.id),
+            blockId: owned.blockId,
+            attemptId: owned.attemptId,
+            params: scope ? {} : request.params,
+            scope,
+            ...(request.method === 'item/commandExecution/requestApproval' &&
+              /(?:^|\s|[;&|])git\s/.test(String(request.params.command ?? '')) && { operation: 'git' }),
+            options:
+              request.method === 'item/tool/requestUserInput'
+                ? []
+                : approvalOptions(request).map(({ id, label, detail }) => ({ id, label, detail })),
+          },
+        ];
+      });
     },
     answer(issueId, blockId, attemptId, requestId, response) {
       const owned = active.get(issueId);
@@ -204,6 +211,13 @@ export function createFlowExecutor(service, options = {}) {
       );
       const request = owned.connection?.requests.get(String(requestId));
       requireThat(request, 'This permission request is no longer pending.');
+      const scope = scopedCommandApproval(request);
+      if (scope || response?.permissionToken !== undefined) {
+        requireThat(
+          scope && response?.permissionToken === scope.token && response.decision === scope.decision,
+          'This permission request changed or has not been reviewed. Review the current request before approving.'
+        );
+      }
       return owned.connection.answer(requestId, request.params.threadId, response);
     },
     close() {
@@ -937,6 +951,11 @@ function modelToolRegistry(outputExecution, ctx) {
   return outputExecution?.tools ?? ctx.tools;
 }
 
+function reviewableAgentInput(connection, requestId) {
+  const request = connection?.requests?.get(String(requestId));
+  return connection?.selection || (request && scopedCommandApproval(request));
+}
+
 function modelNotifications(service, ctx, owned, outputPath) {
   let liveText = '';
   let finished = false;
@@ -970,7 +989,7 @@ function modelNotifications(service, ctx, owned, outputPath) {
       else if (message.method === 'item/started')
         ctx.onProgress(params.item?.command || params.item?.tool || params.item?.type || 'Working');
       progress.event(message.method, params.item);
-      if (message.method === 'ui/approval' && owned.connection?.selection) {
+      if (message.method === 'ui/approval' && reviewableAgentInput(owned.connection, params.requestId)) {
         progress.inputRequired();
       } else if (message.method === 'ui/approval' || message.method === 'ui/unsupportedRequest') {
         progress.inputRequired();

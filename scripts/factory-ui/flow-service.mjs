@@ -1749,14 +1749,7 @@ class IssueFlows {
     if (branchActions.has(input.action)) return this.branchOperation(issue, flow, input);
     if (input.action === 'restate-artifact') return this.restateArtifact(flow, input);
     if (input.action === 'stop') return this.stop(flow, input);
-    if (input.action === 'agent-answer') {
-      requireThat(this.active.has(issue.id), 'This issue has no running block on this runner.');
-      this.executor.answer(issue.id, input.blockId, input.attemptId, input.requestId, input.response);
-      this.changeAttempt(issue, input.blockId, input.attemptId, (attempt) => {
-        delete attempt.inputRequestedAt;
-      });
-      return this.view(issue.id);
-    }
+    if (input.action === 'agent-answer') return this.answerAgent(issue, flow, input);
     requireThat(!this.flowBuilds.has(issue.id), 'Wait for the flow structure to finish building.');
     if (input.action === 'destination-branches') return this.destinationBranches(flow);
     if (input.action === 'preview-publish' || input.action === 'confirm-publish')
@@ -1815,6 +1808,22 @@ class IssueFlows {
     if (input.action === 'issue-settings') return await this.editIssueSettings(issue, flow, input);
     if (input.action === 'rename-issue') return this.renameIssue(issue, flow, input);
     return this.dispatchBlockAction(issue, flow, input, catalog);
+  }
+  answerAgent(issue, flow, { blockId, attemptId, requestId, response }) {
+    requireThat(this.active.has(issue.id), 'This issue has no running block on this runner.');
+    if (response?.permissionToken !== undefined) {
+      const block = flow.blocks.find(({ id }) => id === blockId);
+      const attempt = block && latestCurrentAttempt(block);
+      requireThat(
+        attempt?.id === attemptId && attempt.status === 'running',
+        'This block changed or stopped. Review its current permission request.'
+      );
+    }
+    this.executor.answer(issue.id, blockId, attemptId, requestId, response);
+    this.changeAttempt(issue, blockId, attemptId, (attempt) => {
+      delete attempt.inputRequestedAt;
+    });
+    return this.view(issue.id);
   }
   async recordLiveProof(issue, flow, input) {
     requireThat(

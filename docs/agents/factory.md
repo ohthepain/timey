@@ -184,6 +184,15 @@ review, publication, recovery and server-enforced merge gates. Default delivery 
 one draft PR per issue and ends at manual handoff, including failed checks and
 unfinished implementation. Explicit verified-delivery routes retain their gates. Historical records retain their original meaning.
 
+## Review a blocked command
+
+When a running issue block waits for permission to execute a specific command,
+its **Permission required** notice shows the reason, command, and working
+directory when available. Choose **Review permission** to inspect the request.
+**Allow once** answers the waiting request for that command. If the command
+changes, open a fresh review. **Decline** or Escape closes the review and leaves
+the command waiting.
+
 ## Attach live proof for a sub-issue
 
 Work reports any requested check that requires a live external write. Before
