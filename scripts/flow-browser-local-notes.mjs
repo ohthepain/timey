@@ -326,6 +326,7 @@ async function checkNoteRecommendations({ page, notes, turns, poll, screenshot, 
   );
   await poll(names, (labels) => labels.length === 0, 'Deleted note recommendations cleared');
   await page.goto(firstUrl);
+  await prompts.locator('[data-prompt-id="next"]').waitFor();
   const [source, target, ...later] = notes.view().notes;
   assert.equal(source.id, first.id);
   const before = turns.length;
