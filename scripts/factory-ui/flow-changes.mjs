@@ -1,9 +1,23 @@
-import { readFileSync, statSync, watch } from 'node:fs';
+import { globSync, readFileSync, statSync, watch } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { systemFlowDirectory } from './ui-source.mjs';
 
 const transient = /(?:^|\/)(?:node_modules|\.git)(?:\/|$)|\.(?:tmp|lock)$/;
 const gitState = /^(?:HEAD|index|packed-refs|config|MERGE_HEAD|refs)(?:\/|$)/;
+const projectFlowMarkdown = /^flow\/.*\.md$/;
+
+function projectFlowSources(user) {
+  const sources = new Map();
+  try {
+    for (const name of globSync('flow/**/*.md', { cwd: user })) {
+      const info = statSync(join(user, name), { bigint: true, throwIfNoEntry: false });
+      if (info?.isFile()) sources.set(name, info.ino + ':' + info.ctimeNs);
+    }
+  } catch {
+    return null;
+  }
+  return sources;
+}
 
 function gitDirectory(checkout) {
   const marker = join(checkout, '.git');
@@ -29,7 +43,28 @@ export function createFlowChanges(root, onSourceFileChange) {
   const streams = new Map();
   const watchers = new Map();
   const pending = new Set();
+  const user = join(root, 'user');
   let batch;
+  let projectSources;
+
+  function sourceChanged(name) {
+    onSourceFileChange?.(name);
+    notify('sources');
+  }
+
+  function checkProjectSources() {
+    const current = projectFlowSources(user);
+    if (!current) return;
+    const previous = projectSources ?? current;
+    projectSources = current;
+    const names = new Set([...previous.keys(), ...current.keys()]);
+    for (const name of [...names].filter((name) => previous.get(name) !== current.get(name))) sourceChanged(name);
+  }
+
+  function userSourceChanged(name) {
+    if (projectFlowMarkdown.test(name)) checkProjectSources();
+    else if (!transient.test(name)) sourceChanged(name);
+  }
 
   function notify(topic = 'flow', issue) {
     for (const [response, selection] of streams) {
@@ -101,11 +136,7 @@ export function createFlowChanges(root, onSourceFileChange) {
       add(join(issues, 'store-runtime/pending-flows'), false, (name) => {
         if (!name || name.endsWith('.json')) notify('flow', name?.slice(0, -5));
       });
-      add(join(root, 'user'), true, (name) => {
-        if (name && transient.test(name)) return;
-        onSourceFileChange?.(name);
-        notify('sources');
-      });
+      add(user, true, userSourceChanged);
       add(systemFlowDirectory(), true, (name) => {
         if (!name || !transient.test(name)) notify('sources');
       });
@@ -153,9 +184,11 @@ export function createFlowChanges(root, onSourceFileChange) {
 
   function subscribe(response, issue) {
     streams.set(response, { issue });
+    if (streams.size === 1) checkProjectSources();
     response.once('close', () => {
       streams.delete(response);
       pending.delete(response);
+      if (!streams.size) projectSources = undefined;
       sync();
     });
     sync();
@@ -180,6 +213,10 @@ export function createFlowChanges(root, onSourceFileChange) {
     }
   }
 
+  // Recursive filesystem notifications can lose atomic replacements.
+  const sourceCheck = setInterval(() => {
+    if (streams.size) checkProjectSources();
+  }, 2000).unref();
   const heartbeat = setInterval(() => {
     sync();
     for (const response of streams.keys()) {
@@ -191,6 +228,7 @@ export function createFlowChanges(root, onSourceFileChange) {
     notify,
     checkout,
     close: () => {
+      clearInterval(sourceCheck);
       clearInterval(heartbeat);
       clearTimeout(batch);
       for (const { watcher } of watchers.values()) watcher.close();

@@ -807,6 +807,10 @@ Project `user/flow/extensions/blocks/<type>.md` and personal
 overrides can still replace the bundled list. Work defaults to `poteto-mode`;
 explicit selections, including No skill, remain unchanged.
 
+Open Factory tabs refresh project Flow Markdown after file changes. Factory
+checks those files every two seconds while tabs are connected so an editor's
+atomic save still refreshes the view if the filesystem omits its notification.
+
 Click a block's skill label to choose a skill. **Add skill…** opens its project
 Markdown extension. For example:
 
