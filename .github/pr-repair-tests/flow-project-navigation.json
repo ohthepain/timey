@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "name": "The shared Factory header keeps every project tab and relocated control usable",
+  "command": ["node", "scripts/flow-browser.mjs", "--issue-blocker-retries", "--project-navigation"],
+  "source": {
+    "attemptId": "edc350b8-a111-4a5f-b18c-d052b4c2a891",
+    "checkout": "462f15037b58e8128983de287d778f70d04c686d",
+    "tree": "bdf5aed9fa165a33a327d5dc3c000701fceb121f"
+  }
+}

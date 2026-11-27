@@ -37,11 +37,13 @@ function checkLegacyCount(count) {
 
 function readRecord(path) {
   const test = JSON.parse(readFileSync(path, 'utf8'));
-  const { runId, jobId, checkout, tree } = test.source ?? {};
+  const { runId, jobId, attemptId, checkout, tree } = test.source ?? {};
   const valid = (values, pattern) => values.every((value) => typeof value === 'string' && pattern.test(value));
-  const message = path + ' needs version 2 provenance with a source run, job, checkout and tree.';
+  const message =
+    path + ' needs version 2 provenance with a GitHub run and job or a Factory attempt, plus checkout and tree.';
   assert.equal(test.version, 2, message);
-  assert.ok(valid([runId, jobId], /^\d+$/), message);
+  if (attemptId === undefined) assert.ok(valid([runId, jobId], /^\d+$/), message);
+  else assert.ok(valid([attemptId], /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/), message);
   assert.ok(valid([checkout, tree], /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/), message);
   return test;
 }
@@ -69,8 +71,9 @@ if (!tests.length) {
   for (const test of tests) {
     console.log('RUN PR repair: ' + test.name);
     if (test.source) {
-      const { runId, jobId, checkout, tree } = test.source;
-      console.log(`Source run ${runId}, job ${jobId}, checkout ${checkout}, tree ${tree}`);
+      const { runId, jobId, attemptId, checkout, tree } = test.source;
+      const source = attemptId ? `Factory attempt ${attemptId}` : `run ${runId}, job ${jobId}`;
+      console.log(`Source ${source}, checkout ${checkout}, tree ${tree}`);
     }
     const [command, ...argv] = test.command;
     const env = { ...process.env };

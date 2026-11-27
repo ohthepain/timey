@@ -190,8 +190,7 @@ async function checkAutomateAndHome(page, tablist, header) {
 
 export const unavailableNavigationIssue = '20261125-navigation-second';
 
-async function navigationFixtures(project, service, root) {
-  installBrowserHumanInput(project, root);
+async function navigationFixtures(project, service) {
   const first = '20261125-navigation-first';
   const second = unavailableNavigationIssue;
   const investigation = '20261125-navigation-investigation';
@@ -268,8 +267,8 @@ async function checkHistoryDraft(page, destinations, wording) {
   return { inApp, browser };
 }
 
-async function checkNativeHistory({ page, poll, tablist, project, service, root, screenshot }) {
-  const fixtures = await navigationFixtures(project, service, root);
+async function checkNativeHistory({ page, poll, tablist, project, service, screenshot }) {
+  const fixtures = await navigationFixtures(project, service);
   const { first, second, investigation, request, work } = fixtures;
   await page.goto('/');
   await page.evaluate(() => {
@@ -415,6 +414,7 @@ export async function projectNavigationBrowserChecks({
   service,
   root,
 }) {
+  installBrowserHumanInput(project, root);
   const desktop = { width: 1440, height: 960 };
   const narrow = { width: 390, height: 844 };
   const header = page.locator('.factory-header');
@@ -443,7 +443,7 @@ export async function projectNavigationBrowserChecks({
       join(output, 'project-header-proof.json'),
       JSON.stringify({ candidate, observations, controls }, null, 2)
     );
-    const native = await checkNativeHistory({ page, poll, tablist, project, service, root, screenshot });
+    const native = await checkNativeHistory({ page, poll, tablist, project, service, screenshot });
     writeFileSync(join(output, 'project-native-history.json'), JSON.stringify({ candidate, ...native }, null, 2));
   } finally {
     await page.setViewportSize(desktop);

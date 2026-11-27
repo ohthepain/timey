@@ -571,12 +571,13 @@ Factory preserves the request ID on a GitHub GraphQL query error and marks it
 retryable when GitHub CLI omits the HTTP status. Explicit authentication,
 permission, and validation responses remain terminal.
 
-For a PR repairing failed CI tests or typechecking, add one version 2 JSON file
+For a PR repairing a failed verification check, add one version 2 JSON file
 per check in `.github/pr-repair-tests/`. Record the check's `name`, the full
 `command` argument array in replay order, and a `source` object with string
-`runId`, `jobId`, `checkout`, and `tree` fields. Use the checkout and tree
-that ran in the failed job. Independent files let branches add checks without
-writing over one another's source details. `pnpm run test:pr-repair` runs checks
+`checkout` and `tree` fields from the failed run. Include `runId` and `jobId`
+for a GitHub job or `attemptId` for a Factory attempt. Independent files let
+branches add checks without writing over one another's source details.
+`pnpm run test:pr-repair` runs checks
 by name and stops at the first failure. CI runs changed records before broad
 verification. The version 1 file remains readable for historic entries.
 Use `node scripts/flow-browser.mjs --timers` for the isolated attempt
