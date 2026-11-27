@@ -1001,6 +1001,7 @@ function mergeFixture(
     mergeNow,
     respond,
     browser,
+    verifyWork,
   } = {}
 ) {
   const observations = [];
@@ -1023,6 +1024,7 @@ function mergeFixture(
     repair,
     respond,
     mergeNow,
+    ...(verifyWork && { verifyWork }),
     async mergeDelay(interval) {
       await onWait?.(advanceTarget, interval);
     },
@@ -2012,6 +2014,43 @@ test('Merge reports a GitHub conflict immediately when the issue already contain
   f.connection.turn = async () => assert.fail('There are no local conflicts to repair.');
 
   await assert.rejects(f.run('merge'), /GitHub reports a merge conflict, but the issue branch already contains/);
+});
+
+test('Merge repairs a failed local Fallow audit against the fetched destination before pushing', async (t) => {
+  const audited = [];
+  const f = mergeFixture(t, {
+    async verifyWork(ctx, workspace) {
+      assert.equal(ctx.block.kind, 'merge');
+      assert.equal(workspace.base, f.git('rev-parse', 'dev'));
+      assert.equal(f.observations.length, 0);
+      audited.push(f.git('-C', workspace.checkout, 'rev-parse', 'HEAD'));
+      if (audited.length === 1) {
+        throw Object.assign(Error('Introduced complexity in the issue candidate.'), { verificationFailure: {} });
+      }
+      return { evidence: [] };
+    },
+  });
+  await f.run('understand');
+  const { checkout } = f.flow.workspace;
+  f.advanceTarget();
+  const turn = f.connection.turn.bind(f.connection);
+  f.connection.turn = async (...args) => {
+    assert.match(args[2], /Local formatting and Fallow checkpoint failed/);
+    assert.equal(f.observations.length, 0);
+    writeFileSync(join(checkout, 'source.txt'), 'Simplified issue candidate.\n');
+    f.git('-C', checkout, 'commit', '-am', 'Repair local Fallow finding');
+    return turn(...args);
+  };
+
+  const result = await f.run('merge');
+
+  assert.equal(result.result.revision, 'actual-merge');
+  assert.equal(audited.length, 2);
+  assert.notEqual(audited[0], audited[1]);
+  assert.deepEqual(
+    f.observations.filter(({ operation }) => operation === 'push').map(({ head }) => head),
+    [audited[1]]
+  );
 });
 
 test('Merge preserves each GitHub browser failure and pushes all three repair candidates in order', async (t) => {

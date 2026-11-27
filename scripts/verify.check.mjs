@@ -668,23 +668,7 @@ test('step and commit audits block only introduced findings in changed files', (
   assert.match(introduced.stdout, /FAIL fallow/);
 });
 
-test('real pre-commit hook skips Fallow by default', (t) => {
-  const { root, git } = auditFixture(t);
-  git('config', 'core.hooksPath', resolve('.githooks'));
-  writeFileSync(join(root, 'new-dead.js'), 'export const orphan = 1;\n');
-  git('add', '.');
-  const beforeHead = git('rev-parse', 'HEAD');
-  const result = spawnSync('git', ['commit', '-qm', 'hook probe'], {
-    cwd: root,
-    encoding: 'utf8',
-    env: { ...process.env, TIMEY_FALLOW_ENFORCE: '0', GIT_INDEX_FILE: join(root, '.git/index') },
-  });
-  assert.equal(result.status, 0, result.stdout + result.stderr);
-  assert.match(result.stdout + result.stderr, /SKIP fallow/);
-  assert.notEqual(git('rev-parse', 'HEAD'), beforeHead);
-});
-
-test('pre-commit hook blocks introduced dead code when TIMEY_FALLOW_ENFORCE=1', (t) => {
+test('pre-commit hook blocks introduced dead code even when optional enforcement is disabled', (t) => {
   const { root, git } = auditFixture(t);
   git('config', 'core.hooksPath', resolve('.githooks'));
   writeFileSync(join(root, 'new-dead.js'), 'export const orphan = 1;\n');
@@ -696,7 +680,7 @@ test('pre-commit hook blocks introduced dead code when TIMEY_FALLOW_ENFORCE=1', 
     spawnSync('git', ['commit', '-qm', message], {
       cwd: root,
       encoding: 'utf8',
-      env: { ...process.env, GIT_INDEX_FILE: join(root, '.git/index'), TIMEY_FALLOW_ENFORCE: '1' },
+      env: { ...process.env, GIT_INDEX_FILE: join(root, '.git/index'), TIMEY_FALLOW_ENFORCE: '0' },
     });
   const failed = commit('hook probe');
   assert.notEqual(failed.status, 0, failed.stdout + failed.stderr);
@@ -709,6 +693,27 @@ test('pre-commit hook blocks introduced dead code when TIMEY_FALLOW_ENFORCE=1', 
   const passed = commit('hook probe fixed');
   assert.equal(passed.status, 0, passed.stdout + passed.stderr);
   assert.notEqual(git('rev-parse', 'HEAD'), beforeHead);
+});
+
+test('the pre-merge-commit hook audits a clean automatic merge before Git commits it', (t) => {
+  const { root, git } = auditFixture(t);
+  const issueBranch = git('branch', '--show-current');
+  git('switch', '-c', 'incoming');
+  writeFileSync(join(root, 'new-dead.js'), 'export const orphan = 1;\n');
+  git('add', 'new-dead.js');
+  git('commit', '-qm', 'Introduce a finding');
+  git('switch', issueBranch);
+  writeFileSync(join(root, 'index.js'), 'console.log("issue work");\n');
+  git('commit', '-qam', 'Preserve independent issue work');
+  const before = git('rev-parse', 'HEAD');
+  git('config', 'core.hooksPath', resolve('.githooks'));
+
+  const result = spawnSync('git', ['merge', '--no-edit', 'incoming'], { cwd: root, encoding: 'utf8' });
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.match(result.stdout + result.stderr, /FAIL fallow/);
+  assert.equal(git('rev-parse', 'HEAD'), before);
+  assert.equal(git('rev-parse', 'MERGE_HEAD'), git('rev-parse', 'incoming'));
+  assert.equal(git('ls-files', '-u'), '');
 });
 
 test('a real zero-exit Fallow warning blocks the step checkpoint', (t) => {

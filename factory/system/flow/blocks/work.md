@@ -36,8 +36,8 @@ is no suitable existing test. Report the commands and what they demonstrated. Wh
 failure may already exist on the supplied destination revision, reproduce the
 same failure there in an isolated checkout. Record the revision and matching
 failure and continue. Report issue-specific failures that you cannot repair as
-blockers. Commit the checked issue changes through normal Git hooks before returning a
-successful result. Work requires a clean committed checkout, including any files
+blockers. Commit the checked issue changes through normal Git hooks and fix any
+staged Fallow findings they report. Work requires a clean committed checkout, including any files
 changed by formatting or hooks. Preserve unrelated changes; if they prevent a
 clean result, report the concrete blocker. A no-change result may reuse HEAD.
 Factory checks formatting, Fallow, and checkout cleanliness after the response.

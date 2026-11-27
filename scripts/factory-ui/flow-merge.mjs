@@ -102,13 +102,26 @@ async function synchronize(workspace, target, invoke) {
     throw repairableBlocker('target-conflict', 'Resolve the target merge conflicts in the issue checkout.');
   }
   requireThat(cleanCheckout(workspace), 'Preserve checkout changes in a commit before merging the target branch.');
-  await mergeIssueTarget(workspace.checkout, target, invoke, (_, error) => {
+  await mergeTarget(workspace, target, invoke);
+}
+
+async function mergeTarget(workspace, target, invoke) {
+  try {
+    await mergeIssueTarget(workspace.checkout, target, invoke, (_, error) => {
+      throw repairableBlocker(
+        'target-conflict',
+        'Resolve the target merge conflicts in the issue checkout.',
+        error.evidence
+      );
+    });
+  } catch (error) {
+    if (!/^FAIL fallow: /m.test(error.commandOutput ?? '')) throw error;
     throw repairableBlocker(
       'target-conflict',
-      'Resolve the target merge conflicts in the issue checkout.',
+      'Fallow blocked the target merge commit. Fix the findings in the staged merge and commit it.',
       error.evidence
     );
-  });
+  }
 }
 
 function reserveRepair(error, tree, state) {
@@ -385,12 +398,32 @@ async function updateMergeCandidate(ctx, workspace, invoke, state) {
   return (state.candidate = { head, target });
 }
 
+async function checkMergeCandidate(ctx, workspace, options, state, head, target) {
+  const identity = head + ':' + target;
+  if (state.checked === identity) return;
+  try {
+    const folder = join(state.folder, 'audit-' + head + '-' + target);
+    const check = await options.verifyWork(ctx, { ...workspace, base: target }, folder);
+    requireCleanCandidate(workspace, head);
+    state.evidence.push(...check.evidence);
+    state.checked = identity;
+  } catch (error) {
+    if (!error.verificationFailure) throw error;
+    throw Object.assign(error, {
+      code: 'ci-failure',
+      blockerKey: 'merge-candidate-audit',
+      message: `Local formatting and Fallow checkpoint failed on ${head.slice(0, 12)}. ${error.message}`,
+    });
+  }
+}
+
 async function advanceMerge(service, ctx, workspace, provider, pr, invoke, options, state) {
   const { head, target } = state.candidate;
   requireThat(
     includesCommit(workspace, head, pr.head.sha),
     'The PR branch changed independently. Reconcile it before merging.'
   );
+  await checkMergeCandidate(ctx, workspace, options, state, head, target);
   await prepareBrowserEvidence(service, ctx, workspace, head, options, state);
   requireCleanCandidate(workspace, head);
   await pushMergeCandidate(ctx, workspace, provider, invoke, state, head);

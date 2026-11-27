@@ -547,9 +547,9 @@ requires an idle issue. A new Merge run also aborts a pending local merge once
 before synchronization; subsequent repair steps preserve their own merge state.
 `node scripts/flow-browser.mjs --merge-recovery` checks the control through reload
 and abort using a disposable real conflict. Publish PR requires a clean commit.
-Merge syncs the issue branch with Destination, pushes a changed candidate,
-and waits for the checks and reviews GitHub requires on the exact PR head.
-Work and explicit Verify remain the places for local verification.
+Merge syncs the issue branch with Destination, checks local formatting and Fallow
+against that revision, and pushes the candidate after its focused checks pass.
+GitHub checks and reviews apply to the exact PR head.
 
 GitHub runs Early checks first. Five jobs then run in parallel: two Non-browser
 jobs and the Flow browser parts. The Non-browser jobs
@@ -771,19 +771,22 @@ its literal whitespace.
 Before a commit, the pre-commit hook formats staged issue reports and checks
 formatting on other staged files. It updates a working copy of a report only
 when it matches the original staged contents, preserving unstaged edits. It
-then runs `pnpm run audit:staged`, which exports the staged snapshot
-for verification bookkeeping. **Fallow is skipped by default for legacy/local commands.**
-Strategy candidate checks and CI enforce Fallow with
-`TIMEY_FALLOW_ENFORCE=1 TIMEY_FALLOW_WARNINGS=error`. Their new findings, including
-warnings, must be repaired. Skipped or warning-bearing evidence cannot satisfy
-these strategy checks or be reused from the legacy cache. Set
-`TIMEY_FALLOW_ENFORCE=1` when you want the pinned Fallow audit to fail the hook,
-`audit:step`, or full `verify`. Before declaring an implementation step complete,
+then exports and audits the staged snapshot. The pre-merge-commit hook uses the
+same audit for an automatic merge commit. Staged audits reject new findings and
+warnings even when optional Fallow enforcement is disabled. Work also checks the
+issue changes against its saved comparison base. Merge checks formatting and
+Fallow against the fetched destination before pushing each candidate and sends
+failures to the owning repair loop. Publish uses the existing committed candidate.
+Strategy candidate checks and CI also enforce Fallow with
+`TIMEY_FALLOW_ENFORCE=1 TIMEY_FALLOW_WARNINGS=error`. Skipped or warning-bearing
+evidence cannot satisfy these strategy checks or be reused from the legacy cache.
+Set `TIMEY_FALLOW_ENFORCE=1` to enable Fallow in `audit:step` or full `verify`
+outside the required checks. Before declaring an implementation step complete,
 including an uncommitted step, run `pnpm run audit:step -- --base <step-start-commit>`.
 Use the recorded starting revision, not the new HEAD after committing (which could
 hide that step's changes). Full `verify -- --base REF` runs types, tests,
 build, and factory checks after formatting and Fallow pass. Fallow enforcement
-is opt-in outside Flow, strategy, and CI checks. A successful audit
+is opt-in outside staged, Flow, strategy, and CI checks. A successful audit
 does not establish type/build/device success.
 
 A checkpoint fails on a nonzero Fallow process exit, a `fail` or `error` audit

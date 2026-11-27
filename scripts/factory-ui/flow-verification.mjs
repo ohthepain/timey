@@ -138,18 +138,24 @@ async function verificationCommand(ctx, checkout, folder, execute) {
 
 export async function runWorkVerification(ctx, workspace, folder, execute) {
   const { invoke, log } = await verificationCommand(ctx, workspace.checkout, folder, execute);
-  const evidence = [{ path: log, label: 'Work formatting and Fallow output' }];
+  const evidence = [{ path: log, label: 'Formatting and Fallow output' }];
   const args = [workVerificationScript, '--work-checks', '--base', workspace.base];
   try {
-    const output = await invoke(process.execPath, args, 'Checking Work formatting and Fallow.');
+    const output = await invoke(process.execPath, args, 'Checking formatting and Fallow.');
     return { evidence: [...evidence, summaryEvidence(commandSummary(workspace.checkout, output))] };
   } catch (error) {
-    if (!ctx.signal.aborted && Number.isInteger(error.exitCode)) {
-      error.verificationFailure = true;
-      error.evidence = evidence;
-    }
+    if (!ctx.signal.aborted && Number.isInteger(error.exitCode)) retainVerificationFailure(error, workspace, evidence);
     throw error;
   }
+}
+
+function retainVerificationFailure(error, workspace, evidence) {
+  error.verificationFailure = {};
+  error.evidence = evidence;
+  if (!error.commandOutput?.includes('Verification summary: ')) return;
+  const path = commandSummary(workspace.checkout, error.commandOutput);
+  error.verificationFailure.summaries = [path];
+  evidence.push(summaryEvidence(path));
 }
 
 function summaryEvidence(path) {

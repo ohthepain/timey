@@ -22,8 +22,10 @@ Add or update a dedicated PR repair check that runs those cases before the broad
 suite and reports each result by name. Preserve the behavior and assertions the
 tests protect. Record the focused commands and their actual results.
 
-Commit the repair promptly once its focused checks pass. Factory pushes the
-repair and waits for GitHub. Leave the broad suites to GitHub. Merge as soon as
+Commit the repair through normal Git hooks so staged Fallow findings are fixed
+before it is committed. Factory checks formatting and Fallow against the fetched
+destination before pushing the current candidate. Fix any local findings before
+waiting for GitHub. Leave the broad suites to GitHub. Merge as soon as
 the current candidate satisfies required checks and approvals. Keep unrelated
 cleanup out of the repair.
 
