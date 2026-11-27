@@ -245,7 +245,7 @@ test('selected skills invoke through the issue thread and token-only messages ar
   await f.finish();
   assert.ok(conversationMessages(f.queue.root, f.input.issueId).some((message) => message.kind === 'response-error'));
 });
-test('slash skill selector filters metadata and inserts a removable read-only composer token', async () => {
+test('slash skill selector inserts editable commands and derives selections from the draft', async () => {
   const dom = new JSDOM('<form><textarea></textarea><button type="submit">Send</button></form>', {
     runScripts: 'outside-only',
   });
@@ -258,20 +258,23 @@ test('slash skill selector filters metadata and inserts a removable read-only co
     draft = form.querySelector('textarea'),
     skill = { name: 'practice', description: 'Practice timing', source: 'Personal', icon: '✦' },
     composer = dom.window.createSkillComposer(form, draft, async () => ({ skills: [skill] }));
-  draft.value = '/practice';
-  draft.setSelectionRange(draft.value.length, draft.value.length);
+  draft.value = 'Use /prac with this text';
+  draft.setSelectionRange(9, 9);
   draft.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
   await new Promise((resolve) => setImmediate(resolve));
   const option = form.querySelector('[role="option"]');
   assert.match(option.textContent, /practice.*Practice timing.*Personal/);
   draft.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
   assert.deepEqual(Array.from(composer.skills()), ['practice']);
-  assert.equal(draft.value, '');
-  assert.equal(form.querySelector('.skill-chip').textContent, '✦practice×');
-  assert.equal(composer.canSubmit(''), true);
-  draft.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Backspace', bubbles: true, cancelable: true }));
+  assert.equal(draft.value, 'Use /practice with this text');
+  assert.equal(form.querySelector('.skill-chip'), null);
+  assert.equal(composer.isOpen(), false);
+  draft.value = 'Use this text';
   assert.deepEqual(Array.from(composer.skills()), []);
-  assert.equal(form.querySelector('.skill-chips').hidden, true);
+  composer.restore(['practice']);
+  composer.restore(['practice']);
+  assert.equal(draft.value, 'Use this text /practice');
+  assert.deepEqual(Array.from(composer.skills()), ['practice']);
   dom.window.close();
 });
 test('selected issues keep separate conversations; bounded pages retain full role context for retro', async (t) => {

@@ -37,6 +37,11 @@ and responses in other project conversations are preserved. The provider receive
 the note context when the person sends a prompt. Reopening a note reuses its
 conversation; edited note text refreshes the retained context.
 
+Send `/dnextnote` or choose **Delete & next** in a note discussion to delete its
+note and open the next discussion in sidebar order. When there is no next
+note, Discuss confirms the deletion in the current conversation. The command
+works only while discussing a current note and leaves any linked issue in place.
+
 **Turn into issue** opens the existing issue form with the note prefilled. The
 person can revise the description and settings before creation. Creation uses
 the ordinary issue flow and does not start its work. After creation, the note's

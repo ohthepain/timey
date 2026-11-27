@@ -7,7 +7,7 @@ import { digest, requireThat } from './common.mjs';
 
 const maxSelections = 8;
 
-export async function listAvailableSkills(connection, cwd) {
+export async function listAvailableSkills(connection, cwd, { noteDiscussion = false } = {}) {
   await connection.ready();
   const result = await connection.call('skills/list', { cwds: [cwd], forceReload: true });
   const found = (result.data || [])
@@ -48,7 +48,7 @@ export async function listAvailableSkills(connection, cwd) {
       });
     }
   }
-  return found;
+  return found.filter((skill) => noteDiscussion || !skill.noteDiscussionOnly);
 }
 
 function skillMetadata(content) {
@@ -62,6 +62,7 @@ function skillPolicy(path) {
   const config = existsSync(configPath) ? parse(readFileSync(configPath, 'utf8')) : null;
   return {
     displayName: config?.interface?.display_name || metadata.name,
+    ...(metadata.metadata?.['note-discussion-only'] === 'true' && { noteDiscussionOnly: true }),
     allowImplicitInvocation:
       metadata['disable-model-invocation'] !== true && config?.policy?.allow_implicit_invocation !== false,
   };

@@ -28,9 +28,15 @@ import {
 const idPattern = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/;
 const stamp = () => new Date().toISOString();
 const copy = (value) => structuredClone(value);
-export async function projectDiscussionSkills(discussions, model = discussions.choices().defaults.model) {
-  if (discussions.options.skills) return discussions.options.skills();
-  return discussions.provider('_discovery').skills(model);
+export async function projectDiscussionSkills(discussions, model = discussions.choices().defaults.model, id) {
+  const session = id ? discussions.readOwned(id, undefined) : null;
+  const noteDiscussion = Boolean(
+    session?.noteContext &&
+    !session.closedAt &&
+    discussions.recommendations(session).some(({ id }) => id === 'dnextnote')
+  );
+  if (discussions.options.skills) return discussions.options.skills({ noteDiscussion });
+  return discussions.provider('_discovery').skills(model, { noteDiscussion });
 }
 export function readClarificationSkills(root) {
   const paths = [
@@ -271,6 +277,22 @@ export class ProjectDiscuss {
     return discussionRecommendations(this.service.root, session, readClarificationSkills(this.service.root));
   }
   recommendedMessage(session, input) {
+    if (input.text?.trim() === '/dnextnote' || input.settings?.skills?.includes('dnextnote')) {
+      const recommendation = this.recommendations(session).find(({ id }) => id === 'dnextnote');
+      requireThat(recommendation && !session.closedAt, 'Open a current local note discussion to use /dnextnote.');
+      requireThat(
+        (!input.text?.trim() || input.text.trim() === '/dnextnote') &&
+          !input.attachments?.length &&
+          !input.settings?.skills?.some((name) => name !== 'dnextnote'),
+        'Send /dnextnote by itself.'
+      );
+      return {
+        ...input,
+        text: recommendation.prompt,
+        settings: { ...input.settings, skills: [] },
+        recommendation,
+      };
+    }
     if (!input.recommendationId) return input;
     const recommendation = this.recommendations(session).find(({ id }) => id === input.recommendationId);
     requireThat(recommendation?.prompt === input.text, 'This recommendation changed. Choose a current prompt.');
@@ -455,12 +477,16 @@ export class ProjectDiscuss {
     } else if (operation === 'edit-queued') {
       const previous = session.queue.find((m) => m.id === input.messageId);
       requireThat(previous, 'That message has already started or was removed.');
-      const next = this.envelope(session, {
-        ...previous,
-        ...input,
-        clientId: previous.id,
-        reportContext: previous.reportContext,
-      });
+      const next = this.envelope(
+        session,
+        this.recommendedMessage(session, {
+          ...previous,
+          ...input,
+          recommendation: previous.recommendation?.id === 'dnextnote' ? undefined : previous.recommendation,
+          clientId: previous.id,
+          reportContext: previous.reportContext,
+        })
+      );
       this.change(id, (s) => {
         s.queue[s.queue.findIndex((m) => m.id === previous.id)] = next;
       });
@@ -517,6 +543,7 @@ export class ProjectDiscuss {
       requireThat(this.active.has(id), 'There is no active response to steer.');
       const message = session.queue.find((m) => m.id === input.messageId);
       requireThat(message, 'Choose a queued message to steer.');
+      requireThat(message.recommendation?.id !== 'dnextnote', 'Send /dnextnote as a separate message.');
       await this.provider(id).steer(session, message);
       this.change(id, (s) => {
         s.queue = s.queue.filter((m) => m.id !== message.id);
@@ -547,8 +574,9 @@ export class ProjectDiscuss {
     });
     active.task.catch(() => {});
   }
-  async visitNote(from, message, target) {
+  async visitNote(from, message, target, beforeNavigate) {
     const { selected } = await this.prepareNote(target);
+    beforeNavigate?.();
     this.change(from, (session) => {
       session.noteNavigation = { id: selected.id, messageId: message.id };
     });
@@ -575,8 +603,8 @@ export class ProjectDiscuss {
     }
   }
   runTurn(id, message, context) {
-    const visit = (note) => this.visitNote(id, message, note);
-    return executeNoteRecommendation(this.service.root, message, visit).then((outcome) => {
+    const visit = (note, beforeNavigate) => this.visitNote(id, message, note, beforeNavigate);
+    return executeNoteRecommendation(this.service.root, message, visit, this.read(id).noteContext).then((outcome) => {
       if (outcome) return outcome;
       if (isNoteCreation(message)) this.requireUnconvertedNote(message);
       return this.provider(id).turn(this.read(id), message, {

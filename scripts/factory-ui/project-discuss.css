@@ -560,21 +560,6 @@
   font-size: 11px;
   color: var(--muted);
 }
-.discuss-composer .skill-chips {
-  display: flex;
-  gap: 5px;
-  flex-wrap: wrap;
-  margin-bottom: 8px;
-}
-.discuss-composer .skill-chip {
-  background: #333c45;
-  color: #ddd;
-  border: 1px solid #526477;
-  border-radius: 5px;
-  padding: 5px 8px;
-  display: flex;
-  gap: 6px;
-}
 @media (max-width: 700px) {
   .discuss-toolbar {
     gap: 7px;

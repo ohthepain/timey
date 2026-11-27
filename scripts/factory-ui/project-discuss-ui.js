@@ -102,11 +102,12 @@
       timer;
     const localDrafts = new Map();
     const session = () => data?.selected;
+    const canDeleteAndAdvance = () => session()?.recommendations?.some(({ id }) => id === 'dnextnote');
     let setup = null;
     async function discoverSkills() {
-      const value = await request(
-        '/api/project-discuss-skills?model=' + encodeURIComponent(byId('discuss-model').value)
-      );
+      const query = new URLSearchParams({ model: byId('discuss-model').value });
+      if (canDeleteAndAdvance()) query.set('conversation', selectedId);
+      const value = await request('/api/project-discuss-skills?' + query);
       setup = value.setup;
       clarificationSelect.discovered(value.skills || value);
       return value.skills || value;
@@ -187,8 +188,10 @@
     }
     function apply(value, restore = false) {
       const oldId = selectedId;
+      const hadNoteSkill = canDeleteAndAdvance();
       data = value;
       selectConversation(value.selected?.id || selectedId);
+      if (oldId !== selectedId || hadNoteSkill !== canDeleteAndAdvance()) skillComposer.refresh();
       if (desiredSettings && value.selected?.id === selectedId)
         desiredSettings = { ...value.selected.settings, ...desiredSettings };
       if (restore || oldId !== selectedId) {
@@ -601,10 +604,11 @@
     }
     async function submit(event) {
       event?.preventDefault();
-      if (!draft.value.trim() && !attachments.length && !skillComposer.skills().length) return;
+      if (!draft.value.trim() && !attachments.length) return;
       clearTimeout(timer);
       const sentSettings = settings();
       const submitted = { text: draft.value, attachments: [...attachments], editId, revision: draftRevision };
+      const deleteAndAdvance = submitted.text.trim() === '/dnextnote' || sentSettings.skills.includes('dnextnote');
       await Promise.all([draftSave.catch(() => {}), settingsSave.catch(() => {})]);
       if (!selectedId) {
         const value = { text: draft.value, attachments: [...attachments], settings: settings() };
@@ -613,8 +617,10 @@
         attachments = value.attachments;
         skillComposer.restore(value.settings.skills);
       }
+      const clientId = submitted.editId || crypto.randomUUID();
+      if (deleteAndAdvance) view.write('discuss-note-navigation:' + selectedId, clientId);
       const result = await action(submitted.editId ? 'edit-queued' : 'send', {
-        ...(submitted.editId ? { messageId: submitted.editId } : { clientId: crypto.randomUUID() }),
+        ...(submitted.editId ? { messageId: clientId } : { clientId }),
         text: submitted.text,
         settings: sentSettings,
         attachments: submitted.attachments,
@@ -624,6 +630,7 @@
     function finishSubmission(submitted) {
       if (draftRevision === submitted.revision && draft.value === submitted.text) {
         draft.value = '';
+        skillComposer.reset();
         attachments = [];
         editId = null;
       }
