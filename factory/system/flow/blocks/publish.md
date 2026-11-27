@@ -12,7 +12,7 @@ Push the confirmed issue commit and publish its pull request when you choose.
 
 Publish only the existing committed candidate. Do not run tests, install dependencies,
 format files, repair failures, edit source, or create commits. Failed or missing test
-evidence does not block PR publication. Work and Merge own testing and repairs.
+evidence does not block PR publication. Do not recreate missing evidence. Work and Merge own testing and repairs.
 Retain the push and GitHub publication evidence. Report publication failures as
 publication failures, leaving the candidate unchanged.
 

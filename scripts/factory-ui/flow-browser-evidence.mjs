@@ -170,16 +170,3 @@ export function browserFailure(check) {
   const assertion = diagnostic?.split(/\n\s+at /)[0]?.trim();
   return { scenario: scenario?.name, assertion };
 }
-
-function failureIdentity(check) {
-  return JSON.stringify([check.candidate.head, check.command, browserFailure(check)]);
-}
-
-export function priorBrowserFailure(block, attemptId, check) {
-  const { scenario, assertion } = browserFailure(check);
-  if (!scenario || !assertion) return;
-  const identity = failureIdentity(check);
-  return block.attempts
-    ?.filter(({ id }) => id !== attemptId)
-    .findLast(({ result }) => result?.browser?.exit && failureIdentity(result.browser) === identity);
-}
