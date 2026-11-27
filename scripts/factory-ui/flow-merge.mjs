@@ -320,14 +320,15 @@ async function pushMergeCandidate(ctx, workspace, provider, invoke, state, head)
   state.pushed = head;
 }
 
-async function prepareBrowserEvidence(ctx, workspace, head, options, state) {
+async function prepareBrowserEvidence(service, ctx, workspace, head, options, state) {
   if (state.browser.has(head)) return;
   const candidate = { head, tree: treeOf(workspace) };
   const directory = join(state.folder, 'browser-' + head);
   mkdirSync(directory, { recursive: true });
-  const result = await runCandidateBrowser(ctx, workspace, directory, candidate, options.execute);
+  const result = await runCandidateBrowser(ctx, workspace, directory, candidate, options.execute, service.root);
   state.browser.set(head, result);
   if (!result) return;
+  result.comparisonTarget = state.comparisonTarget;
   state.evidence.push(...[result.log, result.results, ...result.files].filter(Boolean));
   if (result.exit) throw failedBrowserCandidate(head, result);
 }
@@ -351,10 +352,12 @@ function retainDeliveryReceipt(service, ctx, state, provider, workspace, result)
   const checks = result.checks ?? [];
   const receipt = {
     candidate,
+    comparisonTarget: result.target,
     checks,
     jobs: githubCheckRuns(provider.config.repository, checks),
     workProof,
     repairBrowserProof: repairProof,
+    browserReplays: [...state.browser.values()].filter(Boolean),
     ...(browser && { browser, browserProofReason: 'Focused scenarios rerun on this candidate commit and tree.' }),
   };
   const path = join(state.folder, 'delivery-receipt.json');
@@ -388,7 +391,7 @@ async function advanceMerge(service, ctx, workspace, provider, pr, invoke, optio
     includesCommit(workspace, head, pr.head.sha),
     'The PR branch changed independently. Reconcile it before merging.'
   );
-  await prepareBrowserEvidence(ctx, workspace, head, options, state);
+  await prepareBrowserEvidence(service, ctx, workspace, head, options, state);
   requireCleanCandidate(workspace, head);
   await pushMergeCandidate(ctx, workspace, provider, invoke, state, head);
   if (pr.head.sha !== head) throw pending('Waiting for GitHub to observe the pushed PR commit.');

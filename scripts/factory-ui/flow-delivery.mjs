@@ -18,7 +18,8 @@ import { cleanEnvironment, digest, git, requireThat, writeJson } from './common.
 import { StrategyProvider } from './strategy-provider.mjs';
 import { queueReportPaths } from './shared-issue-config.mjs';
 import { requireGroupProof } from './flow-group-proof.mjs';
-import { receiptRepairBrowserProof } from './flow-repair-evidence.mjs';
+import { receiptBrowserReplay, receiptRepairBrowserProof } from './flow-repair-evidence.mjs';
+import { retainedGroupAttempt } from './flow-group-proof.mjs';
 import { evidencePath } from './stores/evidence.mjs';
 import { fetchIssueTarget } from './flow-update-branch.mjs';
 
@@ -484,6 +485,12 @@ export function deliveryWorkProof(ctx, candidate) {
   const work = upstreamBlocks(ctx.block, ctx.flow.blocks).filter(({ kind }) => kind === 'work');
   return {
     requested,
+    ...(ctx.issue.issue_group && {
+      groupAttempts: work
+        .flatMap(({ attempts }) => attempts)
+        .filter((attempt) => attempt.artifacts?.files?.subIssueProof && !attempt.cancelledByEdit)
+        .map((attempt) => retainedGroupAttempt(ctx.evidenceRoot, attempt)),
+    }),
     attempts: work.map((block) => {
       const attempt = latestCurrentAttempt(block);
       const file = attempt?.artifacts?.files?.proof;
@@ -552,16 +559,25 @@ function recordClosureDelivery(ctx, workspace, folder, delivered, deliveryReceip
   ctx.signal.throwIfAborted();
   const path = join(folder, 'merged-delivery.json');
   const workProof = deliveryWorkProof(ctx, candidate);
+  const browser = receiptBrowserReplay(ctx.evidenceRoot, deliveryReceipt, candidate);
   const repairBrowserProof = receiptRepairBrowserProof(ctx.evidenceRoot, deliveryReceipt, {
     commit: candidate.head,
     tree: candidate.tree,
   });
-  writeJson(path, { ...delivered, candidateTree: candidate.tree, workProof, deliveryReceipt, repairBrowserProof });
+  writeJson(path, {
+    ...delivered,
+    candidateTree: candidate.tree,
+    workProof,
+    deliveryReceipt,
+    browser,
+    repairBrowserProof,
+  });
   return {
     revision: candidate.head,
     checkout: workspace.checkout,
     evidence: [
       ...workProof.attempts.flatMap(({ file }) => (file ? [file] : [])),
+      ...(deliveryReceipt ? [deliveryReceipt] : []),
       ...(repairBrowserProof ? [repairBrowserProof.file] : []),
       { path, sha256: digest(readFileSync(path)) },
     ],

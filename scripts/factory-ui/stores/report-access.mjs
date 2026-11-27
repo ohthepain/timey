@@ -293,7 +293,7 @@ export async function moveRegisteredReport(root, id, from, to, expectedContent) 
   });
 }
 
-export async function deleteRegisteredReport(root, issue, purpose) {
+export async function deleteRegisteredReport(root, issue, purpose, expectedFlowRevision) {
   const stores = registeredProjectStores(root);
   const current = await stores.readIssue(issue.id);
   requireThat(
@@ -307,9 +307,17 @@ export async function deleteRegisteredReport(root, issue, purpose) {
     operationId:
       'delete-report-' +
       createHash('sha256')
-        .update(JSON.stringify([issue.id, current.revision, purpose]))
+        .update(
+          JSON.stringify([
+            issue.id,
+            current.revision,
+            purpose,
+            ...(expectedFlowRevision === undefined ? [] : [expectedFlowRevision]),
+          ])
+        )
         .digest('hex'),
     purpose,
+    expectedFlowRevision,
   });
   requireThat(result.status === 'confirmed', 'The issue deletion is pending authoritative confirmation.');
   await stores.refresh({ issueIds: [issue.id] });

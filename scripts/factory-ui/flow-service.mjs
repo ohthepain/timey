@@ -20,6 +20,7 @@ import { prepareAttemptCommit } from './stores/flow-evidence.mjs';
 import { readSnapshot } from './stores/snapshots.mjs';
 import { inheritedIssueCaptureProfile, resolveIssueStorage } from './stores/settings.mjs';
 import { registeredProjectStores } from './stores/report-access.mjs';
+import { saveRetroReport, withRetroSummary } from './flow-retro-report.mjs';
 import { ensureProjectStores, hydrateProjectEvidence } from './stores/runtime.mjs';
 import { evidencePath, evidenceResolverGeneration } from './stores/evidence.mjs';
 import { fileGeneration } from './file-read-cache.mjs';
@@ -66,6 +67,7 @@ import { createDiscussionRuntime } from './discussion-codex.mjs';
 import { redactValue } from './activity.mjs';
 import { digest, git, requireThat, writeJson } from './common.mjs';
 import { closedIssueState, readQueue } from './data.mjs';
+import { issueNickname } from './issue-nickname.mjs';
 import { decisionBasis } from './recorded-result.mjs';
 import { issueClosurePreview } from './issue-decision.mjs';
 import { flowOwnsIssue } from './flow-ownership.mjs';
@@ -683,6 +685,7 @@ class IssueFlows {
     return {
       id: issue.id,
       title: issue.title,
+      nickname: issueNickname(issue),
       issueNumber: issue.issueNumber,
       created: issue.created,
       updated: issue.updated,
@@ -894,10 +897,13 @@ class IssueFlows {
       issue: {
         id: issue.id,
         title: issue.title,
+        nickname: selectedRow.nickname,
+        customNickname: issue.nickname ?? null,
         issueNumber: issue.issueNumber,
         created: issue.created,
         updated: issue.updated,
         state: issue.state,
+        ...(issue.state === 'needs-approval' && { reportBasis: digest(issue.content) }),
         reusable: issue.reusable === true,
         location: issue.location,
         storeId: issue.storeId,
@@ -1335,6 +1341,17 @@ class IssueFlows {
       await this.service.projectStores?.refresh({ issueIds: children.map(({ id }) => id) });
     await this.groups.finish(issue);
   }
+  async finishClosureRetro(attempt, { id, closureId, retry, resourceId }) {
+    const followups = await this.fileRetroItems(attempt.result?.recommendations ?? [], id);
+    const source = this.selected(id);
+    const report = withRetroSummary(source.content, closureId, attempt.summary, followups);
+    const publication = await saveRetroReport(this.service, source, report);
+    if (publication && publication.status !== 'published') return;
+    const current = this.read(this.selected(id));
+    current.closing.filedRetro = true;
+    await this.store.save(current, current.revision);
+    return this.advanceClosure(id, retry, resourceId);
+  }
   async advanceClosure(id, retry = false, resourceId) {
     const issue = this.selected(id);
     const catalog = this.catalog.read().entries;
@@ -1378,13 +1395,8 @@ class IssueFlows {
       await this.start(issue, flow, { action: 'continue', blockId: retro.id, closureId: closing.id }, catalog);
       return;
     }
-    if (retroAttempt?.status === 'completed' && !closing.skipRetro && !closing.filedRetro) {
-      await this.fileRetroItems(retroAttempt.result?.recommendations ?? [], issue.id);
-      const current = this.read(issue, catalog);
-      current.closing.filedRetro = true;
-      await this.store.save(current, current.revision);
-      return this.advanceClosure(id, retry, resourceId);
-    }
+    if (retroAttempt?.status === 'completed' && !closing.skipRetro && !closing.filedRetro)
+      return this.finishClosureRetro(retroAttempt, { id, closureId: closing.id, retry, resourceId });
     const cleanupAttempt = cleanup.attempts.findLast(
       (attempt) => attempt.closureId === closing.id && attempt.cleanupGeneration === closing.cleanupGeneration
     );
@@ -1429,8 +1441,9 @@ class IssueFlows {
     this.closureTasks.set(id, task);
   }
   async fileRetroItems(recommendations, sourceIssue) {
-    if (!recommendations.length) return;
+    if (!recommendations.length) return [];
     createIssueFolderSettings(this.service.root, retroFolder);
+    const followups = [];
     for (const item of recommendations) {
       const title = item.title
         .trim()
@@ -1445,15 +1458,22 @@ class IssueFlows {
         item.verification,
         ...(sourceIssue ? ['## Source issue', sourceIssue] : []),
       ].join('\n\n');
-      await this.capture({
+      const captured = await this.capture({
         requestId: item.requestId,
         description,
+        type: item.type,
         folder: retroFolder,
         storageProfile: inheritedIssueCaptureProfile(this.service),
         needsApproval: true,
         sourceIssue,
       });
+      followups.push({
+        id: captured.issue?.id ?? captured.issueId,
+        title: captured.issue?.title ?? title,
+        type: item.type ?? captured.flow?.type ?? inferType(description),
+      });
     }
+    return followups;
   }
   pause(issueId, reason) {
     this.autoplay.set(issueId, { mode: 'paused', reason });
@@ -1629,6 +1649,7 @@ class IssueFlows {
         'branch-repair-stop',
         'folder',
         'folder-lock',
+        'edit-issue-nickname',
         'comment',
       ].includes(action)
     )
@@ -1640,9 +1661,16 @@ class IssueFlows {
     );
     if (issue.state === 'needs-approval')
       requireThat(
-        ['open-block', 'rename-issue', 'edit-request', 'comment', 'retro-setting', 'folder', 'folder-lock'].includes(
-          action
-        ),
+        [
+          'open-block',
+          'rename-issue',
+          'edit-issue-nickname',
+          'edit-request',
+          'comment',
+          'retro-setting',
+          'folder',
+          'folder-lock',
+        ].includes(action),
         'Approve this issue before starting work.'
       );
     if (flow.closing && !flow.closing.complete)
@@ -1817,7 +1845,7 @@ class IssueFlows {
     if (input.action === 'destination' || input.action === 'accept-pr-base')
       return this.setDestination(issue, flow, input);
     if (input.action === 'issue-settings') return await this.editIssueSettings(issue, flow, input);
-    if (input.action === 'rename-issue') return this.renameIssue(issue, flow, input);
+    if (['rename-issue', 'edit-issue-nickname'].includes(input.action)) return this.editIssueName(issue, flow, input);
     return this.dispatchBlockAction(issue, flow, input, catalog);
   }
   requireActionRevision(input, flow) {
@@ -1893,7 +1921,8 @@ class IssueFlows {
       this.store
     );
   }
-  async renameIssue(issue, flow, input) {
+  async editIssueName(issue, flow, input) {
+    if (input.action === 'edit-issue-nickname') return this.editIssueNickname(issue, input);
     const title = typeof input.title === 'string' ? input.title.trim() : '';
     requireThat(
       title && title.length <= 256 && !/[\r\n\x00-\x1f]/.test(title),
@@ -1907,6 +1936,21 @@ class IssueFlows {
     if (title !== issue.title) {
       if (!existsSync(this.store.path(issue.id))) await this.store.save(flow, flow.revision);
       await renameStoredIssue(this.service.root, issue, title);
+    }
+    return this.view(issue.id);
+  }
+  async editIssueNickname(issue, input) {
+    const nickname = typeof input.nickname === 'string' ? input.nickname.trim() : null;
+    requireThat(
+      nickname !== null && nickname.length <= 48 && !/[\r\n\x00-\x1f]/.test(nickname),
+      'Enter an issue nickname of up to 48 characters on one line.'
+    );
+    requireThat(
+      input.previousNickname === (issue.nickname ?? null),
+      'The issue nickname changed. Refresh before editing it.'
+    );
+    if ((nickname || null) !== (issue.nickname ?? null)) {
+      await updateStoredIssueMetadata(this.service.root, issue, { nickname: nickname || null });
     }
     return this.view(issue.id);
   }
@@ -3558,13 +3602,14 @@ class IssueFlows {
       return this.view(issue.id);
     }
     requireThat(input.title === issue.title, 'Confirm deletion of the current issue.');
+    requireThat(input.reportBasis === digest(issue.content), 'This proposal changed. Review it before deleting.');
     requireThat(!flowWorkspace(this.service, flow), 'This issue has a workspace that needs cleanup first.');
     if (this.service.sharedIssues) {
       const publication = this.service.sharedIssues.deleteProposal(issue);
       if (publication.status !== 'published') return { publication };
       return this.view();
     }
-    await deletePendingIssueReport(this.service.root, issue);
+    await deletePendingIssueReport(this.service.root, issue, flow.revision);
     this.removePendingFlow(issue.id);
     return this.view();
   }

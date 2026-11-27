@@ -661,17 +661,19 @@ export function createProjectStores({
         purpose,
         owner,
       }) {
-        const atomic = await this.atomicIssueSave({
-          issueId,
-          report,
-          location,
-          expectedRevision,
-          operationId,
-          flow,
-          kind,
-          purpose,
-          owner,
-        });
+        const atomic = await this.coordination.withWritableGate(() =>
+          this.atomicIssueSave({
+            issueId,
+            report,
+            location,
+            expectedRevision,
+            operationId,
+            flow,
+            kind,
+            purpose,
+            owner,
+          })
+        );
         if (atomic) return atomic;
         const current = await this.readIssue(issueId);
         const text = reportText(report);
@@ -774,7 +776,9 @@ export function createProjectStores({
         return { flow: saved.flow };
       },
       async saveFlow({ issueId, flow, expectedRevision, operationId, owner, purpose = 'edit' }) {
-        const atomic = await this.atomicFlowSave({ issueId, flow, expectedRevision, operationId, owner, purpose });
+        const atomic = await this.coordination.withWritableGate(() =>
+          this.atomicFlowSave({ issueId, flow, expectedRevision, operationId, owner, purpose })
+        );
         if (atomic) return atomic.flow;
         await this.catalog(issueId);
         const record = await this.coordination.get(flowKey(issueId));

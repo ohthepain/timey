@@ -187,7 +187,10 @@ object, including references in another Issue store or an earlier migration
 source. Other issues keep their shared files. Completed operation receipts retain
 their identities and digests so replay cannot recreate deleted evidence.
 
-Deletion requires an idle project and seals shared changes until cleanup finishes.
+Deleting a previously opened issue requires an idle project. Deleting an unopened
+proposal checks only its own claim and pending operations. Both use a storage seal
+while checking and removing exclusively owned evidence. An unrelated write that
+overlaps the proposal seal waits for it to clear before applying its revision checks.
 If a store fails after the issue disappears, Project settings retains a **Resume
 deletion** action for the original command. Retrying continues the checked cleanup.
 It never sweeps unrelated bucket objects or removes source worktrees. Removing

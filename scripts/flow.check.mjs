@@ -1724,6 +1724,22 @@ test('Work waits for its Update Branch prerequisite even when Work uses a parall
 });
 test('a suggested target update precedes Work in the graph and route execution', { timeout: 5000 }, async (t) => {
   const { root, id, service } = fixture(t);
+  const start = performance.now();
+  const phases = {};
+  const mark = (phase) => (phases[phase] = Math.round(performance.now() - start));
+  t.after(() => {
+    const revision = (...args) => execFileSync('git', ['rev-parse', ...args], { encoding: 'utf8' }).trim();
+    t.diagnostic(
+      JSON.stringify({
+        focusedCommand: ['node', '--test', '--test-name-pattern=' + t.name, 'scripts/flow.check.mjs'],
+        runner: { node: process.version, os: process.platform, arch: process.arch },
+        revision: revision('HEAD'),
+        tree: revision('HEAD^{tree}'),
+        elapsedMs: Math.round(performance.now() - start),
+        phasesMs: phases,
+      })
+    );
+  });
   const updateStarted = Promise.withResolvers();
   const finishUpdate = Promise.withResolvers();
   const workStarted = Promise.withResolvers();
@@ -1737,10 +1753,15 @@ test('a suggested target update precedes Work in the graph and route execution',
     executor: executor(async ({ block }) => {
       started.push(block.kind);
       if (block.kind === 'update-branch') {
+        mark('targetUpdateStarted');
         updateStarted.resolve();
         await finishUpdate.promise;
+        mark('targetUpdateReleased');
       }
-      if (block.kind === 'work') workStarted.resolve();
+      if (block.kind === 'work') {
+        mark('workStarted');
+        workStarted.resolve();
+      }
       return { summary: 'Done' };
     }),
   });
@@ -1769,6 +1790,7 @@ test('a suggested target update precedes Work in the graph and route execution',
     /Complete the suggested Update Branch/
   );
   assert.equal(flows.read(issue).blocks.length, 2);
+  mark('playRequested');
   await flows.action({ issueId: id, revision: saved.revision, action: 'play' });
   await updateStarted.promise;
   assert.deepEqual(started, ['update-branch']);
@@ -1776,6 +1798,7 @@ test('a suggested target update precedes Work in the graph and route execution',
   finishUpdate.resolve();
   await workStarted.promise;
   await flows.active.get(id)?.task;
+  mark('workFinished');
   assert.deepEqual(started, ['update-branch', 'work']);
 });
 
@@ -1962,7 +1985,8 @@ test('opted-in closure holds the worktree until Retro succeeds and files idle ap
     approved.flow.blocks.every((item) => item.attempts.length === 0),
     true
   );
-  await submit(await flows.view(remove.id), 'delete-pending-issue', { title: remove.title });
+  const deleteView = await flows.view(remove.id);
+  await submit(deleteView, 'delete-pending-issue', { title: remove.title, reportBasis: deleteView.issue.reportBasis });
   await flows.fileRetroItems(proposals, id);
   assert.equal(
     flows.issues().some((item) => item.id === remove.id),

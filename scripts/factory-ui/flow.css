@@ -2392,7 +2392,7 @@ kbd {
   margin: 0;
 }
 .folder-settings-panel {
-  margin: 0 0 20px;
+  margin: 0 0 12px;
 }
 .folder-settings-fields {
   display: grid;
@@ -2678,4 +2678,39 @@ html[data-project-issue-request-embed='true'] .factory-header {
   width: 24px;
   height: 24px;
   background: transparent;
+}
+[data-folder-sub-issues] > li {
+  border-top: 0;
+  padding-block: 4px;
+}
+[data-folder-defaults] summary {
+  width: fit-content;
+  padding: 5px 0;
+  cursor: pointer;
+}
+[data-folder-defaults][open] summary {
+  margin-bottom: 8px;
+}
+[data-folder-defaults][open] {
+  margin-bottom: 10px;
+}
+[data-folder-settings-save] {
+  display: none;
+}
+details[open] ~ [data-folder-settings-save] {
+  display: flex;
+}
+.issue-report-dialog {
+  width: min(720px, calc(100vw - 32px));
+}
+.issue-report-content {
+  overflow-wrap: anywhere;
+  line-height: 1.55;
+}
+.issue-report-content p {
+  margin-block: 6px;
+}
+.issue-report-content h2,
+.issue-report-content h3 {
+  margin-top: 16px;
 }

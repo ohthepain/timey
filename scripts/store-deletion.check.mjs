@@ -18,6 +18,7 @@ import { createProjectStores } from './factory-ui/stores/project-stores.mjs';
 import { deleteArchivedIssueReport } from './factory-ui/issue-report-storage.mjs';
 import { registerProjectStores } from './factory-ui/stores/report-access.mjs';
 import { createArtifactRouter } from './factory-ui/stores/coordination.mjs';
+import { runMetadataOperation } from './factory-ui/stores/metadata-operation.mjs';
 import { InvestigationReports } from './factory-ui/investigation-reports.mjs';
 
 async function fixture(t, kind = 'files', s3) {
@@ -52,12 +53,12 @@ async function fixture(t, kind = 'files', s3) {
       artifactStores: new Map([['artifacts', physical]]),
     });
   const project = create();
-  const add = async (id) =>
+  const add = async (id, { state = 'complete', location = 'archive' } = {}) =>
     project.importIssue({
       id,
-      report: `---\nid: ${id}\ntitle: ${id}\nstate: complete\n---\nbody`,
+      report: `---\nid: ${id}\ntitle: ${id}\nstate: ${state}\n---\nbody`,
       flow: null,
-      location: 'archive',
+      location,
       storeId: 'files',
       operationId: 'import-' + id,
     });
@@ -76,6 +77,81 @@ async function fixture(t, kind = 'files', s3) {
     });
   return { ...f, records, issues, physical, project, create, add, evidence, del };
 }
+
+test('proposal deletion lets concurrent Git metadata finish after the evidence seal', async (t) => {
+  const f = await fixture(t, 'git');
+  await f.add('proposal', { state: 'needs-approval', location: 'open' });
+  await f.add('other');
+  const ref = await f.physical.put({ body: 'Exclusive proposal evidence.' });
+  await f.evidence('proposal', [ref]);
+  const pending = await f.project.coordination.operation('other-pending', 'save-flow', { issueId: 'other' });
+  const { revision } = await f.project.readIssue('proposal');
+  const entered = Promise.withResolvers();
+  const release = Promise.withResolvers();
+  const remove = f.physical.remove.bind(f.physical);
+  f.physical.remove = async (ref) => {
+    entered.resolve();
+    await release.promise;
+    return remove(ref);
+  };
+  const deleting = f.project.deleteIssue({
+    issueId: 'proposal',
+    expectedRevision: revision,
+    operationId: 'delete-proposal',
+    purpose: 'proposal',
+  });
+  const retried = Promise.withResolvers();
+  let attempts = 0;
+  try {
+    await Promise.race([entered.promise, deleting.then(() => assert.fail('Deletion skipped physical cleanup.'))]);
+    const confirming = runMetadataOperation(f.project, async () => {
+      attempts++;
+      try {
+        return await f.project.coordination.updateOperation(pending, { status: 'confirmed' }, 'continued');
+      } catch (error) {
+        retried.resolve(error.code);
+        throw error;
+      }
+    });
+    assert.equal(await retried.promise, 'STORE_PROPOSAL_DELETING');
+    release.resolve();
+    const [deletion, confirmation] = await Promise.all([deleting, confirming]);
+    assert.equal(deletion.deleted, true);
+    assert.equal(confirmation.value.status, 'confirmed');
+    assert.equal(attempts, 2);
+  } finally {
+    release.resolve();
+    await deleting.catch(() => {});
+  }
+});
+
+test('proposal deletion releases a failed seal and checks newly shared evidence on resume', async (t) => {
+  const f = await fixture(t);
+  await f.add('proposal', { state: 'needs-approval', location: 'open' });
+  await f.add('other');
+  const ref = await f.physical.put({ body: 'Evidence shared while deletion stands interrupted.' });
+  await f.evidence('proposal', [ref]);
+  const { revision } = await f.project.readIssue('proposal');
+  const remove = f.physical.remove.bind(f.physical);
+  f.physical.remove = async () => {
+    throw Object.assign(Error('offline'), { code: 'STORE_UNAVAILABLE' });
+  };
+  const operationId = 'delete-interrupted-proposal';
+  await assert.rejects(
+    f.project.deleteIssue({
+      issueId: 'proposal',
+      expectedRevision: revision,
+      operationId,
+      purpose: 'proposal',
+    }),
+    { code: 'STORE_UNAVAILABLE', pending: true }
+  );
+  assert.equal(await f.records.get('project/migration'), null);
+  await f.evidence('other', [ref]);
+  f.physical.remove = remove;
+  assert.equal((await f.project.resumeDelete({ operationId })).deleted, true);
+  assert.equal((await f.physical.get(ref)).toString(), 'Evidence shared while deletion stands interrupted.');
+});
 
 for (const kind of ['files', 'git'])
   test(kind + ' Delete removes exclusive evidence and preserves shared evidence and Archive', async (t) => {

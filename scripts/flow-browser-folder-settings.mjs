@@ -72,6 +72,8 @@ export async function flowFolderSettingsBrowserChecks({ page, project, service, 
     };
     const openFolder = async () => {
       await page.goto('/?folder=' + encodeURIComponent(folder));
+      await page.locator('#folder-issue-defaults summary').click();
+      await page.locator('#folder-defaults summary').click();
       await page.locator('#folder-setting-branch').waitFor();
       await poll(
         () => page.locator('#folder-settings-panel [data-default-folder]').count(),
@@ -167,6 +169,7 @@ export async function flowFolderSettingsBrowserChecks({ page, project, service, 
     source = source.replace(/\n---\n$/, '\n# Keep this comment.\ncustom_field: retain-me\n---\n');
     writeFileSync(settingsPath, source);
     await page.reload();
+    await page.locator('#folder-defaults summary').click();
     const wand = page.locator('#folder-settings-panel [data-settings-repair]');
     await wand.waitFor();
     assert.match(await wand.getAttribute('title'), /Add missing fields:.*skill/);
@@ -178,6 +181,7 @@ export async function flowFolderSettingsBrowserChecks({ page, project, service, 
     assert.equal(metadata(settingsPath).id, folderId);
     writeFileSync(settingsPath, source.replace(/^effort:.*$/m, 'effort: invalid-effort'));
     await page.reload();
+    await page.locator('#folder-defaults summary').click();
     await page.locator('#folder-settings-panel .folder-settings-wand.invalid').waitFor();
     await screenshot('folder-settings-invalid');
     await confirmRepair(/effort: default/);

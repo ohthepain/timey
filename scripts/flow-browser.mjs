@@ -1,4 +1,5 @@
 import { projectNightBrowserChecks } from './flow-browser-project-night-fixture.mjs';
+import { proposalBrowserChecks } from './flow-browser-proposals.mjs';
 import { fixtureRoute } from './flow-browser-routes.mjs';
 import { readyControl } from './browser-controls.mjs';
 import {
@@ -14,6 +15,7 @@ import { activityBrowserChecks } from './flow-browser-activity.mjs';
 import { chatProgressBrowserChecks } from './flow-browser-chat-progress.mjs';
 import { inboxDiscussBrowserChecks, inboxFlowBrowserChecks } from './flow-browser-inbox.mjs';
 import { investigationReportsBrowserChecks } from './flow-browser-investigation-reports.mjs';
+import { folderLayoutBrowserChecks, reportLibraryBrowserChecks } from './flow-browser-list-layouts.mjs';
 import { issueStatusFoldersBrowserChecks } from './flow-browser-issue-status-folders.mjs';
 import {
   issueDiscussWorkspaceChecks,
@@ -82,16 +84,19 @@ import {
   automateActivityBrowserChecks,
 } from './flow-browser-project-home.mjs';
 import { projectDiscussBrowserChecks } from './flow-browser-project-discuss.mjs';
+import { discussUiDesignBrowserChecks } from './flow-browser-discuss-ui-design.mjs';
+import { discussDispositionBrowserChecks } from './flow-browser-discuss-disposition.mjs';
 import { assetStorageBrowserChecks } from './flow-browser-asset-storage.mjs';
 import { projectSettingsBrowserChecks } from './flow-browser-project-settings.mjs';
 import { aiTextBrowserChecks } from './flow-browser-ai-text.mjs';
-import { interfaceStateBrowserChecks } from './flow-browser-interface-state.mjs';
+import { flowActionTimeoutBrowserChecks, interfaceStateBrowserChecks } from './flow-browser-interface-state.mjs';
 import { inboxChatBrowserChecks } from './flow-browser-inbox-chat.mjs';
 import { inboxDetailsBrowserChecks } from './flow-browser-inbox-details.mjs';
 import { localNotesBrowserChecks } from './flow-browser-local-notes.mjs';
 import { actionsMenuBrowserChecks } from './flow-browser-actions-menu.mjs';
 import { mergedIssueBrowserChecks } from './flow-browser-merged-issue.mjs';
 import { manualCloseBrowserChecks } from './flow-browser-manual-close.mjs';
+import { retroReportBrowserChecks } from './flow-browser-retro-report.mjs';
 import { noChangesBrowserChecks } from './flow-browser-no-changes.mjs';
 import {
   importBrowserIssue,
@@ -216,6 +221,8 @@ const candidate = {
   clean: !git(root, 'status', '--porcelain', '--untracked-files=all'),
   assets: fingerprint(),
 };
+const command = ['node', 'scripts/flow-browser.mjs', ...process.argv.slice(2)];
+const runStarted = performance.now();
 const results = [];
 const {
   '--master-issues': masterIssuesCheck,
@@ -254,6 +261,7 @@ const {
   '--folder-workspace-grouping': folderWorkspaceGroupingCheck,
   '--tab-source': tabSourceCheck,
   '--sidebar-issue-names': sidebarIssueNamesCheck,
+  '--issue-nicknames': issueNicknamesCheck,
   '--save-request-route': saveRequestRouteCheck,
   '--flow-menu': flowMenuCheck,
   '--add-parallel-block': addParallelBlockCheck,
@@ -306,7 +314,7 @@ service.codex.call = async (method) => {
 const executor = {
   async run({ signal, onProgress, onStep, block, issue, attempt }) {
     const number = logs.execution.length + 1;
-    logs.execution.push({ number, blockId: block.id, issueId: issue.id });
+    logs.execution.push({ number, kind: block.kind, blockId: block.id, issueId: issue.id, at: Date.now() });
     onStep('pnpm test');
     onProgress('Fixture output for explicit attempt ' + number + '.\n');
     if (issue.id === playbackIssueId && block.kind === 'work') await playbackWork.promise;
@@ -391,6 +399,7 @@ const server = createFactoryServer(service, {
 const require = createRequire(import.meta.url);
 const playwrightRequire = createRequire(require.resolve('@playwright/cli/package.json'));
 const { chromium } = playwrightRequire('playwright');
+const runner = { node: process.version, playwright: playwrightRequire('playwright/package.json').version };
 let browser;
 let page;
 let issueId;
@@ -474,18 +483,19 @@ function checkSelected(name) {
 
 async function check(name, run) {
   if (!checkSelected(name)) return;
+  const startedAt = Date.now();
   try {
     await run();
-    results.push({ name, passed: true });
+    results.push({ name, passed: true, startedAt, elapsedMs: Date.now() - startedAt });
     console.log('PASS ' + name);
   } catch (error) {
-    results.push({ name, passed: false, error: error.stack });
+    results.push({ name, passed: false, startedAt, elapsedMs: Date.now() - startedAt, error: error.stack });
     console.error('FAIL ' + name);
     throw error;
   }
 }
 async function view() {
-  const response = await page.request.get('/api/flow?issue=' + issueId);
+  const response = await page.request.get('/api/flow?issue=' + issueId, { maxRetries: 1 });
   assert.equal(response.status(), 200);
   const data = await response.json();
   assert.ok(data.flow, JSON.stringify(data));
@@ -642,6 +652,7 @@ try {
   await once(server, 'listening');
   const baseURL = 'http://127.0.0.1:' + server.address().port;
   browser = await chromium.launch({ headless: true, channel: 'chrome', ignoreDefaultArgs: ['--hide-scrollbars'] });
+  runner.browser = browser.version();
   const context = await browser.newContext({ baseURL, viewport: { width: 1440, height: 960 } });
   page = await context.newPage();
   if (process.env.NODE_V8_COVERAGE) await page.coverage.startJSCoverage({ resetOnNavigation: false });
@@ -651,7 +662,12 @@ try {
   );
   page.on('pageerror', (error) => logs.pageErrors.push(error.stack));
   page.on('request', (request) =>
-    logs.requests.push({ method: request.method(), path: new URL(request.url()).pathname, body: request.postData() })
+    logs.requests.push({
+      at: Date.now(),
+      method: request.method(),
+      path: new URL(request.url()).pathname,
+      body: request.postData(),
+    })
   );
   page.on('requestfailed', (request) => {
     const failure = { url: request.url(), error: request.failure() };
@@ -662,7 +678,13 @@ try {
     logs[cancelledRead ? 'cancelledReads' : 'failedRequests'].push(failure);
   });
   page.on('response', (response) => {
-    const entry = { path: new URL(response.url()).pathname, status: response.status() };
+    const path = new URL(response.url()).pathname;
+    const entry = {
+      at: Date.now(),
+      path,
+      status: response.status(),
+      ...(path === '/api/flow-action' && { request: response.request().postData() }),
+    };
     logs.responses.push(entry);
     if (response.status() >= 400)
       pendingResponses.push(
@@ -677,6 +699,12 @@ try {
           })
       );
   });
+  await check(flowBrowserScenarioNames['--report-library'], () =>
+    reportLibraryBrowserChecks({ page, project, output, candidate, screenshot })
+  );
+  await check(flowBrowserScenarioNames['--folder-layout'], () =>
+    folderLayoutBrowserChecks({ page, project, output, candidate, screenshot })
+  );
   await check('Manual Close remains discoverable after Merge and automatic closing needs no prompt', () =>
     manualCloseBrowserChecks({ page, project, service, output, root, poll, screenshot })
   );
@@ -816,6 +844,12 @@ try {
   await check(flowBrowserScenarioNames['--project-night'], () =>
     projectNightBrowserChecks({ page, project, service, poll, screenshot, output })
   );
+  await check(flowBrowserScenarioNames['--discuss-ui-design'], () =>
+    discussUiDesignBrowserChecks({ page, project, service, poll, screenshot, output })
+  );
+  await check(flowBrowserScenarioNames['--project-discuss-disposition'], () =>
+    discussDispositionBrowserChecks({ page, service, project, root, output, poll, screenshot })
+  );
   await check(inboxDiscussCheck, () => inboxDiscussBrowserChecks({ page, service, screenshot, output }));
   part = '--ci-part=1b';
   await check('Factory provider settings save enablement and quota warnings', () =>
@@ -830,6 +864,9 @@ try {
   await check(storesCheck, () => issueStoresBrowserChecks({ page, project, service, logs, poll, screenshot }));
   await check(aiTextCheck, () => aiTextBrowserChecks({ page, project, service, poll, screenshot }));
   await check(interfaceStateCheck, () => interfaceStateBrowserChecks({ page, project, service, poll, screenshot }));
+  await check(flowBrowserScenarioNames['--stalled-flow-action'], () =>
+    flowActionTimeoutBrowserChecks({ page, project, service })
+  );
   await check('Issues and Local notes use matching text styles', async () => {
     const id = '20261126-sidebar-labels-fixture';
     await writeBrowserIssue(project, {
@@ -1339,9 +1376,70 @@ try {
   });
   // The remaining scenarios share the issue created in this section.
   part = '--ci-part=2';
+  await check(issueNicknamesCheck, async () => {
+    ensureFixtureLifecycle();
+    const existing = '20261127-browser-existing-nickname';
+    const legacyTitle = 'Organize practice recordings alphabetically for the entire project';
+    await writeBrowserIssue(project, {
+      id: existing,
+      title: legacyTitle,
+      body: 'Keep the full title in the issue view.',
+    });
+    const observe = async (label, title, nickname) => {
+      const expectedTab = async () => {
+        const issue = new URL(page.url()).searchParams.get('issue');
+        const data = await (await page.request.get('/api/flow?issue=' + issue)).json();
+        const number = data.issue?.issueNumber;
+        return Number.isSafeInteger(number) ? `#${number} - ${nickname}` : nickname;
+      };
+      await poll(
+        async () => ({
+          heading: await page.locator('#issue-title').textContent(),
+          tab: await page.title(),
+          expected: await expectedTab(),
+        }),
+        ({ heading, tab, expected }) => heading === title && tab === expected,
+        'The issue heading and tab did not show the expected names.'
+      );
+      return { label, heading: title, tab: await page.title() };
+    };
+    const rename = async (title) => {
+      await page.getByRole('button', { name: 'Rename issue', exact: true }).click();
+      await page.getByRole('textbox', { name: 'Issue title', exact: true }).fill(title);
+      await clickAction(page.locator('#rename-issue-form button[type="submit"]'));
+    };
+    const saveNickname = async (nickname) => {
+      await page.getByRole('button', { name: 'Edit nickname', exact: true }).click();
+      await page.getByRole('textbox', { name: 'Issue nickname', exact: true }).fill(nickname);
+      await clickAction(page.getByRole('button', { name: 'Save nickname', exact: true }));
+    };
+    await page.goto('/flow?issue=' + existing);
+    const observations = [
+      await observe('Existing issue', legacyTitle, 'Organize practice recordings alphabetically for…'),
+    ];
+    await page.locator('#new-issue').click();
+    const title = 'Improve the recording library';
+    await page.locator('#capture-description').fill(title);
+    await page.locator('#capture-type').selectOption('feature');
+    const created = await clickAction(page.locator('#capture-submit'));
+    observations.push(await observe('New issue', title, title));
+    const renamed = 'Improve the practice library';
+    await rename(renamed);
+    observations.push(await observe('Generated nickname after rename', renamed, renamed));
+    await saveNickname('Practice library');
+    const finalTitle = 'Keep the practice library sorted by instrument';
+    await rename(finalTitle);
+    await page.goto('/flow?issue=' + created.issue.id);
+    observations.push(await observe('Custom nickname after rename and reload', finalTitle, 'Practice library'));
+    await screenshot('issue-nickname');
+    await saveNickname('');
+    observations.push(await observe('Restored title default', finalTitle, finalTitle));
+    writeFileSync(join(output, 'issue-nicknames.json'), JSON.stringify(observations, null, 2) + '\n');
+  });
   const description =
     'Understand why the save button loses text\nDone: The text survives a reload.\nProof: Retained saved text.\nKnown facts: The problem occurs after refresh.\nConstraints: Reproduce before changing code.';
   await check(captureFolderIssueCheck, async () => {
+    const executionCount = logs.execution.length;
     await page.goto('/');
     await page.locator('#new-folder').click();
     await page.locator('#folder-name').fill('Browser folder');
@@ -1372,7 +1470,7 @@ try {
     assert.equal(startingPoint(data.flow).ref, 'refs/heads/dev');
     assert.equal(deliveryTarget(data.flow).branch, 'dev');
     assert.equal(requestData(data.flow).fields, null);
-    assert.equal(logs.execution.length, 0);
+    assert.equal(logs.execution.length, executionCount, 'Folder issue creation should not start workflow execution.');
   });
   async function ensureBrowserFolderIssue() {
     if (!issueId) {
@@ -1382,6 +1480,7 @@ try {
         requestId: randomUUID(),
         description,
         folder: 'Browser folder',
+        storageProfile: 'default',
       });
       issueId = captured.issue.id;
       worktreeIssueId = issueId;
@@ -1458,7 +1557,11 @@ try {
     assert.equal(requestData(master.flow).wording, edited);
     await openFolder();
     const nested = members.getByRole('list', { name: 'Sub-issues', exact: true });
-    assert.equal(await nested.getByRole('checkbox').count(), 2);
+    await poll(
+      () => nested.getByRole('checkbox').count(),
+      (count) => count === 2,
+      'The master did not display both sub-issues after reopening the folder.'
+    );
     const masterLink = members.locator(':scope > li > div > a').filter({ hasText: 'Keep both save behaviors' });
     const childLink = nested.getByRole('link').first();
     assert.ok((await childLink.boundingBox()).x > (await masterLink.boundingBox()).x);
@@ -2089,6 +2192,7 @@ try {
     await page.setViewportSize({ width: 1440, height: 960 });
   });
   await check(saveBlockCommentCheck, async () => {
+    const executionCount = logs.execution.length;
     await page.reload();
     await block(addedId);
     const comment = page.locator('#comment-form [name="comment"]');
@@ -2100,7 +2204,7 @@ try {
     await block(addedId);
     await page.locator('.message-body').filter({ hasText: 'Keep every partial attempt for review.' }).waitFor();
     assert.equal((await view()).flow.blocks.find((item) => item.id === addedId).comments.length, 1);
-    assert.equal(logs.execution.length, 0);
+    assert.equal(logs.execution.length, executionCount, 'Saving a block comment should not start workflow execution.');
   });
   async function addExtraWork() {
     await page.locator('[data-open-palette]').click();
@@ -2109,6 +2213,7 @@ try {
   }
   let extraWorkId;
   await check(workMarkdownCheck, async () => {
+    const executionCount = logs.execution.length;
     await ensureBrowserFolderIssue();
     const id = await addExtraWork();
     extraWorkId = id;
@@ -2147,7 +2252,8 @@ try {
           revision: candidate.revision,
           tree: candidate.tree,
           clean: candidate.clean,
-          command: ['node', 'scripts/flow-browser.mjs', ...process.argv.slice(2)],
+          command,
+          runner,
           predecessors: results.map(({ name }) => name),
         },
         workOverrideWatcherEvents,
@@ -2175,7 +2281,7 @@ try {
     assert.equal(await card.locator('.block-status').innerText(), status);
     assert.equal(await draft.inputValue(), 'Unsaved Work draft');
     assert.equal(await page.locator('[data-action="start"]').count(), 1);
-    assert.equal(logs.execution.length, 0);
+    assert.equal(logs.execution.length, executionCount, 'Editing Work Markdown should not start workflow execution.');
     await trace('work-markdown-warning-proof.json', {
       invalid: true,
       write: () => replaceSourceFile(workOverride, '# Empty override\n'),
@@ -2777,76 +2883,9 @@ try {
     );
     assert.deepEqual(logs.pageErrors, []);
   });
-  await check(proposalsCheck, async () => {
-    const previous = issueId;
-    await page.goto('/');
-    const runs = logs.execution.length;
-    const create = page.locator('#capture-dialog');
-    await page.locator('#new-issue').click();
-    assert.equal(await create.locator('#capture-retro').isChecked(), false);
-    assert.equal(await create.locator('#capture-needs-approval').isChecked(), false);
-    await create.locator('#capture-description').fill('Review an idle approval proposal');
-    await create.locator('#capture-retro').check();
-    await create.locator('#capture-needs-approval').check();
-    await create.locator('#capture-submit').click();
-    const approval = page.locator('#approve-issue');
-    const remove = page.locator('#delete-pending-issue');
-    await approval.waitFor();
-    await remove.waitFor();
-    await page.locator('#close-with-reason').waitFor({ state: 'hidden' });
-    assert.equal(await page.locator('#worktree-menu').isVisible(), false);
-    await clickAction(approval);
-    await page.locator('#close-with-reason').waitFor();
-    assert.equal(await approval.isVisible(), false);
-    assert.equal(await remove.isVisible(), false);
-
-    const title = 'Discard an idle retro proposal';
-    await service.flows.fileRetroItems([
-      {
-        requestId: randomUUID(),
-        title,
-        description: 'An example recommendation from Retro.',
-        reason: 'Exercise proposal deletion.',
-        verification: 'Check the report file is gone.',
-      },
-    ]);
-    const proposal = service.flows.issues().find((issue) => issue.title === title);
-    assert.ok(proposal);
-    assert.equal(service.flows.read(service.flows.selected(proposal.id)).folder, 'Retro items');
-    const reportPath = join(project, '.issues', proposal.id + '.md');
-    assert.equal(existsSync(reportPath), true);
-    const row = page.locator(`#open-issues [data-issue="${proposal.id}"]`);
-    await page.goto(new URL('/?issue=' + proposal.id, page.url()).href);
-    await row.waitFor();
-    const canceled = page.waitForEvent('dialog');
-    const cancelClick = remove.click();
-    const confirmation = await canceled;
-    assert.match(confirmation.message(), /Permanently delete .*Discard an idle retro proposal/);
-    await confirmation.dismiss();
-    await cancelClick;
-    assert.equal(existsSync(reportPath), true);
-    let delayedDelete = Promise.resolve();
-    const delayDelete = (route) => {
-      if (route.request().postDataJSON()?.action !== 'delete-pending-issue') return route.continue();
-      delayedDelete = new Promise((done) => setTimeout(done, 16000)).then(() => route.continue());
-      return delayedDelete;
-    };
-    const removeDelete = process.argv.includes('--delayed-delete')
-      ? await fixtureRoute(page, '**/api/flow-action', delayDelete)
-      : undefined;
-    page.once('dialog', (dialog) => void dialog.accept());
-    try {
-      await clickAction(remove);
-    } finally {
-      await delayedDelete;
-      await removeDelete?.();
-    }
-    await row.waitFor({ state: 'detached' });
-    assert.equal(new URL(page.url()).searchParams.has('issue'), false);
-    assert.equal(existsSync(reportPath), false);
-    assert.equal(logs.execution.length, runs);
-    await page.goto(previous ? '/?issue=' + previous : '/');
-  });
+  await check(proposalsCheck, () =>
+    proposalBrowserChecks({ page, project, service, output, candidate, logs, clickAction, previous: issueId })
+  );
   await check('Worktree Delete requires confirmation and shows why the menu is disabled afterward', async () => {
     const closedIssueId = issueId;
     issueId = worktreeIssueId;
@@ -3278,6 +3317,9 @@ try {
   await check(mergeTargetUpdateCheck, () =>
     mergeTargetUpdateBrowserChecks({ page, project, service, output, root, poll, screenshot, selectBlock, clickAction })
   );
+  await check(flowBrowserScenarioNames['--retro-report'], () =>
+    retroReportBrowserChecks({ page, project, service, output, root, poll })
+  );
   assert.ok(!ciPart || results.length, 'The Flow browser CI part did not execute any scenarios.');
   passed = true;
 } catch (error) {
@@ -3309,6 +3351,9 @@ try {
     JSON.stringify(
       {
         candidate,
+        command,
+        runner,
+        elapsedMs: Math.round(performance.now() - runStarted),
         output,
         project,
         files: readdirSync(output, { withFileTypes: true })

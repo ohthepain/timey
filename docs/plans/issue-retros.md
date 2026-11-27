@@ -25,6 +25,10 @@ the closure sequence.
   including verified retained GitHub response artifacts. They do not need the
   source queue copied into their checkout.
   Approval is required before work starts on those follow-ups.
+- Retro adds a readable summary to the source issue report before Cleanup. The
+  report links each follow-up and labels it Investigation, Bug fix, or
+  Improvement. When Retro creates no follow-ups, the report says so. Open
+  **Issue report** on the issue to read the summary after Cleanup.
 - Automatically generated issues default to **Needs approval**. Create issue
   offers **Needs approval** as an unchecked option for manual capture.
 - An issue awaiting approval shows **Approve** and **Delete** in place of
@@ -98,9 +102,15 @@ worktrees, and runtime records stay on their runner.
 
 Shared closure and deletion follow the queue's configured publication route.
 Cleanup waits for closure to reach the shared queue so the runner can retain its
-worktree while the report is pending.
+worktree while the report is pending. When closure includes a Retro, Cleanup
+also waits for its source report update to reach the shared queue.
 
 When the shared queue uses PRs, merge the proposal’s queue PR before selecting **Approve**.
 Flow checks that the PR landed as part of approval, even if the last queue
 refresh still showed it as open. Approval opens a separate queue PR to record
 the decision and leaves the issue idle. Work can start once that update lands.
+
+`node scripts/flow-browser.mjs --retro-report` closes disposable issues, runs
+Cleanup, and opens their saved reports. It supplies fixture Retro responses
+with the three follow-up types and with zero follow-ups. The browser check
+visits each linked issue and verifies that approval is still required.

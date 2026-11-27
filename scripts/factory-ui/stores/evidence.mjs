@@ -217,6 +217,25 @@ export async function hydrateEvidence({ manifest, artifacts, directory }) {
   };
 }
 
+export function retainedEvidencePath(root, path, sha256, parentPath) {
+  try {
+    const local = evidencePath(root, sourcePath(path, parentPath, root), sha256);
+    if (digest(readFileSync(local)) === sha256) return local;
+  } catch {
+    // Exported copies can have a different original locator.
+  }
+  return resolveRetainedHash(root, sha256);
+}
+
+function resolveRetainedHash(root, sha256) {
+  const project = resolvers.get(resolve(root)) ?? new Map();
+  for (const resolver of project.values()) {
+    const file = resolver.files.find((entry) => entry.sha256 === sha256);
+    if (file) return resolver.resolve(file.path, sha256);
+  }
+  throw evidenceError('The retained evidence digest is unavailable.');
+}
+
 export function evidenceResolverGeneration(root) {
   return resolverGenerations.get(resolvers.get(resolve(root))) || 0;
 }

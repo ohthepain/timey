@@ -390,11 +390,22 @@
                     aria-description="Edit issue title"
                   ></button>
                 </h1>
+                <button class="small-button" id="edit-issue-nickname" type="button">Edit nickname</button>
               </div>
               <form id="rename-issue-form" class="issue-title-row" hidden>
                 <input id="rename-issue-title" aria-label="Issue title" maxlength="256" required />
                 <button class="small-button" type="submit">Save</button>
                 <button class="small-button" id="cancel-rename" type="button">Cancel</button>
+              </form>
+              <form id="issue-nickname-form" class="issue-title-row" hidden>
+                <input
+                  id="issue-nickname-input"
+                  aria-label="Issue nickname"
+                  maxlength="48"
+                  placeholder="Use title default"
+                />
+                <button class="small-button" type="submit">Save nickname</button>
+                <button class="small-button" id="cancel-issue-nickname" type="button">Cancel</button>
               </form>
               <div class="issue-flow-meta" id="issue-flow-meta">
                 <span class="master-badge" id="issue-master-badge" data-issue-badge="master-issue" hidden>Master</span>
@@ -635,6 +646,9 @@
             <option value="reveal">Reveal in Finder</option>
             <option value="cleanup">Run Cleanup</option>
           </select>
+          <button class="environment-chip" id="open-issue-report" type="button" aria-haspopup="dialog" hidden>
+            Issue report
+          </button>
         </div>
         <section id="folder-workspace" class="folder-workspace" aria-labelledby="folder-workspace-title" hidden>
           <div class="folder-landing-heading">
@@ -1480,6 +1494,13 @@
         <button type="button" class="small-button" data-close-dialog="view-index">Close</button>
       </div>
     </dialog>
+    <dialog id="issue-report-dialog" class="modal issue-report-dialog" aria-labelledby="issue-report-title">
+      <div class="modal-heading"><h2 id="issue-report-title">Issue report</h2></div>
+      <article id="issue-report-content" class="issue-report-content"></article>
+      <div class="modal-footer">
+        <button type="button" class="small-button" data-close-dialog="issue-report-dialog">Close</button>
+      </div>
+    </dialog>
     <dialog id="home-investigation-dialog" class="home-dialog">
       <header>
         <div>
@@ -1755,12 +1776,14 @@
         <p>Retained findings and recommendations from your investigations.</p>
       </header>
       <p data-report-error role="alert"></p>
-      <div class="report-selection" {{controls}}>
+      <div class="report-library">{{controls}}{{items}}</div></template
+    >
+    <template id="report-selection-template">
+      <div class="report-selection">
         <label><input type="checkbox" data-report-select-all /> Select all</label>
         <button class="small-button" type="button" data-report-delete disabled>Delete selected</button>
       </div>
-      <div class="report-library">{{items}}</div></template
-    >
+    </template>
     <template id="report-library-item-template"
       ><div class="report-library-row">
         <input type="checkbox" data-report-select="{{id}}" aria-label="Select {{title}}" />

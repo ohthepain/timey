@@ -425,7 +425,8 @@ import { reorderedBlocks } from './flow-order.mjs';
     try {
       result = await response.json();
     } catch {
-      throw new Error(`The server returned an unreadable response (${response.status}). Your saved flow is unchanged.`);
+      options.signal?.throwIfAborted();
+      throw new Error(`Factory could not read the server response (${response.status}).`);
     }
     if (!response.ok) {
       throw Object.assign(new Error(result.error || result.message || `The request failed (${response.status}).`), {
@@ -433,6 +434,19 @@ import { reorderedBlocks } from './flow-order.mjs';
       });
     }
     return result;
+  }
+
+  async function waitForFlowResponse(request, timeout, signal) {
+    const deadline = new AbortController();
+    const timer = setTimeout(
+      () => deadline.abort(new DOMException('Factory response timed out.', 'TimeoutError')),
+      timeout
+    );
+    try {
+      return await request(signal ? AbortSignal.any([signal, deadline.signal]) : deadline.signal);
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   function post(path, value, signal) {
@@ -627,7 +641,11 @@ import { reorderedBlocks } from './flow-order.mjs';
     const selected = state.issueId;
     state.loading = true;
     try {
-      const { result, issueUnavailable } = await readFlowSnapshot(selected, announce || remote, controller.signal);
+      const { result, issueUnavailable } = await waitForFlowResponse(
+        (signal) => readFlowSnapshot(selected, announce || remote, signal),
+        15_000,
+        controller.signal
+      );
       if (sequence !== state.sequence || selected !== state.issueId || serverControlUI.isWaitingForServer()) return;
       const recovering = Boolean(state.connectionError);
       state.connectionError = '';
@@ -702,26 +720,31 @@ import { reorderedBlocks } from './flow-order.mjs';
     state.sequence += 1;
     state.loading = false;
     state.pending = true;
-    state.error = '';
-    renderErrors();
-    if (!options.global) $('issue-results').hidden = true;
-    setBusy(true);
     try {
-      const result = await post('flow-action', {
+      state.error = '';
+      renderErrors();
+      if (!options.global) $('issue-results').hidden = true;
+      setBusy(true);
+      const input = {
         action: name,
         ...(options.global ? {} : { issueId: selected, revision }),
         ...fields,
-      });
+      };
+      const result = await waitForFlowResponse((signal) => post('flow-action', input, signal), 30_000);
       if (result.error) throw new Error(result.error);
       if (selected === state.issueId && result.flow) applyView(result);
       return result;
     } catch (error) {
+      const timedOut = error.name === 'TimeoutError';
+      const message = timedOut
+        ? 'Factory did not confirm the action in time. Check the current issue before retrying.'
+        : error.message;
       if (options.errorId) {
-        $(options.errorId).textContent = error.message;
+        $(options.errorId).textContent = message;
         $(options.errorId).hidden = false;
       }
-      if (!options.global && selected === state.issueId) await load(true);
-      if (state.view?.lastBlockingError?.message !== error.message) showError(error.message);
+      if (!options.global && selected === state.issueId) await load(true, false, timedOut);
+      if (state.view?.lastBlockingError?.message !== message) showError(message);
       return null;
     } finally {
       state.pending = false;
@@ -742,7 +765,10 @@ import { reorderedBlocks } from './flow-order.mjs';
     $('issue-flow-picker').inert = frozenIssue;
     $('issue-settings-form').inert = frozenIssue;
     $('rename-issue-form').inert = frozenIssue;
-    $('rename-issue').disabled = busy || frozenIssue;
+    const nameEditingDisabled = busy || frozenIssue;
+    $('rename-issue').disabled = nameEditingDisabled;
+    $('issue-nickname-form').inert = nameEditingDisabled;
+    $('edit-issue-nickname').disabled = nameEditingDisabled;
     $('issue-grouping').inert = busy;
     $('issue-master').inert = busy;
     $('issue-sub-issues').inert = busy;
@@ -831,6 +857,7 @@ import { reorderedBlocks } from './flow-order.mjs';
     $('reopen-issue').disabled = busy || Boolean(state.view?.closureBusy);
     $('issue-archive-menu').hidden = !closed;
     $('issue-archive-menu').disabled = busy;
+    $('open-issue-report').hidden = !issue;
     const archived = issue?.location === 'archive';
     for (const option of $('issue-archive-menu').options)
       if (['archive', 'reveal'].includes(option.value)) option.hidden = archived;
@@ -1181,7 +1208,7 @@ import { reorderedBlocks } from './flow-order.mjs';
           folderIssueStatus(issue, reasons.get(issue.id)),
           'member',
           children.length
-            ? `<ul class="folder-issues" aria-label="Sub-issues">${children.map((child) => folderIssueRow(child, folderIssueStatus(child, reasons.get(child.id)), 'member')).join('')}</ul>`
+            ? `<ul class="folder-issues" data-folder-sub-issues aria-label="Sub-issues">${children.map((child) => folderIssueRow(child, folderIssueStatus(child, reasons.get(child.id)), 'member')).join('')}</ul>`
             : ''
         )
       )
@@ -1437,7 +1464,7 @@ import { reorderedBlocks } from './flow-order.mjs';
     workspace.closest('.workspace').querySelector('.inspector').hidden = selected;
     $('graph-scroll').hidden = selected;
     $('graph-region').hidden = selected;
-    $('flow-view-title').textContent = selected ? 'Folder' : 'Issue flow';
+    $('flow-view-title').textContent = 'Issue flow';
     $('issue-folder-content').hidden = !state.folder || missingFolder();
     if (!selected) return;
     $('folder-workspace-title').textContent = folderConfig?.folder?.label || state.fileFolder?.name || state.folder;
@@ -3269,7 +3296,8 @@ import { reorderedBlocks } from './flow-order.mjs';
   function renderWorkspaceTitle() {
     const issue = state.view?.issue || state.index.issues.find(({ id }) => id === state.issueId);
     if (issue && !state.issueUnavailable) {
-      document.title = issue.issueNumber == null ? issue.title : `#${issue.issueNumber} - ${issue.title}`;
+      const name = issue.nickname || issue.title;
+      document.title = issue.issueNumber == null ? name : `#${issue.issueNumber} - ${name}`;
       return;
     }
     if (!state.issueId && $('project-home').dataset.projectTab === 'discuss') {
@@ -3287,7 +3315,7 @@ import { reorderedBlocks } from './flow-order.mjs';
   }
 
   function renderIssueHeadingActions(issue) {
-    $('flow-heading').hidden = Boolean(issue);
+    $('flow-heading').hidden = Boolean(issue || state.folder || state.fileFolder);
     const actions = $('flow-heading-actions');
     const row = $(issue ? 'issue-flow-meta' : 'flow-heading');
     if (actions.parentElement !== row) row.append(actions);
@@ -3317,7 +3345,7 @@ import { reorderedBlocks } from './flow-order.mjs';
     renderIssueAnnotations(issue);
     renderBlockingError();
     renderMergedIssueNotice(issue);
-    if ($('rename-issue-form').dataset.issue !== issue?.id) closeRename();
+    resetIssueNameEditors(issue?.id);
     renderFlowPicker();
     renderIssueSettings();
     const blocks = state.view?.flow?.blocks || [];
@@ -3809,6 +3837,11 @@ import { reorderedBlocks } from './flow-order.mjs';
     $('issue-title').parentElement.hidden = false;
     delete $('rename-issue-form').dataset.issue;
     if (restoreFocus) $('rename-issue').focus();
+  }
+
+  function resetIssueNameEditors(issueId) {
+    if ($('rename-issue-form').dataset.issue !== issueId) closeRename();
+    if ($('issue-nickname-form').dataset.issue !== issueId) closeIssueNickname();
   }
 
   function mergeApproval(block) {
@@ -4491,6 +4524,29 @@ import { reorderedBlocks } from './flow-order.mjs';
     const title = $('rename-issue-title').value;
     if (await action('rename-issue', { title, previousTitle: event.currentTarget.dataset.title })) closeRename(true);
   });
+  function closeIssueNickname() {
+    const form = $('issue-nickname-form');
+    form.hidden = true;
+    delete form.dataset.issue;
+  }
+  $('edit-issue-nickname').addEventListener('click', () => {
+    const form = $('issue-nickname-form');
+    const { id, nickname, customNickname } = state.view.issue;
+    form.dataset.issue = id;
+    form.dataset.previousNickname = customNickname ?? '';
+    form.hidden = false;
+    const input = $('issue-nickname-input');
+    input.value = customNickname ?? '';
+    input.placeholder = nickname;
+    input.select();
+  });
+  $('cancel-issue-nickname').addEventListener('click', closeIssueNickname);
+  $('issue-nickname-form').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const nickname = $('issue-nickname-input').value;
+    const previousNickname = event.currentTarget.dataset.previousNickname || null;
+    if (await action('edit-issue-nickname', { nickname, previousNickname })) closeIssueNickname();
+  });
   $('retry-branches').addEventListener('click', loadDestinationBranches);
   const startingBranchDialog = $('starting-branch-dialog');
   function openStartingBranchMove(ref) {
@@ -4627,6 +4683,20 @@ import { reorderedBlocks } from './flow-order.mjs';
     }
   });
 
+  $('open-issue-report').addEventListener('click', async () => {
+    const issueId = state.view?.issue?.id;
+    if (!issueId) return;
+    try {
+      const { content } = await json('/api/issue-report?issue=' + encodeURIComponent(issueId));
+      if (state.view?.issue?.id !== issueId) return;
+      const body = content.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, '').replace(/^<!--[^\n]*-->\r?\n/gm, '');
+      $('issue-report-content').innerHTML = window.markdownit({ html: false }).render(body);
+      if (!$('issue-report-dialog').open) $('issue-report-dialog').showModal();
+    } catch (error) {
+      showError(error.message);
+    }
+  });
+
   $('issue-archive-menu').addEventListener('change', async (event) => {
     const menu = event.target;
     const operation = menu.value;
@@ -4691,11 +4761,13 @@ import { reorderedBlocks } from './flow-order.mjs';
   $('delete-pending-issue').addEventListener('click', async (event) => {
     const issue = state.view?.issue;
     if (issue?.state !== 'needs-approval') return;
-    if (!confirm(`Permanently delete “${issue.title}” and its exclusively owned evidence? This cannot be undone.`))
-      return;
+    if (!window.confirmProposalDeletion(issue.title)) return;
     const button = event.currentTarget;
     button.textContent = 'Deleting…';
-    const result = await action('delete-pending-issue', { title: issue.title }).finally(() => {
+    const result = await action('delete-pending-issue', {
+      title: issue.title,
+      reportBasis: issue.reportBasis,
+    }).finally(() => {
       button.textContent = 'Delete';
     });
     if (!result) return;
