@@ -594,6 +594,9 @@ When the PR repair plan includes the `flow-integration` suite, its named repair
 cases run first and the six shared checks follow in their recorded order. The
 shared plan lives at `scripts/flow-integration-tests.json` so it travels with the
 installed Factory server and is also available to the CI runner.
+Factory's compatibility preflight also imports shared records from
+`.github/pr-repair-tests/`. Deployment and restart fixtures that copy the server
+source include this directory so they exercise the same imports as an installed checkout.
 A named Flow browser check can include one `--ci-part` flag to use the same
 fixture setup as that GitHub job.
 `node scripts/flow-browser.mjs --ci-part=2 --edit-destination --issue-playback --issue-header-close`

@@ -42,6 +42,8 @@ test('Flow navigation loads another issue while an earlier block check is pendin
     URL: window.URL,
     CustomEvent: window.CustomEvent,
     AbortController: window.AbortController,
+    AbortSignal: window.AbortSignal,
+    DOMException: window.DOMException,
     $,
     serverControlUI: { isWaitingForServer: () => false },
     json: async (path) => {
@@ -81,6 +83,7 @@ test('Flow navigation loads another issue while an earlier block check is pendin
     ...Object.keys(scope),
     'let folderSelection, folderConfig, strategyFolder;\n' +
       section('  function readDestination(', '  const initialDestination') +
+      section('  async function waitForFlowResponse(', '  function post(') +
       section('  async function readFlowSnapshot(', '  async function loadRepoFiles(') +
       section('  async function action(', '  function updateIssueDecisionControls(') +
       section('  function navigateWorkspace(', "  window.addEventListener('popstate'") +

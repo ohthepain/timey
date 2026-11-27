@@ -1,0 +1,16 @@
+{
+  "version": 2,
+  "name": "real restart changes the listener PID and preserves existing chat and progress records",
+  "command": [
+    "node",
+    "--test",
+    "--test-name-pattern=^real restart changes the listener PID and preserves existing chat and progress records$",
+    "scripts/factory-server-control.check.mjs"
+  ],
+  "source": {
+    "runId": "46064634920",
+    "jobId": "140729961042",
+    "checkout": "088763bda1e83407bfd75376b2763e986e8ff5e3",
+    "tree": "23964bedbe6adb2f97190c94a61ba876c6ac458c"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "version": 2,
+  "name": "Factory installed restart listener readiness and recovery",
+  "command": [
+    "node",
+    "--test",
+    "--test-name-pattern=^(?:restart replaces a changed installed source using saved evidence and verifies the new PID and hash|restart runs the current working tree without requiring clean or saved verification|restart waits for a held integration lock and times out without stopping work or deleting it|restart discovers matching saved evidence and never reports ready if the replacement exits|an unknown deployment lock is preserved without pausing or stopping the server)$",
+    "scripts/factory-restart.check.mjs"
+  ],
+  "source": {
+    "runId": "46064634920",
+    "jobId": "140729961042",
+    "checkout": "088763bda1e83407bfd75376b2763e986e8ff5e3",
+    "tree": "23964bedbe6adb2f97190c94a61ba876c6ac458c"
+  }
+}
