@@ -290,20 +290,20 @@
       edit(next);
     };
 
-    $('night-save').onclick = () =>
-      void perform(async () => {
-        const saved = await flowAction('project-night-save', {
-          runId,
-          revision: snapshot?.revision,
-          issueIds,
-          strategy: strategy(),
-        });
-        runId = saved.id;
-        view.write('night-run', runId);
-        snapshot = saved;
-        dirty = false;
-        await changed();
+    async function persistDraft() {
+      const saved = await flowAction('project-night-save', {
+        runId,
+        revision: snapshot?.revision,
+        issueIds,
+        strategy: strategy(),
       });
+      runId = saved.id;
+      view.write('night-run', runId);
+      snapshot = saved;
+      dirty = false;
+      await changed();
+    }
+    $('night-save').onclick = () => void perform(persistDraft);
     $('night-start').onclick = () =>
       void perform(async () => {
         snapshot = await flowAction('project-night-start', { runId, revision: snapshot.revision });
@@ -362,7 +362,7 @@
         next.splice(insert, 0, result.issue.id);
         picked.clear();
         edit(next);
-        await changed();
+        await persistDraft();
       });
     };
 

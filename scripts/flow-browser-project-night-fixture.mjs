@@ -177,6 +177,26 @@ async function verifyIssueControls({ page, service, master, screenshot, output }
   );
 }
 
+async function verifyStaleDraftGuard(page) {
+  const other = await page.context().newPage();
+  try {
+    await other.goto(new URL('/?issue=' + standalone, page.url()).href);
+    await other.locator('#rename-issue').click();
+    const editor = other.locator('#rename-issue-title');
+    await editor.fill('Fix welcome text and labels');
+    await editor.press('Enter');
+    await other.getByRole('heading', { name: 'Fix welcome text and labels', exact: true }).waitFor();
+  } finally {
+    await other.close();
+  }
+  await page.getByRole('button', { name: 'Start overnight run' }).click();
+  const guard = page.getByRole('alert').filter({ hasText: 'A selected issue changed.' });
+  await guard.waitFor();
+  const observed = await guard.innerText();
+  await page.getByRole('button', { name: 'Save draft' }).click();
+  return observed;
+}
+
 export async function projectNightBrowserChecks({ page, service, project, poll, screenshot, output }) {
   const flows = service.flows;
   await prepareIssues(project, flows);
@@ -219,7 +239,18 @@ export async function projectNightBrowserChecks({ page, service, project, poll, 
     await page.getByRole('tab', { name: 'Plan' }).click();
     await suggest(page, 'same-blast-radius', 'Shared editor save behavior.');
     await page.getByRole('button', { name: 'Review master' }).click();
-    await page.getByRole('button', { name: 'Create master', exact: true }).click();
+    await page.getByRole('button', { name: 'Create master and save draft', exact: true }).click();
+    await rows
+      .first()
+      .getByRole('list', { name: 'Sub-issues' })
+      .getByText('Verify editor saves', { exact: false })
+      .waitFor();
+    await poll(
+      () => page.locator('#night-status').innerText(),
+      (text) => text === 'draft',
+      'Created master was not saved in the draft.'
+    );
+    await page.reload();
     await rows
       .first()
       .getByRole('list', { name: 'Sub-issues' })
@@ -244,12 +275,13 @@ export async function projectNightBrowserChecks({ page, service, project, poll, 
       master,
     ]);
     await screenshot('night-draft');
+    const staleDraftGuard = await verifyStaleDraftGuard(page);
     const run = await verifyRun({ page, service, poll, rows, master });
     await screenshot('night-status');
     await verifyIssueControls({ page, service, master, screenshot, output });
     writeFileSync(
       join(output, 'project-night.json'),
-      JSON.stringify({ approvalGuard, same, different, turns, run }, null, 2)
+      JSON.stringify({ approvalGuard, staleDraftGuard, same, different, turns, run }, null, 2)
     );
   } finally {
     flows.folderSelection.recommend = before;

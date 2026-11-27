@@ -281,7 +281,8 @@ async function checkNoteRecommendations({ page, notes, turns, poll, screenshot, 
   await prompts.locator('[data-prompt-id="next"]').waitFor();
   const firstUrl = page.url();
   const noteTabTitle = await page.title();
-  assert.equal(noteTabTitle, 'Note: ' + first.text.split('\n')[0].slice(0, 72));
+  const noteName = await page.locator(`[data-note-id="${first.id}"] .local-note-title`).innerText();
+  assert.equal(noteTabTitle, 'Note: ' + noteName);
   const top = await names();
   assert.ok(!top.includes('Prev'));
   const above = await prompts.evaluate((element) => {

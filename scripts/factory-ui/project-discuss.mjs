@@ -59,6 +59,13 @@ export function readClarificationSkills(root) {
     .concat({ kind: 'value', name: 'none', label: 'No Grilling' });
 }
 
+const noteSentences = new Intl.Segmenter(undefined, { granularity: 'sentence' });
+
+function noteDiscussionTitle(text) {
+  const name = noteSentences.segment(text).containing(0)?.segment ?? text;
+  return 'Note: ' + name.trim();
+}
+
 function conversationTitle(ownership) {
   if (!ownership) return 'New conversation';
   if (ownership.kind === 'issue') return 'Issue Discuss';
@@ -251,9 +258,13 @@ export class ProjectDiscuss {
         encodeURIComponent(file.id),
     };
   }
+  presentation(session) {
+    const title = session.noteContext ? noteDiscussionTitle(session.noteContext.text) : session.title;
+    return { title, recommendations: this.recommendations(session) };
+  }
+
   publicSession(session) {
-    const result = copy(session);
-    result.recommendations = this.recommendations(session);
+    const result = { ...copy(session), ...this.presentation(session) };
     delete result.threadId;
     delete result.startup;
     delete result.turnId;
@@ -353,7 +364,7 @@ export class ProjectDiscuss {
       if (!session.noteContext || session.noteContext.text !== note.text) {
         const initial = !session.noteContext;
         session.noteContext = { ...session.noteContext, id: note.id, text: note.text };
-        session.title = 'Note: ' + note.text.split('\n')[0].slice(0, 72);
+        session.title = noteDiscussionTitle(note.text);
         session.messages.push({
           ...this.envelope(session, {
             text:

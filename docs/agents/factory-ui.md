@@ -132,7 +132,8 @@ order them, and save the draft. Use **Same blast radius** to review possible
 master groups or **Different blast radii** to review the overlap among
 independent work items. A master uses the first selected issue's folder and
 target. Its children keep their own folders. The issues must be eligible and
-share compatible stores and a target. Use **Discussion** on a saved draft or
+share compatible stores and a target. Creating the master also saves the draft
+with the master in the reviewed order. Use **Discussion** on a saved draft or
 run to ask why issues might fit together. Apply edits in **Plan**.
 
 **Start overnight run** uses the saved order and each issue's configured Merge
