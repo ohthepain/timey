@@ -491,6 +491,28 @@ async function waitForNightSignal(signal, label) {
   }
 }
 
+test('Flow workspace exposes overnight reports and drafts only in the full view', async (t) => {
+  const { id, service } = fixture(t);
+  const flows = createIssueFlows(service);
+  t.after(() => flows.close());
+  const folder = 'Save repairs';
+  const report = { id: 'folder-run', folder, status: 'finished', issues: [] };
+  flows.overnight.save(report);
+  const draft = await flows.action({
+    action: 'project-night-save',
+    issueIds: [id],
+    strategy: 'same-blast-radius',
+  });
+
+  const full = await flows.view();
+  assert.deepEqual(full.folderRuns, { [folder]: report });
+  assert.deepEqual(full.projectNightRuns, [draft]);
+
+  const request = await flows.view(id, { requestOnly: true });
+  assert.deepEqual(request.folderRuns, {});
+  assert.deepEqual(request.projectNightRuns, []);
+});
+
 test('Work All Night keeps dependency failures separate and records the normal automatic merge', async (t) => {
   const { id, root, service } = fixture(t);
   const dependent = '20261113-dependent';

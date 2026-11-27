@@ -147,6 +147,11 @@ export class FlowOvernight {
     );
   }
 
+  workspaceView(requestOnly) {
+    if (requestOnly) return { folderRuns: {}, projectNightRuns: [] };
+    return { folderRuns: this.reports(), projectNightRuns: this.projectView() };
+  }
+
   save(run) {
     mkdirSync(this.flows.store.directory, { recursive: true });
     run.updatedAt = new Date().toISOString();

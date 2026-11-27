@@ -848,8 +848,7 @@ class IssueFlows {
         ? []
         : folderSettings.map((folder) => this.folderSettingsView(folder, folderSnapshot)),
       legacyFolders: this.legacyFolders(),
-      folderRuns: requestOnly ? {} : this.overnight.reports(),
-      projectNightRuns: requestOnly ? [] : this.overnight.projectView(),
+      ...this.overnight.workspaceView(requestOnly),
       catalog,
       catalogErrors,
       issues: index,

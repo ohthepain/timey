@@ -1173,6 +1173,9 @@ browser errors fail verification.
 Work All Night fixtures create the folders they assign, so execution reaches the
 injected worker through the same settings validation as a real issue. Start/stop
 checks have a 30-second test deadline and retain per-issue failure explanations.
+The focused workspace check in `scripts/flow.check.mjs` verifies that the full
+Flow view includes saved overnight reports and drafts, and that the embedded
+Request view returns empty collections for both.
 The dependency-failure scenario also checks that an independent issue adopts its
 clarified route and records a confirmed automatic merge within the owning run.
 Shared-chat DOM fixtures load the production template. Browser discussion
