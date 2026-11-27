@@ -610,7 +610,7 @@ async function assertBlocker(page, text) {
   assert.equal(await page.locator('#error-banner').getByText(text, { exact: true }).isVisible(), false);
 }
 
-export async function blockerWorkspaceChecks({ page, project, service, output, screenshot }) {
+export async function blockerWorkspaceChecks({ page, project, service, poll, output, screenshot }) {
   const issueId = '20261126-inbox-blocker';
   await fixture(project, issueId, 'Blocker retry proof');
   const flows = service.flows;
@@ -623,7 +623,7 @@ export async function blockerWorkspaceChecks({ page, project, service, output, s
   const retry = watchBlockerRetries(flows);
   installRetryChat(service, issueId);
   try {
-    const transitions = await exerciseBlockerRetries({ page, issueId, gates: retry.gates, screenshot });
+    const transitions = await exerciseBlockerRetries({ page, issueId, flows, poll, gates: retry.gates, screenshot });
     proof(output, 'blocker-retries', transitions);
   } finally {
     retry.restore();
@@ -644,7 +644,7 @@ async function retryInBlock(page) {
   await page.locator('#run-block[data-action="continue"]').click();
 }
 
-async function exerciseBlockerRetries({ page, issueId, gates, screenshot }) {
+async function exerciseBlockerRetries({ page, issueId, flows, poll, gates, screenshot }) {
   await page.goto('/?issue=' + issueId);
   await page.locator('#issue-playback[data-playback-mode="start"]').click();
   await assertBlocker(page, 'Fixture Work failure 1');
@@ -657,6 +657,7 @@ async function exerciseBlockerRetries({ page, issueId, gates, screenshot }) {
     ['Chat', () => retryInChat(page)],
   ];
   for (const [index, [entry, start]] of controls.entries()) {
+    await poll(() => !flows.active.has(issueId), Boolean, 'Previous attempt still owns the issue.');
     await resume.waitFor();
     await start();
     await assertBlocker(page, 'Unrelated worktree error');
