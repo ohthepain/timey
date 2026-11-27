@@ -437,6 +437,43 @@ test('Close retains browser proof only for the delivered repair commit and tree'
   }
 });
 
+test('Close retains the original Work file and exact candidate browser replay without a rerun', async (t) => {
+  const f = fixture(t);
+  const { head, tree } = f.ctx.flow.blocks[0].attempts[0].result;
+  const retain = (name, value) => {
+    const path = join(f.folder, name);
+    writeFileSync(path, JSON.stringify(value));
+    return { path, sha256: digest(readFileSync(path)) };
+  };
+  const proof = retain('initial-work.json', { observation: 'Work proof from an earlier tree.' });
+  f.ctx.flow.blocks[0].attempts[0].result.tree = 'earlier-tree';
+  f.ctx.flow.blocks[0].attempts[0].artifacts = { files: { proof } };
+  const result = { pr: 17, head, revision: 'merge-revision' };
+  f.ctx.flow.blocks.push({ kind: 'merge', attempts: [{ status: 'completed', result }] });
+  const command = ['node', 'scripts/flow-browser.mjs', '--asset-storage'];
+  const log = retain('command.log', { observation: 'Fixture browser exited zero.' });
+  for (const [testedTree, retained] of [
+    ['wrong-tree', false],
+    [tree, true],
+  ]) {
+    const results = retain('results.json', {
+      passed: true,
+      candidate: { revision: head, tree: testedTree, clean: true },
+    });
+    const browser = { candidate: { head, tree }, command, exit: 0, log, results };
+    result.deliveryReceipt = retain('receipt.json', { candidate: { commit: head, tree }, browser });
+    await flowClosureArtifact(f.service, f.ctx, f.workspace, f.folder, f.options);
+    const manifest = JSON.parse(readFileSync(join(f.folder, 'merged-delivery.json')));
+    assert.deepEqual(manifest.browser, retained ? browser : undefined);
+    assert.equal(manifest.workProof.attempts[0].status, 'different-tree');
+    assert.deepEqual(manifest.workProof.attempts[0].file, proof);
+  }
+  await f.close();
+  const [closed] = readQueue(f.root, { location: 'closed', issueId: f.ctx.issue.id }).issues;
+  assert.equal(closed.accepted_result.verification_rerun, false);
+  assert.ok(closed.accepted_result.evidence.some(({ sha256 }) => sha256 === result.deliveryReceipt.sha256));
+});
+
 function githubClosureFixture(f, checks) {
   const provider = new StrategyProvider(f.workspace.checkout, f.provider.config);
   const { head } = f.ctx.flow.blocks[0].attempts[0].result;

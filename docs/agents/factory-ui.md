@@ -482,6 +482,12 @@ note conversation offers actions based on the saved note and its neighbors.
 The combined action keeps the source note until issue creation succeeds, then
 deletes it and opens the next note’s conversation.
 
+In Project Discuss, name an open, approved issue and a configured reason to close
+it. You can include details to save with the reason. Discuss returns the recorded
+reason and the issue link. To remove an issue awaiting approval, ask to delete
+the proposal, then confirm permanent deletion of the named proposal. If the
+proposal changes before you confirm, resolve it again before deleting it.
+
 ## Delivery finalization and runtime identity
 
 `pnpm run factory -- runtime http://127.0.0.1:PORT` identifies the running UI's
@@ -709,6 +715,8 @@ Retro files follow-ups in **Retro items** as **Needs approval**. **Approve**
 keeps the item in its folder and restores normal controls. **Delete** names the
 proposal in a permanent-deletion confirmation and shows **Deleting…** while
 Factory checks and removes the proposal and its exclusively owned evidence.
+Work and pending operations for other issues can stay in progress. If the
+confirmed proposal changes before deletion, Factory asks you to review it again.
 [Issue retros](../plans/issue-retros.md)
 
 ## Issue priorities

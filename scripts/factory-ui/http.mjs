@@ -1025,6 +1025,10 @@ function projectDiscuss(service) {
     ...service.projectDiscussOptions,
     home: () => projectHome(service),
     flows: () => flows(service),
+    closeIssue: async (value) => {
+      await prepareStoreMutation(service, '/api/issue-decision', value);
+      return decideIssueAndCleanup(service, value);
+    },
   });
   return service.projectDiscuss;
 }

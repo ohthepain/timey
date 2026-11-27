@@ -4525,11 +4525,13 @@ import { reorderedBlocks } from './flow-order.mjs';
   $('delete-pending-issue').addEventListener('click', async (event) => {
     const issue = state.view?.issue;
     if (issue?.state !== 'needs-approval') return;
-    if (!confirm(`Permanently delete “${issue.title}” and its exclusively owned evidence? This cannot be undone.`))
-      return;
+    if (!window.confirmProposalDeletion(issue.title)) return;
     const button = event.currentTarget;
     button.textContent = 'Deleting…';
-    const result = await action('delete-pending-issue', { title: issue.title }).finally(() => {
+    const result = await action('delete-pending-issue', {
+      title: issue.title,
+      reportBasis: issue.reportBasis,
+    }).finally(() => {
       button.textContent = 'Delete';
     });
     if (!result) return;

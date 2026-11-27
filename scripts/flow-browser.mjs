@@ -1,3 +1,4 @@
+import { proposalBrowserChecks } from './flow-browser-proposals.mjs';
 import { fixtureRoute } from './flow-browser-routes.mjs';
 import { readyControl } from './browser-controls.mjs';
 import {
@@ -80,6 +81,7 @@ import {
   automateActivityBrowserChecks,
 } from './flow-browser-project-home.mjs';
 import { projectDiscussBrowserChecks } from './flow-browser-project-discuss.mjs';
+import { discussDispositionBrowserChecks } from './flow-browser-discuss-disposition.mjs';
 import { assetStorageBrowserChecks } from './flow-browser-asset-storage.mjs';
 import { projectSettingsBrowserChecks } from './flow-browser-project-settings.mjs';
 import { aiTextBrowserChecks } from './flow-browser-ai-text.mjs';
@@ -212,6 +214,8 @@ const candidate = {
   clean: !git(root, 'status', '--porcelain', '--untracked-files=all'),
   assets: fingerprint(),
 };
+const command = ['node', 'scripts/flow-browser.mjs', ...process.argv.slice(2)];
+const runStarted = performance.now();
 const results = [];
 const inboxDiscussCheck = 'Project chat stays at the bottom and accepts prompts while work is paused';
 Object.assign(flowBrowserScenarioNames, {
@@ -305,7 +309,7 @@ service.codex.call = async (method) => {
 const executor = {
   async run({ signal, onProgress, onStep, block, issue, attempt }) {
     const number = logs.execution.length + 1;
-    logs.execution.push({ number, blockId: block.id, issueId: issue.id });
+    logs.execution.push({ number, kind: block.kind, blockId: block.id, issueId: issue.id, at: Date.now() });
     onStep('pnpm test');
     onProgress('Fixture output for explicit attempt ' + number + '.\n');
     if (issue.id === playbackIssueId && block.kind === 'work') await playbackWork.promise;
@@ -390,6 +394,7 @@ const server = createFactoryServer(service, {
 const require = createRequire(import.meta.url);
 const playwrightRequire = createRequire(require.resolve('@playwright/cli/package.json'));
 const { chromium } = playwrightRequire('playwright');
+const runner = { node: process.version, playwright: playwrightRequire('playwright/package.json').version };
 let browser;
 let page;
 let issueId;
@@ -473,12 +478,13 @@ function checkSelected(name) {
 
 async function check(name, run) {
   if (!checkSelected(name)) return;
+  const startedAt = Date.now();
   try {
     await run();
-    results.push({ name, passed: true });
+    results.push({ name, passed: true, startedAt, elapsedMs: Date.now() - startedAt });
     console.log('PASS ' + name);
   } catch (error) {
-    results.push({ name, passed: false, error: error.stack });
+    results.push({ name, passed: false, startedAt, elapsedMs: Date.now() - startedAt, error: error.stack });
     console.error('FAIL ' + name);
     throw error;
   }
@@ -641,6 +647,7 @@ try {
   await once(server, 'listening');
   const baseURL = 'http://127.0.0.1:' + server.address().port;
   browser = await chromium.launch({ headless: true, channel: 'chrome', ignoreDefaultArgs: ['--hide-scrollbars'] });
+  runner.browser = browser.version();
   const context = await browser.newContext({ baseURL, viewport: { width: 1440, height: 960 } });
   page = await context.newPage();
   if (process.env.NODE_V8_COVERAGE) await page.coverage.startJSCoverage({ resetOnNavigation: false });
@@ -650,7 +657,12 @@ try {
   );
   page.on('pageerror', (error) => logs.pageErrors.push(error.stack));
   page.on('request', (request) =>
-    logs.requests.push({ method: request.method(), path: new URL(request.url()).pathname, body: request.postData() })
+    logs.requests.push({
+      at: Date.now(),
+      method: request.method(),
+      path: new URL(request.url()).pathname,
+      body: request.postData(),
+    })
   );
   page.on('requestfailed', (request) => {
     const failure = { url: request.url(), error: request.failure() };
@@ -661,7 +673,13 @@ try {
     logs[cancelledRead ? 'cancelledReads' : 'failedRequests'].push(failure);
   });
   page.on('response', (response) => {
-    const entry = { path: new URL(response.url()).pathname, status: response.status() };
+    const path = new URL(response.url()).pathname;
+    const entry = {
+      at: Date.now(),
+      path,
+      status: response.status(),
+      ...(path === '/api/flow-action' && { request: response.request().postData() }),
+    };
     logs.responses.push(entry);
     if (response.status() >= 400)
       pendingResponses.push(
@@ -812,6 +830,9 @@ try {
     )
   );
   await check(discussCheck, () => projectDiscussBrowserChecks({ page, project, service, poll, screenshot }));
+  await check(flowBrowserScenarioNames['--project-discuss-disposition'], () =>
+    discussDispositionBrowserChecks({ page, service, project, root, output, poll, screenshot })
+  );
   await check(inboxDiscussCheck, () => inboxDiscussBrowserChecks({ page, service, screenshot, output }));
   part = '--ci-part=1b';
   await check('Factory provider settings save enablement and quota warnings', () =>
@@ -2143,7 +2164,8 @@ try {
           revision: candidate.revision,
           tree: candidate.tree,
           clean: candidate.clean,
-          command: ['node', 'scripts/flow-browser.mjs', ...process.argv.slice(2)],
+          command,
+          runner,
           predecessors: results.map(({ name }) => name),
         },
         workOverrideWatcherEvents,
@@ -2773,76 +2795,9 @@ try {
     );
     assert.deepEqual(logs.pageErrors, []);
   });
-  await check(proposalsCheck, async () => {
-    const previous = issueId;
-    await page.goto('/');
-    const runs = logs.execution.length;
-    const create = page.locator('#capture-dialog');
-    await page.locator('#new-issue').click();
-    assert.equal(await create.locator('#capture-retro').isChecked(), false);
-    assert.equal(await create.locator('#capture-needs-approval').isChecked(), false);
-    await create.locator('#capture-description').fill('Review an idle approval proposal');
-    await create.locator('#capture-retro').check();
-    await create.locator('#capture-needs-approval').check();
-    await create.locator('#capture-submit').click();
-    const approval = page.locator('#approve-issue');
-    const remove = page.locator('#delete-pending-issue');
-    await approval.waitFor();
-    await remove.waitFor();
-    await page.locator('#close-with-reason').waitFor({ state: 'hidden' });
-    assert.equal(await page.locator('#worktree-menu').isVisible(), false);
-    await clickAction(approval);
-    await page.locator('#close-with-reason').waitFor();
-    assert.equal(await approval.isVisible(), false);
-    assert.equal(await remove.isVisible(), false);
-
-    const title = 'Discard an idle retro proposal';
-    await service.flows.fileRetroItems([
-      {
-        requestId: randomUUID(),
-        title,
-        description: 'An example recommendation from Retro.',
-        reason: 'Exercise proposal deletion.',
-        verification: 'Check the report file is gone.',
-      },
-    ]);
-    const proposal = service.flows.issues().find((issue) => issue.title === title);
-    assert.ok(proposal);
-    assert.equal(service.flows.read(service.flows.selected(proposal.id)).folder, 'Retro items');
-    const reportPath = join(project, '.issues', proposal.id + '.md');
-    assert.equal(existsSync(reportPath), true);
-    const row = page.locator(`#open-issues [data-issue="${proposal.id}"]`);
-    await page.goto(new URL('/?issue=' + proposal.id, page.url()).href);
-    await row.waitFor();
-    const canceled = page.waitForEvent('dialog');
-    const cancelClick = remove.click();
-    const confirmation = await canceled;
-    assert.match(confirmation.message(), /Permanently delete .*Discard an idle retro proposal/);
-    await confirmation.dismiss();
-    await cancelClick;
-    assert.equal(existsSync(reportPath), true);
-    let delayedDelete = Promise.resolve();
-    const delayDelete = (route) => {
-      if (route.request().postDataJSON()?.action !== 'delete-pending-issue') return route.continue();
-      delayedDelete = new Promise((done) => setTimeout(done, 16000)).then(() => route.continue());
-      return delayedDelete;
-    };
-    const removeDelete = process.argv.includes('--delayed-delete')
-      ? await fixtureRoute(page, '**/api/flow-action', delayDelete)
-      : undefined;
-    page.once('dialog', (dialog) => void dialog.accept());
-    try {
-      await clickAction(remove);
-    } finally {
-      await delayedDelete;
-      await removeDelete?.();
-    }
-    await row.waitFor({ state: 'detached' });
-    assert.equal(new URL(page.url()).searchParams.has('issue'), false);
-    assert.equal(existsSync(reportPath), false);
-    assert.equal(logs.execution.length, runs);
-    await page.goto(previous ? '/?issue=' + previous : '/');
-  });
+  await check(proposalsCheck, () =>
+    proposalBrowserChecks({ page, project, service, output, candidate, logs, clickAction, previous: issueId })
+  );
   await check('Worktree Delete requires confirmation and shows why the menu is disabled afterward', async () => {
     const closedIssueId = issueId;
     issueId = worktreeIssueId;
@@ -3302,6 +3257,9 @@ try {
     JSON.stringify(
       {
         candidate,
+        command,
+        runner,
+        elapsedMs: Math.round(performance.now() - runStarted),
         output,
         project,
         files: readdirSync(output, { withFileTypes: true })

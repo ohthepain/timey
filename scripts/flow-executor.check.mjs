@@ -1119,10 +1119,12 @@ test('Update Branch leaves publication of the updated candidate to Merge', async
 
 test('Merge retains the final candidate observations and earlier Work proof through the Artifact store', async (t) => {
   const observations = { batchOrder: ['large', 'small'], selection: ['small'], bytes: 42 };
+  const child = { id: 'asset-storage', title: 'Asset Storage', requestedProof: 'Run the Asset Storage browser check.' };
+  const focusedCommand = ['node', 'scripts/flow-browser.mjs', '--asset-storage'];
   const gitAt = (cwd, ...args) => f.git('-C', cwd, ...args);
   const f = mergeFixture(t, {
     browser(input) {
-      assert.deepEqual(input.args, ['scripts/flow-browser.mjs', '--asset-storage']);
+      assert.deepEqual(input.args, focusedCommand.slice(1));
       writeBrowserEvidenceFixture(input, {
         head: gitAt(input.cwd, 'rev-parse', 'HEAD'),
         tree: gitAt(input.cwd, 'rev-parse', 'HEAD^{tree}'),
@@ -1149,6 +1151,7 @@ test('Merge retains the final candidate observations and earlier Work proof thro
     },
   });
   await f.run('understand');
+  f.issue.issue_group = { children: [child] };
   const { checkout } = f.flow.workspace;
   const registry = join(checkout, 'scripts', 'browser-scenario-policy.mjs');
   mkdirSync(join(registry, '..'), { recursive: true });
@@ -1160,15 +1163,29 @@ test('Merge retains the final candidate observations and earlier Work proof thro
   const work = {
     head: gitAt(checkout, 'rev-parse', 'HEAD'),
     tree: gitAt(checkout, 'rev-parse', 'HEAD^{tree}'),
-    focusedTests: [['node', 'scripts/flow-browser.mjs', '--asset-storage']],
+    focusedTests: [focusedCommand],
   };
   const path = join(f.root, '.issues', 'original-work.json');
   writeFileSync(path, '{"original":true}');
   const proof = { path, sha256: digest(readFileSync(path)) };
+  const verdictPath = join(f.root, '.issues', 'child-work.json');
+  writeFileSync(
+    verdictPath,
+    JSON.stringify([{ id: child.id, status: 'passed', observation: 'Work browser check passed.' }])
+  );
+  const subIssueProof = { path: verdictPath, sha256: digest(readFileSync(verdictPath)) };
   f.flow.blocks.push({
     id: 'work',
     kind: 'work',
-    attempts: [{ id: 'work-1', status: 'completed', result: work, artifacts: { files: { proof } } }],
+    attempts: [
+      {
+        id: 'work-1',
+        status: 'completed',
+        groupIssueIds: [child.id],
+        result: work,
+        artifacts: { files: { proof, subIssueProof } },
+      },
+    ],
   });
   f.publishHead(work.head);
   writeFileSync(join(f.root, 'source.txt'), 'Target source.\n');
@@ -1209,6 +1226,14 @@ test('Merge retains the final candidate observations and earlier Work proof thro
   assert.equal(receipt.workProof.attempts[0].status, 'different-tree');
   assert.deepEqual(receipt.workProof.attempts[0].file, proof);
   assert.equal(receipt.browser.exit, 0);
+  assert.deepEqual(receipt.browser.command, focusedCommand);
+  assert.equal(receipt.comparisonTarget, f.git('rev-parse', 'dev'));
+  assert.deepEqual(receipt.browser.children, [
+    { id: child.id, attemptId: 'work-1', checks: [focusedCommand], shared: false },
+  ]);
+  assert.deepEqual(receipt.workProof.groupAttempts[0].scope, [child.id]);
+  assert.equal(receipt.workProof.groupAttempts[0].tree, work.tree);
+  assert.equal(receipt.workProof.groupAttempts[0].file.sha256, subIssueProof.sha256);
   const { repairBrowserProof } = receipt;
   assert.equal(repairBrowserProof.attemptId, 'attempt-2');
   assert.equal(repairBrowserProof.round, 1);
@@ -1255,6 +1280,18 @@ async function verifyDeliveredBrowserRetrospective(f, merge, proof) {
   );
   const index = JSON.parse(readFileSync(retro.evidence[0].path));
   const [delivery] = JSON.parse(readFileSync(index.sections.deliveryReceipts.path));
+  const [work, replay] = JSON.parse(readFileSync(index.sections.groupVerifications.path));
+  const closure = JSON.parse(readFileSync(index.sections.groupClosure.path));
+  assert.equal(work.attemptId, 'work-1');
+  assert.equal(digest(readFileSync(work.proof.path)), work.proof.sha256);
+  assert.equal(replay.finalCandidate, true);
+  assert.deepEqual(replay.candidate, { head: delivery.candidate.commit, tree: delivery.candidate.tree });
+  assert.equal(replay.delivered.jobs[0].jobId, '91');
+  assert.equal(replay.delivered.comparisonTarget, delivery.comparisonTarget);
+  assert.equal(replay.children[0].id, closure.children[0].id);
+  assert.equal(digest(readFileSync(replay.log.path)), replay.log.sha256);
+  assert.match(closure.children[0].applicability, /earlier tree/);
+  assert.equal(closure.children[0].browserReplay.log.sha256, replay.log.sha256);
   assert.equal(delivery.repairBrowserProof.file.sha256, proof.file.sha256);
   assert.equal(digest(readFileSync(delivery.repairBrowserProof.file.path)), proof.file.sha256);
   assert.match(readFileSync(delivery.repairBrowserProof.file.path, 'utf8'), /GitHub responses are simulated/);
@@ -1446,15 +1483,23 @@ test('Retro retains historical final group proof and command logs for a second r
   await verifyFinalGroupRetrospective(t, producer, merge, checks);
 });
 
-test('Retro retains a failed Work verdict through a blocked Merge, retry, and Close', async (t) => {
+test('PR #141 fixture keeps Work and repair evidence through blocked Merge, retry, and Close', async (t) => {
   const producer = mergeFixture(t);
   await producer.run('understand');
   const live = { id: 'live', title: 'Verify the live check', requestedProof: 'Observe the live check in GitHub.' };
   const attached = { id: 'attached', title: 'Check the browser', requestedProof: 'Run the browser scenario.' };
   const sameTree = { id: 'same-tree', title: 'Check the report', requestedProof: 'Inspect the report.' };
-  producer.issue.issue_group = { children: [attached, live, sameTree] };
+  const secondLive = { ...live, id: 'second-live' };
+  const dirty = { ...sameTree, id: 'dirty' };
+  const missing = { ...sameTree, id: 'missing' };
+  const earlier = Array.from({ length: 5 }, (_, i) => ({ ...attached, id: 'earlier-' + i }));
+  producer.issue.issue_group = { children: [attached, live, sameTree, secondLive, dirty, missing, ...earlier] };
   const path = join(producer.root, '.issues', 'failed-sub-issue-proof.json');
-  const rows = [{ id: 'attached', status: 'failed', observation: 'Browser assertion failed.' }];
+  const rows = [
+    { id: 'attached', status: 'failed', observation: 'Browser assertion failed.' },
+    ...earlier.map(({ id }) => ({ id, status: 'passed', observation: 'Work check passed.' })),
+    { id: dirty.id, status: 'passed', observation: 'Work browser passed with local edits.' },
+  ];
   writeFileSync(path, JSON.stringify(rows));
   const result = {
     head: producer.git('rev-parse', 'HEAD'),
@@ -1463,12 +1508,13 @@ test('Retro retains a failed Work verdict through a blocked Merge, retry, and Cl
     turnId: 'proof-turn',
     liveProofRequirements: reportedLiveProofRequirements(
       { issue: producer.issue, attempt: {} },
-      { liveProofRequirements: [{ id: live.id, check: live.requestedProof }] }
+      { liveProofRequirements: [live, secondLive].map(({ id, requestedProof }) => ({ id, check: requestedProof })) }
     ),
   };
   const work = {
     id: 'work-proof',
     status: 'blocked',
+    groupIssueIds: rows.map(({ id }) => id),
     result,
     artifacts: {
       files: {
@@ -1484,6 +1530,44 @@ test('Retro retains a failed Work verdict through a blocked Merge, retry, and Cl
     writeFileSync(path, body);
     return { path, sha256: digest(readFileSync(path)) };
   };
+  const historical = {
+    comparisonTarget: '535b8fc26843d779d564c36b4e07f5aa82067597',
+    workSide: { commit: '3b4bd647c71c9be3d347382222adce47ed6ff4ae', tree: '4685514324e4f6c7e07f0478b38edeebafdc840f' },
+    candidate: { commit: 'e0c3098299b5d5e8d04de7fa9834a921fc87a73c', tree: 'df5618dff388341bd71bb04b0900d0a4116698ec' },
+    merge: '2d150fb3e554d2fce4cd3516f01d08b48d45c32e',
+  };
+  const failedLog = oldEvidence('actual-failure.log', 'The fixture browser failed during repair.');
+  const passedLog = oldEvidence('actual-passing.log', 'The fixture browser passed while parent checkout had edits.');
+  const failureAlias = { ...failedLog, path: join(groupFolder, 'other-runner', 'failure.log') };
+  const failedRepair = oldEvidence(
+    'failed-result.json',
+    JSON.stringify({ status: 'failed', evidence: [failureAlias] })
+  );
+  const passingRepair = oldEvidence(
+    'passing-result.json',
+    JSON.stringify({ status: 'committed', evidence: [passedLog] })
+  );
+  const repairIndex = oldEvidence(
+    'repair-index.json',
+    JSON.stringify({
+      attemptId: 'blocked-merge',
+      delivery: { ...historical, pr: 141 },
+      attempts: [
+        { round: 1, result: failedRepair, failure: { checks: [{ name: 'Browser', exit: 1, log: failureAlias }] } },
+        {
+          round: 2,
+          result: passingRepair,
+          failure: {},
+          browserProof: {
+            sourceCommit: historical.candidate.commit,
+            sourceTree: historical.candidate.tree,
+            qualification: 'The browser fixture passed while its parent checkout had uncommitted changes.',
+            file: passedLog,
+          },
+        },
+      ],
+    })
+  );
   const legacyEvidence = [
     oldEvidence('output.txt', response),
     oldEvidence('artifact-subIssueProof-verdicts.json', JSON.stringify(rows)),
@@ -1503,14 +1587,37 @@ test('Retro retains a failed Work verdict through a blocked Merge, retry, and Cl
     result: { head: passedHead, tree: candidateTree },
     artifacts: { files: { subIssueProof: passed } },
   };
+  const dirtyReplay = {
+    id: 'dirty-replay',
+    status: 'completed',
+    groupIssueIds: [dirty.id],
+    result: { head: passedHead, tree: candidateTree, uncommitted: true },
+    artifacts: {
+      files: {
+        subIssueProof: oldEvidence('dirty-replay.json', JSON.stringify(rows.filter(({ id }) => id === dirty.id))),
+      },
+    },
+  };
   producer.git('commit', '--allow-empty', '-m', 'Publish identical tree');
   const head = producer.git('rev-parse', 'HEAD');
   const merge = [
-    { id: 'blocked-merge', status: 'blocked', evidence: legacyEvidence },
+    {
+      id: 'blocked-merge',
+      status: 'blocked',
+      evidence: [...legacyEvidence, { ...repairIndex, label: 'Merge repair index' }, failedLog],
+    },
     { id: 'retried-merge', status: 'completed', result: { pr: 9, head, revision: head } },
   ];
   const close = [{ id: 'closed', status: 'completed' }];
   producer.service.store.directory = join(producer.root, '.issues');
+  const artifacts = await openArtifactStore(
+    { id: 'proof', kind: 'files' },
+    { root: producer.root, projectId: 'factory' }
+  );
+  const manifest = await collectEvidence({ root: producer.root, flow: { merge }, artifacts });
+  assert.ok(manifest.gaps.some(({ path, reason }) => path === failureAlias.path && reason === 'missing'));
+  const resolver = await hydrateEvidence({ manifest, artifacts, directory: join(producer.root, '.issues/retained') });
+  t.after(registerEvidenceResolver(producer.root, resolver));
   producer.service.codex = {
     async ready() {},
     async call(_, { threadId }) {
@@ -1542,7 +1649,7 @@ test('Retro retains a failed Work verdict through a blocked Merge, retry, and Cl
       issue: producer.issue,
       flow: {
         blocks: [
-          { kind: 'work', label: 'Work', attempts: [work, workRetry] },
+          { kind: 'work', label: 'Work', attempts: [work, workRetry, dirtyReplay] },
           { kind: 'merge', label: 'Merge', attempts: merge },
           { kind: 'close', label: 'Close', attempts: close },
         ],
@@ -1559,10 +1666,10 @@ test('Retro retains a failed Work verdict through a blocked Merge, retry, and Cl
     })
   );
   const { sections } = JSON.parse(readFileSync(retro.evidence[0].path));
-  const [record, retry, legacy] = JSON.parse(readFileSync(sections.groupVerifications.path));
+  const [record, retry, dirtyReplayRecord, legacy] = JSON.parse(readFileSync(sections.groupVerifications.path));
   const snapshot = JSON.parse(readFileSync(sections.groupClosure.path));
   assert.deepEqual(snapshot.candidate, { head, tree: candidateTree });
-  const [browserProof, pending, retained] = snapshot.children;
+  const [browserProof, pending, retained, secondPending, dirtyCheck, missingCheck] = snapshot.children;
   assert.equal(browserProof.verdict.status, 'failed');
   assert.equal(browserProof.verdict.tree, result.tree);
   assert.equal(browserProof.outstandingProof, attached.requestedProof);
@@ -1573,6 +1680,17 @@ test('Retro retains a failed Work verdict through a blocked Merge, retry, and Cl
   assert.equal(retained.verdict.head, passedHead);
   assert.equal(retained.outstandingProof, null);
   assert.match(retained.applicability, /source tree is identical/);
+  assert.equal(secondPending.outstandingProof, secondLive.requestedProof);
+  assert.equal(dirtyCheck.verdict.status, 'passed');
+  assert.match(dirtyCheck.applicability, /uncommitted changes/);
+  assert.equal(missingCheck.outstandingProof, missing.requestedProof);
+  assert.match(missingCheck.applicability, /No retained verdict/);
+  assert.equal(record.verdicts.length, 7);
+  assert.deepEqual(
+    record.scope,
+    rows.map(({ id }) => id)
+  );
+  assert.equal(dirtyReplayRecord.uncommitted, true);
   assert.equal(record.turnId, result.turnId);
   assert.equal(record.tree, result.tree);
   assert.deepEqual(JSON.parse(readFileSync(record.proof.path)), rows);
@@ -1589,6 +1707,19 @@ test('Retro retains a failed Work verdict through a blocked Merge, retry, and Cl
   assert.equal(legacy.tree, result.tree);
   assert.deepEqual(JSON.parse(readFileSync(legacy.proof.path)), rows);
   assert.equal(readFileSync(legacy.logs[0].path, 'utf8'), 'Final browser run exited 1.');
+  const [repair] = JSON.parse(readFileSync(sections.mergeRepairs.path));
+  assert.deepEqual(repair.delivery, { ...historical, pr: 141 });
+  assert.deepEqual(
+    repair.attempts.map(({ round, status }) => [round, status]),
+    [
+      [1, 'failed'],
+      [2, 'committed'],
+    ]
+  );
+  assert.match(repair.attempts[1].browserProof.qualification, /uncommitted changes/);
+  for (const reference of repair.attempts.flatMap(({ result, attachments }) => [result, ...attachments]))
+    assert.equal(digest(readFileSync(reference.path)), reference.sha256);
+  assert.equal(repair.attempts[0].failure.checks[0].log.sha256, failedLog.sha256);
 });
 
 async function verifyFinalGroupRetrospective(t, producer, merge, checks) {

@@ -10,10 +10,11 @@ import { readQueue } from './data.mjs';
 import { redactValue } from './activity.mjs';
 import { digest, git, requireThat } from './common.mjs';
 import { exportRetroThread, groupVerificationTurns, repairTurns } from './flow-retro-thread.mjs';
-import { receiptRepairBrowserProof } from './flow-repair-evidence.mjs';
-import { evidencePath } from './stores/evidence.mjs';
+import { receiptBrowserReplay, receiptRepairBrowserProof } from './flow-repair-evidence.mjs';
+import { retainedEvidencePath } from './stores/evidence.mjs';
 import { readFileSync } from 'node:fs';
 import { groupClosureProof } from './flow-group-closure.mjs';
+import { retainedGroupAttempt } from './flow-group-proof.mjs';
 
 function closureSnapshot(root, issue, flow) {
   return flow.closing?.groupProof ?? groupClosureProof(root, issue, flow, flow.workspace?.checkout);
@@ -69,7 +70,7 @@ function retroEvidence(root, history) {
   const safe = redactValue({
     ...history,
     repairs: exportRepairEvidence(root, directory, history.attempts),
-    mergeRepairs: exportMergeRepairs(root, directory, history.attempts),
+    mergeRepairs: exportMergeRepairs(root, directory, history),
     deliveryReceipts: exportDeliveryReceipts(root, directory, history.attempts),
     groupVerifications: exportGroupVerifications(root, directory, history),
   });
@@ -97,8 +98,8 @@ function exportRepairEvidence(root, directory, attempts) {
   return files.map(({ id, file }, index) => exportRepair(root, directory, id, file, index + 1));
 }
 
-function readRepairEvidence(root, { path, sha256 }) {
-  const bytes = readFileSync(evidencePath(root, path, sha256));
+function readRepairEvidence(root, { path, sha256 }, parentPath) {
+  const bytes = readFileSync(retainedEvidencePath(root, path, sha256, parentPath));
   requireThat(digest(bytes) === sha256, 'The retained repair evidence digest changed.');
   return bytes;
 }
@@ -114,58 +115,156 @@ function exportDeliveryReceipt(root, directory, attemptId, file, position) {
   const prefix = 'delivery-' + position;
   try {
     const bytes = readRepairEvidence(root, file);
-    const { candidate } = JSON.parse(bytes);
+    const { candidate, comparisonTarget, jobs } = JSON.parse(bytes);
     const receipt = writeDiscussionEvidence(directory, prefix + '-receipt.json', bytes);
     const proof = receiptRepairBrowserProof(root, file, candidate);
     const repairBrowserProof = proof && {
       ...proof,
       file: exportRepairAttachment(root, directory, proof.file, prefix + '-repair-browser.json'),
     };
-    return { attemptId, receipt, candidate, repairBrowserProof };
+    const browser = receiptBrowserReplay(root, file, { head: candidate.commit, tree: candidate.tree });
+    const finalBrowser = browser && exportBrowserReplay(root, directory, browser, prefix);
+    return { attemptId, receipt, candidate, comparisonTarget, jobs, repairBrowserProof, finalBrowser };
   } catch (error) {
     return { attemptId, receipt: { sha256: file.sha256, unavailable: error.message } };
   }
 }
 
-function exportMergeRepairs(root, directory, attempts) {
+function exportMergeRepairs(root, directory, { attempts, threads }) {
   const indexes = attempts.flatMap(({ evidence = [] }) =>
     evidence.filter(({ label }) => label === 'Merge repair index')
   );
-  return indexes.map((file, index) => exportMergeRepair(root, directory, file, index + 1));
+  return indexes.map((file, index) => exportMergeRepair(root, directory, file, index + 1, threads));
 }
 
-function exportMergeRepair(root, directory, file, repairIndex) {
+function exportMergeRepair(root, directory, file, repairIndex, threads) {
   try {
     const { attemptId, attempts, delivery } = JSON.parse(readRepairEvidence(root, file));
     const saved = new Map();
-    const copy = (source) => {
-      if (!saved.has(source.path)) {
+    const copy = (source, parentPath = file.path) => {
+      if (!saved.has(source.sha256)) {
         const name = `merge-repair-${repairIndex}-attachment-${saved.size + 1}.log`;
-        saved.set(source.path, exportRepairAttachment(root, directory, source, name));
+        saved.set(source.sha256, exportRepairAttachment(root, directory, source, name, parentPath));
       }
-      return saved.get(source.path);
+      return saved.get(source.sha256);
     };
-    return { attemptId, delivery, attempts: attempts.map((entry) => exportRepairAttempt(entry, copy)) };
+    return {
+      attemptId,
+      delivery,
+      attempts: attempts.map((entry) => exportRepairAttempt(root, entry, copy, file.path, threads)),
+    };
   } catch (error) {
     return { sha256: file.sha256, unavailable: error.message };
   }
 }
 
-function exportRepairAttempt({ result, log, failure, ...attempt }, copy) {
+function repairOutcome(root, result, parentPath) {
+  if (!result) return {};
+  try {
+    return JSON.parse(readRepairEvidence(root, result, parentPath));
+  } catch {
+    return {};
+  }
+}
+
+function observationLog(refs, path) {
+  if (typeof path !== 'string') return;
+  const name = basename(path);
+  return refs.find(({ path }) => basename(path) === name || basename(path).endsWith('-' + name));
+}
+
+function repairBrowserObservations(root, refs, copy, parentPath, items) {
+  const artifact = refs.find(({ label }) => label === 'Recorded operation result');
+  const { browserRuns = [], locallyObservedFailures = [] } = repairOutcome(root, artifact, parentPath);
+  const observations = [
+    ...locallyObservedFailures.map((failure) => ({ status: 'failed', ...failure })),
+    ...browserRuns.map(classifyBrowserObservation),
+  ];
+  return observations
+    .flatMap((observation) => exportBrowserObservations(observation, refs, copy, parentPath, items))
+    .sort((a, b) => observationSequence(a) - observationSequence(b));
+}
+
+function observationSequence({ logs }) {
+  return Math.min(...logs.map(({ execution }) => execution?.sequence ?? Infinity));
+}
+
+function exportBrowserObservations({ log, logs = [], ...record }, refs, copy, parentPath, items) {
+  const paths = [log, ...logs].filter(Boolean);
+  if (!paths.length) return [{ ...record, logs: [] }];
+  return paths.map((path) => ({
+    ...record,
+    logs: [
+      {
+        ...copyObservationLog(refs, path, copy, parentPath),
+        execution: observationExecution(items, path),
+      },
+    ],
+  }));
+}
+
+function observationExecution(items, path) {
+  const log = basename(path);
+  const item = items.find(
+    ({ command = '' }) => command.includes('node scripts/flow-browser.mjs') && command.includes(log)
+  );
+  if (!item) return;
+  const { command, exitCode, sequence, status, timestamp } = item;
+  return { command, exitCode, sequence, status, timestamp };
+}
+
+function classifyBrowserObservation(run) {
   return {
-    ...attempt,
-    log: log && copy(log),
-    failure: {
-      ...failure,
-      evidence: failure.evidence?.map(copy),
-      checks: failure.checks?.map((check) => ({ ...check, log: check.log && copy(check.log) })),
-    },
+    ...run,
+    status: run.exitCode === 0 ? 'passed' : 'failed',
+    ...(run.browserReportedGitIdentity?.clean === false && {
+      qualification: 'The browser ran while its parent checkout had uncommitted changes.',
+    }),
   };
 }
 
-function exportRepairAttachment(root, directory, file, name) {
+function copyObservationLog(refs, path, copy, parentPath) {
+  const reference = observationLog(refs, path);
+  return reference
+    ? copy(reference, parentPath)
+    : { unavailable: 'No retained hash-verified log named ' + basename(path) };
+}
+
+function exportRepairAttempt(root, { result, log, failure, browserProof, ...attempt }, copy, parentPath, threads) {
+  const outcome = repairOutcome(root, result, parentPath);
+  const attachments = outcome.evidence ?? [];
+  const { items = [] } = findProofTurn(threads, attempt.conversation ?? {}) ?? {};
+  return {
+    ...attempt,
+    status: outcome.status,
+    result: copyReference(result, copy),
+    attachments: attachments.map((reference) => copy(reference, result.path)),
+    browserObservations: repairBrowserObservations(root, attachments, copy, parentPath, items),
+    browserProof: exportRepairProof(browserProof, copy),
+    log: copyReference(log, copy),
+    failure: exportRepairFailure(failure, copy),
+  };
+}
+
+function copyReference(reference, copy) {
+  if (reference) return copy(reference);
+}
+
+function exportRepairProof(proof, copy) {
+  if (proof) return { ...proof, file: copy(proof.file) };
+}
+
+function exportRepairFailure(failure, copy) {
+  return {
+    ...failure,
+    evidence: failure.evidence?.map((reference) => copy(reference)),
+    checks: failure.checks?.map((check) => ({ ...check, log: check.log && copy(check.log) })),
+  };
+}
+
+function exportRepairAttachment(root, directory, file, name, parentPath) {
   try {
-    return writeDiscussionEvidence(directory, name, readRepairEvidence(root, file));
+    return writeDiscussionEvidence(directory, name, readRepairEvidence(root, file, parentPath));
   } catch (error) {
     return { sha256: file.sha256, unavailable: error.message };
   }
@@ -186,18 +285,64 @@ function exportGroupVerifications(root, directory, { attempts, threads }) {
       revision: result?.revision,
       candidate: result?.groupProof?.candidate,
     }));
-  return attempts.flatMap((attempt, index) => {
-    const prefix = 'group-verification-' + (index + 1);
-    const files = (attempt.evidence ?? []).filter(({ groupVerification }) => groupVerification);
-    const records = files.map((file, position) =>
-      exportIndexedVerification(root, directory, attempt.id, file, prefix + '-' + (position + 1), operations)
-    );
-    if (workGroupProof(attempt))
-      records.push(exportWorkVerification(root, directory, attempt, prefix, threads, operations));
-    if (!files.length)
-      records.push(...exportLegacyVerifications(root, directory, attempt, prefix, threads, operations));
-    return records;
-  });
+  return attempts.flatMap((attempt, index) =>
+    exportAttemptVerifications(root, directory, attempt, 'group-verification-' + (index + 1), threads, operations)
+  );
+}
+
+function exportAttemptVerifications(root, directory, attempt, prefix, threads, operations) {
+  const files = (attempt.evidence ?? []).filter(({ groupVerification }) => groupVerification);
+  const indexed = files.map((file, position) =>
+    exportIndexedVerification(root, directory, attempt.id, file, prefix + '-' + (position + 1), operations)
+  );
+  const work = workGroupProof(attempt)
+    ? [exportWorkVerification(root, directory, attempt, prefix, threads, operations)]
+    : [];
+  const legacy = files.length ? [] : exportLegacyVerifications(root, directory, attempt, prefix, threads, operations);
+  return [...indexed, ...work, ...exportDeliveryReplays(root, directory, attempt, prefix, operations), ...legacy];
+}
+
+function exportBrowserReplay(root, directory, { log, results, files, ...browser }, prefix) {
+  return {
+    ...browser,
+    log: log && exportRepairAttachment(root, directory, log, prefix + '.log'),
+    results: results && exportRepairAttachment(root, directory, results, prefix + '.json'),
+    files: files?.map((file, index) =>
+      exportRepairAttachment(root, directory, file, `${prefix}-${index + 1}-${basename(file.path)}`)
+    ),
+  };
+}
+
+function exportDeliveryReplays(root, directory, attempt, prefix, operations) {
+  const deliveryReceipt = attempt.result?.deliveryReceipt;
+  if (!deliveryReceipt) return [];
+  try {
+    const {
+      browser,
+      browserReplays = optionalReference(browser),
+      candidate,
+      comparisonTarget,
+      jobs,
+    } = JSON.parse(readRepairEvidence(root, deliveryReceipt));
+    const final = receiptBrowserReplay(root, deliveryReceipt, { head: candidate.commit, tree: candidate.tree });
+    return browserReplays.map((replay, index) => ({
+      attemptId: attempt.id,
+      operations,
+      ...exportBrowserReplay(root, directory, replay, `${prefix}-browser-${index + 1}`),
+      finalCandidate: finalReplay(final, replay, candidate),
+      delivered: { candidate, comparisonTarget, jobs },
+    }));
+  } catch (error) {
+    return [{ attemptId: attempt.id, operations, unavailable: error.message }];
+  }
+}
+
+function optionalReference(file) {
+  return file ? [file] : [];
+}
+
+function finalReplay(final, replay, { commit, tree }) {
+  return Boolean(final && replay.exit === 0 && replay.candidate.head === commit && replay.candidate.tree === tree);
 }
 
 function legacyProofHead(path) {
@@ -297,15 +442,14 @@ function workVerificationLogs(root, directory, attempt, turn, prefix) {
 }
 
 function exportWorkVerification(root, directory, attempt, prefix, threads, operations) {
-  const { threadId, turnId, head, tree } = attempt.result ?? {};
+  const { threadId, turnId } = attempt.result ?? {};
+  const { file, ...provenance } = retainedGroupAttempt(root, attempt);
   const turn = findProofTurn(threads, { threadId, turnId }) ?? {};
-  const proof = exportRepairAttachment(root, directory, workGroupProof(attempt), prefix + '-proof.json');
+  const proof = exportRepairAttachment(root, directory, file, prefix + '-proof.json');
   return {
-    attemptId: attempt.id,
+    ...provenance,
     threadId,
     turnId,
-    head,
-    tree,
     proof,
     logs: workVerificationLogs(root, directory, attempt, turn, prefix),
     operations,

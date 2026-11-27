@@ -7,6 +7,11 @@
       (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]
     );
 
+  window.confirmProposalDeletion = (title, number) =>
+    confirm(
+      `Permanently delete ${number ? '#' + number + ' ' : ''}“${title}” and its exclusively owned evidence? This cannot be undone.`
+    );
+
   window.createIssueClosureDialog = ({ dialog, panel, approve, error, request }) => {
     let current;
     const selectedItems = () =>
@@ -219,9 +224,16 @@
     return tree ? `${label} · Proof tree <code>${esc(tree)}</code>` : label;
   }
 
-  function subIssueProof({ verdict, applicability, outstandingProof }) {
+  function subIssueProof({ verdict, applicability, outstandingProof, browserReplay }) {
     const outstanding = outstandingProof ? `<p>Outstanding proof · ${esc(outstandingProof)}</p>` : '';
-    return `<p>Latest verdict · ${proofVerdict(verdict ?? undefined)}</p><p>${esc(applicability)}</p>${outstanding}`;
+    return `<p>Latest verdict · ${proofVerdict(verdict ?? undefined)}</p><p>${esc(applicability)}</p>${replaySummary(browserReplay)}${outstanding}`;
+  }
+
+  function replaySummary(replay) {
+    if (!replay) return '';
+    const label = replay.shared ? 'Shared final browser replay' : 'Final browser replay';
+    const qualification = replay.qualification ? ` <span>${esc(replay.qualification)}</span>` : '';
+    return `<p>${label} · <code>${esc(replay.command.join(' '))}</code> · Exit ${esc(replay.exit)}${qualification}</p>`;
   }
 
   function reasonOption(choice) {

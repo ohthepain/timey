@@ -553,9 +553,9 @@
         holder,
         approvals
           .map((approval) => {
-            const params = approval.params || approval;
-            const questions = params.questions || [];
-            const id = approval.requestId || approval.id;
+            const { params = approval, requestId: id = approval.id } = approval;
+            const { questions = [] } = params;
+            if (approval.method === 'factory/issueDeletion') return deletionApproval(id, params);
             if (questions.length)
               return `<form class="discuss-approval" data-view-key="${escape(id)}" data-discuss-answer="${escape(id)}"><h3>Your input is needed</h3>${questions.map((question) => `<label>${escape(question.question || question.header)}<input data-discuss-question="${escape(question.id)}" required></label>`).join('')}<button class="primary-button" type="submit">Answer</button></form>`;
             const options = approval.options || [
@@ -567,6 +567,14 @@
           .join(''),
         'discuss-approvals:' + selectedId
       );
+    }
+    function deletionApproval(id, { title, issueNumber }) {
+      const number = issueNumber ? '#' + escape(issueNumber) + ' ' : '';
+      return `<section class="discuss-approval" data-view-key="${escape(id)}"><h3>Delete proposal</h3><p>${number}${escape(title)}</p><button type="button" class="small-button" data-discuss-approval="${escape(id)}" data-decision="cancel">Cancel</button><button type="button" class="small-button" data-discuss-approval="${escape(id)}" data-decision="confirm" data-proposal-title="${escape(title)}" data-proposal-number="${escape(issueNumber)}">Delete permanently</button></section>`;
+    }
+    function answerApproval({ discussApproval: requestId, decision, proposalTitle, proposalNumber }) {
+      if (proposalTitle && !window.confirmProposalDeletion(proposalTitle, proposalNumber)) decision = 'cancel';
+      return action('answer', { requestId, response: { decision } });
     }
     async function create() {
       if (creating) return null;
@@ -793,11 +801,7 @@
         renderAttachments();
         changedDraft();
       }
-      if (button.dataset.discussApproval)
-        void action('answer', {
-          requestId: button.dataset.discussApproval,
-          response: { decision: button.dataset.decision },
-        });
+      if (button.dataset.discussApproval) void answerApproval(button.dataset);
     });
     root.addEventListener('submit', (event) => {
       const answer = event.target.closest('[data-discuss-answer]');
