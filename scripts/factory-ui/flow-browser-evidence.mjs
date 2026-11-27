@@ -85,7 +85,7 @@ function commandExit(signal, error) {
   return error.exitCode;
 }
 
-async function executeBrowser(ctx, workspace, folder, candidate, [command, ...args], execute) {
+export async function runFocusedBrowser(ctx, workspace, folder, candidate, [command, ...args], execute) {
   const log = join(folder, 'focused-browser.log');
   const output = join(workspace.checkout, '.issues/evidence', 'flow-browser-' + randomUUID());
   const exit = await execute({
@@ -159,7 +159,7 @@ function sameCommand(left, right) {
 export async function runCandidateBrowser(ctx, workspace, folder, candidate, execute, root) {
   const [command] = browserCommands(ctx, workspace, candidate.head);
   if (!command) return;
-  const result = await executeBrowser(ctx, workspace, folder, candidate, command, execute);
+  const result = await runFocusedBrowser(ctx, workspace, folder, candidate, command, execute);
   const children = replayChildCommands(ctx, root, command);
   return children.length ? { ...result, children } : result;
 }

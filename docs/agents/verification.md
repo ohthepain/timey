@@ -85,6 +85,14 @@ mapping is shown as a shared replay. Close and Retro flag missing and earlier
 Work proof alongside any replay. A passing fixture run with a dirty parent
 checkout stays in the repair history with that qualification.
 
+Merge retains a timing record with the candidate and target revisions, CI run
+and attempt IDs, and repair attempt and turn IDs. It measures target refreshes,
+observed CI queues and execution, failure evidence collection, repairs, and
+merge confirmation. The queue interval starts at GitHub's workflow creation
+for an initial run. The execution interval spans observed jobs. The record
+labels missing endpoints and unattributed time, and counts overlapping
+intervals once when reconciling total elapsed time. Retro links to this record.
+
 The focused Merge and Close executor checks exercise target drift, retrieval of
 the replay log by hash, and a Close with no rerun. The PR #141 regression fixture
 uses the recorded Git identities and reconstructs the evidence structure with

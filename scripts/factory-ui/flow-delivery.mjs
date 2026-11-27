@@ -17,7 +17,7 @@ import { cleanEnvironment, digest, git, requireThat, writeJson } from './common.
 import { StrategyProvider } from './strategy-provider.mjs';
 import { queueReportPaths } from './shared-issue-config.mjs';
 import { requireGroupProof } from './flow-group-proof.mjs';
-import { receiptBrowserReplay, receiptRepairBrowserProof } from './flow-repair-evidence.mjs';
+import { exactDeliveryReceipt, receiptBrowserReplay, receiptRepairBrowserProof } from './flow-repair-evidence.mjs';
 import { retainedGroupAttempt } from './flow-group-proof.mjs';
 import { evidencePath } from './stores/evidence.mjs';
 import { fetchIssueTarget } from './flow-update-branch.mjs';
@@ -478,7 +478,7 @@ export async function flowClosureArtifact(service, ctx, workspace, folder, optio
   requireThat(pr, 'No PR exists for this issue branch. Publish and merge its PR before closing.');
   const delivered = await provider.inspectExternalDelivery(pr.number, { requiredChecksOnly: true });
   assertMatchingDelivery(ctx.flow, workspace, pr.number, delivered, merged);
-  return recordClosureDelivery(ctx, workspace, folder, delivered, closureDeliveryReceipt(ctx.flow, delivered));
+  return recordClosureDelivery(ctx, workspace, folder, delivered);
 }
 
 function assertMatchingDelivery(flow, workspace, number, delivered, merged) {
@@ -498,18 +498,7 @@ function assertMatchingDelivery(flow, workspace, number, delivered, merged) {
   );
 }
 
-function closureDeliveryReceipt(flow, delivered) {
-  const historical = [...flow.blocks, ...(flow.retiredBlocks ?? [])].filter(({ kind }) => kind === 'merge');
-  const match = historical
-    .flatMap(({ attempts }) => attempts)
-    .findLast(
-      ({ result }) =>
-        result?.deliveryReceipt && result.head === delivered.head && result.revision === delivered.mergeCommit
-    );
-  return match?.result.deliveryReceipt;
-}
-
-function recordClosureDelivery(ctx, workspace, folder, delivered, deliveryReceipt) {
+function recordClosureDelivery(ctx, workspace, folder, delivered) {
   const candidate = {
     head: delivered.head,
     tree: git(workspace.checkout, 'rev-parse', delivered.head + '^{tree}'),
@@ -517,6 +506,11 @@ function recordClosureDelivery(ctx, workspace, folder, delivered, deliveryReceip
   ctx.signal.throwIfAborted();
   const path = join(folder, 'merged-delivery.json');
   const workProof = deliveryWorkProof(ctx, candidate);
+  const deliveryReceipt = exactDeliveryReceipt(ctx.evidenceRoot, ctx.flow, {
+    ...candidate,
+    pr: delivered.number,
+    revision: delivered.mergeCommit,
+  });
   const browser = receiptBrowserReplay(ctx.evidenceRoot, deliveryReceipt, candidate);
   const repairBrowserProof = receiptRepairBrowserProof(ctx.evidenceRoot, deliveryReceipt, {
     commit: candidate.head,
@@ -525,6 +519,9 @@ function recordClosureDelivery(ctx, workspace, folder, delivered, deliveryReceip
   writeJson(path, {
     ...delivered,
     candidateTree: candidate.tree,
+    observedCheckoutRevision: git(ctx.evidenceRoot, 'rev-parse', 'HEAD'),
+    deliveredMergeRevision: delivered.mergeCommit,
+    verificationRerun: false,
     workProof,
     deliveryReceipt,
     browser,
@@ -536,13 +533,16 @@ function recordClosureDelivery(ctx, workspace, folder, delivered, deliveryReceip
     evidence: [
       ...workProof.attempts.flatMap(({ file }) => (file ? [file] : [])),
       ...(deliveryReceipt ? [deliveryReceipt] : []),
+      ...[browser?.log, browser?.results, ...(browser?.files ?? [])].filter(
+        (file) => file && retainedClosureProof(ctx.evidenceRoot, file)
+      ),
       ...(repairBrowserProof ? [repairBrowserProof.file] : []),
       { path, sha256: digest(readFileSync(path)) },
     ],
   };
 }
 
-function retainedInvestigationProof(root, proof) {
+function retainedClosureProof(root, proof) {
   try {
     const path = evidencePath(root, proof.path, proof.sha256);
     return existsSync(path) && digest(readFileSync(path)) === proof.sha256;
@@ -595,7 +595,7 @@ function investigationClosureArtifact(ctx, workspace) {
       'Investigation output has no recorded immutable digest. Run its inquiry or advisory block again.'
     );
     requireThat(
-      retainedInvestigationProof(ctx.evidenceRoot, proof),
+      retainedClosureProof(ctx.evidenceRoot, proof),
       'Retained investigation evidence changed or is missing. Run its inquiry or advisory block again.'
     );
     return { path: proof.path, sha256: proof.sha256 };
