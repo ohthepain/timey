@@ -1359,6 +1359,7 @@ try {
   const description =
     'Understand why the save button loses text\nDone: The text survives a reload.\nProof: Retained saved text.\nKnown facts: The problem occurs after refresh.\nConstraints: Reproduce before changing code.';
   await check(captureFolderIssueCheck, async () => {
+    const executionCount = logs.execution.length;
     await page.goto('/');
     await page.locator('#new-folder').click();
     await page.locator('#folder-name').fill('Browser folder');
@@ -1389,7 +1390,7 @@ try {
     assert.equal(startingPoint(data.flow).ref, 'refs/heads/dev');
     assert.equal(deliveryTarget(data.flow).branch, 'dev');
     assert.equal(requestData(data.flow).fields, null);
-    assert.equal(logs.execution.length, 0);
+    assert.equal(logs.execution.length, executionCount, 'Folder issue creation should not start workflow execution.');
   });
   async function ensureBrowserFolderIssue() {
     if (!issueId) {
