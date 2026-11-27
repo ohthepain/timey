@@ -20,6 +20,7 @@ const projectTabs = [
   },
   { name: 'Reports', route: 'reports', target: '.reports-heading h1' },
   { name: 'Discuss', route: 'discuss', target: '#discuss-new', screenshot: 'project-navigation-discuss' },
+  { name: 'Work All Night', visibleLabel: '☾', route: 'night', target: 'h2' },
   {
     name: 'Automate me',
     route: 'automate',
@@ -209,6 +210,13 @@ async function navigationFixtures(project, service, root) {
   return { first, second, investigation, request, work };
 }
 
+function expectedTitle(service, destination, title) {
+  if (destination.projectTab === 'discuss') return 'project';
+  if (!destination.issue) return title + ' · Factory';
+  const { issueNumber } = service.flows.selected(destination.issue);
+  return issueNumber == null ? title : `#${issueNumber} - ${title}`;
+}
+
 function observeNavigation(page, poll) {
   const observations = [];
   const expect = async (target, title, locator) => {
@@ -218,7 +226,7 @@ function observeNavigation(page, poll) {
     await locator.waitFor();
     await poll(
       () => page.title(),
-      (value) => value === title + ' · Factory',
+      (value) => value === title,
       'Unexpected browser history title'
     );
     observations.push({ url: page.url(), title: await page.title() });
@@ -271,7 +279,10 @@ async function checkNativeHistory({ page, poll, tablist, project, service, root,
   const { expect, observations } = observeNavigation(page, poll);
   const openIssue = (id) => page.locator(`#open-issues [data-issue="${id}"]`).click();
   const blockCard = (id) => page.locator(`#graph [data-block="${id}"]`);
-  const visit = (open, target, title, locator) => ({ open, check: () => expect(target, title, locator) });
+  const visit = (open, target, title, locator) => ({
+    open,
+    check: () => expect(target, expectedTitle(service, target, title), locator),
+  });
   const byTab = (name, projectTab, title) => {
     const selector = '#project-tab-' + (projectTab ?? 'home');
     const selected = tablist.locator(selector + '[aria-selected="true"]');
@@ -296,13 +307,13 @@ async function checkNativeHistory({ page, poll, tablist, project, service, root,
     request: visit(
       () => blockCard(request.id).click(),
       { issue: first, block: request.id },
-      'Fix login / Request',
+      'Fix login',
       page.locator(`#graph [data-block="${request.id}"][aria-pressed="true"]`)
     ),
     work: visit(
       () => blockCard(work.id).click(),
       { issue: first, block: work.id },
-      'Fix login / Work',
+      'Fix login',
       page.locator(`#graph [data-block="${work.id}"][aria-pressed="true"]`)
     ),
     second: visit(() => openIssue(second), { issue: second }, 'Fix search', issueHeading('Fix search')),
@@ -373,7 +384,11 @@ async function checkNativeHistory({ page, poll, tablist, project, service, root,
     await service.flows.action({ action: 'remove', issueId: first, revision: flow.revision, blockId: work.id });
     await removeBrowserIssue(project, second);
     const unavailable = () =>
-      expect({ issue: second }, 'Issue unavailable', page.getByText('This issue is unavailable.', { exact: false }));
+      expect(
+        { issue: second },
+        'Issue unavailable · Factory',
+        page.getByText('This issue is unavailable.', { exact: false })
+      );
     await page.goBack();
     await unavailable();
     await page.goBack();
@@ -412,10 +427,8 @@ export async function projectNavigationBrowserChecks({
     await tablist.locator('[data-project-tab]').evaluateAll((tabs) => tabs.map((tab) => tab.dataset.projectTab)),
     projectTabs.map(({ route }) => route ?? 'home')
   );
-  for (const { route, name } of projectTabs) {
-    const tab = tablist.locator('#project-tab-' + (route ?? 'home'));
-    await assertControlText(tab, name);
-  }
+  for (const { visibleLabel, name } of projectTabs)
+    await assertControlText(tablist.getByRole('tab', { name, exact: true }), visibleLabel ?? name);
   try {
     const observations = [
       ...(await checkTabsAtViewport(navigation, desktop)),
