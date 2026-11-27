@@ -1401,6 +1401,7 @@ try {
         requestId: randomUUID(),
         description,
         folder: 'Browser folder',
+        storageProfile: 'default',
       });
       issueId = captured.issue.id;
       worktreeIssueId = issueId;
