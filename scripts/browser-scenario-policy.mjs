@@ -61,6 +61,7 @@ export const flowBrowserScenarioNames = {
   '--inbox-chat-reading': 'Inbox issue and block chat opening and live scrolling',
   '--inbox-details': 'Inbox playback and block Details render the requested controls',
   '--merge-settings': 'Request leaves merge checks to GitHub and the block palette hides Verify',
+  '--live-verification': 'Investigate hands off a scoped Full Send verification',
   '--merge-target-update': 'Merge reconciles and publishes the issue before requesting GitHub readiness',
   '--request-save': 'Saving Your words releases issue controls while Request clarification runs',
   '--block-inspection': 'On-demand refresh preserves drafts; Codex popup resets history without moving the sidebar',

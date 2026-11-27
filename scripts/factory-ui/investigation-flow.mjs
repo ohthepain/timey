@@ -26,7 +26,7 @@ export function investigationAttempts(flow, kinds) {
     .flatMap((block) => block.attempts.map((attempt) => ({ block, attempt })));
 }
 function completedInquiry({ attempt }) {
-  return attempt.status === 'completed' && attempt.investigation?.mode !== 'discussion';
+  return attempt.status === 'completed' && !attempt.verificationOrigin && attempt.investigation?.mode !== 'discussion';
 }
 function currentAttempt({ attempt }) {
   return !attempt.invalidatedAt && !attempt.cancelledByEdit;

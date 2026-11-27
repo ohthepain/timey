@@ -119,13 +119,16 @@ export class StrategyProvider {
     );
     return true;
   }
+  targetFreshnessProtection() {
+    return assertTargetFreshnessProtection(this);
+  }
   async merge(number, head, { beforeMerge, requireFreshTarget = false } = {}) {
     const repository = JSON.parse(await this.gh(['api', 'repos/' + this.config.repository]));
     requireThat(
       repository.allow_merge_commit === true,
       'Enable merge commits in the GitHub repository settings before using Full Send.'
     );
-    if (requireFreshTarget) await assertTargetFreshnessProtection(this);
+    if (requireFreshTarget) await this.targetFreshnessProtection();
     // The REST merge compares the head SHA. Strict checks protect the target
     // even if it advances after this final observation.
     await beforeMerge?.();
@@ -204,8 +207,11 @@ async function assertTargetFreshnessProtection(provider) {
   try {
     const rules = (await activeTargetRules(provider)).filter(strictStatusRule);
     const rulesets = await targetRulesets(provider, rules);
-    if (rulesets.some((rule) => rule.enforcement === 'active' && rule.current_user_can_bypass === 'never')) return;
-    if (classicStrictChecks(await classicTargetProtection(provider))) return;
+    const active = rulesets.filter((rule) => rule.enforcement === 'active' && rule.current_user_can_bypass === 'never');
+    if (active.length)
+      return { rules: rules.filter((rule) => active.some(({ id }) => id === rule.ruleset_id)), rulesets: active };
+    const classic = await classicTargetProtection(provider);
+    if (classicStrictChecks(classic)) return { classic };
   } catch (error) {
     error.message = `Could not confirm GitHub's up-to-date branch protection for ${target}. ${error.message}`;
     throw error;
