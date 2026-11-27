@@ -390,6 +390,8 @@ reloading or resubmitting the action.
 the order and destinations of the Home, Issues, Reports, Discuss, Automate me, and
 Admin tabs, and the relocated Factory controls. It saves desktop and narrow
 screenshots alongside the measured layout and navigation in `project-header-proof.json`.
+The focused server-control test checks that Pause and Restart stay disabled until
+the initial server status initializes the header controls.
 The navigation fixture temporarily initializes queue configuration, waits for a
 successful Issues queue response, and unloads the page before restoring configuration.
 Run `--ci-part=1 --project-navigation --sidebar-labels` together to check sidebar

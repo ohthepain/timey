@@ -383,6 +383,22 @@ test('Discuss sends and drains queued prompts over HTTP with No new actions enab
   service.store.connected.clear();
 });
 
+test('Flow header pause and restart wait for initial server status', (t) => {
+  const dom = loadServerControlDom(readFileSync(resolve('scripts/factory-ui/flow.html'), 'utf8'));
+  t.after(() => dom.window.close());
+  const toggle = dom.window.document.querySelector('#flow-actions-switch [data-server-toggle]');
+  const restart = dom.window.document.getElementById('flow-server-restart');
+  toggle.click();
+  assert.equal(toggle.checked, false, 'A click before status must not silently change the pause switch.');
+  assert.equal(toggle.disabled, true);
+  assert.equal(restart.disabled, true);
+
+  const idle = idleServerControl();
+  dom.window.controls.show(idle, async () => idle);
+  assert.equal(toggle.disabled, false);
+  assert.equal(restart.disabled, false);
+});
+
 test('header toggle shows immediate feedback while the request is pending', async () => {
   const dom = loadServerControlDom();
   const value = idleServerControl({ actions: 1 });
