@@ -1,4 +1,5 @@
-import { requireThat } from './common.mjs';
+import { redactValue } from './activity.mjs';
+import { digest, requireThat } from './common.mjs';
 
 const labels = {
   accept: ['Allow once', 'This request only.'],
@@ -14,6 +15,18 @@ export function approvalOptions(request) {
     ...describeDecision(decision),
     response: { decision },
   }));
+}
+export function scopedCommandApproval(request) {
+  const { id, method, params } = request;
+  if (method !== 'item/commandExecution/requestApproval' || !params.command?.trim()) return null;
+  const once = approvalOptions(request).find(({ response }) => response.decision === 'accept');
+  if (!once) return null;
+  const { command, cwd, reason } = params;
+  return {
+    ...redactValue({ command, cwd, reason }),
+    decision: once.id,
+    token: digest(JSON.stringify([id, method, params])),
+  };
 }
 function defaultDecisions(method) {
   return method === 'item/fileChange/requestApproval'
