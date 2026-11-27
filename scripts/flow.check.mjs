@@ -1985,8 +1985,8 @@ test('opted-in closure holds the worktree until Retro succeeds and files idle ap
     approved.flow.blocks.every((item) => item.attempts.length === 0),
     true
   );
-  const deletion = await flows.view(remove.id);
-  await submit(deletion, 'delete-pending-issue', { title: remove.title, reportBasis: deletion.issue.reportBasis });
+  const deleteView = await flows.view(remove.id);
+  await submit(deleteView, 'delete-pending-issue', { title: remove.title, reportBasis: deleteView.issue.reportBasis });
   await flows.fileRetroItems(proposals, id);
   assert.equal(
     flows.issues().some((item) => item.id === remove.id),

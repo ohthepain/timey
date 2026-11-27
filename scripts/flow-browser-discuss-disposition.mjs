@@ -108,7 +108,8 @@ export async function discussDispositionBrowserChecks({ page, service, project, 
     const approvedView = () => service.flows.selected(approved.id);
     const report = (issue) => service.flows.selected(issue.id);
     const inClosed = (issue) => listIssueStorage(service, 'closed').issues.some(({ id }) => id === issue.id);
-    const message = (text) => page.locator('#discuss-messages').getByText(text, { exact: false });
+    const message = (text) =>
+      page.locator('#discuss-messages .assistant .discuss-message-body').getByText(text, { exact: false });
     const approval = page.locator('#discuss-approvals').getByRole('button', { name: 'Delete permanently' });
     try {
       await page.goto('/?projectTab=discuss');

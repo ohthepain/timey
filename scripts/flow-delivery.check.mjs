@@ -446,8 +446,13 @@ test('Close retains the original Work file and exact candidate browser replay wi
     return { path, sha256: digest(readFileSync(path)) };
   };
   const proof = retain('initial-work.json', { observation: 'Work proof from an earlier tree.' });
-  f.ctx.flow.blocks[0].attempts[0].result.tree = 'earlier-tree';
-  f.ctx.flow.blocks[0].attempts[0].artifacts = { files: { proof } };
+  f.ctx.flow.blocks.push({
+    id: 'initial-work',
+    kind: 'work',
+    attempts: [
+      { id: 'initial-work', status: 'completed', result: { tree: 'earlier-tree' }, artifacts: { files: { proof } } },
+    ],
+  });
   const result = { pr: 17, head, revision: 'merge-revision' };
   f.ctx.flow.blocks.push({ kind: 'merge', attempts: [{ status: 'completed', result }] });
   const command = ['node', 'scripts/flow-browser.mjs', '--asset-storage'];

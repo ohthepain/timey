@@ -1265,7 +1265,10 @@ async function verifyDeliveredBrowserRetrospective(f, merge, proof) {
       issue: f.issue,
       flow: {
         ...f.flow,
-        blocks: [...f.flow.blocks, { kind: 'merge', label: 'Merge', attempts: [{ id: proof.attemptId, ...merge }] }],
+        blocks: [
+          ...f.flow.blocks,
+          { kind: 'merge', label: 'Merge', attempts: [{ id: proof.attemptId, status: 'completed', ...merge }] },
+        ],
       },
       signal: new AbortController().signal,
       definition: { prompt: 'Review the fixture.' },

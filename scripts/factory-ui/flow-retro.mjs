@@ -205,12 +205,13 @@ function exportBrowserObservations({ log, logs = [], ...record }, refs, copy, pa
 
 function observationExecution(items, path) {
   const log = basename(path);
-  const item = items.find(
+  const writes = items.filter(
     ({ command = '' }) => command.includes('node scripts/flow-browser.mjs') && command.includes(log)
   );
+  const item = writes.at(-1);
   if (!item) return;
   const { command, exitCode, sequence, status, timestamp } = item;
-  return { command, exitCode, sequence, status, timestamp };
+  return { command, exitCode, sequence, status, timestamp, overwrittenRuns: writes.length - 1 };
 }
 
 function classifyBrowserObservation(run) {
