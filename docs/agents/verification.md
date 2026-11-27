@@ -77,6 +77,19 @@ down, and checks that a different project's Factory cannot make the link return.
 The job retains `timey-factory-return.json` with the tested commit, tree, and browser
 observations. The aggregate check verifies the artifact hash and its commit and tree.
 
+Grouped Merge receipts keep the original Work verdicts with their scope and
+tested tree, plus each candidate browser replay in execution order. To bind a
+focused command to a particular child, list the matching `focusedTests` argument
+array in that child's Work verdict. A legacy Work command without a per-child
+mapping is shown as a shared replay. Close and Retro flag missing and earlier
+Work proof alongside any replay. A passing fixture run with a dirty parent
+checkout stays in the repair history with that qualification.
+
+The focused Merge and Close executor checks exercise target drift, retrieval of
+the replay log by hash, and a Close with no rerun. The PR #141 regression fixture
+uses the recorded Git identities and reconstructs the evidence structure with
+disposable verdicts and command logs.
+
 Locate controls by a stable ID or action attribute. Scope repeated controls to
 their view and record ID. Wait for the view to be ready before calling
 `readyControl`, which reports missing, duplicate, hidden, and disabled controls
@@ -577,8 +590,20 @@ playback, and Cleanup for a separate open issue. For a suite-wide locator
 migration, retain the affected full shards on the baseline and final trees
 alongside the focused replays.
 The `--work-markdown` scenario retains separate valid-reload and invalid-warning
-traces. Each includes the candidate, exact command, preceding scenarios, and the
-first missing event from the override write through the UI assertion.
+traces. Each includes the commit and tree, runner versions, exact command,
+elapsed time, preceding scenarios in execution order, and the first missing
+event from the override write through the UI assertion. If a preceding scenario
+fails, retain `results.json` with that failure and the scenarios that ran before
+it. Replay the recorded predecessor sequence when isolating a Markdown timeout.
+
+If the timeout around target update and Work start recurs, retain `results.json`
+and `browser.log.json` for the failing shard and the focused replay on the same
+clean tree. Use the timestamps on action requests, responses, and Work execution
+to locate the first phase that failed to advance before changing any wait.
+For the non-browser check named `a suggested target update precedes Work in the
+graph and route execution`, retain the failing shard output and the output of
+the same check alone on that tree. Its test diagnostic records runner versions,
+commit, tree, and elapsed time around Play, target update, and Work.
 `node scripts/flow-browser.mjs --ci-part=1 --inbox-flow` checks Inbox dates,
 statuses, folder ordering and block drag in isolation. It scrolls the target
 block into the graph viewport before measuring the drag, then checks the

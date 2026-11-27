@@ -1,13 +1,14 @@
 import { readFileSync } from 'node:fs';
 import { digest, git } from './common.mjs';
-import { readSubIssueProof } from './flow-group-proof.mjs';
+import { retainedGroupAttempt } from './flow-group-proof.mjs';
+import { receiptBrowserReplay } from './flow-repair-evidence.mjs';
 import { groupLiveProofStatuses } from './flow-live-proof.mjs';
 import { groupChildren } from './issue-group.mjs';
 import { mergedDelivery } from './merged-issue.mjs';
-import { evidencePath } from './stores/evidence.mjs';
+import { retainedEvidencePath } from './stores/evidence.mjs';
 
 function verifiedReceipt(root, { path, sha256 }) {
-  const bytes = readFileSync(evidencePath(root, path, sha256));
+  const bytes = readFileSync(retainedEvidencePath(root, path, sha256));
   return digest(bytes) === sha256 ? JSON.parse(bytes) : {};
 }
 
@@ -40,17 +41,22 @@ function checkoutHead(checkout) {
 
 function closureCandidate(root, { head, deliveryReceipt }, checkout, acceptedHead) {
   const revision = acceptedHead ?? head ?? checkoutHead(checkout);
-  return receiptCandidate(root, deliveryReceipt, revision) ?? commitCandidate(root, revision);
+  return verifiedCandidate(root, revision, deliveryReceipt);
+}
+
+function verifiedCandidate(root, revision, receipt) {
+  const candidate = commitCandidate(root, revision);
+  if (candidate.tree) return candidate;
+  return receiptCandidate(root, receipt, revision) ?? candidate;
 }
 
 const proofTime = ({ endedAt, startedAt }) => endedAt ?? startedAt ?? '';
 
-function attemptVerdicts(root, { id, status, result = {}, artifacts, invalidatedAt }) {
-  const { head, tree } = result;
-  return readSubIssueProof(artifacts.files.subIssueProof, root).map((verdict) => [
-    verdict.id,
-    { ...verdict, attemptId: id, blockStatus: status, invalidatedAt, head, tree },
-  ]);
+function attemptVerdicts(root, attempt) {
+  const { verdicts, ...provenance } = retainedGroupAttempt(root, attempt);
+  return verdicts
+    .filter(({ id }) => provenance.scope.includes(id))
+    .map((verdict) => [verdict.id, { ...verdict, ...provenance }]);
 }
 
 function workVerdicts(root, flow) {
@@ -83,6 +89,7 @@ const gaps = [
   [(verdict) => !verdict, 'No retained verdict.'],
   [(verdict) => verdict.invalidatedAt, 'The proof was invalidated by a later edit.'],
   [(verdict, candidate) => !verdict.tree || !candidate.tree, 'The candidate tree could not be matched.'],
+  [(verdict) => verdict.uncommitted, 'The check ran with uncommitted changes in its parent checkout.'],
   [
     (verdict, candidate) => verdict.tree !== candidate.tree,
     'Proof from an earlier tree needs a check on the current candidate.',
@@ -111,14 +118,26 @@ function childClosureProof(child, work, live, flow, candidate) {
   };
 }
 
+function childReplay(replay, id) {
+  const binding = replay?.children?.find((entry) => entry.id === id);
+  if (!binding) return;
+  const { candidate, command, exit, log, results, comparisonTarget } = replay;
+  return { ...binding, candidate, command, exit, log, results, comparisonTarget };
+}
+
 export function groupClosureProof(root, issue, flow, checkout, acceptedHead) {
   const children = groupChildren(issue);
   if (!children.length) return null;
-  const candidate = closureCandidate(root, mergedDelivery(flow) ?? {}, checkout, acceptedHead);
+  const delivery = mergedDelivery(flow) ?? {};
+  const candidate = closureCandidate(root, delivery, checkout, acceptedHead);
+  const replay = receiptBrowserReplay(root, delivery.deliveryReceipt, candidate);
   const work = workVerdicts(root, flow);
   const live = new Map(groupLiveProofStatuses(issue, flow, candidate, root).map((status) => [status.child.id, status]));
   return {
     candidate,
-    children: children.map((child) => childClosureProof(child, work, live, flow, candidate)),
+    children: children.map((child) => ({
+      ...childClosureProof(child, work, live, flow, candidate),
+      browserReplay: childReplay(replay, child.id),
+    })),
   };
 }

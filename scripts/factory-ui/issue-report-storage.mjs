@@ -194,9 +194,9 @@ export function updateStoredGroup(root, updates) {
   );
 }
 
-export function deletePendingIssueReport(root, issue) {
+export function deletePendingIssueReport(root, issue, expectedFlowRevision) {
   requireThat(issue.state === 'needs-approval', 'Only an issue awaiting approval can be deleted here.');
-  if (registeredProjectStores(root)) return deleteRegisteredReport(root, issue, 'pending');
+  if (registeredProjectStores(root)) return deleteRegisteredReport(root, issue, 'proposal', expectedFlowRevision);
   const path = storedIssuePath(root, issue.id, 'open');
   const lock = join(root, '.issues/factory.lock');
   mkdirSync(lock);

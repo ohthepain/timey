@@ -3,7 +3,8 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { realpath } from 'node:fs/promises';
 import { join, sep } from 'node:path';
-import { assertStoreState, inputDigest, sealCoordination, storeFailure } from './coordination.mjs';
+import { parse } from 'yaml';
+import { assertStoreState, deletionBlockers, inputDigest, sealCoordination, storeFailure } from './coordination.mjs';
 import { planRetirement, redactDeletedMove } from './deletion-retention.mjs';
 import { deletedFilePlanner, removeDeletedFiles } from './deletion-files.mjs';
 import { retainedContentReferences } from '../project-asset-retained-content.mjs';
@@ -93,9 +94,7 @@ function candidates(refs) {
   return [...result.values()];
 }
 
-async function prepare(project, operation, seal) {
-  const { issueId, expectedRevision, purpose } = operation.value.input;
-  const current = await project.readIssue(issueId);
+function requireDeletionTarget(current, { expectedRevision, expectedFlowRevision, purpose }) {
   assertStoreState(
     current.revision === expectedRevision,
     'STORE_CONFLICT',
@@ -106,11 +105,44 @@ async function prepare(project, operation, seal) {
     'STORE_CONFLICT',
     'Only an archived issue can be permanently deleted.'
   );
+  if (purpose === 'proposal') requireUnopenedProposal(current, expectedFlowRevision);
+  if (purpose !== 'archive') requireUnmergedDeletion(current.flow);
+}
+
+function requireUnmergedDeletion(flow) {
   assertStoreState(
-    !current.flow || !mergedDelivery(current.flow) || purpose === 'archive',
+    !flow || !mergedDelivery(flow),
     'STORE_MERGED',
     'Archive the merged issue before permanently deleting it.'
   );
+}
+
+function proposalReport(report) {
+  const header = report.match(/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/)?.[1] ?? '';
+  return parse(header)?.state === 'needs-approval';
+}
+
+function isUnopenedProposal(current) {
+  return current.location === 'open' && !current.flow?.workspace && proposalReport(current.report);
+}
+
+function requireUnopenedProposal(current, expectedFlowRevision) {
+  assertStoreState(
+    isUnopenedProposal(current),
+    'STORE_CONFLICT',
+    'This issue is no longer an unopened proposal awaiting approval.'
+  );
+  assertStoreState(
+    expectedFlowRevision === undefined || (current.flow?.revision ?? 0) === expectedFlowRevision,
+    'STORE_CONFLICT',
+    'This proposal changed. Review it before deleting.'
+  );
+}
+
+async function prepare(project, operation, seal) {
+  const { issueId } = operation.value.input;
+  const current = await project.readIssue(issueId);
+  requireDeletionTarget(current, operation.value.input);
   const files = deletedFilePlanner(project.root, issueId);
   const { scopes, refs } = await retirementScopes(project, operation, files);
   const flowPath = join(project.root, '.issues/flows', issueId, 'flow.json');
@@ -129,7 +161,7 @@ async function prepare(project, operation, seal) {
     removed: 0,
     retained: 0,
   };
-  return project.coordination.updateOperation(operation, { cleanup }, 'cleanup-plan', seal.token);
+  return project.coordination.updateOperation(operation, { cleanup }, 'cleanup-plan/' + seal.token, seal.token);
 }
 
 async function eraseRecords(project, operation, stores) {
@@ -188,14 +220,16 @@ async function eraseRecords(project, operation, stores) {
   }
 }
 
-async function scanRetainedArtifacts(stores, retain) {
+async function scanRetainedArtifacts(stores, retain, retainLocal) {
   for (const store of stores.values()) {
     await store.retainedPayloads({
       excludeArtifactInventory: true,
       onRecord(record) {
+        retainLocal(record);
         if (!record.key.startsWith('artifact-locations/')) retain(record.refs);
       },
       onReceipt(receipt) {
+        receipt.records.forEach(retainLocal);
         if (!receipt.records.length || !receipt.records.every((record) => record.key.startsWith('artifact-locations/')))
           retain(receipt.refs);
       },
@@ -203,7 +237,8 @@ async function scanRetainedArtifacts(stores, retain) {
   }
 }
 
-async function retainedArtifacts(project, stores, candidates) {
+async function retainedArtifacts(project, stores, operation, files) {
+  const { candidates } = operation.value.cleanup;
   const supplemental = new Map([...project.issueStores, ...project.recordStores]);
   for (const id of stores.keys()) supplemental.delete(id);
   const candidateHashes = new Set(candidates.map(([sha256]) => sha256));
@@ -211,13 +246,17 @@ async function retainedArtifacts(project, stores, candidates) {
   const retain = (refs) => {
     for (const { sha256 } of refs) if (candidateHashes.has(sha256)) hashes.add(sha256);
   };
-  await scanRetainedArtifacts(stores, retain);
-  const readable = await scanRetainedArtifacts(supplemental, retain).then(
+  const retainLocal = ({ key, value }) => {
+    if (key !== operation.key) files.retain(value);
+  };
+  await scanRetainedArtifacts(stores, retain, retainLocal);
+  const readable = await scanRetainedArtifacts(supplemental, retain, retainLocal).then(
     () => true,
     () => false
   );
   const content = await retainedContentReferences(project.root);
   retain(content.refs);
+  files.retain(content.refs);
   return { hashes, incomplete: !readable || content.unavailable };
 }
 
@@ -289,7 +328,10 @@ async function removeArtifactCopies(project, operationId, removals, token) {
 
 async function eraseArtifacts(project, operation, stores, seal) {
   const { cleanup } = operation.value;
-  const retained = await retainedArtifacts(project, stores, cleanup.candidates);
+  const { issueId } = operation.value.input;
+  const files = deletedFilePlanner(project.root, issueId);
+  files.own(cleanup.localFiles);
+  const retained = await retainedArtifacts(project, stores, operation, files);
   assertStoreState(
     cleanup.phase !== 'pending' || !retained.incomplete,
     'STORE_RETENTION_UNKNOWN',
@@ -304,14 +346,130 @@ async function eraseArtifacts(project, operation, stores, seal) {
       seal.token
     );
   await removeArtifactCopies(project, operation.value.id, removals, seal.token);
-  const local = removeDeletedFiles(project.root, cleanup.localFiles, {
-    issueId: operation.value.input.issueId,
-  });
+  const local = removeDeletedFiles(project.root, files.finish(), { issueId });
   return { removed: removals.length, retained: cleanup.candidates.length - removals.length, local };
 }
 
+function proposalTarget({ purpose, issueId }) {
+  return purpose === 'proposal' ? issueId : undefined;
+}
+
+function deletionStores(project, scopes) {
+  return new Map(
+    scopes.map(({ id }) => {
+      const store = project.recordStores.get(id) || project.issueStores.get(id);
+      const selected = project.records.id === id ? project.records : store;
+      assertStoreState(
+        selected,
+        'STORE_UNCONFIGURED',
+        'Configure the evidence’s retained storage home before resuming deletion.'
+      );
+      return [id, selected];
+    })
+  );
+}
+
+async function needsPreparation(project, operation) {
+  const { input, cleanup } = operation.value;
+  if (!cleanup) return true;
+  if (!proposalTarget(input)) return false;
+  const catalog = await project.coordination.get('catalog/' + input.issueId);
+  return catalog.value.state !== 'deleted';
+}
+
+async function releaseDeletionSeal(coordination, operation, value, stage, seal) {
+  const gate = await coordination.get('project/migration');
+  await coordination.commit(
+    operation.value.id + '/' + stage + '/' + seal.token,
+    [
+      { key: operation.key, revision: operation.revision },
+      { key: gate.key, revision: gate.revision },
+    ],
+    [
+      { key: operation.key, value },
+      { key: gate.key, value: null },
+    ],
+    seal.token
+  );
+}
+
+async function finishDelete(project, operation, seal) {
+  if (await needsPreparation(project, operation)) operation = await prepare(project, operation, seal);
+  const stores = deletionStores(project, operation.value.cleanup.scopes);
+  await eraseRecords(project, { ...operation, seal }, stores);
+  const counts = await eraseArtifacts(project, operation, stores, seal);
+  const result = { status: 'confirmed', deleted: true, issueId: operation.value.input.issueId, ...counts };
+  const current = await project.coordination.get(operation.key);
+  const { cleanup, ...value } = current.value;
+  await releaseDeletionSeal(
+    project.coordination,
+    current,
+    { ...value, status: 'confirmed', confirmedAt: new Date().toISOString(), result },
+    'complete-delete',
+    seal
+  );
+  return result;
+}
+
+async function retainDeleteFailure(coordination, current, error, seal) {
+  const { input, cleanup } = current.value;
+  const changes = {
+    error: String(error.message),
+    ...(cleanup && { cleanup: { ...cleanup, phase: 'pending' } }),
+  };
+  if (proposalTarget(input)) {
+    await releaseDeletionSeal(coordination, current, { ...current.value, ...changes }, 'cleanup-error', seal);
+    return;
+  }
+  await coordination.updateOperation(
+    current,
+    changes,
+    'cleanup-error-' + inputDigest(String(error.message)).slice(0, 16),
+    seal.token
+  );
+}
+
+async function deleteFailure(project, operation, error, seal) {
+  const { coordination } = project;
+  const current = await coordination.get(operation.key);
+  if (current?.value.status === 'confirmed') return current.value.result;
+  const operationId = operation.value.id;
+  const stale = ['STORE_CONFLICT', 'STORE_MERGED'].includes(error.code);
+  if (stale && (await needsPreparation(project, current))) {
+    await releaseDeletionSeal(
+      coordination,
+      current,
+      { ...current.value, status: 'rejected', errorCode: error.code, error: String(error.message) },
+      'reject-delete',
+      seal
+    );
+    throw Object.assign(error, { operationId, rejected: true, pending: false });
+  }
+  await retainDeleteFailure(coordination, current, error, seal).catch(() => {});
+  throw Object.assign(error, { operationId, pending: true });
+}
+
+async function sealedDeletion(project, operation) {
+  const { id, token, input } = operation.value;
+  const issueId = proposalTarget(input);
+  try {
+    const seal = await sealCoordination(project.coordination, {
+      id: token,
+      role: issueId ? 'delete-proposal' : 'delete-evidence',
+      operationId: id,
+      issueId,
+      expected: [{ key: operation.key, revision: operation.revision }],
+    });
+    return { seal };
+  } catch (error) {
+    const current = await project.coordination.get(operation.key);
+    if (current?.value.status === 'confirmed') return { result: current.value.result };
+    throw error;
+  }
+}
+
 export async function resumeDelete(project, { operationId }) {
-  let operation = await project.coordination.get('operations/' + encodeURIComponent(operationId));
+  const operation = await project.coordination.get('operations/' + encodeURIComponent(operationId));
   assertStoreState(
     operation?.value.kind === 'delete-issue',
     'STORE_OPERATION_MISSING',
@@ -320,90 +478,19 @@ export async function resumeDelete(project, { operationId }) {
   if (operation.value.status === 'confirmed') return operation.value.result;
   if (operation.value.status === 'rejected')
     throw Object.assign(Error(operation.value.error), { code: operation.value.errorCode, rejected: true });
-  const seal = await sealCoordination(project.coordination, {
-    id: operation.value.token,
-    role: 'delete-evidence',
-    operationId,
-  });
-  try {
-    if (!operation.value.cleanup) operation = await prepare(project, operation, seal);
-    const stores = new Map();
-    for (const scope of operation.value.cleanup.scopes) {
-      const store =
-        project.records.id === scope.id
-          ? project.records
-          : project.recordStores.get(scope.id) || project.issueStores.get(scope.id);
-      assertStoreState(
-        store,
-        'STORE_UNCONFIGURED',
-        'Configure the evidence’s retained storage home before resuming deletion.'
-      );
-      stores.set(scope.id, store);
-    }
-    await eraseRecords(project, { ...operation, seal }, stores);
-    const counts = await eraseArtifacts(project, operation, stores, seal);
-    const result = { status: 'confirmed', deleted: true, issueId: operation.value.input.issueId, ...counts };
-    const current = await project.coordination.get(operation.key);
-    const gate = await project.coordination.get('project/migration');
-    const { cleanup, ...value } = current.value;
-    await project.coordination.commit(
-      operationId + '/complete-delete',
-      [
-        { key: current.key, revision: current.revision },
-        { key: gate.key, revision: gate.revision },
-      ],
-      [
-        { key: current.key, value: { ...value, status: 'confirmed', confirmedAt: new Date().toISOString(), result } },
-        { key: gate.key, value: null },
-      ],
-      seal.token
-    );
-    return result;
-  } catch (error) {
-    const current = await project.coordination.get(operation.key);
-    if (current?.value.status === 'confirmed') return current.value.result;
-    if (!current.value.cleanup && ['STORE_CONFLICT', 'STORE_MERGED'].includes(error.code)) {
-      const gate = await project.coordination.get('project/migration');
-      await project.coordination.commit(
-        operationId + '/reject-delete',
-        [
-          { key: current.key, revision: current.revision },
-          { key: gate.key, revision: gate.revision },
-        ],
-        [
-          {
-            key: current.key,
-            value: { ...current.value, status: 'rejected', errorCode: error.code, error: String(error.message) },
-          },
-          { key: gate.key, value: null },
-        ],
-        seal.token
-      );
-      throw Object.assign(error, { operationId, rejected: true, pending: false });
-    }
-    await project.coordination
-      .updateOperation(
-        current,
-        {
-          error: String(error.message),
-          ...(current.value.cleanup && { cleanup: { ...current.value.cleanup, phase: 'pending' } }),
-        },
-        'cleanup-error-' + inputDigest(String(error.message)).slice(0, 16),
-        seal.token
-      )
-      .catch(() => {});
-    throw Object.assign(error, { operationId, pending: true });
-  }
+  const { seal, result } = await sealedDeletion(project, operation);
+  if (result) return result;
+  return finishDelete(project, operation, seal).catch((error) => deleteFailure(project, operation, error, seal));
 }
 
-async function requireIdleProject(coordination) {
+async function requireIdleForDeletion(coordination, issueId) {
+  const { claims, pending } = await deletionBlockers(coordination, { issueId });
   assertStoreState(
-    (await coordination.list('claims/')).length === 0,
+    !claims,
     'STORE_BUSY',
-    'Finish or explicitly reconcile project work before permanently deleting evidence.'
-  );
-  const [pending] = await coordination.list('operations/', ({ value }) =>
-    value.status === 'pending' ? { kind: value.kind, id: value.id } : undefined
+    issueId
+      ? 'Finish or explicitly reconcile the proposal’s claim before deleting it.'
+      : 'Finish or explicitly reconcile project work before permanently deleting evidence.'
   );
   if (pending)
     throw storeFailure(
@@ -412,28 +499,28 @@ async function requireIdleProject(coordination) {
     );
 }
 
-export async function deleteIssue(project, { issueId, expectedRevision, operationId, purpose = 'pending', owner }) {
+export async function deleteIssue(
+  project,
+  { issueId, expectedRevision, expectedFlowRevision, operationId, purpose = 'pending', owner }
+) {
   assertStoreState(!owner, 'STORE_BUSY', 'Finish the running attempt before permanently deleting its evidence.');
+  assertStoreState(
+    ['archive', 'pending', 'proposal'].includes(purpose),
+    'STORE_INVALID_OPERATION',
+    'Choose a valid deletion purpose.'
+  );
+  const input = {
+    issueId,
+    expectedRevision,
+    purpose,
+    ...(expectedFlowRevision !== undefined && { expectedFlowRevision }),
+  };
   const existing = await project.coordination.get('operations/' + encodeURIComponent(operationId));
   if (!existing) {
-    await requireIdleProject(project.coordination);
+    await requireIdleForDeletion(project.coordination, proposalTarget(input));
     const issue = await project.readIssue(issueId);
-    assertStoreState(
-      issue.revision === expectedRevision,
-      'STORE_CONFLICT',
-      'The shared issue changed. Refresh before deleting.'
-    );
-    assertStoreState(
-      purpose !== 'archive' || issue.location === 'archive',
-      'STORE_CONFLICT',
-      'Only an archived issue can be permanently deleted.'
-    );
-    assertStoreState(
-      !issue.flow || !mergedDelivery(issue.flow) || purpose === 'archive',
-      'STORE_MERGED',
-      'Archive the merged issue before permanently deleting it.'
-    );
+    requireDeletionTarget(issue, input);
   }
-  await project.coordination.operation(operationId, 'delete-issue', { issueId, expectedRevision, purpose });
+  await project.coordination.operation(operationId, 'delete-issue', input);
   return resumeDelete(project, { operationId });
 }

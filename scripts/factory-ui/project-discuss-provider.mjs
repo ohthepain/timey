@@ -91,6 +91,7 @@ class ProjectDiscussProvider {
         reportContext: () => this.active?.message.reportContext,
         prepareIssueCreation: (input) => this.active?.prepareIssueCreation?.(input),
         issueCreated: (issueId) => this.active?.issueCreated?.(issueId),
+        confirmIssueDeletion: (proposal) => this.active.confirmIssueDeletion(proposal),
         beforeNoteChange: (input) => this.beforeNoteChange(input),
         annotationActor: () => ({ kind: 'chat', id: this.active?.session.id }),
       });
