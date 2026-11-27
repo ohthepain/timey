@@ -17,6 +17,7 @@ import { LocalNotes } from './local-notes.mjs';
 import { agentRecovery, recoverAgentSession } from './agent-recovery.mjs';
 import { retainReportConversation } from './report-conversation.mjs';
 import { isCodexWriterConflict } from './codex-thread-writer.mjs';
+import { prototypeAttachmentInputs } from './discuss-prototype-files.mjs';
 import {
   chatProgress,
   hasChatProgress,
@@ -243,6 +244,11 @@ export class ProjectDiscuss {
         '&attachment=' +
         encodeURIComponent(file.id),
     };
+  }
+  retainPrototypeFiles(session, paths) {
+    requireThat(!session.ownership, 'Open Project Discuss to retain a prototype.');
+    const files = this.attachments(session.id, prototypeAttachmentInputs(this.service.root, paths));
+    return { files: files.map((file) => this.publicAttachment(session.id, file)) };
   }
   publicSession(session) {
     const result = copy(session);
@@ -642,10 +648,12 @@ export class ProjectDiscuss {
     return executeNoteRecommendation(this.service.root, message, visit, this.read(id).noteContext).then((outcome) => {
       if (outcome) return outcome;
       if (isNoteCreation(message)) this.requireUnconvertedNote(message);
-      return this.provider(id).turn(this.read(id), message, {
+      const session = this.read(id);
+      return this.provider(id).turn(session, message, {
         ...context,
         prepareIssueCreation: (input) => this.prepareNoteIssue(message, input),
         issueCreated: (issueId) => this.noteIssueCreated(id, message, issueId),
+        retainPrototypeFiles: (paths) => this.retainPrototypeFiles(session, paths),
         confirmIssueDeletion: (proposal) => this.confirmIssueDeletion(id, proposal, context),
       });
     });

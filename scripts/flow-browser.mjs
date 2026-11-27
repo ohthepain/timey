@@ -14,6 +14,7 @@ import { activityBrowserChecks } from './flow-browser-activity.mjs';
 import { chatProgressBrowserChecks } from './flow-browser-chat-progress.mjs';
 import { inboxDiscussBrowserChecks, inboxFlowBrowserChecks } from './flow-browser-inbox.mjs';
 import { investigationReportsBrowserChecks } from './flow-browser-investigation-reports.mjs';
+import { folderLayoutBrowserChecks, reportLibraryBrowserChecks } from './flow-browser-list-layouts.mjs';
 import { issueStatusFoldersBrowserChecks } from './flow-browser-issue-status-folders.mjs';
 import {
   issueDiscussWorkspaceChecks,
@@ -82,6 +83,7 @@ import {
   automateActivityBrowserChecks,
 } from './flow-browser-project-home.mjs';
 import { projectDiscussBrowserChecks } from './flow-browser-project-discuss.mjs';
+import { discussUiDesignBrowserChecks } from './flow-browser-discuss-ui-design.mjs';
 import { discussDispositionBrowserChecks } from './flow-browser-discuss-disposition.mjs';
 import { assetStorageBrowserChecks } from './flow-browser-asset-storage.mjs';
 import { projectSettingsBrowserChecks } from './flow-browser-project-settings.mjs';
@@ -93,6 +95,7 @@ import { localNotesBrowserChecks } from './flow-browser-local-notes.mjs';
 import { actionsMenuBrowserChecks } from './flow-browser-actions-menu.mjs';
 import { mergedIssueBrowserChecks } from './flow-browser-merged-issue.mjs';
 import { manualCloseBrowserChecks } from './flow-browser-manual-close.mjs';
+import { retroReportBrowserChecks } from './flow-browser-retro-report.mjs';
 import { noChangesBrowserChecks } from './flow-browser-no-changes.mjs';
 import {
   importBrowserIssue,
@@ -258,6 +261,7 @@ const {
   '--folder-workspace-grouping': folderWorkspaceGroupingCheck,
   '--tab-source': tabSourceCheck,
   '--sidebar-issue-names': sidebarIssueNamesCheck,
+  '--issue-nicknames': issueNicknamesCheck,
   '--save-request-route': saveRequestRouteCheck,
   '--flow-menu': flowMenuCheck,
   '--add-parallel-block': addParallelBlockCheck,
@@ -491,7 +495,7 @@ async function check(name, run) {
   }
 }
 async function view() {
-  const response = await page.request.get('/api/flow?issue=' + issueId);
+  const response = await page.request.get('/api/flow?issue=' + issueId, { maxRetries: 1 });
   assert.equal(response.status(), 200);
   const data = await response.json();
   assert.ok(data.flow, JSON.stringify(data));
@@ -695,6 +699,12 @@ try {
           })
       );
   });
+  await check(flowBrowserScenarioNames['--report-library'], () =>
+    reportLibraryBrowserChecks({ page, project, output, candidate, screenshot })
+  );
+  await check(flowBrowserScenarioNames['--folder-layout'], () =>
+    folderLayoutBrowserChecks({ page, project, output, candidate, screenshot })
+  );
   await check('Manual Close remains discoverable after Merge and automatic closing needs no prompt', () =>
     manualCloseBrowserChecks({ page, project, service, output, root, poll, screenshot })
   );
@@ -831,6 +841,9 @@ try {
     )
   );
   await check(discussCheck, () => projectDiscussBrowserChecks({ page, project, service, poll, screenshot }));
+  await check(flowBrowserScenarioNames['--discuss-ui-design'], () =>
+    discussUiDesignBrowserChecks({ page, project, service, poll, screenshot, output })
+  );
   await check(flowBrowserScenarioNames['--project-discuss-disposition'], () =>
     discussDispositionBrowserChecks({ page, service, project, root, output, poll, screenshot })
   );
@@ -1357,6 +1370,56 @@ try {
   });
   // The remaining scenarios share the issue created in this section.
   part = '--ci-part=2';
+  await check(issueNicknamesCheck, async () => {
+    ensureFixtureLifecycle();
+    const existing = '20261127-browser-existing-nickname';
+    const legacyTitle = 'Organize practice recordings alphabetically for the entire project';
+    await writeBrowserIssue(project, {
+      id: existing,
+      title: legacyTitle,
+      body: 'Keep the full title in the issue view.',
+    });
+    const observe = async (label, title, nickname) => {
+      await poll(
+        async () => ({ heading: await page.locator('#issue-title').textContent(), tab: await page.title() }),
+        ({ heading, tab }) => heading === title && tab === nickname + ' · Factory',
+        'The issue heading and tab did not show the expected names.'
+      );
+      return { label, heading: title, tab: await page.title() };
+    };
+    const rename = async (title) => {
+      await page.getByRole('button', { name: 'Rename issue', exact: true }).click();
+      await page.getByRole('textbox', { name: 'Issue title', exact: true }).fill(title);
+      await clickAction(page.locator('#rename-issue-form button[type="submit"]'));
+    };
+    const saveNickname = async (nickname) => {
+      await page.getByRole('button', { name: 'Edit nickname', exact: true }).click();
+      await page.getByRole('textbox', { name: 'Issue nickname', exact: true }).fill(nickname);
+      await clickAction(page.getByRole('button', { name: 'Save nickname', exact: true }));
+    };
+    await page.goto('/flow?issue=' + existing);
+    const observations = [
+      await observe('Existing issue', legacyTitle, 'Organize practice recordings alphabetically for…'),
+    ];
+    await page.locator('#new-issue').click();
+    const title = 'Improve the recording library';
+    await page.locator('#capture-description').fill(title);
+    await page.locator('#capture-type').selectOption('feature');
+    const created = await clickAction(page.locator('#capture-submit'));
+    observations.push(await observe('New issue', title, title));
+    const renamed = 'Improve the practice library';
+    await rename(renamed);
+    observations.push(await observe('Generated nickname after rename', renamed, renamed));
+    await saveNickname('Practice library');
+    const finalTitle = 'Keep the practice library sorted by instrument';
+    await rename(finalTitle);
+    await page.goto('/flow?issue=' + created.issue.id);
+    observations.push(await observe('Custom nickname after rename and reload', finalTitle, 'Practice library'));
+    await screenshot('issue-nickname');
+    await saveNickname('');
+    observations.push(await observe('Restored title default', finalTitle, finalTitle));
+    writeFileSync(join(output, 'issue-nicknames.json'), JSON.stringify(observations, null, 2) + '\n');
+  });
   const description =
     'Understand why the save button loses text\nDone: The text survives a reload.\nProof: Retained saved text.\nKnown facts: The problem occurs after refresh.\nConstraints: Reproduce before changing code.';
   await check(captureFolderIssueCheck, async () => {
@@ -3237,6 +3300,9 @@ try {
   );
   await check(mergeTargetUpdateCheck, () =>
     mergeTargetUpdateBrowserChecks({ page, project, service, output, root, poll, screenshot, selectBlock, clickAction })
+  );
+  await check(flowBrowserScenarioNames['--retro-report'], () =>
+    retroReportBrowserChecks({ page, project, service, output, root, poll })
   );
   assert.ok(!ciPart || results.length, 'The Flow browser CI part did not execute any scenarios.');
   passed = true;

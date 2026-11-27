@@ -92,6 +92,19 @@ const homeActions = {
   },
 };
 
+function prototypeTools(retainPrototypeFiles) {
+  if (!retainPrototypeFiles) return {};
+  return {
+    discuss_prototype_files: {
+      description:
+        'Retain the files for a user-requested UI prototype in Project Discuss. Pass PNG screenshots and runnable HTML or ZIP paths relative to .cache/discuss-prototypes/. Returns stable download links for the saved version. Use these links in the conversation and in a later user-requested implementation issue.',
+      schema: z.object({ paths: z.array(z.string().min(1).max(255)).min(1).max(8) }).strict(),
+      path: '/api/project-discuss-action',
+      run: ({ paths }) => retainPrototypeFiles(paths),
+    },
+  };
+}
+
 export function createProjectDiscussTools(service, options = {}) {
   const home = () => options.home?.() || service.projectHome;
   const flows = () => options.flows?.() || service.flows;
@@ -136,6 +149,7 @@ export function createProjectDiscussTools(service, options = {}) {
       run: ({ location, issueId }) =>
         location === 'open' ? openIssueList(service, issueId, flows) : storedIssueList(service, location, issueId),
     },
+    ...prototypeTools(options.retainPrototypeFiles),
     ...(options.closeIssue && {
       issue_dispose: {
         description:

@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "name": "Block models preserve history and surface persistent blockers",
+  "command": ["node", "scripts/flow-browser.mjs", "--ci-part=1b", "--storage-status", "--block-models"],
+  "source": {
+    "runId": "45999924727",
+    "checkout": "ad4c8a91e5158904d40427b330e39b69ab1dd3cb",
+    "tree": "8e819ee94162771c881afe80faa796df9241beca",
+    "jobId": "140512541418"
+  }
+}

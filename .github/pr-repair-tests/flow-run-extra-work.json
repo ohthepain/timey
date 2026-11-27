@@ -1,0 +1,21 @@
+{
+  "version": 2,
+  "name": "Run beside the Work name starts exactly one block",
+  "command": [
+    "node",
+    "scripts/flow-browser.mjs",
+    "--ci-part=2",
+    "--capture-folder-issue",
+    "--save-request-route",
+    "--work-markdown",
+    "--stop-work",
+    "--retry-work",
+    "--run-extra-work"
+  ],
+  "source": {
+    "runId": "46002427719",
+    "checkout": "03d8b0caf6e54908e7d943cafd11bc808f9fc4e6",
+    "tree": "b88d54f47ff30d42ac7e7e6cdec70fb2a3410d25",
+    "jobId": "140521234953"
+  }
+}

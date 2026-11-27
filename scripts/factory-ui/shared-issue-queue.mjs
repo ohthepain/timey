@@ -25,8 +25,10 @@ import { createSharedIssuePublication } from './shared-issue-publication.mjs';
 import { copySharedIssueFile, fetchSharedIssueTarget, syncSharedIssueFiles } from './shared-issue-sync.mjs';
 import { flowOwnsIssue } from './flow-ownership.mjs';
 import { investigationReport } from './investigation-records.mjs';
+import { commitStoredReport } from './stores/report-access.mjs';
 
 const archiveSource = (record) => record.baseLocation || 'closed';
+const retroReportReason = 'Retro summary saved';
 
 function withSharedProgress(report, status) {
   const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---(?=\r?\n|$)/;
@@ -365,8 +367,21 @@ export function createSharedIssueQueue(service, options = {}) {
     if (receipt(id)) return;
     return checkpoint(id, reason);
   }
+  async function saveRetroReport(issue, report) {
+    const operation = 'retro-report';
+    if (report === issue.content && !flowBlockReceipt(issue.id, operation)) return retroReportCheckpoint(issue.id);
+    const context = acquireClosurePublication(issue, operation);
+    if (report !== issue.content) await commitStoredReport(root, issue, report, { purpose: 'closure' });
+    return publicState(checkpoint(issue.id, retroReportReason, context, report));
+  }
+  function retroReportCheckpoint(id) {
+    const saved = receipt(id);
+    return saved?.reason === retroReportReason ? publicState(saved) : null;
+  }
   function acquireGroupClosure(issue, reason) {
-    const operation = `group-close:${reason}`;
+    return acquireClosurePublication(issue, `group-close:${reason}`);
+  }
+  function acquireClosurePublication(issue, operation) {
     const pending = flowBlockReceipt(issue.id, operation);
     if (!pending) return acquire(issue, true, false, undefined, operation);
     return {
@@ -584,6 +599,7 @@ export function createSharedIssueQueue(service, options = {}) {
     acquireFlowBlock,
     releaseFlowBlock,
     capture,
+    saveRetroReport,
     checkpoint,
     publishGroupClosure,
     finish,

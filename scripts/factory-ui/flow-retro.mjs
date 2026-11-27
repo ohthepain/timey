@@ -513,7 +513,7 @@ export async function runRetro(service, ctx, create = createDiscussionRuntime) {
           ctx.definition.prompt,
           'Use the issue report, timeline, attempts, and linked Codex turns as evidence. Preserve order within each thread. Use recorded repair attempt and turn IDs to link repairs before using timestamps for other events. State missing history and unclear ordering.',
           'The evidence index links to the report, timeline, attempts, linked Codex turns, repair command logs, merge repair revisions, CI runs and failure attachments, delivery receipts with matching repair browser proof, group verification history, and the child proof snapshot from Close. Search and read relevant ranges across the history, including earlier attempts. Inspect relevant project files and recent Git work when useful. Cite evidence paths/revisions, distinguish observations from claims, and state which evidence was unavailable or not inspected.',
-          'Return a concise summary and concrete follow-up issues. An empty recommendation list is valid. Do not claim model descriptions prove actual checks, merge or acceptance.',
+          'Write the summary for the source issue report. Use plain language and short Markdown paragraphs or bullets to explain what happened, what problems you found, and why they mattered. The report adds the heading and any follow-up links. Classify each follow-up as investigation for an open question, bug for a defect, or feature for an improvement. An empty recommendation list is valid. Do not claim model descriptions prove actual checks, merge or acceptance.',
         ].join('\n\n')
       );
       if (ended) return;
