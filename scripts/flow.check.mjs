@@ -1731,7 +1731,7 @@ test('a suggested target update precedes Work in the graph and route execution',
     const revision = (...args) => execFileSync('git', ['rev-parse', ...args], { encoding: 'utf8' }).trim();
     t.diagnostic(
       JSON.stringify({
-        command: [process.execPath, ...process.execArgv, ...process.argv.slice(1)],
+        focusedCommand: ['node', '--test', '--test-name-pattern=' + t.name, 'scripts/flow.check.mjs'],
         runner: { node: process.version, os: process.platform, arch: process.arch },
         revision: revision('HEAD'),
         tree: revision('HEAD^{tree}'),
