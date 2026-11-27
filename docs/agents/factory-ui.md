@@ -148,7 +148,7 @@ in Destination before running Publish or Merge.
 The issue number appears in smaller text to the left of the title in the center
 column. Use the pencil next to the title to rename the issue. The browser tab
 uses a short nickname generated from the current title. Select **Edit nickname**
-to save a custom nickname that stays through title changes. Clear the field and
+beside the issue title to save a custom nickname that stays through title changes. Clear the field and
 save to restore the generated nickname. **Start** or **Resume**
 runs the route; Publish runs when the candidate and destination checks pass. When running Publish directly,
 review the title, source and destination branches, verified commit, and exact PR
