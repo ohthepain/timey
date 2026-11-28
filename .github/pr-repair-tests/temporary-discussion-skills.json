@@ -1,6 +1,9 @@
 {
   "version": 2,
   "name": "temporary discussion lists enabled skills and invokes selected skills without persisting the transcript",
+  "expectedTests": [
+    "temporary discussion lists enabled skills and invokes selected skills without persisting the transcript"
+  ],
   "command": [
     "node",
     "--test",

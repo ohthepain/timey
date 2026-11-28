@@ -152,6 +152,19 @@ const serverControlUI = (() => {
   function actionCard(item, request, drafts) {
     const card = document.createElement('article');
     card.className = 'server-action-card';
+    const issue = item.issues?.[0];
+    if (item.blockId && issue) card.append(flowSummary(item, issue), actionLinks(item, []));
+    else appendActionDetails(card, item);
+    card.append(actionControls(item, request, drafts));
+    return card;
+  }
+  function flowSummary(item, issue) {
+    const summary = document.createElement('p');
+    const number = issue.issueNumber ? `#${issue.issueNumber}` : issue.id;
+    summary.append(issueLink(issue, `${number}: ${issue.title}: ${item.title}`));
+    return summary;
+  }
+  function appendActionDetails(card, item) {
     card.append(textNode('h3', actionTitle(item)));
     const state = textNode('p', actionStatus(item));
     state.className = 'muted';
@@ -159,8 +172,6 @@ const serverControlUI = (() => {
     if (item.trigger) card.append(textNode('p', item.trigger));
     if (item.purpose) card.append(textNode('p', item.purpose));
     card.append(textNode('p', actionDetails(item)), actionLinks(item));
-    card.append(actionControls(item, request, drafts));
-    return card;
   }
   function actionTitle(item) {
     return item.title || item.kind || 'Action';
@@ -176,17 +187,20 @@ const serverControlUI = (() => {
     node.textContent = text;
     return node;
   }
-  function actionLinks(item) {
+  function issueLink(issue, label) {
+    const link = textNode('a', label);
+    link.href = `/?issue=${encodeURIComponent(issue.id)}`;
+    return link;
+  }
+  function actionLinks(item, issues = item.issues) {
     const links = document.createElement('p');
     links.className = 'server-action-links';
     if (!item.issues?.length) {
       links.textContent = 'No linked issue';
       return links;
     }
-    for (const issue of item.issues) {
-      const link = document.createElement('a');
-      link.href = `/?issue=${encodeURIComponent(issue.id)}`;
-      link.textContent = `Issue: ${issue.title}${issue.issueNumber ? ` (#${issue.issueNumber})` : ''}`;
+    for (const issue of issues) {
+      const link = issueLink(issue, `Issue: ${issue.title}${issue.issueNumber ? ` (#${issue.issueNumber})` : ''}`);
       links.append(link, document.createTextNode(' '));
     }
     links.append(actionOutputLink(item.outputHref || `/api/run?id=${encodeURIComponent(item.id)}`));

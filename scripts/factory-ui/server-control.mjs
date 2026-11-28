@@ -218,6 +218,7 @@ function flowActionItems(service, queue) {
       id: `flow:${issueId}:${active.attemptId || active.blockId}`,
       ...operation,
       kind: 'flow',
+      blockId: block?.id,
       active: true,
       ...flowActionProgress(block, active.attemptId),
       issues: [issueLink(queue, issueId)],

@@ -220,6 +220,11 @@ function mergeExecutor(service, provider, remote, currentPR) {
   let waits = 0;
   return createFlowExecutor(service, {
     provider,
+    async verifyWork(_ctx, { checkout, base }) {
+      assert.equal(git(checkout, 'merge-base', 'HEAD', base), base);
+      assert.equal(git(checkout, 'status', '--porcelain'), '');
+      return { evidence: [] };
+    },
     async execute(input) {
       const { command, cwd, args, log } = input;
       assert.equal(command, 'git');
@@ -456,7 +461,7 @@ export async function mergeTargetUpdateBrowserChecks(harness) {
               'scripts/factory-ui/strategy-provider.mjs'
             ),
             fixture:
-              'Browser Merge control, Factory executor, and real Git with a disposable bare remote. GitHub responses are simulated.',
+              'Browser Merge control, Factory executor, and real Git with a disposable bare remote. GitHub responses and the project audit are simulated.',
             scenarios,
             blocked,
           },

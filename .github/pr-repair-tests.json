@@ -8,6 +8,10 @@
     },
     {
       "name": "CI keeps Timey browser verification and assembles evidence for the exact candidate",
+      "expectedTests": [
+        "CI gates the parallel suites on early checks and keeps test as their aggregate",
+        "CI assembles passing evidence across rerun jobs only for one exact snapshot"
+      ],
       "command": [
         "node",
         "--test",
@@ -37,6 +41,7 @@
     },
     {
       "name": "a revised request keeps the open PR and requires fresh Work for manual delivery",
+      "expectedTests": ["a revised request keeps the open PR and requires fresh Work for manual delivery"],
       "command": [
         "node",
         "--test",
@@ -46,6 +51,7 @@
     },
     {
       "name": "Merge repairs a target conflict before requesting GitHub readiness",
+      "expectedTests": ["Merge repairs a target conflict before requesting GitHub readiness"],
       "command": [
         "node",
         "--test",
@@ -55,6 +61,9 @@
     },
     {
       "name": "Merge retains the final candidate observations and earlier Work proof through the Artifact store",
+      "expectedTests": [
+        "Merge retains the final candidate observations and earlier Work proof through the Artifact store"
+      ],
       "command": [
         "node",
         "--test",
@@ -64,16 +73,13 @@
     },
     {
       "name": "Merge pushes each new candidate, then expires approval if the target moves again",
+      "expectedTests": ["Merge pushes each new candidate, then expires approval if the target moves again"],
       "command": [
         "node",
         "--test",
         "--test-name-pattern=^Merge pushes each new candidate, then expires approval if the target moves again$",
         "scripts/flow-executor.check.mjs"
       ]
-    },
-    {
-      "name": "Merge reconciles and publishes the issue before requesting GitHub readiness",
-      "command": ["node", "scripts/flow-browser.mjs", "--merge-target-update"]
     }
   ]
 }

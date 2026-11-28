@@ -1,6 +1,9 @@
 {
   "version": 2,
   "name": "local pause and restart controls stay available during a required store outage without shared reads or writes",
+  "expectedTests": [
+    "local pause and restart controls stay available during a required store outage without shared reads or writes"
+  ],
   "command": [
     "node",
     "--test",

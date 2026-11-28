@@ -677,8 +677,9 @@ The count opens the **Action list**. It shows those actions,
 connected work, active cleanup, and recent stopped
 work that can be resumed or skipped. Completed and incomplete
 cleanup results are available on the issue page. The open list refreshes when
-the running count changes. Each entry shows its saved issue and current
-details, links to the issue and that run's output, and
+the running count changes. An issue-linked Flow block shows one summary link
+in the form `#319: Group: Inbox: Work`. Other entries show their saved issue
+and current details. Entries retain their Action output link and
 Stop, Restart, Skip, Pause issue and Steer controls. Stop interrupts an
 interruptible current response while retaining its saved work. Pause asks the
 issue to finish its current action before stopping later work; it does not
