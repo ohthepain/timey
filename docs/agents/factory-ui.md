@@ -54,7 +54,9 @@ Investigations always cover the project and use a selected branch, defaulting to
 the branch in Project settings. Optional discussion retains goals and codebase
 questions in the investigation conversation. Its ordinary route is Request,
 Investigate, Generate report, and Create Issues. Either output can be removed or
-run independently after a completed inquiry. Create Issues saves uncovered work
+run independently after a completed inquiry. Request shows the saved investigation
+prompt and additional instructions alongside **Your words** and uses them the next
+time Request runs. Create Issues saves uncovered work
 as Needs approval and links matching existing issues without changing them.
 Approval does not start work. Reports retains dated publications and evidence,
 with optional discussion below the reader. Recommended prompts sit above the

@@ -2630,7 +2630,14 @@ import { reorderedBlocks } from './flow-order.mjs';
     const open = state.view.issue.status !== 'closed';
     const disabled = open ? '' : ' disabled';
     const settings = `<label><input type="checkbox" id="retro-setting"${values.runRetro ? ' checked' : ''}${disabled}> Run a retro</label>${state.view.issue.state === 'needs-approval' ? '' : `<label><input type="checkbox" id="auto-close-setting"${flow.autoClose ? ' checked' : ''}${disabled}> Close as Fixed and remove the worktree after Factory Merge</label>`}`;
-    return `<section class="detail-section"><div class="section-label">Inputs</div><form id="request-form">${formField('wording', 'Your words', values.wording, 'The original request.', 4)}${saveRow()}</form>${settings}</section>${requestMergeBranch()}${outputsSection(block)}${definition?.prompt ? `<details class="detail-section system-prompt" data-preserve="system-prompt"><summary>System prompt</summary><div class="prompt-preview">${escape(definition.prompt)}</div></details>` : ''}${
+    const fixedInputs = (block.details ?? [])
+      .filter(({ input, fixed }) => input && fixed)
+      .map(
+        (detail) =>
+          `<label class="field">${escape(detail.label)}${readonlyInput(detail.key, detail, detail.value)}</label>`
+      )
+      .join('');
+    return `<section class="detail-section"><div class="section-label">Inputs</div><form id="request-form">${formField('wording', 'Your words', values.wording, 'The original request.', 4)}${saveRow()}</form>${fixedInputs}${settings}</section>${requestMergeBranch()}${outputsSection(block)}${definition?.prompt ? `<details class="detail-section system-prompt" data-preserve="system-prompt"><summary>System prompt</summary><div class="prompt-preview">${escape(definition.prompt)}</div></details>` : ''}${
       last
         ? `<section class="detail-section">${attemptCard(last, block.attempts.length - 1)}${
             block.attempts.length > 1
