@@ -60,9 +60,17 @@ export function readClarificationSkills(root) {
     .concat({ kind: 'value', name: 'none', label: 'No Grilling' });
 }
 
+const noteSentences = new Intl.Segmenter(undefined, { granularity: 'sentence' });
+
+function noteDiscussionTitle(text) {
+  const name = noteSentences.segment(text).containing(0)?.segment ?? text;
+  return 'Note: ' + name.trim();
+}
+
 function conversationTitle(ownership) {
   if (!ownership) return 'New conversation';
-  return ownership.kind === 'issue' ? 'Issue Discuss' : 'Investigation discussion';
+  if (ownership.kind === 'issue') return 'Issue Discuss';
+  return ownership.kind === 'night' ? 'Work All Night' : 'Investigation discussion';
 }
 
 function checkedId(id) {
@@ -107,10 +115,16 @@ function restoreChatActivity(message) {
   for (const event of message.events || []) recordChatProgress(message, event);
 }
 
+function discussionPreview(text) {
+  return String(text ?? '')
+    .split(/\n?```timey-(?:suggestion|recommendations)/, 1)[0]
+    .trimEnd();
+}
+
 function appendReplyDelta(response, { itemId, delta = '' }) {
   const stream = response.stream || { id: itemId, text: '' };
   response.stream = { id: itemId, text: (stream.id === itemId ? stream.text : '') + delta };
-  response.text = stripChatProgress(response.stream.text);
+  response.text = discussionPreview(stripChatProgress(response.stream.text));
 }
 
 function updateReplyPreview(response, { method, params = {} }) {
@@ -121,7 +135,7 @@ function updateReplyPreview(response, { method, params = {} }) {
 function setCompletedPreview(response, { item }) {
   if (item?.type !== 'agentMessage') return;
   delete response.stream;
-  response.text = isChatCommentary(item) ? '' : item.text;
+  response.text = isChatCommentary(item) ? '' : discussionPreview(item.text);
 }
 
 function retainRecommendations(session, response, result) {
@@ -245,14 +259,18 @@ export class ProjectDiscuss {
         encodeURIComponent(file.id),
     };
   }
+  presentation(session) {
+    const title = session.noteContext ? noteDiscussionTitle(session.noteContext.text) : session.title;
+    return { title, recommendations: this.recommendations(session) };
+  }
+
   retainPrototypeFiles(session, paths) {
     requireThat(!session.ownership, 'Open Project Discuss to retain a prototype.');
     const files = this.attachments(session.id, prototypeAttachmentInputs(this.service.root, paths));
     return { files: files.map((file) => this.publicAttachment(session.id, file)) };
   }
   publicSession(session) {
-    const result = copy(session);
-    result.recommendations = this.recommendations(session);
+    const result = { ...copy(session), ...this.presentation(session) };
     delete result.threadId;
     delete result.startup;
     delete result.turnId;
@@ -352,7 +370,7 @@ export class ProjectDiscuss {
       if (!session.noteContext || session.noteContext.text !== note.text) {
         const initial = !session.noteContext;
         session.noteContext = { ...session.noteContext, id: note.id, text: note.text };
-        session.title = 'Note: ' + note.text.split('\n')[0].slice(0, 72);
+        session.title = noteDiscussionTitle(note.text);
         session.messages.push({
           ...this.envelope(session, {
             text:

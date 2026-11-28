@@ -9,7 +9,7 @@ import {
   assertBlockModelAvailable,
 } from './block-models.mjs';
 import { commandLogError } from './flow-command-error.mjs';
-import { lastBlockingError, retainBlockingError, resolveBlockingErrors } from './block-errors.mjs';
+import { lastBlockingError, retainBlockingError, resolveBlockingErrors, resolveRetryErrors } from './block-errors.mjs';
 import { guardProviderWork } from './provider-runtime.mjs';
 import { withDiagnosticContext } from './diagnostic-activity.mjs';
 import { storeUnavailable } from './stores/availability.mjs';
@@ -196,7 +196,16 @@ const folderGroupActions = new Set([
   'folder-attach',
   'move-grouped-issue',
 ]);
-const folderNightActions = new Set(['folder-night-plan', 'folder-night-start', 'folder-night-stop']);
+const folderNightActions = new Set([
+  'folder-night-plan',
+  'folder-night-start',
+  'folder-night-stop',
+  'project-night-save',
+  'project-night-start',
+  'project-night-stop',
+  'project-night-group',
+  'project-night-suggest',
+]);
 const folderOperationActions = new Set(['folder-ai-search', 'folder-bulk-preview', 'folder-bulk-run']);
 const folderActions = new Set([
   'create-folder',
@@ -839,7 +848,7 @@ class IssueFlows {
         ? []
         : folderSettings.map((folder) => this.folderSettingsView(folder, folderSnapshot)),
       legacyFolders: this.legacyFolders(),
-      folderRuns: requestOnly ? {} : this.overnight.reports(),
+      ...this.overnight.workspaceView(requestOnly),
       catalog,
       catalogErrors,
       issues: index,
@@ -2506,7 +2515,7 @@ class IssueFlows {
       );
     }
     const controller = new AbortController();
-    const admitted = await this.admitAttempt(issue, flow, current, attempt, controller);
+    const admitted = await this.admitAttempt(issue, flow, current, attempt, controller, 'edit', keepPlaying);
     flow = admitted.flow;
     const owned = admitted.owned;
     owned.task = this.execute(issue, flow, current.id, attempt.id, controller, {}, definition);
@@ -2917,7 +2926,8 @@ class IssueFlows {
       block,
       attempt,
       controller,
-      input.closureId ? 'closure' : 'edit'
+      input.closureId ? 'closure' : 'edit',
+      publication === 'play'
     );
     flow = admitted.flow;
     const owned = admitted.owned;
@@ -2947,7 +2957,7 @@ class IssueFlows {
       else this.pause(issueId, 'A different block was started.');
     }
   }
-  async admitAttempt(issue, flow, block, attempt, controller, purpose = 'edit') {
+  async admitAttempt(issue, flow, block, attempt, controller, purpose = 'edit', route = false) {
     if (!['detach-blocked-child', 'reattach-child', 'attach-child'].includes(block.operation)) {
       this.groups.requireScopeStable(issue.id);
       requireThat(
@@ -2959,6 +2969,7 @@ class IssueFlows {
     const owned = { blockId: block.id, attemptId: attempt.id, controller };
     this.active.set(issue.id, owned);
     try {
+      resolveRetryErrors(flow, block.id, route);
       if (this.service.projectStores) {
         const admitted = await this.attemptMetadata(block, () =>
           this.service.projectStores.beginAttempt({
@@ -3130,7 +3141,6 @@ class IssueFlows {
         );
       this.changeAttempt(issue, blockId, attemptId, (current, saved) => {
         Object.assign(current, result, { status: result.status || 'completed', endedAt: new Date().toISOString() });
-        if (current.status === 'completed') resolveBlockingErrors(saved, blockId, ['play']);
         outcome = current;
         if (result.workspace) saved.workspace = result.workspace;
         if (block.kind === 'publish' && result.result?.pr && result.result?.target && !saved.destination?.pr) {

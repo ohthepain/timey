@@ -44,12 +44,15 @@
     ]);
     for (const [tab, chat] of chats) chat.setVisible(visible && projectTab === tab);
   }
-  window.createProjectHomeUI = ({ request, post, navigateHome, navigateIssue, changed }) => {
-    const discuss = window.createProjectDiscussUI({ request, post });
+  window.createProjectHomeUI = ({ request, post, navigateHome, navigateIssue, changed, nightIndex }) => {
+    const discuss = window.createProjectDiscussUI({ request, post, titleChanged: syncDiscussionTitle });
+    const night = window.createProjectNightUI({ request, post, changed, index: nightIndex });
     const reports = window.createProjectReportsUI({ request, post });
     window.createProjectAdminUI({ request, post });
     const tabs = [...document.querySelectorAll('[role="tab"][data-project-tab]')];
-    const labels = new Map(tabs.map((button) => [button.dataset.projectTab, button.textContent.trim()]));
+    const labels = new Map(
+      tabs.map((button) => [button.dataset.projectTab, button.getAttribute('aria-label') || button.textContent.trim()])
+    );
     let projectTab;
     const state = {
       visible: false,
@@ -84,6 +87,7 @@
       $('project-issues').hidden = tab !== 'issues';
       $('project-admin').hidden = tab !== 'admin';
       $('project-automate').hidden = tab !== 'automate';
+      night.setVisible(state.visible && tab === 'night');
       updateChatVisibility(state.visible, projectTab, discuss, reports);
       updateTabSelection();
       loadIssuesFrame();
@@ -102,17 +106,20 @@
         localStorage.getItem('factory.project-issues.detail-width') || configuredWidth || responsiveWidth
       );
     }
-    const issuesFrame = document.querySelector('#project-issues iframe');
-    issuesFrame?.addEventListener('load', syncIssueDetailWidth);
-    syncIssueDetailWidth();
-    window.addEventListener('resize', syncIssueDetailWidth);
-    const workspace = document.querySelector('.workspace');
-    if (workspace && window.MutationObserver) {
-      new MutationObserver(syncIssueDetailWidth).observe(workspace, {
-        attributes: true,
-        attributeFilter: ['style'],
-      });
+    function bindIssueDetailWidth() {
+      const issuesFrame = document.querySelector('#project-issues iframe');
+      issuesFrame?.addEventListener('load', syncIssueDetailWidth);
+      syncIssueDetailWidth();
+      window.addEventListener('resize', syncIssueDetailWidth);
+      const workspace = document.querySelector('.workspace');
+      if (workspace && window.MutationObserver) {
+        new MutationObserver(syncIssueDetailWidth).observe(workspace, {
+          attributes: true,
+          attributeFilter: ['style'],
+        });
+      }
     }
+    bindIssueDetailWidth();
 
     function investigationSessions() {
       return state.data?.investigations || [];
@@ -166,9 +173,13 @@
       const content = markup || '<p class="muted">No saved sessions yet.</p>';
       window.timeyView.render($(id), content, 'home-runs:' + id);
     }
+    function syncDiscussionTitle(title) {
+      if (state.visible && projectTab === 'discuss') document.title = title || $('home-title').textContent;
+    }
     function renderHome() {
       const { project, stats } = state.data;
       $('home-title').textContent = project.name;
+      syncDiscussionTitle(discuss.noteTitle());
       $('home-freshness').textContent = state.data.storeStatus?.checkedAt
         ? 'Shared data last checked ' +
           new Date(state.data.storeStatus.checkedAt).toLocaleString() +
@@ -296,11 +307,38 @@
       setRunButtons('automate', session);
       renderMessages('home-automate-messages', session.messages, session.id, busy(session) || state.responding);
       automateReplyControls(session);
+      renderAutomatePrompts(session);
       $('home-automate-coverage').textContent = coverageText(session.history);
       $('home-automate-review').hidden = !session.draft;
       fillAutomateDraft(session, fillDraft);
       automateReviewControls(session);
     }
+    function automatePrompts(session) {
+      if (['running', 'starting', 'stopping', 'applied'].includes(session.status)) return [];
+      const { recommendations = [] } = session.messages.at(-1) || {};
+      return recommendations;
+    }
+    function renderAutomatePrompts(session) {
+      const prompts = automatePrompts(session);
+      window.timeyView.render(
+        $('home-automate-recommendations'),
+        prompts
+          .map(
+            ({ label, id }) =>
+              `<button class="small-button" type="button" data-prompt-id="${escape(id)}">${escape(label)}</button>`
+          )
+          .join('')
+      );
+    }
+    function chooseAutomatePrompt(event) {
+      const id = event.target.closest('[data-prompt-id]')?.dataset.promptId;
+      const option = automatePrompts(state.automate).find((entry) => entry.id === id);
+      if (!option) return;
+      $('home-automate-message').value = option.prompt;
+      $('home-automate-reply').requestSubmit();
+    }
+    $('home-automate-recommendations').addEventListener('click', chooseAutomatePrompt);
+
     function fillAutomateDraft(session, force) {
       if (!session.draft) return;
       const fingerprint = JSON.stringify([session.id, session.draft.content, session.draft.basis]);
@@ -468,6 +506,8 @@
     }, 2000);
     return {
       isVisible: () => state.visible,
+      discussionTitle: discuss.noteTitle,
+      discussionTitle: () => discuss.noteTitle() || $('home-title').textContent,
       title: () => (projectTab === 'home' ? 'Project Home' : labels.get(projectTab)),
       selectTab: selectProjectTab,
       setVisible(value) {
@@ -477,6 +517,7 @@
         updateTabSelection();
         updateChatVisibility(state.visible, projectTab, discuss, reports);
         loadIssuesFrame();
+        night.setVisible(value && projectTab === 'night');
         if (value && !wasVisible) void refresh();
       },
       openIssuesTab() {

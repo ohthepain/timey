@@ -2,7 +2,39 @@ import { randomUUID } from 'node:crypto';
 import { redactValue } from './activity.mjs';
 
 const failed = new Set(['failed', 'blocked', 'uncertain']);
-const succeeded = new Set(['completed', 'succeeded', 'success', 'skipped']);
+const admitted = new Set([
+  'running',
+  'in-progress',
+  'stopping',
+  'stopped',
+  'awaiting-input',
+  'completed',
+  'succeeded',
+  'success',
+  'skipped',
+  ...failed,
+]);
+const retriedOperations = new Set([
+  'start',
+  'continue',
+  'play',
+  'run-request',
+  'Publish',
+  'preview-publish',
+  'confirm-publish',
+]);
+
+function matchesRetry(error, blockId, includeRoute) {
+  if (error.blockId) return error.blockId === blockId && retriedOperations.has(error.operation);
+  return includeRoute && error.operation === 'play';
+}
+
+export function resolveRetryErrors(flow, blockId, includeRoute) {
+  for (const error of flow.blockingErrors || [])
+    if ([!error.resolvedAt, matchesRetry(error, blockId, includeRoute)].every(Boolean))
+      error.resolvedAt = new Date().toISOString();
+}
+
 export function retainBlockingError(flow, { action, blockId, error, model }) {
   const block = flow.blocks.find((entry) => entry.id === blockId);
   const record = {
@@ -30,7 +62,7 @@ export function lastBlockingError(flow) {
   const errors = (flow.blockingErrors || []).filter(
     (error) => !error.resolvedAt && (!error.blockId || blocks.has(error.blockId))
   );
-  for (const block of flow.blocks) errors.push(...attemptErrors(block, flow.closing?.skipRetro));
+  for (const block of visibleBlocks(flow)) errors.push(...attemptErrors(block));
   if (flow.closing?.error && !flow.closing.complete)
     errors.push({
       operation: 'Close',
@@ -40,13 +72,19 @@ export function lastBlockingError(flow) {
   return errors.sort((a, b) => (a.at || '').localeCompare(b.at || '')).at(-1) || null;
 }
 
-function attemptErrors(block, skipRetro) {
-  if (block.kind === 'retro' && skipRetro) return [];
-  const attempts = block.attempts || [];
-  const lastSuccess = attempts.findLastIndex((attempt) => succeeded.has(attempt.status));
-  return attempts
-    .slice(lastSuccess + 1)
-    .filter((attempt) => !attempt.invalidatedAt && failed.has(attempt.status))
+function visibleBlocks(flow) {
+  return flow.closing?.skipRetro ? flow.blocks.filter(({ kind }) => kind !== 'retro') : flow.blocks;
+}
+
+function currentAttempt(attempt) {
+  return !attempt.invalidatedAt && admitted.has(attempt.status);
+}
+
+function attemptErrors(block) {
+  const attempts = (block.attempts || []).filter(currentAttempt);
+  const latest = new Map(attempts.map((attempt) => [attempt.sequentialChild?.id, attempt]));
+  return [...latest.values()]
+    .filter((attempt) => failed.has(attempt.status))
     .map((attempt) => attemptError(block, attempt));
 }
 

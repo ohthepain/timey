@@ -21,7 +21,17 @@ export async function investigationReportsBrowserChecks({ page, service, project
     createProvider: () => ({
       async turn(_session, message) {
         calls.push(message);
-        return { text: 'Retained report answer.', suggestion: 'Explain the evidence' };
+        return {
+          text: 'Retained report answer.',
+          suggestion: 'Explain the evidence',
+          recommendations: [
+            {
+              id: 'context-0',
+              label: 'Review the report evidence',
+              prompt: 'Which evidence supports the latest finding?',
+            },
+          ],
+        };
       },
       async stop() {},
       close() {},
@@ -309,6 +319,11 @@ export async function investigationReportsBrowserChecks({ page, service, project
     (n) => n === 2,
     'The second report question did not send.'
   );
+  const contextualPrompts = page.locator('#report-discuss-recommendations').getByRole('button');
+  await contextualPrompts.filter({ hasText: 'Review the report evidence' }).waitFor();
+  const reportPrompts = await contextualPrompts.allTextContents();
+  assert.deepEqual(reportPrompts, ['Review the report evidence']);
+  writeFileSync(join(output, 'report-prompts.json'), JSON.stringify({ prompts: reportPrompts }, null, 2));
   assert.equal(calls[1].reportContext.reportId, second.id);
   assert.equal(calls[0].reportContext.reportId, first.id, 'Earlier messages retain their original report context.');
   async function dictate(text) {

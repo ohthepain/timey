@@ -32,6 +32,8 @@ export async function projectDiscussBrowserChecks({ page, service, project, poll
     createProvider: () => ({
       async turn(session, message, { signal, event, retain }) {
         calls.push(message);
+        const prompted = contextFixture(message.text);
+        if (prompted) return prompted;
         if (message.text === 'Fail response') throw Error('Fixture provider failure');
         retain({ threadId: 'fixture-' + session.id, startup: { status: 'ready' } });
         event({ method: 'item/agentMessage/delta', params: { delta: 'Live partial response' } });
@@ -521,6 +523,7 @@ export async function projectDiscussBrowserChecks({ page, service, project, poll
   await removeLateImage();
 
   await conversationTabOverflowChecks({ page, service, project, screenshot, attachedConversation });
+  await checkContextualPrompts({ page, project, screenshot });
 }
 
 async function conversationTabOverflowChecks({ page, service, project, screenshot, attachedConversation }) {
@@ -590,4 +593,61 @@ async function conversationTabOverflowChecks({ page, service, project, screensho
     await screenshot('project-discuss-tabs-' + width);
   }
   await page.setViewportSize({ width: 1440, height: 960 });
+}
+
+function contextFixture(text) {
+  const prompt = (label, text, index) => ({ id: 'context-' + index, label, prompt: text });
+  const fixtures = new Map([
+    [
+      'Help debug the scroll reset.',
+      {
+        text: 'The reset and the streaming regression are distinct paths.',
+        recommendations: [
+          prompt('Trace the scroll reset', 'Trace what resets the scroll position.', 0),
+          prompt('Define a streaming check', 'Define a regression check for streaming replies.', 1),
+        ],
+      },
+    ],
+    [
+      'Trace what resets the scroll position.',
+      {
+        text: 'The reset is explained. Only the streaming check remains.',
+        recommendations: [prompt('Define a streaming check', 'Define a regression check for streaming replies.', 0)],
+      },
+    ],
+    [
+      'Define a regression check for streaming replies.',
+      {
+        text: 'The streaming check is defined. The investigation is complete.',
+        recommendations: [],
+      },
+    ],
+  ]);
+  return fixtures.get(text);
+}
+
+async function checkContextualPrompts({ page, project, screenshot }) {
+  await page.locator('#discuss-new').click();
+  const draft = page.locator('#discuss-draft');
+  const buttons = page.locator('#discuss-recommendations').getByRole('button');
+  await draft.fill('Help debug the scroll reset.');
+  await page.locator('#discuss-send').click();
+  await buttons.filter({ hasText: 'Define a streaming check' }).waitFor();
+  const multiple = await buttons.allTextContents();
+  assert.deepEqual(multiple, ['Trace the scroll reset', 'Define a streaming check']);
+  await screenshot('contextual-prompts-multiple');
+  await buttons.filter({ hasText: 'Trace the scroll reset' }).click();
+  await page.getByText('The reset is explained. Only the streaming check remains.', { exact: true }).waitFor();
+  const one = await buttons.allTextContents();
+  assert.deepEqual(one, ['Define a streaming check']);
+  await buttons.first().click();
+  await page.getByText('The streaming check is defined. The investigation is complete.', { exact: true }).waitFor();
+  const finished = await buttons.allTextContents();
+  assert.deepEqual(finished, []);
+  const title = await page.title();
+  assert.equal(title, 'project');
+  writeFileSync(
+    join(dirname(project), 'contextual-prompts.json'),
+    JSON.stringify({ title, multiple, one, finished }, null, 2)
+  );
 }

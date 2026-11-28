@@ -102,6 +102,8 @@
       timer;
     const localDrafts = new Map();
     const session = () => data?.selected;
+    const noteTitle = () => (session()?.noteContext ? session().title : '');
+
     const canDeleteAndAdvance = () => session()?.recommendations?.some(({ id }) => id === 'dnextnote');
     let setup = null;
     async function discoverSkills() {
@@ -202,7 +204,12 @@
         skillComposer.restore(saved.skills || value.selected?.settings?.skills || []);
         editId = null;
       }
-      render();
+      renderSession(oldId);
+    }
+    function renderSession(oldId) {
+      view.keepChatScroll(log, render, oldId === selectedId && !openingScroll);
+      scrollOpeningHistory();
+      options.titleChanged?.(noteTitle());
     }
     function openNoteDiscussion(id) {
       const url = new URL(location.href);
@@ -436,7 +443,6 @@
       renderSuggestion();
       renderRecommendations();
       updateControls();
-      scrollOpeningHistory();
     }
     function scrollOpeningHistory() {
       if (!openingScroll || !visible || !session()) return;
@@ -468,27 +474,42 @@
         'discuss-attachments:' + selectedId
       );
     }
-    function renderRecommendations() {
-      const prompts = session()?.recommendations || [];
+    function isNoteAction({ id }) {
+      return Boolean(session()?.noteContext && !id.startsWith('context-'));
+    }
+    function renderPromptButtons(id, prompts) {
       view.render(
-        byId('discuss-recommendations'),
+        byId(id),
         prompts
           .map(
             ({ id, label }) =>
               `<button type="button" class="small-button" data-prompt-id="${escape(id)}">${escape(label)}</button>`
           )
           .join(''),
-        'discuss-recommendations:' + selectedId
+        id + ':' + selectedId
       );
     }
-    function chooseRecommendation(id) {
-      const recommendation = session()?.recommendations?.find((entry) => entry.id === id);
+    function renderRecommendations() {
+      const prompts = session()?.recommendations || [];
+      renderPromptButtons('discuss-note-actions', prompts.filter(isNoteAction));
+      renderPromptButtons(
+        'discuss-recommendations',
+        prompts.filter((entry) => !isNoteAction(entry))
+      );
+    }
+    function recommendationForEvent(event) {
+      const clicked = event.target.closest('[data-prompt-id]')?.dataset.promptId;
+      return session()?.recommendations?.find(({ id }) => id === clicked);
+    }
+    function chooseRecommendation(event) {
+      if (pending || creating) return;
+      const recommendation = recommendationForEvent(event);
       if (recommendation) void sendRecommendation(recommendation);
     }
-    byId('discuss-recommendations').addEventListener('click', (event) => {
-      if (pending || creating) return;
-      chooseRecommendation(event.target.closest('[data-prompt-id]')?.dataset.promptId);
-    });
+    ['discuss-note-actions', 'discuss-recommendations'].forEach((id) =>
+      byId(id).addEventListener('click', chooseRecommendation)
+    );
+
     async function sendRecommendation({ id, prompt }) {
       const conversationId = selectedId;
       await Promise.all([draftSave.catch(() => {}), settingsSave.catch(() => {})]);
@@ -499,8 +520,7 @@
       void saveDraft();
     }
     function renderSuggestion() {
-      const suggestion =
-        [...(session()?.messages || [])].reverse().find((message) => message.suggestion)?.suggestion || '';
+      const suggestion = session()?.messages?.at(-1)?.suggestion || '';
       const node = byId('discuss-suggestion');
       node.textContent = !draft.value && !editId ? suggestion : '';
       node.hidden = Boolean(draft.value || editId || !suggestion);
@@ -872,6 +892,7 @@
         root.hidden = !value;
       },
       refresh,
+      noteTitle,
       draft() {
         return draft.value;
       },

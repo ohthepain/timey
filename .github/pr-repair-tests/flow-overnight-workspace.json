@@ -1,0 +1,16 @@
+{
+  "version": 2,
+  "name": "Flow workspace exposes overnight reports and drafts only in the full view",
+  "command": [
+    "node",
+    "--test",
+    "--test-name-pattern=^Flow workspace exposes overnight reports and drafts only in the full view$",
+    "scripts/flow.check.mjs"
+  ],
+  "source": {
+    "runId": "46062003160",
+    "jobId": "140719106293",
+    "checkout": "6c41f7ad52ace1a19fd0cfdb05c608014896883c",
+    "tree": "da144aef2f16918840a6bc27aa913c251808694f"
+  }
+}

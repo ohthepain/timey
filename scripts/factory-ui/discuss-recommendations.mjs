@@ -86,10 +86,18 @@ function baseRecommendations(root, session, skills) {
   return [];
 }
 
+function contextualPrompts({ messages }) {
+  const { role, status, recommendations = [] } = messages.at(-1) || {};
+  return role === 'assistant' && status === 'completed' ? recommendations : [];
+}
+
+function showConversationControls(session) {
+  return session.noteContext || !session.messages.some(({ status }) => status === 'completed');
+}
+
 export function discussionRecommendations(root, session, skills) {
-  const latest = session.messages.findLast(({ role, status }) => role === 'assistant' && status === 'completed');
-  const contextual = latest?.recommendations || [];
-  return [...baseRecommendations(root, session, skills), ...contextual];
+  const controls = showConversationControls(session) ? baseRecommendations(root, session, skills) : [];
+  return [...contextualPrompts(session), ...controls];
 }
 
 function noteDirection(id) {
