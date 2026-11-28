@@ -385,12 +385,16 @@ The production closed issues are reserved for the user's own archive test and
 must not be used by these checks.
 
 `node scripts/flow-browser.mjs --interface-state` checks expanded tool activity,
-editor size, drafts, caret and scroll preservation through polling, same-tab
-navigation, and reload. It drags a real selection across an issue poll and checks
-the copied clipboard text. Different requests and new tabs retain independent
-state. The fixture uses disposable conversations and issues and starts no model
-work. `node --test scripts/interface-state.check.mjs` reproduces the original
-Discuss collapse and checks selection through growing and replaced activity.
+editor size, drafts, caret and scroll preservation through refreshes, same-tab
+navigation, and reload. It checks that an idle issue sends no snapshot or UI
+source requests after its initial loads and the live stream's catch-up read.
+The idle window keeps the stream open and gates delayed fixture notifications.
+Later edits exercise live notifications. The scenario drags a real selection
+across an issue refresh and checks the copied clipboard text. Different requests
+and new tabs retain independent state. The fixture uses disposable conversations
+and issues and starts no model work.
+`node --test scripts/interface-state.check.mjs` reproduces the original Discuss
+collapse and checks selection through growing and replaced activity.
 
 `node scripts/flow-browser.mjs --stalled-flow-action` checks that a withheld Flow
 action response refreshes the issue and re-enables its controls without
