@@ -126,10 +126,6 @@ export async function chatProgressBrowserChecks({ page, service, project, poll, 
     };
     await page.goto('/?issue=' + issue.id + '&block=' + block.id);
     await reopen();
-    const userNote = 'Retain the live progress while I add a note.';
-    await page.locator('#comment-form [name="comment"]').fill(userNote);
-    await page.locator('#comment-form button[type="submit"]').click();
-    results.blockUserBox = await assertUserMessageBox(page.locator('#inspector-body'), userNote);
     results.issue = await exerciseChat({
       page,
       screenshot,
@@ -147,6 +143,12 @@ export async function chatProgressBrowserChecks({ page, service, project, poll, 
         flowDone.resolve({ summary: 'Final progress proof reply.' });
       },
     });
+    await poll(() => !service.flows.active.has(issue.id), Boolean, 'Issue work released its claim');
+    const userNote = 'Retain the completed progress with this note.';
+    await page.locator('#comment-form [name="comment"]').fill(userNote);
+    await page.locator('#comment-form button[type="submit"]').click();
+    results.blockUserBox = await assertUserMessageBox(page.locator('#inspector-body'), userNote);
+    await screenshot('block-conversation-user-message');
   } finally {
     flowDone.resolve({ summary: 'Fixture cleanup.' });
     service.flows.executor = previous;

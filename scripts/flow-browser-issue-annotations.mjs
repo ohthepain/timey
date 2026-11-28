@@ -146,6 +146,8 @@ async function checkListControls(page, output, poll) {
   await frame
     .getByRole('navigation', { name: 'Issues', exact: true })
     .screenshot({ path: join(output, 'annotation-badge-filter.png') });
+  await frame.locator(`[data-issue-row="${child}"] .issue-sidebar-link`).click();
+  await page.locator('#issue-heading').getByRole('heading', { name: titles[child], exact: true }).waitFor();
   return { normal, ordered, filters: filterObservations };
 }
 
@@ -210,12 +212,12 @@ export async function issueAnnotationBrowserChecks({ page, project, root, output
       }
       await openIssue(page, child);
       const toggle = await checkAnnotationToggle(page, output);
+      writeFileSync(join(output, 'annotation-toggle.json'), JSON.stringify(toggle, null, 2) + '\n');
       const first = await addAnnotation(page, 'blocked', 'Waiting on an API decision.', master);
       const second = await addAnnotation(page, 'blocked', 'Missing a fixture.');
       const comment = await addAnnotation(page, 'comment', 'The comment stays active.');
       const both = await badgeCounts(page, 1);
       const list = await checkListControls(page, output, poll);
-      await openIssue(page, child);
       await page.getByRole('button', { name: 'Annotations', exact: true }).click();
       const clearedFirst = await clearAnnotation(page, first);
       const remaining = await badgeCounts(page, 1);
