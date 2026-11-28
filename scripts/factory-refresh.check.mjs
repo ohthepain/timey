@@ -43,6 +43,7 @@ test('Flow navigation loads another issue while an earlier block check is pendin
     CustomEvent: window.CustomEvent,
     AbortController: window.AbortController,
     AbortSignal: window.AbortSignal,
+    DOMException: window.DOMException,
     $,
     serverControlUI: { isWaitingForServer: () => false },
     json: async (path) => {

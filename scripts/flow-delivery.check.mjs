@@ -7,6 +7,7 @@ import YAML from 'yaml';
 import { deliveryFixture } from './factory-workflow-fixture.mjs';
 import { FactoryUI } from './factory-test-service.mjs';
 import { flowClosureArtifact, prepareFlowPublication, publishFlowPR } from './factory-ui/flow-delivery.mjs';
+import { groupClosureProof } from './factory-ui/flow-group-closure.mjs';
 import { createIssueFlows } from './factory-ui/flow-service.mjs';
 import { decideIssue } from './factory-ui/issue-decision.mjs';
 import { readQueue } from './factory-ui/data.mjs';
@@ -436,7 +437,7 @@ test('Close retains browser proof only for the delivered repair commit and tree'
     [{ ...repairBrowserProof, sourceTree: 'earlier-tree' }, false],
     [repairBrowserProof, true],
   ]) {
-    writeFileSync(receipt, JSON.stringify({ repairBrowserProof: proof }));
+    writeFileSync(receipt, JSON.stringify({ candidate: { commit: head, tree }, repairBrowserProof: proof }));
     result.deliveryReceipt = { path: receipt, sha256: digest(readFileSync(receipt)) };
     const closure = await flowClosureArtifact(f.service, f.ctx, f.workspace, f.folder, f.options);
     const manifest = JSON.parse(readFileSync(join(f.folder, 'merged-delivery.json')));
@@ -448,7 +449,7 @@ test('Close retains browser proof only for the delivered repair commit and tree'
   }
 });
 
-test('Close retains the original Work file and exact candidate browser replay without a rerun', async (t) => {
+test('Close retains exact delivery evidence when the local target checkout lags', async (t) => {
   const f = fixture(t);
   const { head, tree } = f.ctx.flow.blocks[0].attempts[0].result;
   const retain = (name, value) => {
@@ -464,10 +465,35 @@ test('Close retains the original Work file and exact candidate browser replay wi
       { id: 'initial-work', status: 'completed', result: { tree: 'earlier-tree' }, artifacts: { files: { proof } } },
     ],
   });
-  const result = { pr: 17, head, revision: 'merge-revision' };
+  const observedCheckoutRevision = f.queue.git('rev-parse', 'HEAD');
+  f.queue.git('update-ref', 'refs/heads/dev', observedCheckoutRevision);
+  const deliveredMergeRevision = f.source.git(
+    'commit-tree',
+    tree,
+    '-p',
+    f.workspace.base,
+    '-p',
+    head,
+    '-m',
+    'Merge PR'
+  );
+  const inspect = f.provider.inspectExternalDelivery;
+  f.provider.inspectExternalDelivery = async (number) => ({
+    ...(await inspect(number)),
+    mergeCommit: deliveredMergeRevision,
+    targetRevision: deliveredMergeRevision,
+  });
+  const result = { pr: 17, head, revision: deliveredMergeRevision };
+  f.ctx.flow.merged = { ...result };
+  const otherResult = { ...result };
   f.ctx.flow.blocks.push({ kind: 'merge', attempts: [{ status: 'completed', result }] });
+  f.ctx.flow.retiredBlocks = [{ kind: 'merge', attempts: [{ status: 'completed', result: otherResult }] }];
+  const child = { id: 'fixture-child', title: 'Review delivery', requestedProof: 'Show the browser check.' };
+  const groupedIssue = { ...f.ctx.issue, issue_group: { children: [child] } };
+  f.queue.git('fetch', f.source.root, head);
   const command = ['node', 'scripts/flow-browser.mjs', '--asset-storage'];
   const log = retain('command.log', { observation: 'Fixture browser exited zero.' });
+  const screenshot = retain('asset-storage.png', 'Simulated screenshot bytes');
   for (const [testedTree, retained] of [
     ['wrong-tree', false],
     [tree, true],
@@ -476,18 +502,56 @@ test('Close retains the original Work file and exact candidate browser replay wi
       passed: true,
       candidate: { revision: head, tree: testedTree, clean: true },
     });
-    const browser = { candidate: { head, tree }, command, exit: 0, log, results };
+    const browser = {
+      candidate: { head, tree },
+      command,
+      exit: 0,
+      log,
+      results,
+      files: [screenshot],
+      children: [{ id: child.id, checks: [command] }],
+    };
     result.deliveryReceipt = retain('receipt.json', { candidate: { commit: head, tree }, browser });
+    otherResult.deliveryReceipt = retain('wrong-receipt.json', { candidate: { commit: head, tree: 'wrong-tree' } });
     await flowClosureArtifact(f.service, f.ctx, f.workspace, f.folder, f.options);
     const manifest = JSON.parse(readFileSync(join(f.folder, 'merged-delivery.json')));
+    assert.deepEqual(manifest.deliveryReceipt, result.deliveryReceipt);
     assert.deepEqual(manifest.browser, retained ? browser : undefined);
+    const snapshot = groupClosureProof(f.root, groupedIssue, f.ctx.flow, f.workspace.checkout, head);
+    assert.deepEqual(snapshot.children[0].browserReplay?.results, retained ? results : undefined);
     assert.equal(manifest.workProof.attempts[0].status, 'different-tree');
     assert.deepEqual(manifest.workProof.attempts[0].file, proof);
   }
   await f.close();
   const [closed] = readQueue(f.root, { location: 'closed', issueId: f.ctx.issue.id }).issues;
-  assert.equal(closed.accepted_result.verification_rerun, false);
-  assert.ok(closed.accepted_result.evidence.some(({ sha256 }) => sha256 === result.deliveryReceipt.sha256));
+  const accepted = closed.accepted_result;
+  assert.equal(accepted.revision, head);
+  assert.equal(accepted.observed_project_revision, observedCheckoutRevision);
+  assert.equal(accepted.verification_rerun, false);
+  const retained = new Map(accepted.evidence.map((file) => [file.source, file]));
+  const manifest = JSON.parse(readFileSync(retained.get(join(f.folder, 'merged-delivery.json')).path));
+  assert.equal(manifest.head, head);
+  assert.equal(manifest.candidateTree, tree);
+  assert.equal(manifest.deliveredMergeRevision, deliveredMergeRevision);
+  assert.equal(manifest.observedCheckoutRevision, observedCheckoutRevision);
+  assert.equal(manifest.verificationRerun, false);
+  assert.notEqual(observedCheckoutRevision, deliveredMergeRevision);
+  for (const file of [proof, result.deliveryReceipt, manifest.browser.log, manifest.browser.results, screenshot]) {
+    assert.equal(digest(readFileSync(retained.get(file.path).path)), file.sha256);
+  }
+  assert.equal(retained.has(otherResult.deliveryReceipt.path), false);
+  assert.deepEqual(f.calls, []);
+  t.diagnostic(
+    JSON.stringify({
+      acceptedCandidate: { head, tree },
+      deliveredMergeRevision,
+      observedCheckoutRevision,
+      verificationRerun: accepted.verification_rerun,
+      receiptSha256: result.deliveryReceipt.sha256,
+      browserEvidenceSha256: [manifest.browser.log, manifest.browser.results, screenshot].map(({ sha256 }) => sha256),
+      workProofSha256: proof.sha256,
+    })
+  );
 });
 
 function githubClosureFixture(f, checks) {

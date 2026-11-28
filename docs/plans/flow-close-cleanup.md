@@ -33,6 +33,11 @@ Agreed design for the Factory issue flow.
 - Close saves the disposition before Cleanup starts. A failed deletion leaves
   the issue Closed. Cleanup retains each resource's result and can retry an
   incomplete deletion without repeating Close.
+- For a merged PR, Close retains the delivery receipt that matches the accepted
+  commit and tree, alongside Work proof and available matching browser evidence.
+  The saved merged-delivery record identifies the observed project checkout and
+  delivered merge revisions separately. Close reads the recorded checks without
+  rerunning them.
 - In the Close dialog, **Run Retro before Cleanup** starts with the issue's
   Request setting for Fixed and starts unchecked for every other reason.
   You can change it for this closure.

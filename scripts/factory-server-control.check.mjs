@@ -210,6 +210,7 @@ test('real restart changes the listener PID and preserves existing chat and prog
   const installed = gitFixture(t, 'restart-installed-');
   installed.root = realpathSync(installed.root);
   cpSync(resolve('scripts'), join(installed.root, 'scripts'), { recursive: true });
+  cpSync(resolve('.github/pr-repair-tests'), join(installed.root, '.github/pr-repair-tests'), { recursive: true });
   writeFileSync(join(installed.root, 'package.json'), '{"type":"module"}');
   writeFileSync(join(installed.root, '.gitignore'), 'node_modules\n');
   symlinkSync(installedDependencies(), join(installed.root, 'node_modules'), 'dir');

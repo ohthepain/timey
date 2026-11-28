@@ -28,7 +28,7 @@ const cases = [
   },
 ];
 
-export async function retroReportBrowserChecks({ page, project, service, output, root, poll }) {
+export async function retroReportBrowserChecks({ page, project, service, output, root, poll, candidate, runner }) {
   return withBrowserScenarioFixture({ project, service }, async () => {
     initializeProjectLifecycle(service, { digest: readProjectSettings(project).lifecycle.digest });
     installBrowserHumanInput(project, root);
@@ -54,13 +54,12 @@ export async function retroReportBrowserChecks({ page, project, service, output,
       await writeBrowserIssue(service, { id, title, body: request });
       const checkout = await addCheckout(flows, project, id);
       await closeWithRetro(page, id);
-      await poll(
-        () => flows.read(flows.selected(id)).closing?.complete,
-        Boolean,
-        'Retro and Cleanup did not finish. ' + id
-      );
+      await poll(() => !flows.closureBusy(id), Boolean, 'Closure is still running. ' + id, 30_000);
+      const issue = flows.selected(id);
+      const { closing } = flows.read(issue);
+      assert.equal(closing?.complete, true, 'Retro and Cleanup did not finish. ' + id + '\n' + JSON.stringify(closing));
       assert.equal(existsSync(checkout), false, 'Cleanup removed the actual fixture worktree.');
-      assert.equal(flows.selected(id).location, 'closed');
+      assert.equal(issue.location, 'closed');
       const screenshot = 'retro-report-' + name + '.png';
       const report = await openReport(page, id);
       await report.getByText(request, { exact: true }).waitFor();
@@ -76,7 +75,15 @@ export async function retroReportBrowserChecks({ page, project, service, output,
       join(output, 'retro-report.json'),
       JSON.stringify(
         {
-          sourceCommit: git(root, 'rev-parse', 'HEAD'),
+          sourceCommit: candidate.revision,
+          sourceTree: candidate.tree,
+          sourceClean: candidate.clean,
+          sourceEnvironment: {
+            ...runner,
+            platform: process.platform,
+            arch: process.arch,
+            viewport: page.viewportSize(),
+          },
           fixture: 'Only the Retro provider reply is simulated. Factory closes the local fixture and runs Cleanup.',
           observations,
         },
