@@ -85,6 +85,14 @@ mapping is shown as a shared replay. Close and Retro flag missing and earlier
 Work proof alongside any replay. A passing fixture run with a dirty parent
 checkout stays in the repair history with that qualification.
 
+Merge retains a timing record with the candidate and target revisions, CI run
+and attempt IDs, and repair attempt and turn IDs. It measures target refreshes,
+observed CI queues and execution, failure evidence collection, repairs, and
+merge confirmation. The queue interval starts at GitHub's workflow creation
+for an initial run. The execution interval spans observed jobs. The record
+labels missing endpoints and unattributed time, and counts overlapping
+intervals once when reconciling total elapsed time. Retro links to this record.
+
 The focused Merge and Close executor checks exercise target drift, retrieval of
 the replay log by hash, and a Close with no rerun. The PR #141 regression fixture
 uses the recorded Git identities and reconstructs the evidence structure with
@@ -586,6 +594,9 @@ When the PR repair plan includes the `flow-integration` suite, its named repair
 cases run first and the six shared checks follow in their recorded order. The
 shared plan lives at `scripts/flow-integration-tests.json` so it travels with the
 installed Factory server and is also available to the CI runner.
+Factory's compatibility preflight also imports shared records from
+`.github/pr-repair-tests/`. Deployment and restart fixtures that copy the server
+source include this directory so they exercise the same imports as an installed checkout.
 A named Flow browser check can include one `--ci-part` flag to use the same
 fixture setup as that GitHub job.
 `node scripts/flow-browser.mjs --ci-part=2 --edit-destination --issue-playback --issue-header-close`

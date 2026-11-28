@@ -1957,6 +1957,84 @@ test('Merge repairs a target conflict before requesting GitHub readiness', async
   assert.equal(readFileSync(join(checkout, 'source.txt'), 'utf8'), 'Issue and target changes.\n');
 });
 
+test('Merge runs focused compatibility checks on the combined candidate before pushing it', async (t) => {
+  const runs = [];
+  let repaired = false;
+  const f = mergeFixture(t, {
+    browser(input) {
+      const { args, cwd, log } = input;
+      const head = f.git('-C', cwd, 'rev-parse', 'HEAD');
+      const tree = f.git('-C', cwd, 'rev-parse', 'HEAD^{tree}');
+      runs.push({ args, head, tree });
+      assert.equal(f.git('-C', cwd, 'merge-base', head, target), target);
+      assert.deepEqual(f.observations, []);
+      if (args[0] === '--test') {
+        const name = args[1].slice('--test-name-pattern=^'.length, -1);
+        return writeFileSync(log, '✔ ' + name + '\n');
+      }
+      const passed = !args.includes('--block-models') || repaired;
+      writeBrowserEvidenceFixture(input, {
+        head,
+        tree,
+        scenarios: [{ name: 'Compatibility fixture', passed, error: passed ? undefined : 'Header wraps incorrectly.' }],
+        files: { 'fixture.png': 'Rendered fixture' },
+      });
+    },
+  });
+  await f.run('understand');
+  const { checkout } = f.flow.workspace;
+  const change = (root, path, text) => {
+    mkdirSync(dirname(join(root, path)), { recursive: true });
+    writeFileSync(join(root, path), text);
+    f.git('-C', root, 'add', path);
+    f.git('-C', root, 'commit', '-m', 'Change ' + path);
+  };
+  change(checkout, 'scripts/factory-ui/http.mjs', 'Retire a workspace route.\n');
+  change(checkout, 'scripts/factory-ui/project-discuss.mjs', 'Update temporary Discuss.\n');
+  const workHead = f.git('-C', checkout, 'rev-parse', 'HEAD');
+  change(f.root, 'scripts/factory-ui/flow.html', 'A narrower issue header.\n');
+  const target = f.git('rev-parse', 'dev');
+  const turn = f.connection.turn.bind(f.connection);
+  f.connection.turn = async (...args) => {
+    assert.match(args[2], /Header wraps incorrectly/);
+    assert.deepEqual(f.observations, []);
+    change(checkout, 'scripts/factory-ui/flow.html', 'A wrapping issue header.\n');
+    repaired = true;
+    return turn(...args);
+  };
+
+  const result = await f.run('merge');
+  const receipt = JSON.parse(readFileSync(result.result.deliveryReceipt.path, 'utf8'));
+  const report = JSON.parse(readFileSync(receipt.compatibility.path, 'utf8'));
+  assert.equal(digest(readFileSync(receipt.compatibility.path)), receipt.compatibility.sha256);
+  assert.equal(report.originalHead, workHead);
+  assert.equal(report.target, target);
+  assert.equal(report.candidate.tree, receipt.candidate.tree);
+  assert.deepEqual(
+    runs
+      .map(({ args }) => args)
+      .filter(([script]) => script === 'scripts/flow-browser.mjs')
+      .map((args) => args.slice(1)),
+    Array.from({ length: 2 }, () => [
+      ['--ci-part=1a', '--master-issues'],
+      ['--ci-part=1b', '--sidebar-labels'],
+      ['--ci-part=1b', '--interface-state', '--sidebar-labels'],
+      ['--ci-part=1b', '--storage-status', '--block-models'],
+    ]).flat()
+  );
+  assert.equal(report.checks.length, 8);
+  assert.ok(report.checks.every(({ passed }) => passed));
+  assert.ok(report.checks.some(({ command }) => command.at(-1) === 'scripts/factory-discussion.check.mjs'));
+  assert.ok(report.checks.some(({ command }) => command.at(-1) === 'scripts/issue-delivery.check.mjs'));
+  assert.ok(
+    f.observations
+      .filter(({ operation }) => operation === 'push')
+      .every(({ head }) => head === receipt.candidate.commit)
+  );
+  assert.ok(f.observations.some(({ operation, head }) => operation === 'ready' && head === receipt.candidate.commit));
+  assert.equal(result.result.revision, 'actual-merge');
+});
+
 test('Merge repairs a target conflict before waiting for pending GitHub readiness', async (t) => {
   const { inspectReadiness } = await import('./factory-ui/strategy-readiness.mjs');
   let repaired = false;
@@ -3064,6 +3142,18 @@ test('Merge downloads failed GitHub verification evidence, repairs it, pushes an
   assert.equal(downloads, 1);
   assert.equal(result.result.revision, 'actual-merge');
   assert.equal(f.observations.filter(({ operation }) => operation === 'push').length, 2);
+  const timing = result.evidence.find(({ key }) => key === 'mergeTiming');
+  const { intervals, elapsedMs, coveredMs, unclassifiedMs } = JSON.parse(readFileSync(timing.path, 'utf8'));
+  const interval = (phase) => intervals.find((entry) => entry.phase === phase);
+  assert.equal(coveredMs + unclassifiedMs, elapsedMs);
+  assert.equal(interval('target-refresh').target, result.result.target);
+  assert.equal(interval('failure-evidence-available').runId, '77');
+  assert.equal(interval('failure-evidence-available').elapsedMs, null);
+  assert.equal(interval('repair').revision, interval('failure-evidence-available').revision);
+  assert.equal(interval('repair').repairedRevision, result.result.head);
+  assert.ok(interval('repair').repairAttemptId.endsWith('-repair-1'));
+  assert.ok(interval('repair').turnId);
+  assert.equal(interval('merge-confirmation').mergedRevision, result.result.revision);
 });
 
 test('Merge stops when repairs cycle back to the same failing source tree', async (t) => {
