@@ -558,6 +558,10 @@ and abort using a disposable real conflict. Publish PR requires a clean commit.
 Merge syncs the issue branch with Destination, checks local formatting and Fallow
 against that revision, and pushes the candidate after its focused checks pass.
 GitHub checks and reviews apply to the exact PR head.
+When a provider pause leaves an uncommitted Merge repair, an explicit retry can
+use the retained repair record for the same issue commit. It resumes repair before
+synchronizing a newer destination. The repair worker reviews the checkout and
+commits the verified repair. Ordinary dirty checkouts still require review.
 
 GitHub runs Early checks first. Five jobs then run in parallel: two Non-browser
 jobs and the Flow browser parts. The Non-browser jobs

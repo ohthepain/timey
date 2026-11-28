@@ -3253,6 +3253,53 @@ test('Merge bounds temporary lookup failures and retains the final reason withou
   assert.equal(f.calls.filter(({ method }) => method === 'turn').length, 1);
 });
 
+test('Merge retries a provider-paused repair before synchronizing a newer destination', async (t) => {
+  let checkout;
+  let first;
+  let repairCalls = 0;
+  let original;
+  const f = mergeFixture(t, {
+    async verifyWork() {
+      if (!repairCalls) throw Object.assign(Error('Local verification failed.'), { verificationFailure: {} });
+      return { evidence: [] };
+    },
+    async repair(error, _round, { conversation }) {
+      repairCalls++;
+      const file = join(checkout, 'source.txt');
+      if (repairCalls === 1) {
+        conversation.turnId = 'previous-repair-turn';
+        original = f.git('-C', checkout, 'rev-parse', 'HEAD');
+        writeFileSync(file, 'Repair in progress.\n');
+        throw Object.assign(Error('OpenAI: Allowance exhausted. Resume explicitly when available.'), {
+          code: 'PROVIDER_PAUSED',
+        });
+      }
+      assert.equal(error.resumeRepair, true);
+      assert.match(error.message, /Local verification failed/);
+      assert.equal(f.git('-C', checkout, 'rev-parse', 'HEAD'), original);
+      assert.equal(readFileSync(file, 'utf8'), 'Repair in progress.\n');
+      assert.equal(f.observations.length, 0);
+      f.git('-C', checkout, 'commit', '-am', 'Finish the paused repair');
+      return { evidence: [] };
+    },
+  });
+  await f.run('understand');
+  ({ checkout } = f.flow.workspace);
+  await assert.rejects(f.run('merge'), (error) => {
+    first = { id: 'attempt-2', status: 'blocked', evidence: error.evidence };
+    return /Allowance exhausted/.test(error.message);
+  });
+  f.advanceTarget();
+  await assert.rejects(f.run('merge'), /Preserve checkout changes in a commit/);
+  assert.equal(repairCalls, 1);
+
+  const result = await f.run('merge', { attempts: [first] });
+
+  assert.equal(repairCalls, 2);
+  assert.equal(result.result.revision, 'actual-merge');
+  assert.equal(f.git('-C', checkout, 'merge-base', 'HEAD', 'dev'), f.git('rev-parse', 'dev'));
+});
+
 test('Merge Continue checks GitHub again before merging', async (t) => {
   const f = mergeFixture(t);
   await f.run('understand');
