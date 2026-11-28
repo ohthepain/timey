@@ -1,6 +1,13 @@
 {
   "version": 2,
   "name": "Factory deployment listener readiness and recovery",
+  "expectedTests": [
+    "managed deployment drains the real listener and checks replacement identity",
+    "deployment refuses dirty candidates and coordinator work without stopping the server",
+    "draining rejects new mutations until cancellation",
+    "a failed replacement restores the previous listener and records recovery",
+    "unsuccessful candidate and recovery waits retain HTTP failures and identity mismatches with the recovery lock intact"
+  ],
   "command": [
     "node",
     "--test",
