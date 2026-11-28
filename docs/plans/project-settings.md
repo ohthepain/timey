@@ -1,8 +1,8 @@
 # Project Settings
 
 The Flow header gear opens Settings across the project workspace. Settings
-categories replace the project sidebar. **Close** restores the previous project
-view. Direct links use `/?settings=issues`, `lifecycle`, `git`, `storage`, `skills`,
+categories replace the project sidebar. **Close** or Escape restores the previous
+project view. Direct links use `/?settings=issues`, `lifecycle`, `git`, `storage`, `skills`,
 `providers`, `prompts`, or `hotkeys`. The Admin tab remains at
 `/?projectTab=admin`.
 

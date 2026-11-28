@@ -762,8 +762,9 @@
     content.addEventListener('input', (event) => {
       resetPrompts.delete(event.target.name);
     });
-    view.addEventListener('keydown', (event) => {
-      if (event.key !== 'Escape' || event.defaultPrevented) return;
+    document.addEventListener('keydown', (event) => {
+      if (view.hidden || event.key !== 'Escape' || event.defaultPrevented) return;
+      if (event.target !== document.body && !view.contains(event.target)) return;
       event.preventDefault();
       close();
     });

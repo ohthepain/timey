@@ -1019,7 +1019,7 @@ try {
     assert.equal(await palette.locator('[data-add-kind="verify"]').count(), 0);
     await palette.locator('button[data-close-dialog="palette-dialog"]').click();
   });
-  await check('Opening the workspace starts no work and loads no skills', async () => {
+  await check(flowBrowserScenarioNames['--workspace-open'], async () => {
     await page.goto('/');
     await page.locator('#connection-status').filter({ hasText: 'Live' }).waitFor();
     assert.equal(logs.execution.length, 0);
@@ -1038,7 +1038,7 @@ try {
     await page.locator('#capture-dialog .icon-button[data-close-dialog="capture-dialog"]').click();
     assert.equal(await page.locator('#issue-list').getByText('Unfiled', { exact: true }).count(), 0);
   });
-  await check('The sidebar browses system Markdown and saves project Markdown on disk', async () => {
+  await check(flowBrowserScenarioNames['--sidebar-markdown'], async () => {
     const tree = page.locator('#sidebar-file-tree');
     const sidebar = page.locator('.sidebar');
     for (const label of ['Files', 'System', 'Open'])
@@ -1106,7 +1106,7 @@ try {
     await page.reload();
     await page.locator('#connection-status').filter({ hasText: 'Live' }).waitFor();
   });
-  await check('Project settings explain missing configuration and initialize it only on request', async () => {
+  await check(flowBrowserScenarioNames['--project-settings-initialize'], async () => {
     const labels = join(project, '.issues/triage-labels.md');
     rmSync(labels, { force: true });
     await page.locator('#project-settings').click();
