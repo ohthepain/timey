@@ -84,10 +84,15 @@ button[data-sub-issue] {
 .issue-annotations {
   margin-block: 4px;
   font-size: 13px;
+  max-width: 430px;
 }
 
-.issue-annotations[open] {
-  max-width: 430px;
+.issue-annotations-toggle:hover {
+  background: transparent;
+}
+
+.issue-annotations-toggle[aria-expanded='true'] {
+  color: var(--text);
 }
 
 .issue-annotations ul {

@@ -29,10 +29,18 @@ function matchesRetry(error, blockId, includeRoute) {
   return includeRoute && error.operation === 'play';
 }
 
+function retainedRetryErrors(flow, blockId, includeRoute) {
+  return (flow.blockingErrors || []).filter((error) => !error.resolvedAt && matchesRetry(error, blockId, includeRoute));
+}
+
 export function resolveRetryErrors(flow, blockId, includeRoute) {
-  for (const error of flow.blockingErrors || [])
-    if ([!error.resolvedAt, matchesRetry(error, blockId, includeRoute)].every(Boolean))
-      error.resolvedAt = new Date().toISOString();
+  for (const error of retainedRetryErrors(flow, blockId, includeRoute)) error.resolvedAt = new Date().toISOString();
+}
+
+export function retryingBlocker(flow, block, includeRoute) {
+  const retained = retainedRetryErrors(flow, block.id, includeRoute).at(-1);
+  const error = attemptErrors(block).at(-1) || retained;
+  return error && { name: error.blockLabel || '' };
 }
 
 export function retainBlockingError(flow, { action, blockId, error, model }) {

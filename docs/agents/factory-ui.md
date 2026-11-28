@@ -401,6 +401,9 @@ drop it on another folder to change the assignment. Issues in sidebar folders ap
 with Implementation order. The ordering is shared with the queue's implementation
 order, and hidden issues keep their positions during a folder-scoped reorder.
 
+Open issues show a checkmark after their flow completes and an X after a terminal
+failure. The sidebar still marks in-progress, paused, and blocked work.
+
 Drag a block by its handle to reorder the issue flow. The graph shows the
 proposed position and connections before drop. With a block focused, use
 Alt+Up or Alt+Down to move it.
@@ -880,8 +883,8 @@ repairs. An open PR stays linked to the issue.
 
 ## Issue annotations and blocked sub-issues
 
-Open **Issue annotations** in Flow to add a blocker, readiness concern, or
-comment. Anyone with annotation access can clear an entry. **Cleared history**
+Select the **Annotations** tag button beside Issue Discuss to add a blocker,
+readiness concern, or comment. Select it again to collapse the annotation panel. Anyone with annotation access can clear an entry. **Cleared history**
 retains the original entry and the first clearance. A badge stays visible while
 any active entry reports that label. Filter the issue list by badge or turn on
 **Attention first** to move blockers, readiness concerns, and pending approvals

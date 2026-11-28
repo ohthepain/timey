@@ -7,6 +7,7 @@ import { ProjectHome } from './factory-ui/project-home.mjs';
 import { InvestigationOutputs } from './factory-ui/investigation-outputs.mjs';
 import { InvestigationReports } from './factory-ui/investigation-reports.mjs';
 import { digest, git } from './factory-ui/common.mjs';
+import { assertUserMessageBox } from './flow-browser-chat-style.mjs';
 
 const draft = `---\nname: fixture-mode\ndescription: Work in the fixture user's style when explicitly selected.\ndisable-model-invocation: true\n---\n\nKeep responses concise. Verify changed behavior.\n`;
 const findings =
@@ -309,7 +310,11 @@ async function verifyAutomateChatReopening({ page, dialog, poll, output, chat })
   await poll(chat.metrics, chat.atLatest, 'Reopened Automate me did not show the latest reply.');
   writeFileSync(
     join(output, 'automate-chat-scroll.json'),
-    JSON.stringify({ followed: chat.followed, reading, reopened: await chat.metrics() }, null, 2) + '\n'
+    JSON.stringify(
+      { followed: chat.followed, reading, reopened: await chat.metrics(), userBox: chat.userBox },
+      null,
+      2
+    ) + '\n'
   );
 }
 
@@ -342,6 +347,8 @@ export async function automateActivityBrowserChecks({ page, service, screenshot,
     turn.resolve();
     await dialog.locator('#home-automate-review:not([hidden])').waitFor();
     await indicator.waitFor({ state: 'detached' });
+    chat.userBox = await assertUserMessageBox(dialog.locator('#home-automate-messages'), 'Make verification explicit.');
+    await screenshot('automate-user-message');
     await verifyAutomateChatReopening({ page, dialog, poll, output, chat });
     await dialog.locator('[data-home-close="automate"]').click();
   } finally {

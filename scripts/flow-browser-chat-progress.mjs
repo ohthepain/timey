@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { initializeProjectLifecycle, readProjectSettings } from './factory-ui/project-settings.mjs';
 import { ensureProjectStores } from './factory-ui/stores/runtime.mjs';
 import { resolveIssueStorage } from './factory-ui/stores/settings.mjs';
+import { assertUserMessageBox } from './flow-browser-chat-style.mjs';
 
 function command(emit, id, text, output, exitCode = 0) {
   const item = { id, type: 'commandExecution', command: text };
@@ -125,6 +126,10 @@ export async function chatProgressBrowserChecks({ page, service, project, poll, 
     };
     await page.goto('/?issue=' + issue.id + '&block=' + block.id);
     await reopen();
+    const userNote = 'Retain the live progress while I add a note.';
+    await page.locator('#comment-form [name="comment"]').fill(userNote);
+    await page.locator('#comment-form button[type="submit"]').click();
+    results.blockUserBox = await assertUserMessageBox(page.locator('#inspector-body'), userNote);
     results.issue = await exerciseChat({
       page,
       screenshot,

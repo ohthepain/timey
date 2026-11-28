@@ -3,8 +3,9 @@ import assert from 'node:assert/strict';
 import { readRequiredSkillSets } from './factory-ui/required-skills.mjs';
 import { writeFileSync, readFileSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { assertUserMessageBox } from './flow-browser-chat-style.mjs';
 
-export async function projectDiscussBrowserChecks({ page, service, project, poll, screenshot }) {
+export async function projectDiscussBrowserChecks({ page, service, project, poll, screenshot, output }) {
   const requiredSkillSets = readRequiredSkillSets(process.cwd());
   const skillsDirectory = join(project, 'user/skills');
   mkdirSync(skillsDirectory, { recursive: true });
@@ -84,6 +85,8 @@ export async function projectDiscussBrowserChecks({ page, service, project, poll
   await page.locator('#discuss-draft').fill('First project question');
   await page.locator('#discuss-send').click();
   await page.locator('#discuss-messages h2').filter({ hasText: 'Project answer' }).waitFor();
+  const messages = page.locator('#discuss-messages');
+  const firstUserBox = await assertUserMessageBox(messages, 'First project question');
   assert.equal(calls.length, 1);
   assert.equal(await page.locator('#discuss-messages [data-discuss-copy-code]').count(), 1);
   const first = service.projectDiscuss.view().selected;
@@ -173,7 +176,7 @@ export async function projectDiscussBrowserChecks({ page, service, project, poll
   );
   await page.locator('#discuss-draft').fill('Hold response');
   await page.locator('#discuss-send[data-discuss-action="send"]').click();
-  await page.locator('#discuss-messages').getByText('Hold response', { exact: true }).waitFor();
+  const laterUserBox = await assertUserMessageBox(messages, 'Hold response');
   await page.locator('#discuss-messages').getByText('Live partial response', { exact: true }).waitFor();
   await page.locator('#discuss-messages > .activity-indicator').waitFor();
   assert.equal(await page.locator('#discuss-messages > .activity-indicator .SparkleText').count(), 1);
@@ -226,6 +229,13 @@ export async function projectDiscussBrowserChecks({ page, service, project, poll
   );
   await page.locator('#discuss-clarification').selectOption('none');
   await screenshot('project-discuss');
+  await page.emulateMedia({ colorScheme: 'light' });
+  const lightPreference = await assertUserMessageBox(messages, 'Hold response');
+  await page.emulateMedia({ colorScheme: null });
+  writeFileSync(
+    join(output, 'project-discuss-user-boxes.json'),
+    JSON.stringify({ firstUserBox, laterUserBox, lightPreference }, null, 2) + '\n'
+  );
   await page.setViewportSize({ width: 640, height: 900 });
   assert.equal(
     await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth),
