@@ -1,0 +1,22 @@
+.factory-header {
+  grid-template-columns: minmax(35rem, max-content) minmax(0, 1fr) auto auto;
+  grid-template-areas:
+    'project tabs account revision'
+    'tools tabs account revision'
+    'status status status status';
+}
+:where(#factory-revision) {
+  grid-area: revision;
+  justify-self: end;
+  font-family: ui-monospace, monospace;
+}
+@media (max-width: 1180px) {
+  .factory-header {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-areas:
+      'project account revision'
+      'tools tools tools'
+      'tabs tabs tabs'
+      'status status status';
+  }
+}

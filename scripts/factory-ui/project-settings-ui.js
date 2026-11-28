@@ -150,7 +150,11 @@
         ],
         files: [],
       }[store.kind];
-      return `<fieldset data-store-check><legend>${esc(store.label)} · ${esc(store.kind)}</legend>${storeField(store, 'label', 'Name')}${fields.map(([key, label]) => storeField(store, key, label)).join('')}${store.references ? references(store) : '<p>Connection references are checked after saving.</p>'}<button type="button" class="small-button" data-store-test="${esc(store.id)}"${store.unsaved ? ' disabled' : ''}>Test store connection</button><p data-store-result="${esc(store.id)}" role="status"></p></fieldset>`;
+      const diskUsage =
+        store.kind === 'postgres' && !store.unsaved
+          ? `<section data-store-usage><h4>Disk usage</h4><button type="button" class="small-button" data-store-usage-refresh="${esc(store.id)}">Refresh</button><p data-store-usage-status role="status"></p><ul data-store-usage-tables></ul></section>`
+          : '';
+      return `<fieldset data-store-check><legend>${esc(store.label)} · ${esc(store.kind)}</legend>${storeField(store, 'label', 'Name')}${fields.map(([key, label]) => storeField(store, key, label)).join('')}${store.references ? references(store) : '<p>Connection references are checked after saving.</p>'}<button type="button" class="small-button" data-store-test="${esc(store.id)}"${store.unsaved ? ' disabled' : ''}>Test store connection</button><p data-store-result="${esc(store.id)}" role="status"></p>${diskUsage}</fieldset>`;
     }
     function storeOptions(role, selected) {
       const registry = data.storeRegistry;
@@ -342,6 +346,28 @@
         output.textContent = result.message || 'Connection verified.';
       } catch (failure) {
         output.textContent = failure.message;
+      } finally {
+        button.disabled = false;
+      }
+    }
+    async function refreshDiskUsage(button) {
+      const section = button.closest('[data-store-usage]');
+      const status = section.querySelector('[data-store-usage-status]');
+      const tables = section.querySelector('[data-store-usage-tables]');
+      button.disabled = true;
+      status.textContent = 'Reading disk usage…';
+      tables.replaceChildren();
+      try {
+        const usage = await request(
+          '/api/issue-store-disk-usage?' +
+            new URLSearchParams({
+              store: button.dataset.storeUsageRefresh,
+            })
+        );
+        status.textContent = 'Database total · ' + usage.total;
+        tables.innerHTML = usage.tables.map(({ name, size }) => `<li>${esc(name)} · ${esc(size)}</li>`).join('');
+      } catch (failure) {
+        status.textContent = failure.message;
       } finally {
         button.disabled = false;
       }
@@ -543,6 +569,7 @@
       if (page === 'asset-storage') window.renderProjectAssetStorage(content, data, esc);
       window.factoryAgentOptions(content);
       baseline = snapshot();
+      for (const button of content.querySelectorAll('[data-store-usage-refresh]')) void refreshDiskUsage(button);
     }
     async function readAssetInventory(ticket, status) {
       const endpoint = '/api/project-asset-storage?status';
@@ -798,6 +825,7 @@
       ['[data-store-add]', addStore],
       ['[data-profile-add]', addProfile],
       ['[data-store-test], [data-store-test-role]', testStore],
+      ['[data-store-usage-refresh]', refreshDiskUsage],
       ['[data-store-discover]', discoverStorageMoves],
       ['[data-store-resume-move]', (button) => leave(() => void resumeStorageMove(button))],
       ['[data-store-resume-delete], [data-store-pause-delete]', (button) => leave(() => void controlDeletion(button))],

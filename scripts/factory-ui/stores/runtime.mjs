@@ -18,6 +18,7 @@ import { collectEvidence, hydrateEvidence, registerEvidenceResolver } from './ev
 import { activateStorageProfiles, persistStorageProfiles } from './profile-activation.mjs';
 import { assetCleanupRole, collectS3Uploads, stageReportAssets } from './asset-cleanup.mjs';
 import { assetIdentity } from './asset-references.mjs';
+import { backgroundAction } from '../server-action-inventory.mjs';
 
 const runtimes = new WeakMap();
 const bootstrapKey = 'project/bootstrap';
@@ -176,7 +177,7 @@ export async function cleanProjectAssetUploads(service) {
   if (!runtime?.ready || runtime.assetCleanup || runtime.pending) return 0;
   if (![...runtime.project.artifactStores.values()].some((store) => store.kind === 's3')) return 0;
   service.ownServer();
-  const task = Symbol(assetCleanupRole);
+  const task = backgroundAction('asset-cleanup', assetCleanupRole, 'Clean up S3 artifacts', basename(service.root));
   service.issueStorageTasks ||= new Set();
   service.issueStorageTasks.add(task);
   const pending = observeActivity('stores', 'Clean up S3 artifacts', diagnosticContext(service.root), () =>

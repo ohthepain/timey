@@ -66,12 +66,6 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.project-header .brand-mark,
-.project-header .brand-tag {
+.project-header .brand-mark {
   flex-shrink: 0;
-}
-@container (max-width: 230px) {
-  .project-header .brand-tag {
-    display: none;
-  }
 }

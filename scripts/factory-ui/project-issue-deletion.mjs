@@ -4,8 +4,7 @@ import { flowWorkspace } from './flow-observer.mjs';
 import { issueHasActiveWork } from './issue-cleanup.mjs';
 import { deleteArchivedIssueReport } from './issue-report-storage.mjs';
 import { checkedArchivedReport } from './project-archive-deletion.mjs';
-
-const deletionBatch = Symbol('project-issue-deletion');
+import { backgroundAction } from './server-action-inventory.mjs';
 
 function reviewIssue(service, workflow, { id, location }) {
   if (location === 'archive') {
@@ -65,8 +64,17 @@ export async function deleteProjectIssues(service, workflow, { action, selected,
   if (action === 'preview') return { basis: reviewedBasis, issues: rows.map(({ id, title }) => ({ id, title })) };
   requireThat(basis === reviewedBasis, 'The selected issues changed. Review them again before deleting.');
   service.issueStorageTasks ||= new Set();
-  requireThat(!service.issueStorageTasks.has(deletionBatch), 'A selected-issue deletion is already running.');
-  service.issueStorageTasks.add(deletionBatch);
+  const task = backgroundAction(
+    'project-issue-deletion',
+    'selected',
+    'Delete selected issues',
+    rows.map(({ title }) => title).join(', ')
+  );
+  requireThat(
+    ![...service.issueStorageTasks].some(({ id }) => id === task.id),
+    'A selected-issue deletion is already running.'
+  );
+  service.issueStorageTasks.add(task);
   const results = [];
   let deleted = 0;
   try {
@@ -86,6 +94,6 @@ export async function deleteProjectIssues(service, workflow, { action, selected,
       results.push({ id, status: 'kept', reason: 'Another deletion is pending. Finish it before retrying.' });
     return { results };
   } finally {
-    service.issueStorageTasks.delete(deletionBatch);
+    service.issueStorageTasks.delete(task);
   }
 }

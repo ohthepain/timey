@@ -676,13 +676,15 @@ need their existing reconciliation workflow.
 
 The running-action count includes saved actions still marked preparing, running,
 or checking. This includes interrupted preparations that block a server update.
-The count opens the **Action list**. It shows those actions,
-connected work, active cleanup, and recent stopped
-work that can be resumed or skipped. Completed and incomplete
-cleanup results are available on the issue page. The open list refreshes when
-the running count changes. An issue-linked Flow block shows one summary link
-in the form `#319: Group: Inbox: Work`. Other entries show their saved issue
-and current details. Entries retain their Action output link and
+The count opens the **Action list**. Every action and temporary chat counted in
+the header has a row, including archive deletion and other operations without an
+issue link. Unlinked rows show the action name, target and status and include
+an Action output link when one is available. The list also keeps recent stopped
+work that can be resumed or skipped. Completed and incomplete cleanup results
+are available on the issue page. The open list refreshes while it is visible.
+An issue-linked Flow block shows one summary link in the form
+`#319: Group: Inbox: Work`. Issue rows show their saved issue links and retain
+their Action output link where available. Action rows also show
 Stop, Restart, Skip, Pause issue and Steer controls. Stop interrupts an
 interruptible current response while retaining its saved work. Pause asks the
 issue to finish its current action before stopping later work; it does not
@@ -703,10 +705,9 @@ same port. It installs no build. Saved chats, pending questions and progress
 remain in the project. The button is hidden on preview copies and while a restart
 is already in progress.
 
-The header displays the last four characters of the server's reported startup
-commit, with the full hash and source path in its tooltip. Unknown revisions
-are shown as unknown, and source changes retain their warning. This is not an
-independent attestation of the browser’s loaded code or dirty source contents.
+The right edge of the header shows the first seven characters of the commit
+from which Factory started. Select the hash to copy the full commit ID. The
+value identifies the Factory source checkout and stays fixed until restart.
 
 Queue roles use 24-pixel squares. Future roles remain outlined squares on dotted
 connectors. Skipped roles use slightly smaller, lowered squares, with the dotted

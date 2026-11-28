@@ -607,7 +607,7 @@ export class ProjectDiscuss {
     if (this.closed || this.active.has(id) || session.paused || !session.queue.length || session.activeMessageId)
       return;
     const controller = new AbortController();
-    const active = { controller, issueDeletionRequests: new Map() };
+    const active = { controller, issueDeletionRequests: new Map(), title: session.title, ownership: session.ownership };
     this.active.set(id, active);
     active.task = this.run(id, controller).finally(() => {
       for (const resolve of active.issueDeletionRequests.values()) resolve(false);

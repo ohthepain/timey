@@ -1,6 +1,6 @@
 import { blockDefinitionId } from './flow-block-data.mjs';
 import { existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { requireThat } from './common.mjs';
 import { readQueue } from './data.mjs';
 import { openSiblingIssueIds } from './linked-issues.mjs';
@@ -8,6 +8,13 @@ import { cleanupActionRecords } from './issue-cleanup.mjs';
 import { canCancelInterruptedPreparation } from './issue-action-cancellation.mjs';
 import { isActiveRun } from './runs.mjs';
 import { storedIssuePath } from './issue-report-storage.mjs';
+import {
+  backgroundAction,
+  captureActionItems,
+  lifecycleActionItems,
+  nativeActionItems,
+  projectActionItems,
+} from './server-action-inventory.mjs';
 
 const finishing = new Set([
   '/api/server-cancel-restart',
@@ -56,13 +63,8 @@ export function serverControl(service, restart) {
   const timer = setInterval(tick, 300);
   timer.unref();
   function activity() {
-    const runs = new Set(service.store.connected);
-    for (const run of service.store.runs) if (isActiveRun(run)) runs.add(run.id);
+    const { runs, flow, cleanup, background, chats } = actionInventory(service);
     const conversation = conversationActivity(service);
-    const controllers = [...service.lifecycleTasks.keys()].filter((id) => {
-      const record = service.lifecycleRuns[id];
-      return !runs.has(record?.childRunId) && !runs.has(record?.work?.runId);
-    });
     const locks = [
       'factory.lock',
       'factory-progress.lock',
@@ -70,24 +72,10 @@ export function serverControl(service, restart) {
       'factory-integration.lock',
     ].filter((name) => existsSync(join(service.root, '.issues', name)));
     return {
-      actions:
-        runs.size +
-        nativeActions(service.codex) +
-        controllers.length +
-        (service.captures?.active || 0) +
-        flowActions(service) +
-        (service.flows?.flowBuilds?.size || 0) +
-        (service.flows?.captures?.size || 0) +
-        (service.flows?.followups?.busy.size || 0) +
-        projectHomeActions(service) +
-        (service.projectRemoteBranchCleanup?.activeCount || 0) +
-        (service.projectLocalBranchCleanup?.activeCount || 0) +
-        (service.projectDiscuss?.active.size || 0) +
-        (service.issueStorageTasks?.size || 0) +
-        cleanupActions(service),
+      actions: runs.size + flow.length + cleanup.length + background.length,
       operations: conversation.operations,
       uncertain: conversation.uncertain,
-      chats: service.discussions.sessions.size,
+      chats: chats.length,
       approvals: pendingPermissions(service),
       locks,
     };
@@ -155,32 +143,58 @@ export function serverControl(service, restart) {
   };
 }
 
-function cleanupActions(service) {
-  return activeCleanups(service).length;
-}
-
-function activeCleanups(service) {
-  return cleanupActionRecords(service.root).filter((item) => ['preparing', 'running'].includes(item.status));
+function actionInventory(service) {
+  const runs = new Set(service.store.connected);
+  for (const run of service.store.runs) if (isActiveRun(run)) runs.add(run.id);
+  const flow = flowOperations(service.flows);
+  const cleanup = cleanupActionRecords(service.root).filter((item) => ['preparing', 'running'].includes(item.status));
+  const project = basename(service.root);
+  const background = [
+    ...nativeActionItems(service.codex, project),
+    ...lifecycleActionItems(service, runs),
+    ...captureActionItems(service),
+    ...projectActionItems(service, project),
+    ...(service.issueStorageTasks || []),
+  ];
+  const chats = [...service.discussions.sessions].map(([id, session]) =>
+    backgroundAction('discussion', id, 'Temporary issue discussion', session.issueId || project, {
+      issueId: session.issueId,
+      status: session.busy ? 'running' : 'open',
+    })
+  );
+  return { runs, flow, cleanup, background, chats };
 }
 
 function actionItems(service) {
+  const inventory = actionInventory(service);
   const queue = readQueue(service.root);
   const runs = service.store.runs
-    .filter((run) => listableAction(run, service))
+    .filter((run) => inventory.runs.has(run.id) || (isRecentAction(run) && hasRestartableStatus(run)))
     .sort((left, right) => Date.parse(right.updated || right.created) - Date.parse(left.updated || left.created))
     .map((run) => actionEntry(run, service, queue));
-  const current = [...flowActionItems(service, queue), ...runs.filter((item) => item.active)];
+  const current = [
+    ...flowActionItems(service, queue, inventory.flow),
+    ...runs.filter((item) => item.active),
+    ...unrecordedRuns(inventory.runs, runs, service.root),
+    ...[...inventory.background, ...inventory.chats].map(({ issueId, ...item }) => ({
+      ...item,
+      active: true,
+      issues: issueId ? [issueLink(queue, issueId)] : [],
+    })),
+  ];
   const recent = runs.filter((item) => !item.active && item.currentStrategy);
-  const cleanup = activeCleanups(service).map((record) => ({
+  const cleanup = inventory.cleanup.map((record) => ({
     id: `cleanup:${record.issueId}`,
     title: 'Cleanup',
     trigger: 'Issue cleanup',
     purpose: 'Remove the selected issue resources while retaining its history.',
     kind: 'cleanup',
     status: record.status,
+    active: true,
     summary: cleanupSummary(record),
     details: (record.selected || []).join(', '),
     issues: [issueLink(queue, record.issueId)],
+    outputHref: `/?issue=${encodeURIComponent(record.issueId)}`,
     currentStrategy: true,
     canStop: false,
     canRestart: false,
@@ -189,16 +203,29 @@ function actionItems(service) {
     canPause: false,
     canSteer: false,
   }));
-  return [...cleanup, ...current, ...recent.slice(0, Math.max(0, 40 - cleanup.length - current.length))];
+  return [...cleanup, ...current, ...recent.slice(0, 40)];
 }
 
-function flowActionItems(service, queue) {
-  const flows = service.flows;
-  const operations = [
-    ...(flows?.active || []),
-    ...[...(flows?.branchRepairs?.active.keys() || [])].map((id) => [id, { blockId: 'fix-the-branch' }]),
-    ...[...(flows?.flowBuilds || [])].map((id) => [id, { blockId: 'build-flow' }]),
+function unrecordedRuns(ids, saved, root) {
+  const displayed = new Set(saved.map(({ id }) => id));
+  return [...ids]
+    .filter((id) => !displayed.has(id))
+    .map((id) => ({
+      ...backgroundAction('connected', id, 'Connected action', basename(root)),
+      active: true,
+      issues: [],
+    }));
+}
+
+function flowOperations({ active = [], branchRepairs = { active: new Map() }, flowBuilds = [] } = {}) {
+  return [
+    ...active,
+    ...Array.from(branchRepairs.active.keys(), (id) => [id, { blockId: 'fix-the-branch' }]),
+    ...Array.from(flowBuilds, (id) => [id, { blockId: 'build-flow' }]),
   ];
+}
+
+function flowActionItems(service, queue, operations) {
   return operations.map(([issueId, active]) => {
     const issue = service.flows.selected(issueId);
     const flow = service.flows.read(issue);
@@ -275,11 +302,6 @@ function cleanupSummary(record) {
   return `${complete} cleanup items complete; ${Math.max(0, pending)} pending or needing attention.`;
 }
 
-function listableAction(run, service) {
-  if (service.store.connected.has(run.id) || isActiveRun(run)) return true;
-  return isRecentAction(run) && hasRestartableStatus(run);
-}
-
 function isRecentAction(run) {
   return withinRecentWindow(run) && isActionKind(run);
 }
@@ -330,10 +352,16 @@ function actionEntry(run, service, queue) {
     active: connected || isActiveRun(run),
     summary: actionSummary(run),
     details: interruptedPreparation ? 'Setup was interrupted. No worker thread was saved.' : actionDetails(action, run),
+    target: unlinkedRunTarget(run, issues, service.root),
+    outputHref: `/api/run?id=${encodeURIComponent(run.id)}`,
     issues,
     ...controls,
     ...(interruptedPreparation && { canCancel: true, cancelReason: '' }),
   };
+}
+
+function unlinkedRunTarget(run, issues, root) {
+  if (!issues.length) return run.checkout || run.threadId || basename(root);
 }
 
 function actionTurn(codex, connection, threadId) {
@@ -465,21 +493,9 @@ function ready(current) {
   return [current.actions, current.chats, current.approvals, current.locks.length].every((count) => count === 0);
 }
 
-function nativeActions(codex) {
-  return Math.max(codex.turns?.size || 0, Number(Boolean(codex.pending?.size)));
-}
-
 function conversationActivity(service) {
   return service.issueChats?.activity?.() || { operations: 0, uncertain: 0 };
 }
 function pendingPermissions(service) {
   return service.permissionRequests?.().size ?? service.codex.requests.size;
-}
-
-function projectHomeActions(service) {
-  return service.projectHome?.activeCount || 0;
-}
-
-function flowActions(service) {
-  return (service.flows?.active.size || 0) + (service.flows?.branchRepairs?.active.size || 0);
 }

@@ -384,7 +384,8 @@ must not be used by these checks.
 
 `node scripts/flow-browser.mjs --interface-state` checks expanded tool activity,
 editor size, drafts, caret and scroll preservation through refreshes, same-tab
-navigation, and reload. It checks that an idle issue sends no snapshot or UI
+navigation, and reload. Before exercising Back, it waits for the Home panel to
+be visible. It checks that an idle issue sends no snapshot or UI
 source requests after its initial loads and the live stream's catch-up read.
 The idle window keeps the stream open and gates delayed fixture notifications.
 Later edits exercise live notifications. The scenario drags a real selection
@@ -1338,6 +1339,10 @@ screenshots of the live and unavailable readings. The scenario configures the
 fixture queue. Run `node scripts/flow-browser.mjs --ci-part=1 --manual-close --server-heap --project-navigation --sidebar-labels --local-notes`
 to check the sidebar console after the intentional Close and heap errors. Each
 expected failed response accounts for one matching console entry.
+
+`node scripts/flow-browser.mjs --ci-part=1a --master-issues` checks hierarchy,
+badges, and navigation to child issues. The fixture answers health probes in
+the browser to keep restart recovery from interrupting those checks.
 
 `node scripts/flow-browser.mjs --manual-sub-issue-removal` removes sub-issues
 from both the master and child pages. It checks active membership, links,

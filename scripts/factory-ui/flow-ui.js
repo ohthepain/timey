@@ -4960,6 +4960,14 @@ import { reorderedBlocks } from './flow-order.mjs';
     state.connectionError = '';
     renderErrors();
   });
+  $('factory-revision')?.addEventListener('click', async ({ currentTarget }) => {
+    try {
+      await navigator.clipboard.writeText(currentTarget.dataset.revision);
+      toast('Factory revision copied.');
+    } catch {
+      toast('Clipboard unavailable. The full revision is in the tooltip.');
+    }
+  });
   $('issue-search').addEventListener('input', (event) => {
     state.search = event.target.value;
     state.collapsedSearchFolders.clear();

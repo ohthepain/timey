@@ -6,6 +6,7 @@ import { deleteArchivedIssueReport, storedIssuePath } from './issue-report-stora
 import { readSavedReport } from './report-document.mjs';
 import { issueHasActiveWork } from './issue-cleanup.mjs';
 import { archivedIssueBranches, heads, refs } from './project-branch-resources.mjs';
+import { backgroundAction } from './server-action-inventory.mjs';
 
 const previewLifetime = 15 * 60 * 1000;
 
@@ -171,7 +172,12 @@ export class ProjectArchiveDeletion {
     requireThat(preview && Date.now() < preview.expires, 'Review a fresh archive preview.');
     const rows = approvedRows(preview, selected);
     this.previews.delete(id);
-    const task = Symbol('archive-deletion');
+    const task = backgroundAction(
+      'archive-deletion',
+      id,
+      'Delete archived issues',
+      rows.map(({ title }) => title).join(', ')
+    );
     service.issueStorageTasks ||= new Set();
     service.issueStorageTasks.add(task);
     try {

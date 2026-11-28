@@ -42,6 +42,7 @@ import { BlockCatalog, blockExtensions, userBlocks } from './factory-ui/block-ca
 import { moveIssueStorage } from './factory-ui/issue-storage-actions.mjs';
 import { deleteProjectIssues } from './factory-ui/project-issue-deletion.mjs';
 import { FactoryUI } from './factory-ui/service.mjs';
+import { serverControl } from './factory-ui/server-control.mjs';
 import { readQueue } from './factory-ui/data.mjs';
 import { decisionBasis } from './factory-ui/recorded-result.mjs';
 import { issueCleanupIdentities, previewIssueCleanupResource } from './factory-ui/issue-cleanup.mjs';
@@ -52,8 +53,16 @@ import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 
 test('Delete selected rejects overlapping batches and stops after a paused deletion', async (t) => {
-  const { root } = gitFixture(t, 'delete-selection-');
-  const service = { root, ownServer() {}, lifecycleTasks: new Map(), store: { runs: [] } };
+  const { root, git } = gitFixture(t, 'delete-selection-');
+  git('commit', '--allow-empty', '-qm', 'fixture');
+  mkdirSync(join(root, '.issues'));
+  cpSync(new URL('../.issues/triage-labels.md', import.meta.url), join(root, '.issues/triage-labels.md'));
+  const service = new FactoryUI(root);
+  const control = serverControl(service);
+  t.after(() => {
+    control.close();
+    service.close();
+  });
   const selected = ['first', 'second', 'third'].map((id) => ({ id, location: 'open' }));
   const entered = Promise.withResolvers();
   const resume = Promise.withResolvers();
@@ -78,6 +87,11 @@ test('Delete selected rejects overlapping batches and stops after a paused delet
   const batch = deleteProjectIssues(service, workflow, request, (status) => progress.push(status));
   try {
     await Promise.race([entered.promise, batch.then(() => assert.fail('The batch ended before the pause.'))]);
+    assert.equal(control.status().actions, 1);
+    const action = control.actions().find(({ title }) => title === 'Delete selected issues');
+    assert.equal(action?.target, 'first, second, third');
+    assert.equal(action.status, 'running');
+    assert.deepEqual(action.issues, []);
     await assert.rejects(deleteProjectIssues(service, workflow, request), /selected-issue deletion is already running/);
     assert.deepEqual(progress.at(-1), { currentId: 'second', processed: 1, deleted: 0, total: 3 });
   } finally {
@@ -91,6 +105,7 @@ test('Delete selected rejects overlapping batches and stops after a paused delet
     ['kept', 'kept', 'kept']
   );
   assert.equal(service.issueStorageTasks.size, 0);
+  assert.equal(control.status().actions, 0);
 });
 
 test('Markdown block defaults apply to new blocks and user definitions keep the Work operation', (t) => {
