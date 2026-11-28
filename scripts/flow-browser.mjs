@@ -1,3 +1,4 @@
+import { projectNightBrowserChecks } from './flow-browser-project-night-fixture.mjs';
 import { proposalBrowserChecks } from './flow-browser-proposals.mjs';
 import { fixtureRoute } from './flow-browser-routes.mjs';
 import { readyControl } from './browser-controls.mjs';
@@ -185,6 +186,8 @@ const assets = [
   'hotkeys-ui.js',
   'investigation-followups-ui.js',
   'project-home-ui.js',
+  'project-night-ui.js',
+  'project-workspace.css',
   'project-discuss-ui.js',
   'project-reports-ui.js',
   'project-reports.css',
@@ -221,16 +224,13 @@ const candidate = {
 const command = ['node', 'scripts/flow-browser.mjs', ...process.argv.slice(2)];
 const runStarted = performance.now();
 const results = [];
-const inboxDiscussCheck = 'Project chat stays at the bottom and accepts prompts while work is paused';
-Object.assign(flowBrowserScenarioNames, {
-  '--inbox-discuss': inboxDiscussCheck,
-});
 const {
   '--master-issues': masterIssuesCheck,
   '--manual-sub-issue-removal': manualSubIssueRemovalCheck,
   '--investigative-grouping': investigativeGroupingCheck,
   '--issue-annotations': issueAnnotationsCheck,
   '--inbox-flow': inboxFlowCheck,
+  '--inbox-discuss': inboxDiscussCheck,
   '--folder-settings': folderSettingsCheck,
   '--block-deletion': blockDeletionCheck,
   '--investigation-followups': followupsCheck,
@@ -457,6 +457,8 @@ async function assertCleanSidebarConsole() {
     consoleErrorsAfterExpectedResponses([
       ['/api/issue-decision', 400, 'The test rejected the pending close.'],
       ['/api/server-heap', 503, 'The test made the heap reading unavailable.'],
+      ['/api/flow-action', 400, 'Approve this issue before starting work.'],
+      ['/api/flow-action', 400, 'A selected issue changed. Review and save the draft again before starting.'],
     ]),
     []
   );
@@ -841,6 +843,9 @@ try {
     )
   );
   await check(discussCheck, () => projectDiscussBrowserChecks({ page, project, service, poll, screenshot }));
+  await check(flowBrowserScenarioNames['--project-night'], () =>
+    projectNightBrowserChecks({ page, project, service, poll, screenshot, output })
+  );
   await check(flowBrowserScenarioNames['--discuss-ui-design'], () =>
     discussUiDesignBrowserChecks({ page, project, service, poll, screenshot, output })
   );
@@ -1383,15 +1388,25 @@ try {
       body: 'Keep the full title in the issue view.',
     });
     const observe = async (label, title, nickname) => {
+      const expectedTab = async () => {
+        const issue = new URL(page.url()).searchParams.get('issue');
+        const data = await (await page.request.get('/api/flow?issue=' + issue)).json();
+        const number = data.issue?.issueNumber;
+        return Number.isSafeInteger(number) ? `#${number} - ${nickname}` : nickname;
+      };
       await poll(
-        async () => ({ heading: await page.locator('#issue-title').textContent(), tab: await page.title() }),
-        ({ heading, tab }) => heading === title && tab === nickname + ' · Factory',
+        async () => ({
+          heading: await page.locator('#rename-issue').textContent(),
+          tab: await page.title(),
+          expected: await expectedTab(),
+        }),
+        ({ heading, tab, expected }) => heading === title && tab === expected,
         'The issue heading and tab did not show the expected names.'
       );
       return { label, heading: title, tab: await page.title() };
     };
     const rename = async (title) => {
-      await page.getByRole('button', { name: 'Rename issue', exact: true }).click();
+      await page.locator('#rename-issue').click();
       await page.getByRole('textbox', { name: 'Issue title', exact: true }).fill(title);
       await clickAction(page.locator('#rename-issue-form button[type="submit"]'));
     };
@@ -1735,7 +1750,7 @@ try {
     };
     await rename('Edited from the issue heading');
     await poll(
-      () => page.locator('#issue-title').textContent(),
+      () => page.locator('#issue-title').innerText(),
       (title) => title === 'Edited from the issue heading',
       'The heading did not show the saved issue title.'
     );

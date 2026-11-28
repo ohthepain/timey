@@ -1,9 +1,8 @@
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { LocalNotes } from './factory-ui/local-notes.mjs';
 import { resolveIssueStorage } from './factory-ui/stores/settings.mjs';
-import { ensureIssueNumbers } from './factory-ui/issue-numbers.mjs';
 import { listAvailableSkills } from './factory-ui/skills.mjs';
 
 export async function localNotesBrowserChecks({ page, service, project, poll, screenshot, output, candidate }) {
@@ -24,6 +23,17 @@ export async function localNotesBrowserChecks({ page, service, project, poll, sc
     createProvider: () => ({
       async turn(session, message, context) {
         turns.push(message);
+        if (message.text === 'How can I clarify this note?')
+          return {
+            text: 'Clarify the expected save behavior before capturing the issue.',
+            recommendations: [
+              {
+                id: 'context-0',
+                label: 'Clarify save behavior',
+                prompt: 'What save behavior should the issue describe?',
+              },
+            ],
+          };
         if (message.recommendation?.id === 'create-delete-next')
           return fixtureCreateAndAdvance(service, session, context);
         return { text: 'Let’s discuss this note.' };
@@ -141,38 +151,36 @@ export async function localNotesBrowserChecks({ page, service, project, poll, sc
   await page.locator('#capture-dialog[open]').waitFor();
   assert.equal(await page.locator('#capture-description').inputValue(), 'Edited second thought');
   await page.locator('#capture-description').fill('An issue from the quick note');
-  const registryPath = join(project, '.issues/issue-numbers.json');
-  ensureIssueNumbers(project, []);
-  const registry = JSON.parse(readFileSync(registryPath, 'utf8'));
-  registry.next = 182;
-  writeFileSync(registryPath, JSON.stringify(registry));
   await page.locator('#capture-form button[type="submit"]').click();
   await page.locator('[data-discuss-delete-note]').waitFor();
   const link = page.locator('#discuss-messages').getByRole('link', { name: 'the new issue', exact: true });
   assert.match(await link.getAttribute('href'), /\?issue=/);
   assert.ok(notes.get(second.id).issueId);
-  const createdPrompts = page.locator('[data-discuss-recommendations]');
+  const createdPrompts = page.locator('#discuss-note-actions');
   await createdPrompts.locator('[data-prompt-id="delete"]').waitFor();
   assert.equal(await createdPrompts.locator('[data-prompt-id="create"]').count(), 0);
   assert.equal(await createdPrompts.locator('[data-prompt-id="create-delete-next"]').count(), 0);
   assert.equal(turns.length, 1);
   await screenshot('local-note-created-issue');
   const issueId = notes.get(second.id).issueId;
+  const { issueNumber } = service.flows.selected(issueId);
+  assert.ok(Number.isSafeInteger(issueNumber));
+  assert.ok(issueNumber > 0);
   const sidebarLink = page.locator(`[data-note-id="${second.id}"] .local-note-issue`);
   await sidebarLink.waitFor();
   const conversationUrl = page.url();
   await page.reload();
   await sidebarLink.waitFor();
   const label = await sidebarLink.textContent();
-  assert.equal(label, 'Open issue #182');
+  assert.equal(label, `Open issue #${issueNumber}`);
   const href = await sidebarLink.getAttribute('href');
   assert.equal(href, '/?issue=' + encodeURIComponent(issueId));
   await screenshot('local-note-issue-number');
   await sidebarLink.click();
   await page.locator('#issue-heading:not([hidden])').waitFor();
   assert.equal(new URL(page.url()).searchParams.get('issue'), issueId);
-  assert.equal(await page.locator('#issue-number').textContent(), '#182');
-  assert.equal(await page.locator('#issue-title').textContent(), 'An issue from the quick note');
+  assert.equal(await page.locator('#issue-number').textContent(), `#${issueNumber}`);
+  assert.equal(await page.locator('#issue-title').innerText(), 'An issue from the quick note');
   writeFileSync(
     join(output, 'local-note-issue-number.json'),
     JSON.stringify(
@@ -187,7 +195,7 @@ export async function localNotesBrowserChecks({ page, service, project, poll, sc
         retainedAfterReload: true,
         openedUrl: page.url(),
         openedIssueNumber: await page.locator('#issue-number').textContent(),
-        openedIssueTitle: await page.locator('#issue-title').textContent(),
+        openedIssueTitle: await page.locator('#issue-title').innerText(),
         screenshot: join(output, 'local-note-issue-number.png'),
       },
       null,
@@ -235,7 +243,7 @@ export async function localNotesBrowserChecks({ page, service, project, poll, sc
     'Edit, completion and order are retained',
     'Discuss prepares quietly and only Send starts a reply',
     'Issue creation is prefilled and links back before optional deletion',
-    'The sidebar retains Open issue #182 after reload and opens that issue',
+    `The sidebar retains Open issue #${issueNumber} after reload and opens that issue`,
     'Unsaved capture draft survives reload',
     'Multi-sentence notes show only their first sentence and retain the full text in the editor',
   ];
@@ -264,11 +272,14 @@ async function openNoteFromSidebar(page, id) {
 async function checkNoteRecommendations({ page, notes, turns, poll, screenshot, output }) {
   const currentNotes = notes.view().notes;
   const [first, second, third] = currentNotes;
-  const prompts = page.locator('[data-discuss-recommendations]');
+  const prompts = page.locator('#discuss-note-actions');
   const names = () => prompts.getByRole('button').allTextContents();
   await openNoteFromSidebar(page, first.id);
   await prompts.locator('[data-prompt-id="next"]').waitFor();
   const firstUrl = page.url();
+  const noteTabTitle = await page.title();
+  const noteName = await page.locator(`[data-note-id="${first.id}"] .local-note-title`).innerText();
+  assert.equal(noteTabTitle, 'Note: ' + noteName);
   const top = await names();
   assert.ok(!top.includes('Prev'));
   const above = await prompts.evaluate((element) => {
@@ -315,6 +326,7 @@ async function checkNoteRecommendations({ page, notes, turns, poll, screenshot, 
   );
   await poll(names, (labels) => labels.length === 0, 'Deleted note recommendations cleared');
   await page.goto(firstUrl);
+  await prompts.locator('[data-prompt-id="next"]').waitFor();
   const [source, target, ...later] = notes.view().notes;
   assert.equal(source.id, first.id);
   const before = turns.length;
@@ -330,11 +342,14 @@ async function checkNoteRecommendations({ page, notes, turns, poll, screenshot, 
     [target.id, ...later.map(({ id }) => id)]
   );
   assert.equal(turns.length, before);
+  const contextual = await checkNotePromptContext(page);
   writeFileSync(
     join(output, 'note-recommendations.json'),
     JSON.stringify(
       {
         aboveComposer: above,
+        noteTabTitle,
+        contextual,
         top,
         nextAndPrev: true,
         sent,
@@ -347,4 +362,18 @@ async function checkNoteRecommendations({ page, notes, turns, poll, screenshot, 
       2
     )
   );
+}
+
+async function checkNotePromptContext(page) {
+  const draft = page.locator('#discuss-draft');
+  const suggestions = page.locator('#discuss-recommendations').getByRole('button');
+  await draft.fill('How can I clarify this note?');
+  await page.locator('#discuss-send').click();
+  await suggestions.filter({ hasText: 'Clarify save behavior' }).waitFor();
+  assert.deepEqual(await suggestions.allTextContents(), ['Clarify save behavior']);
+  await suggestions.first().click();
+  await page.getByText('Let’s discuss this note.', { exact: true }).waitFor();
+  assert.equal(await suggestions.count(), 0);
+  assert.ok(await page.locator('#discuss-note-actions').getByRole('button').count());
+  return { whenOpen: ['Clarify save behavior'], whenFinished: [] };
 }

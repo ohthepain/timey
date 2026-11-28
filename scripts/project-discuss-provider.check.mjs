@@ -39,9 +39,9 @@ function fixture(t, hook = async () => {}, { useProjectTools = false, ...provide
       calls.push({ method: 'provider/turn', params: { threadId, cwd, prompt, schema, inputs, settings } });
       this.turns.set(threadId, { started: Promise.resolve({ turn: { id: 'turn' } }) });
       receipt.accepted({ turnId: 'turn' });
-      await hook(connection);
+      const output = await hook(connection);
       this.turns.delete(threadId);
-      return 'Here is the answer.\n\n```timey-suggestion\nShow me the changes.\n```';
+      return output ?? 'Here is the answer.\n\n```timey-suggestion\nShow me the changes.\n```';
     },
     send(value) {
       sent.push(value);
@@ -370,4 +370,26 @@ test('Issue Discuss sends the Issue chat prompt with the current request and flo
   assert.match(prompt, /"id":"selected-issue"/);
   assert.match(prompt, /Preserve the original wording/);
   assert.match(prompt, /"status":"blocked","summary":"Waiting for review"/);
+});
+
+test('current chat capabilities filter actionable recommendations', async (t) => {
+  const options = [
+    { label: 'Trace the scroll reset', prompt: 'Trace the reset after the latest stream.' },
+    { label: 'Use a private skill', prompt: 'Invoke the unavailable skill.', skill: 'grill-with-docs' },
+    { label: 'Deploy this', prompt: 'Deploy this now.', tool: 'unknown' },
+    { label: 'Define a regression check', prompt: 'Define a regression check for the observed stream.' },
+  ];
+  const output =
+    'Here is the reply.\n\n```timey-recommendations\n' + JSON.stringify({ recommendations: options }) + '\n```';
+  const f = fixture(t, async () => output);
+  const reply = await f.provider.turn(f.session, f.message, f.context);
+  assert.deepEqual(
+    reply.recommendations.map(({ label }) => label),
+    ['Trace the scroll reset', 'Define a regression check']
+  );
+  const turn = f.calls.find(({ method }) => method === 'provider/turn').params.prompt;
+  assert.match(turn, /decisions already made/);
+  assert.match(turn, /one clear next step/);
+  assert.match(turn, /empty list when nothing remains/);
+  assert.match(turn, /Available tools: \["known"\]/);
 });

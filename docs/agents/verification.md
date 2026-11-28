@@ -398,6 +398,8 @@ reloading or resubmitting the action.
 the order and destinations of the Home, Issues, Reports, Discuss, Automate me, and
 Admin tabs, and the relocated Factory controls. It saves desktop and narrow
 screenshots alongside the measured layout and navigation in `project-header-proof.json`.
+The focused server-control test checks that Pause and Restart stay disabled until
+the initial server status initializes the header controls.
 The navigation fixture temporarily initializes queue configuration, waits for a
 successful Issues queue response, and unloads the page before restoring configuration.
 Run `--ci-part=1 --project-navigation --sidebar-labels` together to check sidebar
@@ -583,14 +585,17 @@ Factory preserves the request ID on a GitHub GraphQL query error and marks it
 retryable when GitHub CLI omits the HTTP status. Explicit authentication,
 permission, and validation responses remain terminal.
 
-For a PR repairing failed CI tests or typechecking, add one version 2 JSON file
+For a PR repairing a failed verification check, add one version 2 JSON file
 per check in `.github/pr-repair-tests/`. Record the check's `name`, the full
 `command` argument array in replay order, and a `source` object with string
-`runId`, `jobId`, `checkout`, and `tree` fields. Use the checkout and tree
-that ran in the failed job. Independent files let branches add checks without
-writing over one another's source details. `pnpm run test:pr-repair` runs checks
+`checkout` and `tree` fields from the failed run. Include `runId` and `jobId`
+for a GitHub job or `attemptId` for a Factory attempt. Independent files let
+branches add checks without writing over one another's source details.
+`pnpm run test:pr-repair` runs checks
 by name and stops at the first failure. CI runs changed records before broad
 verification. The version 1 file remains readable for historic entries.
+For a version 2 record that needs a longer browser replay, set `timeoutMs` to
+an integer from 120000 to 240000. The default is 120000.
 Use `node scripts/flow-browser.mjs --timers` for the isolated attempt
 timer scenario. Repair workers reproduce the named failures, include necessary
 predecessor scenarios, and return after focused proof so GitHub can check the repaired commit.
@@ -681,6 +686,8 @@ page, and closes its Discuss service before installing its own injected provider
 Its console assertion catches draft saves that cross that fixture boundary. Run
 `node scripts/flow-browser.mjs --project-discuss --local-notes` to verify the
 Discuss-to-Notes transition; combining focused flags runs those scenarios together.
+Include `--project-night` to check the note link and issue header against the
+number assigned by the shared store after Work All Night creates numbered issues.
 
 The capture-start browser scenario waits for active route handlers before removing
 its mocks. Issue refreshes can still be fetching the fixture queue when capture
@@ -1186,6 +1193,9 @@ browser errors fail verification.
 Work All Night fixtures create the folders they assign, so execution reaches the
 injected worker through the same settings validation as a real issue. Start/stop
 checks have a 30-second test deadline and retain per-issue failure explanations.
+The focused workspace check in `scripts/flow.check.mjs` verifies that the full
+Flow view includes saved overnight reports and drafts, and that the embedded
+Request view returns empty collections for both.
 The dependency-failure scenario also checks that an independent issue adopts its
 clarified route and records a confirmed automatic merge within the owning run.
 Shared-chat DOM fixtures load the production template. Browser discussion
@@ -1211,6 +1221,9 @@ relative card bounds and viewport height in the polling diagnostic.
 also checks that clicking the selected card reveals it without adding a history entry.
 The `--project-navigation` scenario preloads Chromium history so it checks the
 recorded destinations even when the browser evicts older entries.
+It checks the destination URL, visible content, and title independently after
+history traversal so Playwright does not need to resolve a pending document
+navigation before it can read the visible destination.
 
 `node scripts/flow-browser.mjs --error-recovery` triggers a rejected branch update
 and verifies that a successful explicit Refresh clears its old error banner.

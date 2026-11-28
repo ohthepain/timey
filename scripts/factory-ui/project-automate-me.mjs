@@ -1,3 +1,4 @@
+import { normalizeChatRecommendations } from './chat-recommendations.mjs';
 import {
   closeSync,
   existsSync,
@@ -371,7 +372,12 @@ export class ProjectAutomateMe {
 
   receiveResponse(session, value) {
     const result = parseResponse(value);
-    session.messages.push({ role: 'assistant', text: result.message, at: this.now().toISOString() });
+    session.messages.push({
+      role: 'assistant',
+      text: result.message,
+      recommendations: normalizeChatRecommendations(result.recommendations),
+      at: this.now().toISOString(),
+    });
     session.status = result.draft ? 'ready' : 'awaiting-input';
     if (result.draft) this.preview(session, { ...result.draft, destination: session.destination });
     else this.save(session);

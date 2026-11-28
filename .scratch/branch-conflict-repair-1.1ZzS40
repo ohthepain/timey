@@ -1,0 +1,28 @@
++zsh:6> git rev-parse HEAD MERGE_HEAD
+289cced89c35c5cce0c4707ec200e0c01f0a537b
+43f147830b2737a3a391ee28af9720c23996a15d
++zsh:7> rg -n 'document\.title = issue\.issueNumber|issue\.nickname \|\| issue\.title' scripts/factory-ui/flow-ui.js
+3299:      document.title = issue.issueNumber == null ? issue.title : `#${issue.issueNumber} - ${issue.title}`;
+3316:        ? [issue.nickname || issue.title, block?.label].filter(Boolean).join(' / ')
++zsh:8> rg -n 'assert\.equal\(await page\.title\(\)|tab === nickname|name: .Rename issue' scripts/flow-browser-project-night-fixture.mjs scripts/flow-browser.mjs
+scripts/flow-browser-project-night-fixture.mjs:154:  assert.equal(await page.title(), `#${original.issueNumber} - ${original.title}`);
+scripts/flow-browser-project-night-fixture.mjs:165:  assert.equal(await page.title(), `#${original.issueNumber} - Night save master`);
+scripts/flow-browser.mjs:1391:        ({ heading, tab }) => heading === title && tab === nickname + ' · Factory',
+scripts/flow-browser.mjs:1397:      await page.getByRole('button', { name: 'Rename issue', exact: true }).click();
++zsh:9> node --check scripts/factory-ui/project-discuss.mjs
++zsh:10> node --check scripts/flow-browser.mjs
++zsh:11> git add -- scripts/factory-ui/flow.html scripts/factory-ui/project-discuss.mjs scripts/flow-browser.mjs
+fatal: Unable to create '/Users/paulwilkinson/projects/tanstack-start/timey/.git/worktrees/20261127T110344966-878d07030eb7cc58/index.lock': Operation not permitted
++zsh:4> git diff --cached --check -- scripts/factory-ui/flow.html scripts/factory-ui/project-discuss.mjs scripts/flow-browser.mjs
++zsh:5> git diff --check -- scripts/factory-ui/flow.html scripts/factory-ui/project-discuss.mjs scripts/flow-browser.mjs
++zsh:6> git diff --cached --name-status -- scripts/factory-ui/flow.html scripts/factory-ui/project-discuss.mjs scripts/flow-browser.mjs
+M	scripts/factory-ui/flow.html
+M	scripts/factory-ui/project-discuss.mjs
+M	scripts/flow-browser.mjs
++zsh:7> git ls-files -u
+100644 49521c7555a9175c7120567e14b56f9e491a11f6 1	scripts/factory-ui/flow-ui.js
+100644 366bf6b216f53baed0a971a6f3cb5de65af36549 2	scripts/factory-ui/flow-ui.js
+100644 a58d1f2179b59ccde98db7df74660e03b87c09b1 3	scripts/factory-ui/flow-ui.js
++zsh:8> git rev-parse HEAD MERGE_HEAD
+289cced89c35c5cce0c4707ec200e0c01f0a537b
+43f147830b2737a3a391ee28af9720c23996a15d

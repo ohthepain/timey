@@ -1,0 +1,70 @@
+.issue-title-button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.issue-title-button:hover {
+  text-decoration: underline;
+}
+.issue-approve-control.approval-required {
+  --approval-text: #d7ffe4;
+  --approval-background: #205738;
+  --approval-border: #439565;
+  color: var(--approval-text);
+  border-color: var(--approval-border);
+  background: var(--approval-background);
+}
+.issue-sub-issues > li {
+  border: 0;
+  padding: 2px 0;
+}
+[role='log'],
+[data-chat-scroll] {
+  overflow-anchor: none;
+  scroll-behavior: auto;
+}
+
+.night-workspace {
+  display: grid;
+  gap: 12px;
+}
+.night-workspace h2 {
+  margin: 0;
+}
+.night-plan,
+.night-edit {
+  display: grid;
+  gap: 12px;
+}
+.night-error {
+  color: var(--night-error-color);
+  --night-error-color: #ffaba5;
+}
+.night-master textarea {
+  display: block;
+  width: 100%;
+  min-height: 12rem;
+  margin-block: 8px;
+}
+.night-order {
+  display: grid;
+  gap: 10px;
+  padding-inline-start: 28px;
+}
+.night-order ul {
+  list-style: none;
+  padding-inline-start: 24px;
+}
+.night-order small {
+  color: var(--muted);
+}
+.night-order .folder-controls {
+  margin: 4px 0;
+}
+.night-conversation {
+  height: max(360px, calc(100dvh - 260px));
+}

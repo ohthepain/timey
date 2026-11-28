@@ -116,7 +116,11 @@ function configureHome(service, calls) {
           calls.duration = input.context.duration;
           await calls.beforeTurn?.();
           return calls.automate === 1
-            ? { message: 'Which working habit matters most?', draft: null }
+            ? {
+                message: 'Which working habit matters most?',
+                draft: null,
+                recommendations: [{ label: 'Make verification explicit', prompt: 'Make verification explicit.' }],
+              }
             : { message: 'Review this proposed skill.', draft: { name: 'fixture-mode', content: draft } };
         },
         close() {},
@@ -359,9 +363,12 @@ async function automate(page, service, calls, screenshot) {
   await dialog.getByText('Which working habit matters most?', { exact: true }).waitFor();
   assert.equal(calls.duration.durationValue, 10);
   assert.equal(calls.duration.durationUnit, 'days');
-  await dialog.locator('#home-automate-message').fill('Make verification explicit.');
-  await dialog.locator('#home-automate-reply button[type="submit"]').click();
+  const contextualPrompt = dialog.getByRole('button', { name: 'Make verification explicit', exact: true });
+  await contextualPrompt.waitFor();
+  await screenshot('automate-contextual-prompt');
+  await contextualPrompt.click();
   await dialog.locator('#home-automate-review:not([hidden])').waitFor();
+  assert.equal(await dialog.locator('#home-automate-recommendations button').count(), 0);
   assert.match(await dialog.locator('#home-automate-path').textContent(), /\.agents\/skills\/fixture-mode\/SKILL.md$/);
   const apply = dialog.locator('#home-automate-apply');
   await dialog.locator('#home-automate-content').fill(draft + '\nKeep evidence with the result.\n');

@@ -172,8 +172,8 @@ async function checkNarrowHeader(page, login) {
   assert.ok(rightGap >= 0 && rightGap <= 24, 'The Timey account stays at the right edge of the narrow header');
 
   const tabs = page.locator('.project-workspace-tabs');
-  const order = ['Home', 'Issues', 'Reports', 'Discuss', 'Automate me', 'Admin'];
-  const identifiers = ['home', 'issues', 'reports', 'discuss', 'automate', 'admin'];
+  const order = ['Home', 'Issues', 'Reports', 'Discuss', '☾', 'Automate me', 'Admin'];
+  const identifiers = ['home', 'issues', 'reports', 'discuss', 'night', 'automate', 'admin'];
   assert.deepEqual(
     (await tabs.getByRole('tab').allTextContents()).map((label) => label.trim()),
     order

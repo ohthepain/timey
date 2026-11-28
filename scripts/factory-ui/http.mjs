@@ -1,3 +1,4 @@
+import { nightDiscussionContext } from './flow-overnight.mjs';
 import { createProjectApp } from './project-app.mjs';
 import { createFlowChanges } from './flow-changes.mjs';
 import { issueAnnotations } from './issue-annotations.mjs';
@@ -79,9 +80,12 @@ import {
   startIssueCleanupRetry,
 } from './issue-cleanup.mjs';
 async function body(request) {
-  const limit = ['/api/project-discuss-action', '/api/report-discuss-action', '/api/issue-discuss-action'].includes(
-    request.url
-  )
+  const limit = [
+    '/api/project-discuss-action',
+    '/api/report-discuss-action',
+    '/api/issue-discuss-action',
+    '/api/night-discuss-action',
+  ].includes(request.url)
     ? 12000000
     : request.url === '/api/sidebar-files-action'
       ? 800000
@@ -162,9 +166,14 @@ function authorize(request, token, port) {
     );
   }
 }
+function handlesOwnIssueState(path, action) {
+  if (['/api/flow-action', '/api/issue-storage-move', '/api/issue-store-recovery'].includes(path)) return true;
+  return path === '/api/issue-discuss-action' && ['draft', 'settings'].includes(action);
+}
+
 function requireFlowIdle(service, path, value) {
   if (localRunControl(service, path, value)) return;
-  if (['/api/flow-action', '/api/issue-storage-move', '/api/issue-store-recovery'].includes(path)) return;
+  if (handlesOwnIssueState(path, value.action)) return;
   if (value.issueId)
     requireThat(
       !flowOwnsIssue(service, value.issueId),
@@ -189,12 +198,14 @@ const pauseSafeActions = {
   '/api/local-notes-action': ['create', 'edit', 'complete', 'delete', 'move', 'discuss', 'link'],
   '/api/project-discuss-action': ['stop', 'answer', 'draft', 'settings', 'edit-queued', 'remove-queued', 'delete-note'],
   '/api/issue-discuss-action': ['create', 'stop', 'answer', 'draft', 'settings', 'edit-queued', 'remove-queued'],
+  '/api/night-discuss-action': ['stop', 'draft', 'settings', 'edit-queued', 'remove-queued'],
   '/api/report-discuss-action': ['stop', 'answer', 'draft', 'settings', 'edit-queued', 'remove-queued'],
   '/api/flow-action': [
     'stop',
     'pause',
     'cancel-confirmation',
     'folder-night-stop',
+    'project-night-stop',
     'branch-repair-stop',
     'agent-answer',
   ],
@@ -266,6 +277,22 @@ function issueDiscussAction(service, value) {
   return projectDiscuss(service).action(
     { ...value, ...(action === 'create' && { requestId: 'issue-' + ownership.issueId }) },
     { ownership }
+  );
+}
+
+function nightDiscussOwner(service, id) {
+  return { kind: 'night', runId: flows(service).overnight.projectRun(id).id };
+}
+
+function nightDiscussAction(service, value) {
+  const ownership = nightDiscussOwner(service, value.runId);
+  requireThat(
+    !['close', 'delete-note', 'open-skill-extension'].includes(value.action),
+    'Use the overnight planner to manage this run.'
+  );
+  return projectDiscuss(service).action(
+    { ...value, ...(value.action === 'create' && { requestId: 'night-' + ownership.runId }) },
+    { ownership, title: 'Work All Night' }
   );
 }
 
@@ -383,6 +410,7 @@ async function mutation(service, path, value, onStorageProgress) {
     '/api/ai-text-bro': () => simplifyAIText(service, value),
     '/api/local-notes-action': () => localNoteAction(service, value, () => projectDiscuss(service)),
     '/api/project-discuss-action': () => projectDiscuss(service).action(value),
+    '/api/night-discuss-action': () => nightDiscussAction(service, value),
     '/api/report-discuss-action': () => reportChatAction(service, value),
     '/api/issue-discuss-action': () => issueDiscussAction(service, value),
     '/api/investigation-report-delete': () => new InvestigationReports(service.root).deleteReports(value.ids),
@@ -733,6 +761,8 @@ async function read(service, request, response, owner) {
     '/api/project-archive-deletion': () => archiveDeletion(service).preview(),
     '/api/issue-discuss': () =>
       projectDiscuss(service).view(undefined, issueDiscussOwner(service, issue(selectedIssue))),
+    '/api/night-discuss': () =>
+      projectDiscuss(service).view(undefined, nightDiscussOwner(service, url.searchParams.get('run'))),
     '/api/project-discuss': () => projectDiscuss(service).view(url.searchParams.get('conversation')),
     '/api/project-discuss-skills': async () => {
       const skills = await projectDiscussionSkills(
@@ -936,6 +966,7 @@ function readResource(service, request, response, owner) {
     '/local-notes-ui.js': 'local-notes-ui.js',
     '/local-notes.css': 'local-notes.css',
     '/project-discuss-ui.js': 'project-discuss-ui.js',
+    '/project-night-ui.js': 'project-night-ui.js',
     '/project-reports-ui.js': 'project-reports-ui.js',
     '/project-reports.css': 'project-reports.css',
     '/skill-select.js': 'skill-select.js',
@@ -960,6 +991,7 @@ function readResource(service, request, response, owner) {
     '/project-admin-ui.js': 'project-admin-ui.js',
     '/investigation-issue-ui.js': 'investigation-issue-ui.js',
     '/investigation-flow-controls-ui.js': 'investigation-flow-controls-ui.js',
+    '/project-workspace.css': 'project-workspace.css',
     '/project-home.css': 'project-home.css',
     '/issue-folder-drag-ui.js': 'issue-folder-drag-ui.js',
     '/sidebar-files-ui.js': 'sidebar-files-ui.js',
@@ -1027,6 +1059,7 @@ function archiveDeletion(service) {
 function projectDiscuss(service) {
   service.projectDiscuss ||= new ProjectDiscuss(service, {
     ...service.projectDiscussOptions,
+    nightContext: (id) => nightDiscussionContext(flows(service), id),
     home: () => projectHome(service),
     flows: () => flows(service),
     closeIssue: async (value) => {

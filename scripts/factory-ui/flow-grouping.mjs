@@ -116,12 +116,12 @@ export class FlowGrouping {
     );
   }
 
-  snapshot(folder, ids) {
+  snapshot(folder, ids, acrossFolders = false) {
     requireThat(
       Array.isArray(ids) && ids.length >= 2 && ids.length <= 50 && new Set(ids).size === ids.length,
       'Choose between two and fifty different issues to group.'
     );
-    const candidates = this.currentCandidates(folder, ids);
+    const candidates = this.currentCandidates(folder, ids, this.flows.issues(), acrossFolders);
     requireThat(
       candidates.every(({ type }) => (type === 'investigation') === (candidates[0].type === 'investigation')),
       'A master cannot mix investigative and non-investigative sub-issues.'
@@ -129,22 +129,24 @@ export class FlowGrouping {
     return candidates;
   }
 
-  currentCandidates(folder, ids, issues = this.flows.issues()) {
+  currentCandidates(folder, ids, issues = this.flows.issues(), acrossFolders = false) {
     const registryPath = join(this.service.root, '.issues/factory.json');
     const scheduled = existsSync(registryPath)
       ? JSON.parse(readFileSync(registryPath, 'utf8')).actions.filter((action) =>
           ['reserved', 'setup', 'running', 'blocked'].includes(action.status)
         )
       : [];
+    const target = acrossFolders && resolveFolderSettings(this.service.root, folder).values.branch;
     return ids.map((id) => {
       const issue = issues.find((entry) => entry.id === id);
       requireThat(issue, 'A selected issue no longer exists. Review the group again.');
       const flow = this.flows.read(issue);
+      const location = { folder, acrossFolders, target };
+      this.requireCandidateLocation(issue, flow, location);
       requireThat(
-        flow.folder === folder &&
-          this.flows.groupEligible(issue, flow, undefined, issues) &&
+        this.flows.groupEligible(issue, flow, undefined, issues) &&
           !scheduled.some((action) => action.issues.includes(id)),
-        `${issue.title} cannot join this master. It must be open, idle, independent, and use this folder’s target branch. Review the group again.`
+        `${issue.title} cannot join this master. It must be open, idle, independent, and use its folder’s target branch. Review the group again.`
       );
       const request = requestData(flow);
       return {
@@ -158,19 +160,29 @@ export class FlowGrouping {
         reportHash: digest(issue.content),
         flowRevision: flow.revision,
         targetBranch: deliveryTarget(flow).branch,
-        folderSettingsBasis: resolveFolderSettings(this.service.root, folder).basis,
+        folderSettingsBasis: resolveFolderSettings(this.service.root, flow.folder).basis,
       };
     });
   }
 
+  requireCandidateLocation(issue, flow, { folder, acrossFolders, target }) {
+    if (acrossFolders) {
+      this.flows.requireAvailableAction(issue, flow, 'play');
+      requireThat(deliveryTarget(flow).branch === target, `${issue.title} uses a different target branch.`);
+    } else {
+      requireThat(flow.folder === folder, `${issue.title} is no longer in this folder. Review the group again.`);
+    }
+  }
+
   checkCapture(grouping) {
-    const { folder, children, basis } = grouping;
+    const { folder, children, basis, acrossFolders } = grouping;
     requireThat(
       digest(
         JSON.stringify(
           this.snapshot(
             folder,
-            children.map(({ id }) => id)
+            children.map(({ id }) => id),
+            acrossFolders
           )
         )
       ) === basis,
@@ -246,16 +258,16 @@ export class FlowGrouping {
     return this.changeBlockedScope(input, { operation: input.action }).then(() => this.flows.view(input.issueId));
   }
 
-  preview({ folder, issueIds, strategy }, reasoning) {
+  preview({ folder, issueIds, strategy, acrossFolders }, reasoning) {
     const stores = registeredProjectStores(this.service.root);
     return afterReportWrite(stores?.assertSameStorage(issueIds), () =>
-      this.previewCurrent(folder, issueIds, reasoning, strategy)
+      this.previewCurrent(folder, issueIds, reasoning, strategy, acrossFolders)
     );
   }
 
-  previewCurrent(folder, issueIds, reasoning, strategy) {
+  previewCurrent(folder, issueIds, reasoning, strategy, acrossFolders) {
     requireThat(typeof folder === 'string' && folder.trim(), 'Choose an issue folder.');
-    const candidates = this.snapshot(folder, issueIds);
+    const candidates = this.snapshot(folder, issueIds, acrossFolders);
     const wording = [`# Group: ${folder}`, ...candidates.map(childRequestSection)].join('\n\n');
     requireThat(wording.length <= 24000, 'The combined request is too long. Select fewer issues.');
     const [first] = candidates;
@@ -264,6 +276,7 @@ export class FlowGrouping {
     const id = randomUUID();
     const grouping = {
       folder,
+      acrossFolders,
       investigative: type === 'investigation',
       ...sequential,
       children: candidates.map(childRecord),
