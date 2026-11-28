@@ -1,8 +1,10 @@
 # Project Settings
 
-The Flow header gear opens a project Settings window with sidebar navigation.
-Direct links use `/?settings=issues`, `lifecycle`, `git`, `storage`, `skills`,
-`prompts`, or `hotkeys`. The existing Admin tab remains at `/?projectTab=admin`.
+The Flow header gear opens Settings across the project workspace. Settings
+categories replace the project sidebar. **Close** restores the previous project
+view. Direct links use `/?settings=issues`, `lifecycle`, `git`, `storage`, `skills`,
+`providers`, `prompts`, or `hotkeys`. The Admin tab remains at
+`/?projectTab=admin`.
 
 ## Configuration owners
 
@@ -38,9 +40,20 @@ this project's `user/factory-preferences.json`. Restoring a default removes that
 override after Save. Work authorization and registered operation guards remain
 separate from conversational prompt text.
 
+## AI providers
+
+Every provider starts disabled on a fresh installation. Upgrades retain the
+existing provider behavior and saved model and quota settings.
+
+**Enabled** applies as soon as Factory saves the checkbox change. Disabling a
+provider hides its settings, clears its quota warnings, and blocks new requests.
+Requests already sent can finish. Factory suppresses further quota warnings for
+the provider while it is disabled. Re-enable the provider to see its previous
+configuration. Use **Save** to apply changes to models or quota thresholds.
+
 ## Saving and hotkeys
 
-Settings uses explicit Save buttons. Navigating between categories or closing the
+Settings forms use explicit Save buttons. Navigating between categories or closing the
 window with changes offers Save, Discard and Cancel. Save validates and persists
 before navigation completes. Validation failures and Cancel retain the draft.
 Restore actions also remain drafts until Save. Concurrent saved edits are checked

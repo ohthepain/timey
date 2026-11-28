@@ -858,7 +858,7 @@ try {
   await check(inboxDiscussCheck, () => inboxDiscussBrowserChecks({ page, service, screenshot, output }));
   part = '--ci-part=1b';
   await check('Factory provider settings save enablement and quota warnings', () =>
-    providerSettingsBrowserChecks({ page, project, screenshot })
+    providerSettingsBrowserChecks({ page, project, screenshot, output, candidate })
   );
   await check(settingsCheck, () =>
     withQueueConfiguration({ page, project, root }, () =>
@@ -1110,7 +1110,7 @@ try {
     const labels = join(project, '.issues/triage-labels.md');
     rmSync(labels, { force: true });
     await page.locator('#project-settings').click();
-    const settings = page.locator('#project-settings-dialog');
+    const settings = page.locator('#project-settings-view');
     await settings.locator('[data-settings-page="lifecycle"]').click();
     const initialize = settings.locator('[data-settings-initialize]');
     const openFile = settings.locator('[data-settings-action="open-lifecycle"]');

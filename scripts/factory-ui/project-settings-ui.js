@@ -35,7 +35,11 @@
   };
 
   window.createProjectSettingsUI = ({ request, changed }) => {
-    const dialog = document.getElementById('project-settings-dialog');
+    const view = document.getElementById('project-settings-view');
+    const workspace = document.getElementById('app');
+    const header = document.querySelector('.factory-header');
+    let returnFocus;
+    let pendingProviderSetup = null;
     const content = document.getElementById('project-settings-content');
     const error = document.getElementById('project-settings-error');
     const unsaved = document.getElementById('settings-unsaved-dialog');
@@ -586,7 +590,7 @@
     }
     async function load(
       value,
-      { preserveScroll = false, scrollTop = dialog.querySelector('.settings-body').scrollTop } = {}
+      { preserveScroll = false, scrollTop = view.querySelector('.settings-body').scrollTop } = {}
     ) {
       const ticket = ++sequence;
       page = value;
@@ -609,7 +613,7 @@
         if (ticket !== sequence) return;
         data = result;
         render();
-        dialog.querySelector('.settings-body').scrollTop = preserveScroll ? scrollTop : 0;
+        view.querySelector('.settings-body').scrollTop = preserveScroll ? scrollTop : 0;
       } catch (failure) {
         showCurrentError(ticket, failure);
       }
@@ -626,7 +630,7 @@
     }
     function renderSavedSettings() {
       resetPrompts.clear();
-      const body = dialog.querySelector('.settings-body');
+      const body = view.querySelector('.settings-body');
       const scrollTop = body.scrollTop;
       render();
       body.scrollTop = scrollTop;
@@ -643,7 +647,7 @@
     }
     async function persistDraft() {
       busy = true;
-      dialog.inert = true;
+      view.inert = true;
       showError();
       content.querySelector('[data-settings-status]').textContent = 'Saving…';
       try {
@@ -674,7 +678,7 @@
         return false;
       } finally {
         busy = false;
-        dialog.inert = false;
+        view.inert = false;
       }
     }
     function leave(operation) {
@@ -686,12 +690,16 @@
       pending = operation;
       if (!unsaved.open) unsaved.showModal();
     }
+    function closeView() {
+      sequence++;
+      view.hidden = true;
+      workspace.hidden = false;
+      header.inert = false;
+      updateUrl(null);
+      returnFocus?.focus();
+    }
     function close() {
-      leave(() => {
-        sequence++;
-        dialog.close();
-        updateUrl(null);
-      });
+      leave(closeView);
     }
     function select(value) {
       leave(() => {
@@ -701,8 +709,12 @@
     }
     function open(value = 'issues') {
       const selected = Object.hasOwn(renderers, value) ? value : 'issues';
-      if (dialog.open) return select(selected);
-      dialog.showModal();
+      if (!view.hidden) return select(selected);
+      returnFocus = document.activeElement;
+      view.hidden = false;
+      workspace.hidden = true;
+      header.inert = true;
+      view.querySelector('[data-settings-close]').focus();
       updateUrl(selected);
       void load(selected);
     }
@@ -711,10 +723,47 @@
       event.preventDefault();
       void save();
     });
+    content.addEventListener('change', (event) => {
+      if (event.target.matches('[data-provider-enabled]')) void toggleProvider(event.target);
+    });
+    async function toggleProvider(checkbox) {
+      const provider = data.providers.find(({ id }) => id === checkbox.dataset.providerEnabled);
+      const configuration = view.querySelector(`[data-provider-configuration="${provider.id}"]`);
+      const active = checkbox.checked;
+      configuration.hidden = !active;
+      view.inert = true;
+      busy = true;
+      showError();
+      try {
+        const result = await post('/api/ai-provider-enabled', {
+          provider: provider.id,
+          active,
+          revision: data.revision,
+        });
+        data.revision = result.revision;
+        provider.active = active;
+        if (!active && pendingProviderSetup === provider.id) pendingProviderSetup = null;
+        const saved = result.providers.find(({ id }) => id === provider.id);
+        const reasons = new Map(saved.models.map((model) => [model.id, model.availability.reason]));
+        for (const label of configuration.querySelectorAll('[data-model-availability]'))
+          label.textContent = reasons.get(label.dataset.modelAvailability) ?? label.textContent;
+        changed?.();
+        window.dispatchEvent(new CustomEvent('factory-provider-settings-saved', { detail: result.providers }));
+      } catch (failure) {
+        checkbox.checked = provider.active;
+        configuration.hidden = !provider.active;
+        showError(failure.message);
+      } finally {
+        busy = false;
+        view.inert = false;
+        checkbox.focus();
+      }
+    }
     content.addEventListener('input', (event) => {
       resetPrompts.delete(event.target.name);
     });
-    dialog.addEventListener('cancel', (event) => {
+    view.addEventListener('keydown', (event) => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
       event.preventDefault();
       close();
     });
@@ -728,8 +777,7 @@
     }
     function openMaintenance(button) {
       leave(() => {
-        dialog.close();
-        updateUrl(null);
+        closeView();
         document.getElementById('project-tab-admin').click();
         document.getElementById(button.dataset.settingsMaintenance).click();
       });
@@ -761,7 +809,7 @@
           }),
       ],
     ];
-    dialog.addEventListener('click', (event) => {
+    view.addEventListener('click', (event) => {
       for (const [selector, action] of clicks) {
         const button = event.target.closest(selector);
         if (!button) continue;
@@ -783,13 +831,12 @@
         showError('Copy the displayed command manually; clipboard access is unavailable.');
       }
     }
-    let pendingProviderSetup = null;
     async function providerAction(button) {
       if (busy) return;
-      const body = dialog.querySelector('.settings-body'),
+      const body = view.querySelector('.settings-body'),
         scrollTop = body.scrollTop;
       busy = true;
-      dialog.inert = true;
+      view.inert = true;
       showError();
       const id = button.dataset.providerId,
         action = button.dataset.providerAction;
@@ -809,7 +856,7 @@
         showError(failure.message);
       } finally {
         busy = false;
-        dialog.inert = false;
+        view.inert = false;
       }
     }
     function providerActionResult(id, action, result) {
@@ -824,7 +871,7 @@
       if (status) status.textContent = result.message;
     }
     window.addEventListener('focus', () => {
-      if (!pendingProviderSetup || !dialog.open || page !== 'providers' || busy || dirty()) return;
+      if (!pendingProviderSetup || view.hidden || page !== 'providers' || busy || dirty()) return;
       const id = pendingProviderSetup;
       pendingProviderSetup = null;
       void providerAction({ dataset: { providerId: id, providerAction: 'refresh' } });
@@ -887,14 +934,14 @@
       pending = null;
     });
     window.addEventListener('beforeunload', (event) => {
-      if (dialog.open && dirty()) {
+      if (!view.hidden && dirty()) {
         event.preventDefault();
         event.returnValue = '';
       }
     });
     window.addEventListener('popstate', () => {
       const requested = new URL(location.href).searchParams.get('settings');
-      if (!dialog.open) {
+      if (view.hidden) {
         if (requested) open(requested);
         return;
       }
