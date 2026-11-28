@@ -501,8 +501,8 @@ async function view() {
   assert.ok(data.flow, JSON.stringify(data));
   return data;
 }
-async function poll(read, predicate, message) {
-  const deadline = Date.now() + 15000;
+async function poll(read, predicate, message, timeoutMs = 15_000) {
+  const deadline = Date.now() + timeoutMs;
   let value;
   while (Date.now() < deadline) {
     value = await read();
@@ -3305,7 +3305,7 @@ try {
     mergeTargetUpdateBrowserChecks({ page, project, service, output, root, poll, screenshot, selectBlock, clickAction })
   );
   await check(flowBrowserScenarioNames['--retro-report'], () =>
-    retroReportBrowserChecks({ page, project, service, output, root, poll })
+    retroReportBrowserChecks({ page, project, service, output, root, poll, candidate, runner })
   );
   assert.ok(!ciPart || results.length, 'The Flow browser CI part did not execute any scenarios.');
   passed = true;
