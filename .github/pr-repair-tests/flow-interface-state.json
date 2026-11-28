@@ -5,8 +5,6 @@
     "node",
     "scripts/flow-browser.mjs",
     "--ci-part=1b",
-    "--project-settings",
-    "--stores",
     "--ai-text",
     "--interface-state",
     "--stalled-flow-action",
