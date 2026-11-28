@@ -12,6 +12,7 @@ import { ProjectInvestigations } from './factory-ui/project-investigations.mjs';
 import { BlockCatalog } from './factory-ui/block-catalog.mjs';
 import { digest } from './factory-ui/common.mjs';
 import { successfulInvestigationSource } from './factory-ui/investigation-flow.mjs';
+import { clarifyRequest } from './factory-ui/flow-request.mjs';
 
 async function fixture(t, execute) {
   const { root, git } = gitFixture(t, 'investigation-flow-');
@@ -405,6 +406,59 @@ test('saved investigation settings reach ordinary starts and each inquiry snapsh
   const second = await f.run('investigate');
   assert.equal(second.investigation.settings.effort, 'medium');
   assert.equal(f.flow().blocks[1].attempts[0].investigation.settings.effort, 'high');
+});
+
+test('Request shows saved investigation settings and uses them to calculate its outputs', async (t) => {
+  const f = await fixture(t);
+  const investigations = new ProjectInvestigations(f.service, f.flows);
+  t.after(() => investigations.close());
+  const prompt = 'Verify the bulk-delete warning at 320 × 600.';
+  const instructions = 'Select only disposable proposals #15 and #16. Verify that Cancel keeps both.';
+  await investigations.action({
+    action: 'investigation-save',
+    requestId: randomUUID(),
+    issueId: f.issueId,
+    revision: f.flow().revision,
+    reusable: true,
+    branch: 'refs/heads/dev',
+    prompt,
+    instructions,
+  });
+  const wording = f.flow().blocks[0].data.wording;
+  const { flow } = await f.flows.view(f.issueId);
+  const inputs = flow.blocks[0].details.filter(({ fixed, input }) => fixed && input);
+  assert.deepEqual(
+    inputs.map(({ value }) => value),
+    [prompt, instructions]
+  );
+
+  f.flows.clarify = (root, definition, attempt, signal) =>
+    clarifyRequest(root, definition, attempt, signal, () => ({
+      async begin() {},
+      async ask(input) {
+        const { wording: original, investigationPrompt, investigationInstructions } = JSON.parse(input);
+        assert.equal(original, wording);
+        return JSON.stringify({
+          type: 'investigation',
+          goal: investigationPrompt ?? '',
+          requestedProof: investigationInstructions ?? '',
+          knownFacts: '',
+          constraints: '',
+        });
+      },
+      close() {},
+    }));
+  const updated = await f.flows.action({
+    action: 'request',
+    issueId: f.issueId,
+    revision: f.flow().revision,
+    wording,
+  });
+  const request = updated.flow.blocks[0].attempts.at(-1);
+  assert.equal(request.status, 'completed', request.output);
+  assert.equal(f.flow().blocks[0].data.fields.goal, prompt);
+  assert.equal(f.flow().blocks[0].data.fields.requestedProof, instructions);
+  assert.equal(f.flow().blocks[0].data.wording, wording);
 });
 
 test('manual follow-up receipts preserve completed issue creation without a project session', async (t) => {

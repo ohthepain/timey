@@ -113,6 +113,19 @@ const issueFlowSources = new Map([
 ]);
 
 export function blockDetails(flow, issue, block, definitions) {
+  const details = definedBlockDetails(flow, issue, block, definitions);
+  if (block.kind !== 'request' || !flow.investigation) return details;
+  const { prompt, instructions } = flow.investigation;
+  for (const [key, label, value] of [
+    ['investigationPrompt', 'Investigation prompt', prompt],
+    ['investigationInstructions', 'Investigation additional instructions', instructions],
+  ]) {
+    if (value) details.push({ key, label, value, type: 'long text', input: true, fixed: true });
+  }
+  return details;
+}
+
+function definedBlockDetails(flow, issue, block, definitions) {
   const definition = definitions.get(blockDefinitionId(block));
   const addresses = blockAddresses(flow.blocks);
   const parents = upstreamBlocks(block, flow.blocks);
