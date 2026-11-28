@@ -80,6 +80,10 @@
           "scripts/verify-preflight.mjs",
           "scripts/factory-ui/issue-chat-runtime.mjs",
           "scripts/factory-ui/flow-delivery.mjs",
+          "scripts/factory-ui/flow-update-branch.mjs",
+          "scripts/factory-ui/project-settings-ui.js",
+          "scripts/factory-ui/stores/deletion.mjs",
+          "scripts/factory-ui/stores/routes.mjs",
           "scripts/factory.mjs"
         ],
         "maxCrap": 10000,

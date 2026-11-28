@@ -688,7 +688,11 @@ async function runBranchConflictRepair(service, ctx, owned, options, paths, targ
   const context = {
     ...ctx,
     continuing: ctx.continuing || recovery.attempt > 1,
-    attempt: { ...ctx.attempt, id: ctx.attempt.id + '-conflict-' + recovery.attempt },
+    attempt: {
+      ...ctx.attempt,
+      id: ctx.attempt.id + '-conflict-' + target + '-' + recovery.attempt,
+      branchConflictTarget: target,
+    },
     block: { ...ctx.block, prompt: '', skill: null },
     definition: { ...ctx.definition, prompt: task, artifacts: ctx.definition?.artifacts ?? [] },
   };
@@ -979,6 +983,7 @@ function modelConversationBasis(ctx, tools) {
       ctx.block.skill,
       ctx.block.prompt,
       ctx.block.comments,
+      ...(ctx.attempt.branchConflictTarget ? [ctx.attempt.branchConflictTarget] : []),
     ])
   );
 }
@@ -1095,10 +1100,11 @@ async function runModel(service, ctx, owned, options) {
     onEvent: notifications.onEvent,
   });
   owned.connection = connection;
-  const skills = selectedSkills(
-    await listAvailableSkills(connection, workspace.temporary ? service.root : workspace.checkout),
-    ctx.block.skill ? [ctx.block.skill] : []
-  );
+  const skills = ctx.block.skill
+    ? selectedSkills(await listAvailableSkills(connection, workspace.temporary ? service.root : workspace.checkout), [
+        ctx.block.skill,
+      ])
+    : [];
   const liveRequirements = new Map();
   let rounds = 1;
   if (ctx.block.kind === 'sol') {

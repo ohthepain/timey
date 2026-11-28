@@ -150,7 +150,10 @@ results and evidence. The observer reads Git and PR facts independently of model
 turns. Local Git queries have short timeouts. PR reads run separately and retain
 freshness and failures. An externally merged PR is an observation, not acceptance.
 Factory suggests Update Branch when the cached upstream of Starting point
-contains commits missing from the issue branch. Git fetches remain explicit operations or external Git-tool work.
+contains commits missing from the issue branch. Start and Resume run that
+prerequisite before Work. A pending local merge can also trigger it before
+Publish when Work is already complete. The update fetches the starting branch
+and retains its own result.
 
 The center column shows playback results and closure errors in a Results section
 directly below the issue banner, hidden when empty. Playback status remains visible
@@ -296,11 +299,12 @@ conversations still block the update. This check starts no model turn.
 New oversized inputs fail before dispatch and leave a blocked attempt rather
 than uncertain ownership.
 
-An explicit Update Branch run aborts an existing merge in the managed issue
-checkout before fetching. This discards that merge’s partial resolutions;
-committed issue work remains. Other unfinished Git operations still stop the
-update. A new conflict receives the existing bounded resolution attempt and
-remains available for review if it cannot be resolved.
+Update Branch fetches the starting branch before reconciling an existing merge.
+It can finish a merge of that branch and carry its resolutions forward when
+the fetched branch has advanced. If the earlier conflicts are untouched, it can
+instead retry against the new revision directly. A merge outside the fetched
+branch's history, a missing original merge tree, unrelated staged edits, or
+another unfinished Git operation requires review before the update proceeds.
 
 Factory fetches the exact remote branch selected in Starting point, or the
 configured remote upstream of a local starting branch. A local branch without
@@ -324,12 +328,12 @@ fast-forward or already up-to-date result. Merge uses passing verification for
 its committed candidate and fetched destination. A no-op
 update leaves uncommitted changes alone.
 
-If Git reports conflicts from this update, Factory gives Codex one attempt. Codex
+If Git reports conflicts from this update, Factory gives Codex up to three attempts. Codex
 may edit and stage only the conflicted files. It must preserve both sides and stop
 when resolution requires a decision. Factory commits the resolved merge through
-normal Git hooks. If the attempt cannot finish the merge, Factory keeps the local
+normal Git hooks. If repair cannot finish the merge, Factory keeps the local
 commit and the in-progress merge, lists the files that need attention, and pauses
-route. Resolve or abort the merge in the issue worktree before another update.
+the route. Retry Update Branch after answering any required decision or staging a resolution.
 
 ## Issue Start, Resume, and Pause
 

@@ -204,6 +204,11 @@ Permanent Delete removes the issue and evidence whose exclusive ownership it can
 verify. Files shared with retained issues stay available. Archive retains the
 report and history.
 
+Postgres filters completed inline operations before Factory checks deletion
+admission. Factory still reads older external operation payloads whose status is
+unavailable in Postgres. The proposal Delete button waits for confirmation while
+the store checks admitted work and shared evidence.
+
 Factory scans publications and Discuss attachments in the current project
 checkout. Other runners can retain their own copies of these references. Until
 Factory can check those references across runners, it keeps candidate artifacts
@@ -215,8 +220,10 @@ copies and routing records for candidates that have a shared storage home.
    Factory processes retained records and receipts in batches where the store
    supports it. The cleanup plan saves record identities, revisions, and
    reference and file checks for the selected issue.
-2. If deletion stops while the issue is still present, retry its original Delete
-   action after the blocker clears.
+2. If a proposal deletion still holds shared changes before Factory saves its
+   cleanup plan, choose **Pause deletion** in **Project settings → Issue Storage**.
+   This keeps the proposal and evidence and releases shared changes. To continue
+   later, retry Delete from the proposal.
 3. If the issue is already absent, open **Project settings → Issue Storage** and
    click **Resume deletion**. The action resumes its original deletion command.
 4. Restore an unavailable store, then retry the same action. Factory releases

@@ -18,6 +18,7 @@ import { openRecordStore, openIssueStore } from './factory-ui/stores/providers.m
 import { openArtifactStore } from './factory-ui/stores/artifacts.mjs';
 import { createFactoryPool, ensureFactoryDatabase } from './factory-ui/stores/postgres-connection.mjs';
 import { cleanEnvironment } from './factory-ui/common.mjs';
+import { createCoordination, deletionBlockers } from './factory-ui/stores/coordination.mjs';
 
 const providers = (process.env.TIMEY_STORE_TEST_PROVIDERS || 'files,git').split(',');
 const sha = (value) => createHash('sha256').update(value).digest('hex');
@@ -741,6 +742,49 @@ test('a projected Postgres scan returns matching operations across snapshot page
   const pending = await store.list('operations/', ({ value }) => (value.status === 'pending' ? value.id : undefined));
   assert.deepEqual(pending, ['1', '2']);
   assert.deepEqual(statements, ['BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY', 'COMMIT']);
+});
+
+test('Postgres deletion admission selects pending operations and checks legacy external payloads', async (t) => {
+  const artifactReads = [];
+  const operation = (id, status, input) => ({ id, kind: 'save-flow', status, input });
+  const inputs = [
+    operation('completed', 'confirmed', { issueId: 'proposal' }),
+    operation('other', 'pending', { issueId: 'other' }),
+    operation('legacy', 'pending', { ids: ['other', 'proposal'] }),
+  ];
+  const rows = inputs.map((value) => ({
+    key: 'operations/' + value.id,
+    revision: 'stored',
+    value: value.id === 'legacy' ? { encoding: 'artifact', ref: { key: 'legacy' } } : { encoding: 'json', value },
+  }));
+  t.mock.method(pg.Pool.prototype, 'query', async (statement, args) => {
+    if (args[2] === 'claims/proposal') return { rows: [] };
+    assert.match(statement, /value#>>'\{value,status\}'\s*=\s*'pending'/);
+    assert.match(statement, /encoding' IS DISTINCT FROM 'json'/);
+    return { rows: rows.filter(({ value }) => value.encoding === 'artifact' || value.value.status === 'pending') };
+  });
+  const store = await openRecordStore(
+    { kind: 'postgres', id: 'readonly', connectionString: 'postgresql://fixture@localhost/factory_readonly_fixture' },
+    {
+      root: process.cwd(),
+      projectId: 'readonly-fixture',
+      readOnly: true,
+      artifacts: {
+        async get({ key }) {
+          artifactReads.push(key);
+          return Buffer.from(JSON.stringify(inputs.find(({ id }) => id === key)));
+        },
+      },
+    }
+  );
+  t.after(() => store.close());
+  const coordination = createCoordination(store);
+  const match = await deletionBlockers(coordination, { issueId: 'proposal' });
+  assert.equal(match.claims, false);
+  assert.deepEqual(match.pending, inputs[2]);
+  const excluded = await deletionBlockers(coordination, { issueId: 'proposal', operationId: 'legacy' });
+  assert.equal(excluded.pending, undefined);
+  assert.deepEqual(artifactReads, ['legacy', 'legacy']);
 });
 
 test('Postgres rejects the installed application database without a connection or exposed credentials', async () => {

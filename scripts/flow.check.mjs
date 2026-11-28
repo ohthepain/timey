@@ -1824,6 +1824,61 @@ test('a suggested target update precedes Work in the graph and route execution',
   assert.deepEqual(started, ['update-branch', 'work']);
 });
 
+void test(
+  'the Work route recovers a pending starting-branch merge before publication',
+  { timeout: 10000 },
+  async (t) => {
+    const { root, id, service } = fixture(t);
+    const started = [];
+    const published = Promise.withResolvers();
+    let merging = true;
+    const flows = createIssueFlows(service, {
+      observer: {
+        async observe() {
+          return merging
+            ? {
+                startingBranchBehind: 1,
+                startingBranchRevision: 'new-target',
+                merge: { target: 'old-target', conflicts: ['source.txt'] },
+              }
+            : { startingBranchBehind: 0, startingBranchRevision: 'new-target' };
+        },
+      },
+      executor: executor(async ({ block }) => {
+        started.push(block.kind);
+        if (block.kind === 'update-branch') merging = false;
+        if (block.kind === 'publish') published.resolve();
+        return { summary: 'Done' };
+      }),
+    });
+    t.after(() => flows.close());
+    const issue = flows.selected(id);
+    const flow = flows.read(issue);
+    flow.blocks = flow.blocks.filter(({ kind }) => ['request', 'work', 'publish'].includes(kind));
+    flow.blocks[0].data.fields = { type: 'bug', goal: 'Repair Save' };
+    flow.blocks[1].attempts.push({
+      id: 'saved-work',
+      status: 'completed',
+      startedAt: '2026-01-01T00:00:00.000Z',
+      endedAt: '2026-01-01T00:01:00.000Z',
+    });
+    flow.workspace = { checkout: root, branch: 'codex/fixture' };
+    const saved = flows.store.save(flow, flow.revision);
+
+    await flows.action({ issueId: id, revision: saved.revision, action: 'play' });
+    await published.promise;
+    await flows.active.get(id)?.task;
+    assert.deepEqual(started, ['update-branch', 'publish']);
+    assert.equal(
+      flows
+        .read(issue)
+        .blocks.find(({ kind }) => kind === 'work')
+        .attempts.at(-1).id,
+      'saved-work'
+    );
+  }
+);
+
 test('completed target merges do not hide a later target change and parallel lanes join before suggested publication', async (t) => {
   const { root, id, service } = fixture(t);
   const flows = createIssueFlows(service, {

@@ -68,6 +68,11 @@ function pendingStoreOperation({ value }) {
     kind: value.kind,
     status: value.status,
     ...operationSubject(value),
+    ...(value.kind === 'delete-issue' &&
+      value.input?.purpose === 'proposal' &&
+      !value.cleanup && {
+        canPause: true,
+      }),
     createdAt: value.createdAt,
   };
 }
@@ -294,6 +299,7 @@ export async function handleStoreAction(service, input) {
   const actions = new Map([
     ['reconcile-flow-save', () => reconcileSupersededFlowSave(service, input)],
     ['resume-delete', () => stores.resumeDelete({ operationId: input.operationId })],
+    ['pause-proposal-delete', () => stores.pauseProposalDelete({ operationId: input.operationId })],
     ['resume-move', () => resumeIssueMove(stores, input)],
     ['move-issue', () => moveSelectedIssue(service, input, stores)],
     ['move-role', () => moveRole(service, input, stores)],

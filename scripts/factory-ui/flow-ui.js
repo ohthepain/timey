@@ -458,6 +458,12 @@ import { reorderedBlocks } from './flow-order.mjs';
     });
   }
 
+  function postFlowAction(input) {
+    // Proposal deletion may scan retained evidence across stores before it can confirm.
+    if (input.action === 'delete-pending-issue') return post('flow-action', input);
+    return waitForFlowResponse((signal) => post('flow-action', input, signal), 30_000);
+  }
+
   window.createInvestigationFollowupsUI({
     request: post,
     folders: () => state.index.issueFolders || [],
@@ -730,7 +736,7 @@ import { reorderedBlocks } from './flow-order.mjs';
         ...(options.global ? {} : { issueId: selected, revision }),
         ...fields,
       };
-      const result = await waitForFlowResponse((signal) => post('flow-action', input, signal), 30_000);
+      const result = await postFlowAction(input);
       if (result.error) throw new Error(result.error);
       if (selected === state.issueId && result.flow) applyView(result);
       return result;
