@@ -330,10 +330,18 @@ update leaves uncommitted changes alone.
 
 If Git reports conflicts from this update, Factory gives Codex up to three attempts. Codex
 may edit and stage only the conflicted files. It must preserve both sides and stop
-when resolution requires a decision. Factory commits the resolved merge through
-normal Git hooks. If repair cannot finish the merge, Factory keeps the local
-commit and the in-progress merge, lists the files that need attention, and pauses
-the route. Retry Update Branch after answering any required decision or staging a resolution.
+when resolution requires a decision. Retry fetches the starting branch and shows
+the saved question with the staged resolutions intact while the issue head,
+target, and conflict match. **Record decision and continue** supplies the answer
+to the conflict resolution turn. A changed head, target, or conflict triggers a
+fresh merge evaluation. If the user fully stages a resolution, Factory can
+finish that merge and carry it forward to a newer starting-branch revision.
+Changes outside the recorded conflict require review before Factory can restart
+the merge.
+
+Factory commits the resolved merge through normal Git hooks. If the attempts
+cannot finish, Factory keeps the local commit and the in-progress merge, lists
+the files that need attention, and pauses the route.
 
 ## Issue Start, Resume, and Pause
 

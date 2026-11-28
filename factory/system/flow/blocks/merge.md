@@ -12,9 +12,10 @@ Temporary GitHub request failures get up to three retries with 1, 2 and 4 second
 
 Recover from required GitHub check failures within the same run. Use the failed run’s retained logs, repair the candidate, verify it, push it, and check GitHub again. Make up to three different repair attempts per distinct blocker. Stop for a required decision, unavailable permission, an unchanged candidate, or a repeated failing source tree.
 
-If a provider pause interrupted a saved repair, an explicit retry can continue
-that repair before synchronizing a newer destination. Inspect the retained edits,
-preserve unrelated changes, and commit only the verified repair.
+If a repair turn was interrupted, Retry continues in the original
+conversation when the issue commit, partial tracked edits, PR head and target
+still match. Use the retained failed run and the recorded repair turn to inspect
+and complete the verified repair. Changes to those inputs require reconciliation.
 
 Identify the exact failed test names, assertions and errors from the current
 candidate's verification evidence. Reproduce those cases with focused commands

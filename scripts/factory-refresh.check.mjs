@@ -87,6 +87,7 @@ test('Flow navigation loads another issue while an earlier block check is pendin
       section('  function postFlowAction(', '  window.createInvestigationFollowupsUI(') +
       section('  async function readFlowSnapshot(', '  async function loadRepoFiles(') +
       section('  async function action(', '  function updateIssueDecisionControls(') +
+      section('  function setIssueInputAvailability(', '  function playbackInputTitle(') +
       section('  function navigateWorkspace(', "  window.addEventListener('popstate'") +
       '; return { action, setBusy, navigateWorkspace };'
   )(...Object.values(scope));

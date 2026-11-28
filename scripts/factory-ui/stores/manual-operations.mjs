@@ -19,7 +19,7 @@ function reconcileDisconnected(current, disconnected) {
   }
 }
 
-export async function updateOwnedWorktree(flows, issue, flow) {
+export async function updateOwnedWorktree(flows, issue, flow, input) {
   const disconnected = await observeDisconnectedFlow(flows.service, flow, flows.deliveryOptions.createConnection);
   return runOwnedOperation(flows, {
     issue,
@@ -32,6 +32,7 @@ export async function updateOwnedWorktree(flows, issue, flow) {
       return flows.executor.run({
         issue,
         ...context,
+        input,
         onWorkspace: (workspace) =>
           context.change((_, current) => {
             current.workspace = workspace;
