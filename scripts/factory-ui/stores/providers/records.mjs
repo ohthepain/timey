@@ -207,12 +207,13 @@ async function decodedWithRefs(record, decode, onUnreadable, referencesOnly, ind
     Array.isArray(index.refs) &&
     index.refs.every(artifactReference)
   ) {
-    return { ...record, value: { kind: index.kind }, refs: [ref, ...index.refs] };
+    return { ...record, value: { kind: index.kind }, payloadRef: ref, refs: [ref, ...index.refs] };
   }
   const decoded = await retainedEntry(() => decode(record), onUnreadable);
   return {
     ...record,
     value: decoded?.value,
+    ...(encoding === 'artifact' && { payloadRef: ref }),
     refs: references([record.value, decoded?.value]),
   };
 }
@@ -423,11 +424,17 @@ export function recordStore(backend, artifacts, { allowInlineLarge = false, stor
         if (released && current.value.released) return;
       }
       const next = { ...value, touchedAt: new Date().toISOString(), released };
+      const statusKey = key.replace('artifact-uploads/', 'asset-deletions/');
+      const deleted = await this.get(statusKey);
+      const clear = deleted && !released;
       try {
         await this.commit({
           operationId: key + '/' + randomUUID(),
-          expected: [{ key, revision: current?.revision ?? null }],
-          writes: [{ key, value: next }],
+          expected: [
+            { key, revision: current?.revision ?? null },
+            ...(clear ? [{ key: statusKey, revision: deleted.revision }] : []),
+          ],
+          writes: [{ key, value: next }, ...(clear ? [{ key: statusKey, value: null }] : [])],
         });
       } catch (error) {
         if (error.code !== 'STORE_CONFLICT') throw error;

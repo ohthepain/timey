@@ -22,7 +22,7 @@ import { storeUnavailable } from './stores/availability.mjs';
 import { sameOwner } from './stores/coordination.mjs';
 import { reconcileRecoveredProgress } from './stores/recovered-flow.mjs';
 import { abortOwnedMerge, moveOwnedStartingPoint, updateOwnedWorktree } from './stores/manual-operations.mjs';
-import { prepareAttemptCommit } from './stores/flow-evidence.mjs';
+import { prepareAttemptCommit, releaseIssueArtifact } from './stores/flow-evidence.mjs';
 import { readSnapshot } from './stores/snapshots.mjs';
 import { inheritedIssueCaptureProfile, resolveIssueStorage } from './stores/settings.mjs';
 import { registeredProjectStores } from './stores/report-access.mjs';
@@ -3761,7 +3761,7 @@ class IssueFlows {
       discussion.close();
     }
   }
-  deleteArtifact(flow, issue, input) {
+  async deleteArtifact(flow, issue, input) {
     requireThat(!this.active.has(issue.id), 'Stop the current block before deleting its artifacts.');
     const artifact = this.artifacts(flow).find((item) => item.id === input.artifactId);
     requireThat(
@@ -3778,6 +3778,14 @@ class IssueFlows {
         !lstatSync(artifact.path).isSymbolicLink() &&
         lstatSync(path).isFile(),
       'Only listed regular artifacts inside the managed issue directory can be removed.'
+    );
+    const generation = fileGeneration(path);
+    const sha256 = digest(readFileSync(path));
+    const stores = this.service.projectStores;
+    if (stores) await releaseIssueArtifact(stores, issue.id, artifact.originalPath, sha256);
+    requireThat(
+      fileGeneration(path) === generation,
+      'The local artifact changed during deletion. Refresh before retrying.'
     );
     unlinkSync(path);
     this.pauseAutoplay(issue.id, 'Block evidence changed.');

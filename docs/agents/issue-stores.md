@@ -228,6 +228,15 @@ can use a bounded projection saved with new overflow records and operation
 receipts. Older and larger records fall back to reading the original payload.
 The upload catalog records physical locations. Current records and retained
 receipts supply recorded ownership.
+Reference reconciliation stores one record per owner and S3 object identity.
+Shared writes schedule reconciliation. The idle sweep also reconciles changes
+from background work and runner-local files.
+Records and receipts keep their logical identities across storage moves. Move
+receipts that record copies and routing aliases have no ownership of their own.
+Deleting an individual issue artifact releases that evidence path and digest,
+including its retained manifest copies. Other owners continue to protect the
+object. S3 removal writes a durable deletion status. Factory's authenticated
+`/api/project-asset-reference` read accepts an object's `sha256` and `bytes`.
 
 Deleting a published report queues its matching S3 copies for cleanup. Factory
 checks remaining reports, Discuss attachments, shared records, and retained
@@ -238,6 +247,8 @@ against the same sources. The cleanup uses the existing storage seal and
 processes a bounded batch on each pass. An unavailable reference source pauses
 cleanup for that pass. Retained receipts keep their references until retired.
 The sweep uses registered object keys and the keys derived from deleted reports.
+Publishers' runner-local report and attachment references are recorded by
+runner. A different runner preserves those ownership records.
 It also reclaims their history in versioned buckets. The S3 role needs
 `s3:GetBucketVersioning`, and versioned buckets also need
 `s3:ListBucketVersions` and `s3:DeleteObjectVersion`.

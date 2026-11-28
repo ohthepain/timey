@@ -21,6 +21,7 @@ import { createArtifactRouter } from './factory-ui/stores/coordination.mjs';
 import { runMetadataOperation } from './factory-ui/stores/metadata-operation.mjs';
 import { InvestigationReports } from './factory-ui/investigation-reports.mjs';
 import { collectS3Uploads, stageReportAssets } from './factory-ui/stores/asset-cleanup.mjs';
+import { releaseIssueArtifact } from './factory-ui/stores/flow-evidence.mjs';
 
 async function fixture(t, kind = 'files', s3) {
   const f = gitFixture(t, 'store-delete-');
@@ -42,8 +43,12 @@ async function fixture(t, kind = 'files', s3) {
   const artifacts = createArtifactRouter({ active: physical, stores: new Map(), records: () => records });
   records = await openRecordStore(config, { ...options, artifacts });
   const issues = await openIssueStore(config, { ...options, artifacts });
-  const create = (root = f.root, runnerId = 'deleting-runner') =>
-    createProjectStores({
+  const registry = s3
+    ? await openRecordStore({ id: 'asset-registry', kind: 'files' }, { ...options, inlinePayloads: true })
+    : null;
+  if (registry) t.after(() => registry.close());
+  const create = (root = f.root, runnerId = 'deleting-runner') => {
+    const project = createProjectStores({
       ...options,
       root,
       records,
@@ -53,6 +58,9 @@ async function fixture(t, kind = 'files', s3) {
       recordStores: new Map([['files', records]]),
       artifactStores: new Map([['artifacts', physical]]),
     });
+    if (registry) project.assetUploadRegistry = () => registry;
+    return project;
+  };
   const project = create();
   const add = async (id, { state = 'complete', location = 'archive' } = {}) =>
     project.importIssue({
@@ -361,6 +369,11 @@ test('S3 collection handles deleted reports, abandoned uploads, and non-issue la
   reports.deleteReports([one.id]);
   await clean();
   assert.ok(await f.physical.inspect(shared));
+  const edges = await registry.list('asset-references/' + shared.sha256 + ':' + shared.bytes + '/');
+  assert.deepEqual(
+    edges.map(({ value }) => value.owner),
+    [['report', f.project.runnerId, two.id]]
+  );
   await stageReportAssets(f.project, registry, [two.id]);
   reports.deleteReports([two.id]);
   await clean();
@@ -381,10 +394,86 @@ test('S3 collection handles deleted reports, abandoned uploads, and non-issue la
     deletionId: 'delete-fixture',
     receipts: [{ id: prior.id, identity: prior.identity, inputDigest: prior.inputDigest }],
   });
-  await clean(later);
+  await clean();
   assert.equal(await f.physical.inspect(other), null);
   assert.equal((await registry.list('artifact-uploads/')).length, 0);
+  assert.equal((await registry.list('asset-references/')).length, 0);
+  assert.equal((await registry.list('asset-deletions/')).length, 4);
   assert.equal(await f.records.get('project/migration'), null);
+});
+
+test('moving duplicate records preserves their owner count and deleting issue evidence releases its retained copies', async (t) => {
+  const f = await fixture(t, 'files', {
+    config: { bucket: 'disposable-fixture', prefix: 'project-proof', region: 'us-east-1' },
+    client: mockS3(),
+  });
+  const registry = f.project.assetUploadRegistry();
+  f.physical.registerUpload = (upload) => registry.registerArtifactUpload(upload);
+  const artifact = await f.physical.put({ body: 'fixture evidence' });
+  const path = join(f.root, '.issues', 'proof.txt');
+  const key = 'evidence/a';
+  const body = { root: f.root, files: [{ path, sha256: artifact.sha256, ref: artifact }] };
+  const request = {
+    operationId: 'fixture-evidence',
+    expected: [{ key, revision: null }],
+    writes: [{ key, value: body }],
+  };
+  await f.records.commit(request);
+  await collectS3Uploads(f.project, registry);
+  const prefix = 'asset-references/' + artifact.sha256 + ':' + artifact.bytes + '/';
+  assert.equal((await registry.list(prefix)).length, 2);
+  const destination = await openRecordStore(
+    { id: 'destination', kind: 'files' },
+    { root: f.root, projectId: f.project.projectId }
+  );
+  t.after(() => destination.close());
+  f.project.recordStores.set(destination.id, destination);
+  await destination.commit(request);
+  await f.records.commit({
+    operationId: 'fixture-move',
+    expected: [{ key: 'operations/fixture-move', revision: null }],
+    writes: [
+      {
+        key: 'operations/fixture-move',
+        value: {
+          kind: 'move-issue',
+          status: 'confirmed',
+          input: { issueId: 'a' },
+          sources: [{ artifactCopies: [artifact] }],
+        },
+      },
+    ],
+  });
+  await collectS3Uploads(f.project, registry);
+  assert.equal((await registry.list(prefix)).length, 2);
+  const peer = gitFixture(t, 'artifact-report-peer-');
+  const peerProject = f.create(peer.root, 'report-owner');
+  const reports = new InvestigationReports(peer.root);
+  const reportPath = join(peer.root, 'report.md');
+  const evidencePath = join(peer.root, 'proof.txt');
+  writeFileSync(reportPath, '# Peer evidence\n');
+  writeFileSync(evidencePath, 'fixture evidence');
+  const published = reports.publish({
+    source: { issueId: 'b', blockId: 'findings', attemptId: 'source', revision: 'a'.repeat(40) },
+    attemptId: 'publication',
+    publicationId: 'peer-evidence',
+    title: 'Peer evidence',
+    report: reportPath,
+    evidence: [evidencePath],
+  });
+  await collectS3Uploads(peerProject, registry);
+  assert.equal((await registry.list(prefix)).length, 3);
+  await releaseIssueArtifact(f.project, 'a', path, artifact.sha256);
+  await collectS3Uploads(f.project, registry);
+  assert.equal((await registry.list(prefix)).length, 1);
+  assert.ok(await f.physical.inspect(artifact));
+  await stageReportAssets(peerProject, registry, [published.id]);
+  reports.deleteReports([published.id]);
+  await collectS3Uploads(peerProject, registry);
+  assert.equal((await registry.list(prefix)).length, 0);
+  assert.equal(await f.physical.inspect(artifact), null);
+  const status = (await registry.list('asset-deletions/')).find(({ value }) => value.object.sha256 === artifact.sha256);
+  assert.equal(status.value.status, 'deleted');
 });
 
 async function removeTestVersions(client, bucket, prefix) {

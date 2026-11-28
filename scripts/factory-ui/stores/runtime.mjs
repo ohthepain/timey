@@ -17,6 +17,7 @@ import { sharedIssueQueueConfig, sharedIssueQueueEnabled } from '../shared-issue
 import { collectEvidence, hydrateEvidence, registerEvidenceResolver } from './evidence.mjs';
 import { activateStorageProfiles, persistStorageProfiles } from './profile-activation.mjs';
 import { assetCleanupRole, collectS3Uploads, stageReportAssets } from './asset-cleanup.mjs';
+import { assetIdentity } from './asset-references.mjs';
 
 const runtimes = new WeakMap();
 const bootstrapKey = 'project/bootstrap';
@@ -55,6 +56,7 @@ function lazyProvider(runtime, kind, config) {
         projectId: runtime.config.projectId,
         artifacts: runtime.artifacts,
         readOnly: runtime.readOnly,
+        ...(config.id.startsWith('artifact-uploads:') && config.kind !== 'dynamodb' && { inlinePayloads: true }),
         ...(kind === 'artifact' &&
           config.kind === 's3' &&
           !runtime.readOnly && {
@@ -96,10 +98,32 @@ function lazyProvider(runtime, kind, config) {
         'STORE_UNSUPPORTED',
         'The configured store does not support this operation.'
       );
-      return provider[name](...args);
+      const result = await provider[name](...args);
+      if (
+        kind !== 'artifact' &&
+        ['commit', 'commitGroup', 'removeRecords', 'retireReceipts'].includes(name) &&
+        !config.id.startsWith('artifact-uploads:')
+      )
+        scheduleAssetReconciliation(runtime);
+      return result;
     };
   runtime.providers.set(key, proxy);
   return proxy;
+}
+
+function scheduleAssetReconciliation(runtime) {
+  if (
+    runtime.service.reviewMode !== 'live' ||
+    runtime.assetCleanup ||
+    runtime.assetReconcileTimer ||
+    !runtime.config.stores.some((store) => store.kind === 's3')
+  )
+    return;
+  runtime.assetReconcileTimer = setTimeout(() => {
+    runtime.assetReconcileTimer = null;
+    void cleanProjectAssetUploads(runtime.service).catch(() => {});
+  }, 1000);
+  runtime.assetReconcileTimer.unref();
 }
 
 function artifactUploadRegistry(runtime) {
@@ -113,6 +137,30 @@ export async function stageReportDeletionAssets(service, ids) {
   const runtime = runtimes.get(service);
   if (!runtime?.project || !Array.isArray(ids)) return;
   await stageReportAssets(runtime.project, artifactUploadRegistry(runtime), ids);
+}
+
+export async function s3ReferenceStatus(service, { sha256, bytes }) {
+  assertStore(
+    /^[a-f0-9]{64}$/.test(sha256) && Number.isSafeInteger(bytes) && bytes >= 0,
+    'STORE_INVALID',
+    'Supply an S3 object digest and size.'
+  );
+  if (service.reviewMode === 'preview') return { object: { sha256, bytes }, refCount: 0, status: 'unknown' };
+  const object = { sha256, bytes };
+  const identity = assetIdentity(object);
+  return inspectProjectStores(service.root, readStoreConfig(service.root), async (project) => {
+    const registry = project.assetUploadRegistry();
+    const [references, registered, deleted] = await Promise.all([
+      registry.list('asset-references/' + identity + '/'),
+      registry.list('artifact-uploads/', ({ value }) => (assetIdentity(value) === identity ? true : undefined)),
+      registry.list('asset-deletions/', ({ value }) => (assetIdentity(value.object) === identity ? true : undefined)),
+    ]);
+    return {
+      object,
+      refCount: references.length,
+      status: registered.length ? 'registered' : deleted.length ? 'deleted' : 'unknown',
+    };
+  });
 }
 
 export async function cleanProjectAssetUploads(service) {
@@ -184,6 +232,7 @@ function buildProject(runtime, config, runnerId) {
     artifactStores,
     recordStores,
   });
+  runtime.project.assetUploadRegistry = () => artifactUploadRegistry(runtime);
   runtime.service.projectStores = runtime.project;
   runtime.service.artifacts = runtime.artifacts;
 }
@@ -626,6 +675,7 @@ function closeProviders(runtime) {
 export async function closeProjectStores(service) {
   const runtime = runtimes.get(service);
   if (!runtime) return;
+  clearTimeout(runtime.assetReconcileTimer);
   await runtime.assetCleanup?.catch(() => {});
   runtime.unregister?.();
   await closeProviders(runtime);

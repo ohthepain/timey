@@ -186,8 +186,7 @@ circular plus button adds a step. The center-column Start/Resume/Pause control r
 the route one eligible block at a time. A confirmation link appears in the header
 when the route reaches a protected block. The Run, Retry, Recover, or Stop button
 beside the selected block's name controls that block individually.
-Flow is the Factory workspace. Legacy `/classic` links open the selected issue
-in Flow. Legacy queue links open **Issues**. Other legacy links open Project Home.
+Flow is the Factory workspace.
 In the **Issues** tab,
 you can filter and sort saved issues, edit shared fields across an open selection,
 and archive a closed selection.

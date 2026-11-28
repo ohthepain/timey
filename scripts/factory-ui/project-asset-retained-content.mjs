@@ -43,7 +43,7 @@ async function discussionAttachment(directory, attachment) {
   if (!matchesPattern(attachment.id, recordId)) throw Error('Invalid retained attachment identity.');
   const bytes = await retainedBytes(join(directory, 'attachments', attachment.id + '.bin'));
   if (bytes.length !== attachment.size) throw Error('Retained attachment bytes have changed.');
-  return matchedReference(bytes, 'Restricted reference');
+  return { ...matchedReference(bytes, 'Restricted reference'), attachmentId: attachment.id };
 }
 
 async function discussionMessage(directory, message) {
@@ -77,7 +77,16 @@ async function collectRetained(directory, filename, collect, ids) {
     try {
       if (!entry.isDirectory()) throw Error('A retained content record must be a project directory.');
       const record = JSON.parse(await retainedBytes(join(folder, filename)));
-      matches.push(...(await collect(record, folder)));
+      for (const result of await collect(record, folder)) {
+        if (result.status === 'fulfilled') {
+          const value = result.value;
+          const owner =
+            filename === 'report.json'
+              ? ['report', entry.name]
+              : ['discussion-attachment', entry.name, value.attachmentId];
+          matches.push({ ...result, value: { ...value, owner } });
+        } else matches.push(result);
+      }
     } catch (reason) {
       matches.push({ status: 'rejected', reason });
     }

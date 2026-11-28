@@ -72,6 +72,7 @@ import {
   hydrateProjectEvidence,
   cleanProjectAssetUploads,
   stageReportDeletionAssets,
+  s3ReferenceStatus,
 } from './stores/runtime.mjs';
 import { issueStoresView, handleStoreAction } from './stores/routes.mjs';
 import {
@@ -662,7 +663,6 @@ async function respondToAction(service, request, response, path) {
 }
 function page(service, request, response, token, port, accountOrigin) {
   const url = new URL(request.url, 'http://127.0.0.1');
-  if (url.pathname === '/classic') return redirectClassic(service, url, response);
   response.setHeader('Set-Cookie', `timey_factory_${port}=${token}; HttpOnly; SameSite=Strict; Path=/`);
   response.setHeader('Content-Type', 'text/html; charset=utf-8');
   const pages = { '/native-chat': 'native-chat.html', '/project-issues': 'project-issues.html' };
@@ -673,34 +673,6 @@ function page(service, request, response, token, port, accountOrigin) {
   const frame = `<iframe title="Timey account" src="${accountOrigin}/auth/factory-account?${query}" height="40" sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"></iframe><script src="/project-account-ui.js" defer></script>`;
   response.end(html.replace('<!-- project-account -->', frame));
 }
-function redirectClassic(service, url, response) {
-  const selected = url.searchParams.get('issue');
-  if (selected === null && !url.searchParams.has('embed')) {
-    response.setHeader('Content-Type', 'text/html; charset=utf-8');
-    // URL fragments are available to the browser only.
-    return response.end(String.raw`<!doctype html><title>Open Flow</title><a href="/">Open Flow</a>
-      <script>
-        const match = /^#\/issue\/([\w%.-]+)(?:\?|$)/.exec(location.hash);
-        const home = /^#\/?queue$/.test(location.hash) ? '/?projectTab=issues' : '/';
-        location.replace(match ? '/classic?issue=' + match[1] : home);
-      </script>`);
-  }
-  response.writeHead(302, { Location: classicDestination(service, selected, url.searchParams.get('embed')) });
-  response.end();
-}
-
-function classicDestination(service, selected, embed) {
-  if (selected) return classicIssueDestination(service, selected);
-  return embed === 'project-issues' ? '/?projectTab=issues#' : '/';
-}
-
-function classicIssueDestination(service, selected) {
-  if (!/^[\w-]+$/.test(selected)) return '/';
-  const id = resolveIssueNumber(service, selected);
-  const exists = ['open', 'closed', 'archive'].some((state) => existsSync(storedIssuePath(service.root, id, state)));
-  return exists ? '/?issue=' + encodeURIComponent(id) : '/';
-}
-
 function displayRead(url) {
   return url.pathname !== '/api/issue-store-recovery';
 }
@@ -750,6 +722,11 @@ async function read(service, request, response, owner) {
       url.searchParams.has('status')
         ? projectAssetStorageStatus(service, url.searchParams.get('refresh') === 'true')
         : projectAssetStorage(service),
+    '/api/project-asset-reference': () =>
+      s3ReferenceStatus(service, {
+        sha256: url.searchParams.get('sha256'),
+        bytes: Number(url.searchParams.get('bytes') ?? NaN),
+      }),
     '/api/project-preferences': () => readProjectPreferences(service.root),
     '/api/project-home': () => projectHome(service).view(),
     '/api/investigation-reports': () => {
@@ -897,8 +874,7 @@ function issueResponse(service, owner, id) {
 
 function isPage(request) {
   return (
-    request.method === 'GET' &&
-    ['/', '/flow', '/classic', '/native-chat', '/project-issues'].includes(request.url.split('?')[0])
+    request.method === 'GET' && ['/', '/flow', '/native-chat', '/project-issues'].includes(request.url.split('?')[0])
   );
 }
 

@@ -20,7 +20,7 @@ function operationIssues(record) {
 export function ownsDeletedRecord(record, issueId) {
   if (['flows/', 'evidence/', 'classic/', 'catalog/'].some((prefix) => record.key === prefix + issueId)) return true;
   if (
-    ['issues/', 'progress/', 'commands/', 'issue-history/', 'issue-annotations/'].some((prefix) =>
+    ['issues/', 'progress/', 'commands/', 'issue-history/', 'issue-annotations/', 'artifact-releases/'].some((prefix) =>
       record.key.startsWith(prefix + issueId + '/')
     )
   )

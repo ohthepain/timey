@@ -8,6 +8,7 @@ import { assertStoreState, deletionBlockers, inputDigest, sealCoordination, stor
 import { planRetirement, redactDeletedMove } from './deletion-retention.mjs';
 import { deletedFilePlanner, removeDeletedFiles } from './deletion-files.mjs';
 import { retainedContentReferences } from '../project-asset-retained-content.mjs';
+import { collectReleasedIssueAssets } from './asset-cleanup.mjs';
 
 const chunks = (values) =>
   Array.from({ length: Math.ceil(values.length / 90) }, (_, i) => values.slice(i * 90, i * 90 + 90));
@@ -302,6 +303,7 @@ async function artifactRemoval(
   physical,
   migratedHomes,
   removeS3,
+  keepLocal,
   [sha256, bytes, mediaType, locations]
 ) {
   const alias = await project.coordination.get('artifact-locations/' + sha256);
@@ -317,7 +319,7 @@ async function artifactRemoval(
     );
     if (store.kind === 's3') {
       if (removeS3) s3.push(store);
-    } else if (await localArtifactHome(root, store)) local.push(store);
+    } else if (!keepLocal && (await localArtifactHome(root, store))) local.push(store);
   }
   const stores = s3.length + local.length === ids.size ? [...s3, ...local] : s3;
   if (!stores.length) return null;
@@ -331,7 +333,9 @@ async function artifactRemoval(
 async function planArtifactRemovals(project, candidates, retained, seal) {
   const root = await realpath(project.root);
   const physical = artifactHomes(project);
-  const removeS3 = seal.role !== 'delete-proposal' || (await project.coordination.list('claims/')).length === 0;
+  const removeS3 =
+    [...physical.values()].some((store) => store.kind === 's3') &&
+    (seal.role !== 'delete-proposal' || (await project.coordination.list('claims/')).length === 0);
   const migratedHomes = (
     await project.coordination.list('operations/', ({ value }) =>
       value.kind === 'move-project-store' && value.input.role === 'artifacts'
@@ -343,8 +347,9 @@ async function planArtifactRemovals(project, candidates, retained, seal) {
     .filter(Boolean);
   const removals = [];
   for (const candidate of candidates) {
-    if (retained.hashes.has(candidate[0])) continue;
-    const removal = await artifactRemoval(project, root, physical, migratedHomes, removeS3, candidate);
+    const keepLocal = retained.hashes.has(candidate[0]);
+    if (keepLocal && !removeS3) continue;
+    const removal = await artifactRemoval(project, root, physical, migratedHomes, removeS3, keepLocal, candidate);
     if (removal) removals.push(removal);
   }
   return removals;
@@ -355,12 +360,15 @@ async function removeArtifactCopies(project, operationId, removals, token) {
     const batch = removals.slice(offset, offset + 8);
     const outcomes = await Promise.allSettled(
       batch.map(async ({ ref, stores }) => {
-        for (const store of stores) await store.remove({ ...ref, storeId: store.id });
+        for (const store of stores) if (store.kind !== 's3') await store.remove({ ...ref, storeId: store.id });
       })
     );
     const failed = outcomes.find(({ status }) => status === 'rejected');
     if (failed) throw failed.reason;
-    for (const { ref, alias } of batch.filter(({ alias }) => alias)) {
+    for (const { ref, alias } of batch.filter(
+      ({ alias, stores }) =>
+        alias && stores.some((store) => store.kind !== 's3' && store.id === alias.value.ref.storeId)
+    )) {
       await project.coordination.commit(
         operationId + '/remove-alias/' + ref.sha256,
         [{ key: alias.key, revision: alias.revision }],
@@ -391,8 +399,13 @@ async function eraseArtifacts(project, operation, stores, seal) {
       seal.token
     );
   await removeArtifactCopies(project, operation.value.id, removals, seal.token);
+  const released = project.assetUploadRegistry
+    ? await collectReleasedIssueAssets(project, project.assetUploadRegistry(), seal, removals)
+    : 0;
+  const localOnly = removals.filter(({ stores }) => stores.every((store) => store.kind !== 's3')).length;
   const local = removeDeletedFiles(project.root, files.finish(), { issueId });
-  return { removed: removals.length, retained: cleanup.candidates.length - removals.length, local };
+  const removed = Math.min(cleanup.candidates.length, localOnly + released);
+  return { removed, retained: cleanup.candidates.length - removed, local };
 }
 
 function proposalTarget({ purpose, issueId }) {

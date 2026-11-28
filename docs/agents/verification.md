@@ -124,8 +124,8 @@ details in `merge-target-update.json`. The fixture simulates GitHub responses
 and supplies a candidate check that verifies a clean worktree containing the
 target commit.
 
-`node scripts/flow-browser.mjs --project-issues` exercises retired Classic
-links and operations, the Flow Issues queue, and archival of saved issues.
+`node scripts/flow-browser.mjs --project-issues` exercises the Flow Issues queue
+and archival of saved issues.
 
 `node scripts/flow-browser.mjs --request-save` holds Request clarification after
 saving Your words on an existing issue. Rename, Close, Stop, and the editor remain
