@@ -935,7 +935,7 @@ try {
     activityBrowserChecks({ page, project, service, poll, screenshot, output })
   );
   await check('Issue and project chats retain semantic progress', () =>
-    chatProgressBrowserChecks({ page, project, service, poll, screenshot, output })
+    chatProgressBrowserChecks({ page, project, service, poll, screenshot, output, clickAction })
   );
   await check('Issue flow scrollbar appears only while scrolling', async () => {
     const id = '20261122-issue-scrollbar-fixture';

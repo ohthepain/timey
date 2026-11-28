@@ -90,7 +90,7 @@ async function exerciseChat({ page, chat, emit, reopen, waitForApproval, finish,
   };
 }
 
-export async function chatProgressBrowserChecks({ page, service, project, poll, screenshot, output }) {
+export async function chatProgressBrowserChecks({ page, service, project, poll, screenshot, output, clickAction }) {
   initializeProjectLifecycle(service, { digest: readProjectSettings(project).lifecycle.digest });
   await ensureProjectStores(service);
   const previous = service.flows.executor;
@@ -146,7 +146,7 @@ export async function chatProgressBrowserChecks({ page, service, project, poll, 
     await poll(() => !service.flows.active.has(issue.id), Boolean, 'Issue work released its claim');
     const userNote = 'Retain the completed progress with this note.';
     await page.locator('#comment-form [name="comment"]').fill(userNote);
-    await page.locator('#comment-form button[type="submit"]').click();
+    await clickAction(page.locator('#comment-form button[type="submit"]'));
     results.blockUserBox = await assertUserMessageBox(page.locator('#inspector-body'), userNote);
     await screenshot('block-conversation-user-message');
   } finally {
