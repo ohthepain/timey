@@ -37,6 +37,12 @@ For a shared closed report, the proposed flow saves the local archive copy first
   the server. It stays open until dismissed and reports how many issues were
   archived, any awaiting review, and any individual failures.
 - Provide a local Archive view with Restore to closed. Reopening is a separate explicit action.
+- The project Issues tab also lists **Archived** issues. **Delete selected**
+  appears for an archived selection and for Open selections made up entirely
+  of proposals awaiting approval. Confirm the listed reports before Factory
+  deletes them through the existing checked deletion paths. Search filters
+  preserve the selection, and deletion includes selected reports hidden by the
+  current filter. Uncheck **Select all** to clear the whole selection.
 - Admin can permanently delete reviewed local archive copies in one batch. A
   person can also select eligible local branches associated with those reports.
   This operation preserves display numbers and leaves issue worktree and

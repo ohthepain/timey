@@ -16,6 +16,7 @@ import {
 import { tmpdir, homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { CodexConnection } from './codex.mjs';
+import { assertProviderActive } from './provider-runtime.mjs';
 import { handleTurnTool } from './issue-chat-runtime.mjs';
 import { digest, requireThat } from './common.mjs';
 import { redactValue } from './activity.mjs';
@@ -76,6 +77,7 @@ class DiscussionCodex extends CodexConnection {
     });
   }
   async begin(context, instructions) {
+    assertProviderActive(this.root, 'codex');
     const contextText = JSON.stringify(redactValue(context), null, 2);
     const reference = this.suppliedText ? null : writeDiscussionEvidence(this.files, 'context.json', contextText);
     const developerInstructions = this.suppliedText
@@ -86,6 +88,7 @@ Complete context is available at ${JSON.stringify(reference)}. Use bounded reads
 ${this.linkInput(instructions || '', 'instructions')}`;
     validateTextInput(developerInstructions);
     await this.ready();
+    assertProviderActive(this.root, 'codex');
     const result = await this.call(
       'thread/start',
       {
@@ -102,6 +105,7 @@ ${this.linkInput(instructions || '', 'instructions')}`;
     this.thread = result.thread.id;
   }
   async ask(text, skills = [], schema = undefined) {
+    assertProviderActive(this.root, 'codex');
     requireThat(!this.suppliedText || skills.length === 0, 'Text discussions accept supplied text only.');
     const input = [];
     for (const skill of skills) input.push({ type: 'skill', ...(await this.registerSkill(skill)) });

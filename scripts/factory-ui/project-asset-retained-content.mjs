@@ -43,7 +43,7 @@ async function discussionAttachment(directory, attachment) {
   if (!matchesPattern(attachment.id, recordId)) throw Error('Invalid retained attachment identity.');
   const bytes = await retainedBytes(join(directory, 'attachments', attachment.id + '.bin'));
   if (bytes.length !== attachment.size) throw Error('Retained attachment bytes have changed.');
-  return matchedReference(bytes, 'Restricted reference');
+  return { ...matchedReference(bytes, 'Restricted reference'), attachmentId: attachment.id };
 }
 
 async function discussionMessage(directory, message) {
@@ -69,15 +69,24 @@ async function readRetainedDirectory(path) {
   }
 }
 
-async function collectRetained(directory, filename, collect) {
+async function collectRetained(directory, filename, collect, ids) {
   const entries = await readRetainedDirectory(directory);
   const matches = [];
-  for (const entry of entries.filter((entry) => recordId.test(entry.name))) {
+  for (const entry of entries.filter((entry) => recordId.test(entry.name) && (!ids || ids.has(entry.name)))) {
     const folder = join(directory, entry.name);
     try {
       if (!entry.isDirectory()) throw Error('A retained content record must be a project directory.');
       const record = JSON.parse(await retainedBytes(join(folder, filename)));
-      matches.push(...(await collect(record, folder)));
+      for (const result of await collect(record, folder)) {
+        if (result.status === 'fulfilled') {
+          const value = result.value;
+          const owner =
+            filename === 'report.json'
+              ? ['report', entry.name]
+              : ['discussion-attachment', entry.name, value.attachmentId];
+          matches.push({ ...result, value: { ...value, owner } });
+        } else matches.push(result);
+      }
     } catch (reason) {
       matches.push({ status: 'rejected', reason });
     }
@@ -85,11 +94,11 @@ async function collectRetained(directory, filename, collect) {
   return matches;
 }
 
-export async function retainedContentReferences(root) {
+export async function retainedContentReferences(root, { reportIds } = {}) {
   const directory = join(await realpath(root), '.issues/factory-ui');
   const results = await Promise.allSettled([
-    collectRetained(join(directory, 'investigation-reports'), 'report.json', publishedReport),
-    collectRetained(join(directory, 'project-discuss'), 'conversation.json', discussion),
+    collectRetained(join(directory, 'investigation-reports'), 'report.json', publishedReport, reportIds),
+    ...(reportIds ? [] : [collectRetained(join(directory, 'project-discuss'), 'conversation.json', discussion)]),
   ]);
   const matches = results.flatMap((result) => (result.status === 'fulfilled' ? result.value : [result]));
   return {

@@ -13,6 +13,7 @@
   const date = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' });
   let activity;
   let quotaRequest;
+  let quotaGeneration = 0;
   let activityRequest;
 
   function node(tag, value = '', className = '') {
@@ -203,6 +204,7 @@
   }
 
   const quotaMessages = {
+    disabled: 'OpenAI is disabled in Factory settings.',
     'api-key': 'Codex is using an API key. Check API organization and project limits in the OpenAI platform.',
     'no-chatgpt-account': 'Sign in to Codex with ChatGPT to see plan usage.',
     unavailable: 'Could not read Codex plan usage. Try refreshing.',
@@ -258,13 +260,15 @@
 
   async function loadQuota(force = false) {
     if (quotaRequest) return;
+    const current = quotaGeneration;
     quotaRequest = true;
     refresh.disabled = true;
     if (!quota.childElementCount) quota.replaceChildren(node('p', 'Checking Codex plan usage…'));
     try {
-      showQuota(await get('/api/codex-quota' + (force ? '?refresh=1' : '')));
-    } catch {
-      showQuota({ status: 'unavailable' });
+      const data = await get('/api/codex-quota' + (force ? '?refresh=1' : '')).catch(() => ({
+        status: 'unavailable',
+      }));
+      if (current === quotaGeneration) showQuota(data);
     } finally {
       quotaRequest = false;
       refresh.disabled = false;
@@ -293,6 +297,12 @@
       void loadActivity();
       void loadQuota();
     }
+  });
+  window.addEventListener('factory-provider-settings-saved', (event) => {
+    const codex = event.detail?.find(({ id }) => id === 'codex');
+    if (codex?.active !== false) return;
+    quotaGeneration++;
+    showQuota({ status: 'disabled' });
   });
   window.addEventListener('resize', position);
   reset.addEventListener('click', async () => {

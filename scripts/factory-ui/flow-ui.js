@@ -279,6 +279,12 @@ import { reorderedBlocks } from './flow-order.mjs';
     return blocks.some(blockWorking) || repairing || updating;
   }
 
+  function blockerRetryProgress() {
+    const block = state.view?.flow?.blocks.find(blockWorking);
+    const blocker = block && latest(block)?.retryingBlocker;
+    return blocker && { label: 'Retrying blocker', text: blocker.name };
+  }
+
   function statusText(value, attempt) {
     if (value === 'blocked' && attempt?.result?.humanInput) return 'Needs your input';
     return value === 'blocked' && attempt?.result?.completed?.length ? 'Needs retry' : words(value);
@@ -288,7 +294,7 @@ import { reorderedBlocks } from './flow-order.mjs';
     return block && state.view?.humanInput?.blockId === block.id ? state.view.humanInput : null;
   }
 
-  function statusIcon(value) {
+  function statusIcon(value, glyph) {
     const normalized = String(value || 'new').replaceAll('_', '-');
     const icons = {
       running: '◌',
@@ -315,7 +321,7 @@ import { reorderedBlocks } from './flow-order.mjs';
       stopped: 'Ⅱ',
       paused: 'Ⅱ',
     };
-    return `<span class="status-icon ${escape(normalized)}" title="${escape(words(normalized))}" aria-label="${escape(words(normalized))}">${icons[normalized] || '○'}</span>`;
+    return `<span class="status-icon ${escape(normalized)}" title="${escape(words(normalized))}" aria-label="${escape(words(normalized))}">${glyph ?? icons[normalized] ?? '○'}</span>`;
   }
 
   function date(value) {
@@ -997,6 +1003,14 @@ import { reorderedBlocks } from './flow-order.mjs';
     if (armDeletion) state.deleteBlockId = state.blockId;
   }
 
+  function issueRowStatus(issue) {
+    if (issue.status === 'merged') return 'completed';
+    if (issue.status === 'closed') return issue.status;
+    if (issue.paused) return 'paused';
+    if (issue.humanInput) return 'needs-input';
+    return (issue.waitingForApproval ? null : issue.flowOutcome) || issue.status;
+  }
+
   function renderSidebar() {
     if (state.draggedIssueId) return;
     void updateProjectActions();
@@ -1009,8 +1023,13 @@ import { reorderedBlocks } from './flow-order.mjs';
       ...new Set([...(state.index.folders || []), ...issues.map((issue) => issue.folder).filter(Boolean)]),
     ];
     const { issueGroups, issueBadges } = window.issueGroupUI;
-    const row = (issue, subIssue = false) =>
-      `<button class="issue-row${issue.id === state.issueId ? ' selected' : ''}" data-issue="${escape(issue.id)}"${issue.isMaster ? ` data-issue-master-drop="${escape(issue.id)}"` : ''}${subIssue ? ' data-sub-issue' : ''} draggable="${issue.status !== 'closed' && !issue.readOnly && !issue.activeBlock}" title="${escape(issue.title)}"${issue.id === state.issueId ? ' aria-current="page"' : ''}>${issue.activeBlock ? activeSpinner(issue.activeBlock) : statusIcon(issue.humanInput ? 'needs-input' : issue.status)}<span class="issue-name"><span class="issue-title-text">${issue.issueNumber ? `#${escape(issue.issueNumber)} - ` : ''}${escape(issue.title)}</span> ${issueBadges(issue, true)}${issue.humanInput ? '<span class="issue-input-label">Needs your input</span>' : ''}</span></button>`;
+    const row = (issue, subIssue = false) => {
+      const status = issueRowStatus(issue);
+      const icon = issue.activeBlock
+        ? activeSpinner(issue.activeBlock)
+        : statusIcon(status, status === 'failed' ? '×' : undefined);
+      return `<button class="issue-row${issue.id === state.issueId ? ' selected' : ''}" data-issue="${escape(issue.id)}"${issue.isMaster ? ` data-issue-master-drop="${escape(issue.id)}"` : ''}${subIssue ? ' data-sub-issue' : ''} draggable="${issue.status !== 'closed' && !issue.readOnly && !issue.activeBlock}" title="${escape(issue.title)}"${issue.id === state.issueId ? ' aria-current="page"' : ''}>${icon}<span class="issue-name"><span class="issue-title-text">${issue.issueNumber ? `#${escape(issue.issueNumber)} - ` : ''}${escape(issue.title)}</span> ${issueBadges(issue, true)}${issue.humanInput ? '<span class="issue-input-label">Needs your input</span>' : ''}</span></button>`;
+    };
     const rows = (items) =>
       issueGroups(items, state.attentionFirst)
         .map(({ issue, children }) => row(issue) + children.map((child) => row(child, true)).join(''))
@@ -1668,12 +1687,18 @@ import { reorderedBlocks } from './flow-order.mjs';
     form.elements.content.required = comment;
   }
 
+  function setAnnotationsExpanded(expanded) {
+    $('issue-annotations').hidden = !expanded;
+    $('issue-annotations-toggle').setAttribute('aria-expanded', String(expanded));
+  }
+
+  $('issue-annotations-toggle').addEventListener('click', () => setAnnotationsExpanded($('issue-annotations').hidden));
+
   function renderIssueAnnotations(issue) {
     const panel = $('issue-annotations');
-    panel.hidden = !issue;
     if (panel.dataset.issue !== (issue?.id || '')) {
       panel.dataset.issue = issue?.id || '';
-      panel.open = false;
+      setAnnotationsExpanded(false);
       $('issue-annotation-history').open = false;
       $('issue-annotation-error').hidden = true;
       $('issue-annotation-form').reset();
@@ -1683,11 +1708,9 @@ import { reorderedBlocks } from './flow-order.mjs';
     const active = annotations.filter(({ cleared }) => !cleared);
     const history = annotations.filter(({ cleared }) => cleared);
     const investigate = issue?.badges?.includes('investigate');
-    const count = active.length + Number(Boolean(investigate));
     const warning = state.view?.annotationsWarning;
     $('issue-annotation-warning').hidden = !warning;
     $('issue-annotation-warning').textContent = warning || '';
-    $('issue-annotation-count').textContent = count ? `(${count})` : '';
     const incoming = state.view?.incomingReferences || [];
     $('incoming-issue-references').hidden = !incoming.length;
     updateFolderMarkup($('incoming-issue-reference-list'), incoming.map(incomingReferenceRow).join(''));
@@ -2629,7 +2652,14 @@ import { reorderedBlocks } from './flow-order.mjs';
     const open = state.view.issue.status !== 'closed';
     const disabled = open ? '' : ' disabled';
     const settings = `<label><input type="checkbox" id="retro-setting"${values.runRetro ? ' checked' : ''}${disabled}> Run a retro</label>${state.view.issue.state === 'needs-approval' ? '' : `<label><input type="checkbox" id="auto-close-setting"${flow.autoClose ? ' checked' : ''}${disabled}> Close as Fixed and remove the worktree after Factory Merge</label>`}`;
-    return `<section class="detail-section"><div class="section-label">Inputs</div><form id="request-form">${formField('wording', 'Your words', values.wording, 'The original request.', 4)}${saveRow()}</form>${settings}</section>${requestMergeBranch()}${outputsSection(block)}${definition?.prompt ? `<details class="detail-section system-prompt" data-preserve="system-prompt"><summary>System prompt</summary><div class="prompt-preview">${escape(definition.prompt)}</div></details>` : ''}${
+    const fixedInputs = (block.details ?? [])
+      .filter(({ input, fixed }) => input && fixed)
+      .map(
+        (detail) =>
+          `<label class="field">${escape(detail.label)}${readonlyInput(detail.key, detail, detail.value)}</label>`
+      )
+      .join('');
+    return `<section class="detail-section"><div class="section-label">Inputs</div><form id="request-form">${formField('wording', 'Your words', values.wording, 'The original request.', 4)}${saveRow()}</form>${fixedInputs}${settings}</section>${requestMergeBranch()}${outputsSection(block)}${definition?.prompt ? `<details class="detail-section system-prompt" data-preserve="system-prompt"><summary>System prompt</summary><div class="prompt-preview">${escape(definition.prompt)}</div></details>` : ''}${
       last
         ? `<section class="detail-section">${attemptCard(last, block.attempts.length - 1)}${
             block.attempts.length > 1
@@ -2909,7 +2939,7 @@ import { reorderedBlocks } from './flow-order.mjs';
     const activity =
       chat.milestones(conversationProgress, 'flow-live') +
       (notice ? `<p class="chat-milestone" role="alert">${escape(notice)}</p>` : '') +
-      chat.live(conversationProgress, issueWorking());
+      chat.live({ ...conversationProgress, ...blockerRetryProgress() }, issueWorking());
     const history = conversationHistory(messages, activity);
     return `<p class="conversation-context">This issue's conversation shows notes and responses from its blocks.</p>${history}${block ? commentForm(block) : ''}`;
   }
@@ -3098,7 +3128,12 @@ import { reorderedBlocks } from './flow-order.mjs';
     waitingButton.textContent = waiting ? waiting.label + ' needs confirmation' : '';
     waitingButton.dataset.block = waiting?.id || '';
     const input = state.view?.agentApprovals?.[0]?.scope ? null : state.view?.humanInput;
-    $('playback-status').innerHTML = playback?.userPaused ? 'Paused' : playbackSpinner(blocks, playback, playing);
+    const retry = blockerRetryProgress();
+    $('playback-status').innerHTML = playback?.userPaused
+      ? 'Paused'
+      : retry
+        ? escape([retry.label, retry.text].filter(Boolean).join(' · '))
+        : playbackSpinner(blocks, playback, playing);
     const blocker = state.view?.lastBlockingError;
     const reason = playback?.reason;
     const result = input?.message || (reason === blocker?.message ? '' : reason) || '';
@@ -3294,10 +3329,6 @@ import { reorderedBlocks } from './flow-order.mjs';
           .filter(Boolean)
           .join(' · ')
       : '';
-    const retrying = error?.blockId
-      ? state.view.flow.blocks.some((block) => block.id === error.blockId && isRunning(block))
-      : state.view?.autoplay?.mode === 'playing';
-    $('issue-blocker-retrying').hidden = !error || !retrying || Boolean(permission);
     $('issue-blocker-open').hidden = !error?.blockId;
     $('issue-permission').hidden = !permission;
     $('issue-permission-review').hidden = !permission;
@@ -4657,6 +4688,9 @@ import { reorderedBlocks } from './flow-order.mjs';
       void action('cancel-confirmation', { blockId: review.blockId });
   });
   $('project-settings').addEventListener('click', () => projectSettingsUI.open());
+  document
+    .querySelector('[data-provider-settings-open]')
+    .addEventListener('click', () => projectSettingsUI.open('providers'));
   $('empty-new-issue').addEventListener('click', openCapture);
   const closureModal = $('issue-closure-dialog');
   const closureFields = $('issue-closure-fields');

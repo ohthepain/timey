@@ -298,12 +298,12 @@ function validateSelection(kind, text) {
 
 function saveStageInterview(manager, session, queue, issue, intent, input) {
   requireThat(!session.busy, 'Wait for this response to finish.');
-  requireThat(!input.continue || intent.canContinue, 'Continue only from the current unfinished step.');
+  requireThat(!input.continue, 'Save the reviewed results, then start work from Flow.');
   requireThat(
     intent.interviewBasis === grillingAnswerBasis(manager.service.root, session),
     'The interview changed. Review its results again.'
   );
-  const saved = recordDiscussion(manager.service, queue, issue, intent, input.continue === true);
+  const saved = recordDiscussion(manager.service, queue, issue, intent);
   return afterReportWrite(saved, (value) => {
     finishGrilling(manager.service.root, session);
     manager.drop(session);

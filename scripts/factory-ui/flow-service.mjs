@@ -9,14 +9,20 @@ import {
   assertBlockModelAvailable,
 } from './block-models.mjs';
 import { commandLogError } from './flow-command-error.mjs';
-import { lastBlockingError, retainBlockingError, resolveBlockingErrors, resolveRetryErrors } from './block-errors.mjs';
+import {
+  lastBlockingError,
+  retainBlockingError,
+  resolveBlockingErrors,
+  resolveRetryErrors,
+  retryingBlocker,
+} from './block-errors.mjs';
 import { guardProviderWork } from './provider-runtime.mjs';
 import { withDiagnosticContext } from './diagnostic-activity.mjs';
 import { storeUnavailable } from './stores/availability.mjs';
 import { sameOwner } from './stores/coordination.mjs';
 import { reconcileRecoveredProgress } from './stores/recovered-flow.mjs';
 import { abortOwnedMerge, moveOwnedStartingPoint, updateOwnedWorktree } from './stores/manual-operations.mjs';
-import { prepareAttemptCommit } from './stores/flow-evidence.mjs';
+import { prepareAttemptCommit, releaseIssueArtifact } from './stores/flow-evidence.mjs';
 import { readSnapshot } from './stores/snapshots.mjs';
 import { inheritedIssueCaptureProfile, resolveIssueStorage } from './stores/settings.mjs';
 import { registeredProjectStores } from './stores/report-access.mjs';
@@ -257,6 +263,7 @@ function hydrateMergeLiveProof(service, issue, flow, block) {
 
 function retainExecutionFailure(current, error) {
   const { humanInput, liveProofRequirements, input } = error;
+  if (current.status === 'blocked' && error.terminalStatus === 'failed') current.terminalStatus = 'failed';
   if (humanInput || liveProofRequirements)
     current.result = {
       ...current.result,
@@ -312,6 +319,11 @@ const completedBlock = (block, flow) =>
   (flow && historicalInvestigationOutputComplete(block, flow)) ||
   latestCurrentAttempt(block)?.status === 'completed' ||
   (block.kind === 'request' && Boolean(block.data.fields) && !latestCurrentAttempt(block));
+
+function routeBlockComplete(issue, flow, block) {
+  const sequential = sequentialWork(issue, flow, block);
+  return sequential ? sequential.finished : completedBlock(block, flow);
+}
 
 function requireRevisedRequestPrerequisites(flow, block) {
   const delivery = ['publish', 'merge'].includes(block.kind);
@@ -709,7 +721,7 @@ class IssueFlows {
       humanInput: availableHumanInput(issue, flow, approvals[0]),
       paused: Boolean(this.autoplay.get(issue.id)?.userPaused),
       waitingForApproval: this.autoplay.get(issue.id)?.mode === 'waiting',
-      status: masterId && !issue.closed ? 'new' : flowStatus(flow, issue, active),
+      ...(masterId && !issue.closed ? { status: 'new' } : flowIndexState(flow, issue, active)),
     };
   }
   async storageView(id, { refresh = false } = {}) {
@@ -1547,10 +1559,7 @@ class IssueFlows {
     }
   }
   async nextAutoplayBlock(issue, flow, catalog) {
-    const next = flow.blocks.find((block) => {
-      const sequential = sequentialWork(issue, flow, block);
-      return sequential ? !sequential.finished : !completedBlock(block, flow);
-    });
+    const next = flow.blocks.find((block) => !routeBlockComplete(issue, flow, block));
     return (await this.checkSuggestedWorkUpdate(flow, next, catalog, { recoverBeforePublish: true })) || next;
   }
   async checkSuggestedWorkUpdate(flow, block, catalog, { recoverBeforePublish = false } = {}) {
@@ -1685,6 +1694,7 @@ class IssueFlows {
       requireThat(
         [
           'open-block',
+          'destination-branches',
           'rename-issue',
           'edit-issue-nickname',
           'edit-request',
@@ -2995,6 +3005,8 @@ class IssueFlows {
     const owned = { blockId: block.id, attemptId: attempt.id, controller };
     this.active.set(issue.id, owned);
     try {
+      const blocker = retryingBlocker(flow, block, route);
+      if (blocker) attempt.retryingBlocker = blocker;
       resolveRetryErrors(flow, block.id, route);
       if (this.service.projectStores) {
         const admitted = await this.attemptMetadata(block, () =>
@@ -3769,7 +3781,7 @@ class IssueFlows {
       discussion.close();
     }
   }
-  deleteArtifact(flow, issue, input) {
+  async deleteArtifact(flow, issue, input) {
     requireThat(!this.active.has(issue.id), 'Stop the current block before deleting its artifacts.');
     const artifact = this.artifacts(flow).find((item) => item.id === input.artifactId);
     requireThat(
@@ -3786,6 +3798,14 @@ class IssueFlows {
         !lstatSync(artifact.path).isSymbolicLink() &&
         lstatSync(path).isFile(),
       'Only listed regular artifacts inside the managed issue directory can be removed.'
+    );
+    const generation = fileGeneration(path);
+    const sha256 = digest(readFileSync(path));
+    const stores = this.service.projectStores;
+    if (stores) await releaseIssueArtifact(stores, issue.id, artifact.originalPath, sha256);
+    requireThat(
+      fileGeneration(path) === generation,
+      'The local artifact changed during deletion. Refresh before retrying.'
     );
     unlinkSync(path);
     this.pauseAutoplay(issue.id, 'Block evidence changed.');
@@ -3818,24 +3838,35 @@ function selectedHumanInput(issue, flow, agentApproval, workspace, active) {
   return pending && pending.token === input?.token ? input : (pending ?? null);
 }
 
-function flowStatus(flow, issue, active) {
-  if (issue.closed) return 'closed';
-  if (mergedDelivery(flow)) return 'merged';
-  if (issue.state === 'needs-approval') return 'needs-approval';
-  if (active) return 'running';
+function flowIndexState(flow, issue, active) {
+  if (issue.closed) return { status: 'closed' };
+  if (mergedDelivery(flow)) return { status: 'merged' };
+  if (issue.state === 'needs-approval') return { status: 'needs-approval' };
+  if (active) return { status: 'running' };
   const attempts = flow.blocks.flatMap((block) => block.attempts);
-  if (
-    attempts.some((attempt) => !attempt.reconciledAt && ['running', 'stopping', 'uncertain'].includes(attempt.status))
-  )
-    return 'need-input';
+  if (attempts.some(unresolvedAttempt)) return { status: 'need-input' };
   const last = attempts
     .filter((attempt) => !attempt.invalidatedAt)
     .toSorted((a, b) => a.startedAt.localeCompare(b.startedAt))
     .at(-1);
-  if (['running', 'stopping', 'uncertain'].includes(last?.status)) return 'need-input';
-  if (last?.result?.mergeConfirmation) return 'need-input';
+  const status = idleFlowStatus(flow, last);
+  const flowOutcome = sidebarFlowOutcome(flow, issue, status, last);
+  return { status, flowOutcome };
+}
+
+function idleFlowStatus(flow, last) {
+  if (['running', 'stopping', 'uncertain'].includes(last?.status) || last?.result?.mergeConfirmation)
+    return 'need-input';
   if (['blocked', 'failed'].includes(last?.status)) return 'blocked';
   if (last?.status === 'stopped') return 'ready';
   if (flow.blocks.some(flowVerificationHead)) return 'ready-to-merge';
   return last ? 'ready' : 'new';
+}
+
+function sidebarFlowOutcome(flow, issue, status, last) {
+  if (status === 'blocked') return last.status === 'failed' || last.terminalStatus === 'failed' ? 'failed' : undefined;
+  if (status === 'need-input') return;
+  const closure = flow.blocks.findIndex(({ kind }) => ['close', 'retro', 'cleanup'].includes(kind));
+  const blocks = closure < 0 ? flow.blocks : flow.blocks.slice(0, closure);
+  if (blocks.length && blocks.every((block) => routeBlockComplete(issue, flow, block))) return 'completed';
 }

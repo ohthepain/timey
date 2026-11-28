@@ -134,7 +134,7 @@ export async function investigativeGroupingBrowserChecks({ page, project, output
     const [inquiry, secondInquiry, thirdInquiry, bug, feature, secondBug] = saved;
     await page.goto('/?issue=' + inquiry);
     await page.locator('#issue-heading [data-issue-badge="investigate"]').waitFor();
-    await page.locator('#issue-annotations > summary').click();
+    await page.getByRole('button', { name: 'Annotations', exact: true }).click();
     const annotation = page.locator('#active-issue-annotations [data-annotation-label="investigate"]');
     await annotation.waitFor();
     const annotationText = await annotation.innerText();

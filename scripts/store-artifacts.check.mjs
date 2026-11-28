@@ -12,6 +12,52 @@ import { closeProjectStores, testStoreConnection } from './factory-ui/stores/run
 const live = process.env.FACTORY_STORES_LIVE === '1';
 const sourceRoot = process.env.FACTORY_STORES_ENV_ROOT || process.cwd();
 
+test('S3 cleanup removes versions and delete markers only for the registered key', async () => {
+  const versions = [];
+  const deletions = [];
+  const store = await openArtifactStore(
+    { id: 's3', kind: 's3', bucket: 'disposable-fixture', region: 'us-east-1' },
+    {
+      root: process.cwd(),
+      projectId: 'fixture',
+      s3Client: {
+        async send(command) {
+          if (command.constructor.name === 'HeadObjectCommand')
+            throw Object.assign(Error('The current version is deleted.'), { name: 'NotFound' });
+          if (command.constructor.name === 'GetBucketVersioningCommand') return { Status: 'Enabled' };
+          if (command.constructor.name === 'ListObjectVersionsCommand')
+            return {
+              Versions: versions.filter(({ marker }) => !marker),
+              DeleteMarkers: versions.filter(({ marker }) => marker),
+            };
+          if (command.constructor.name === 'DeleteObjectsCommand') {
+            for (const entry of command.input.Delete.Objects) {
+              deletions.push(entry);
+              versions.splice(
+                versions.findIndex(({ Key, VersionId }) => Key === entry.Key && VersionId === entry.VersionId),
+                1
+              );
+            }
+            return {};
+          }
+          assert.fail('Unexpected S3 command ' + command.constructor.name);
+        },
+      },
+    }
+  );
+  const upload = store.describeUpload({ sha256: 'a'.repeat(64), bytes: 15 });
+  const key = upload.objectKey;
+  const neighbor = { Key: key + '-neighbor', VersionId: '3' };
+  versions.push({ Key: key, VersionId: '1' }, { Key: key, VersionId: '2', marker: true }, neighbor);
+  assert.equal(await store.removeRegisteredUpload({ ...upload, objectKey: 'another-project' }), false);
+  assert.equal(await store.removeRegisteredUpload(upload), true);
+  assert.deepEqual(deletions, [
+    { Key: key, VersionId: '1' },
+    { Key: key, VersionId: '2' },
+  ]);
+  assert.deepEqual(versions, [neighbor]);
+});
+
 async function fixture(t, kind) {
   const root = await mkdtemp(join(tmpdir(), 'factory-artifacts-'));
 

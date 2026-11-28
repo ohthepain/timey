@@ -96,6 +96,7 @@ export async function collectEvidence({
   root,
   flow,
   artifacts,
+  released = new Set(),
   originId = 'legacy',
   allowedRoots = [join(root, '.issues')],
 }) {
@@ -117,6 +118,7 @@ export async function collectEvidence({
       return;
     }
     const sha256 = digest(bytes);
+    if (released.has(JSON.stringify([reference.path, sha256]))) return;
     if (reference.sha256 && sha256 !== reference.sha256) {
       manifest.gaps.push({ ...reference, actualSha256: sha256, reason: 'digest-mismatch' });
       return;

@@ -5,7 +5,13 @@ import { issueAnnotations } from './issue-annotations.mjs';
 import { userInfo } from 'node:os';
 import { getHeapStatistics } from 'node:v8';
 import { readProviderConfig } from './provider-config.mjs';
-import { providerSettings, saveProviderSettings } from './provider-runtime.mjs';
+import {
+  assertProviderActive,
+  changeProviderEnabled,
+  providerIsActive,
+  providerSettings,
+  saveProviderSettings,
+} from './provider-runtime.mjs';
 import { refreshProvider, setupProvider, installProvider } from './provider-setup.mjs';
 import { readDiagnosticActivity, resetCodexActivity } from './diagnostic-activity.mjs';
 import { readCodexQuota } from './codex-quota.mjs';
@@ -57,6 +63,7 @@ import { ProjectWorktreeCleanup } from './project-worktree-cleanup.mjs';
 import { ProjectRemoteBranchCleanup } from './project-remote-branch-cleanup.mjs';
 import { ProjectLocalBranchCleanup } from './project-local-branch-cleanup.mjs';
 import { ProjectArchiveDeletion } from './project-archive-deletion.mjs';
+import { deleteProjectIssues } from './project-issue-deletion.mjs';
 import { ProjectDiscuss, readClarificationSkills, projectDiscussionSkills } from './project-discuss.mjs';
 import { InvestigationReports } from './investigation-reports.mjs';
 import { investigationCreatedIssues } from './investigation-history.mjs';
@@ -69,6 +76,9 @@ import {
   testStoreConnection,
   closeProjectStores,
   hydrateProjectEvidence,
+  cleanProjectAssetUploads,
+  stageReportDeletionAssets,
+  s3ReferenceStatus,
 } from './stores/runtime.mjs';
 import { issueStoresView, handleStoreAction } from './stores/routes.mjs';
 import {
@@ -331,11 +341,13 @@ function mutationIssueIds(service, path, value) {
     investigationId,
     ...numberedIssueIds(service, value),
     ...arrayValue(value.issueIds),
+    ...(path === '/api/project-issue-deletion' ? arrayValue(value.selected).map((row) => row?.id) : []),
   ];
   return [...new Set(ids)].filter((id) => typeof id === 'string' && /^[\w-]+$/.test(id));
 }
 
 const independentActions = new Set([
+  '/api/ai-provider-enabled',
   '/api/ai-providers',
   '/api/ai-provider-action',
   '/api/server-pause',
@@ -413,12 +425,19 @@ async function mutation(service, path, value, onStorageProgress) {
     '/api/night-discuss-action': () => nightDiscussAction(service, value),
     '/api/report-discuss-action': () => reportChatAction(service, value),
     '/api/issue-discuss-action': () => issueDiscussAction(service, value),
-    '/api/investigation-report-delete': () => new InvestigationReports(service.root).deleteReports(value.ids),
+    '/api/investigation-report-delete': async () => {
+      const reports = new InvestigationReports(service.root);
+      await stageReportDeletionAssets(service, value.ids);
+      const result = reports.deleteReports(value.ids);
+      setImmediate(() => void cleanProjectAssetUploads(service).catch(() => {}));
+      return result;
+    },
     '/api/project-home-action': () => projectHome(service).action(value),
     '/api/project-worktree-cleanup': () => worktreeCleanup(service).apply(value),
     '/api/project-remote-branch-cleanup': () => remoteBranchCleanup(service).apply(value),
     '/api/project-local-branch-cleanup': () => localBranchCleanup(service).apply(value),
     '/api/project-archive-deletion': () => archiveDeletion(service).apply(value),
+    '/api/project-issue-deletion': () => deleteProjectIssues(service, flows(service), value, onStorageProgress),
     '/api/folder-settings': () => changeFolderSettings(service, value),
     '/api/folder-strategies': () => {
       service.ownServer();
@@ -430,9 +449,14 @@ async function mutation(service, path, value, onStorageProgress) {
       service.ownServer();
       return saveProviderSettings(service.root, value);
     },
+    '/api/ai-provider-enabled': () => {
+      service.ownServer();
+      return changeProviderEnabled(service.root, value);
+    },
     '/api/ai-provider-action': () => {
       service.ownServer();
       requireThat(['setup', 'refresh', 'install'].includes(value.action), 'Choose Install, Sign in, or Check again.');
+      assertProviderActive(service.root, value.provider);
       if (value.action === 'install') return installProvider(service.root, value.provider);
       return value.action === 'setup'
         ? setupProvider(service.root, value.provider)
@@ -617,7 +641,7 @@ async function respond(service, request, response, token, port, accountOrigin) {
   response.end(JSON.stringify({ error: 'Unsupported method' }));
 }
 
-async function streamingArchiveAction(service, request, response) {
+async function streamingIssueStorageAction(service, request, response) {
   response.setHeader('Content-Type', 'application/x-ndjson');
   try {
     const result = await postedAction(service, request, (progress) => {
@@ -634,13 +658,16 @@ const mutationNotifications = new Map([
   ['/api/ui-sources', 'sources'],
   ['/api/flow-action', 'flow'],
   ['/api/issue-storage-move', 'flow'],
+  ['/api/project-issue-deletion', 'flow'],
   ['/api/issue-capture', 'flow'],
 ]);
 
 async function respondToAction(service, request, response, path) {
-  const stream = path === '/api/issue-storage-move' && request.headers.accept === 'application/x-ndjson';
+  const stream =
+    ['/api/issue-storage-move', '/api/project-issue-deletion'].includes(path) &&
+    request.headers.accept === 'application/x-ndjson';
   const content = stream
-    ? await streamingArchiveAction(service, request, response)
+    ? await streamingIssueStorageAction(service, request, response)
     : JSON.stringify(await postedAction(service, request));
   const topic = mutationNotifications.get(path);
   if (topic) service.flowChanges.notify(topic);
@@ -648,7 +675,6 @@ async function respondToAction(service, request, response, path) {
 }
 function page(service, request, response, token, port, accountOrigin) {
   const url = new URL(request.url, 'http://127.0.0.1');
-  if (url.pathname === '/classic') return redirectClassic(service, url, response);
   response.setHeader('Set-Cookie', `timey_factory_${port}=${token}; HttpOnly; SameSite=Strict; Path=/`);
   response.setHeader('Content-Type', 'text/html; charset=utf-8');
   const pages = { '/native-chat': 'native-chat.html', '/project-issues': 'project-issues.html' };
@@ -659,34 +685,6 @@ function page(service, request, response, token, port, accountOrigin) {
   const frame = `<iframe title="Timey account" src="${accountOrigin}/auth/factory-account?${query}" height="40" sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"></iframe><script src="/project-account-ui.js" defer></script>`;
   response.end(html.replace('<!-- project-account -->', frame));
 }
-function redirectClassic(service, url, response) {
-  const selected = url.searchParams.get('issue');
-  if (selected === null && !url.searchParams.has('embed')) {
-    response.setHeader('Content-Type', 'text/html; charset=utf-8');
-    // URL fragments are available to the browser only.
-    return response.end(String.raw`<!doctype html><title>Open Flow</title><a href="/">Open Flow</a>
-      <script>
-        const match = /^#\/issue\/([\w%.-]+)(?:\?|$)/.exec(location.hash);
-        const home = /^#\/?queue$/.test(location.hash) ? '/?projectTab=issues' : '/';
-        location.replace(match ? '/classic?issue=' + match[1] : home);
-      </script>`);
-  }
-  response.writeHead(302, { Location: classicDestination(service, selected, url.searchParams.get('embed')) });
-  response.end();
-}
-
-function classicDestination(service, selected, embed) {
-  if (selected) return classicIssueDestination(service, selected);
-  return embed === 'project-issues' ? '/?projectTab=issues#' : '/';
-}
-
-function classicIssueDestination(service, selected) {
-  if (!/^[\w-]+$/.test(selected)) return '/';
-  const id = resolveIssueNumber(service, selected);
-  const exists = ['open', 'closed', 'archive'].some((state) => existsSync(storedIssuePath(service.root, id, state)));
-  return exists ? '/?issue=' + encodeURIComponent(id) : '/';
-}
-
 function displayRead(url) {
   return url.pathname !== '/api/issue-store-recovery';
 }
@@ -736,6 +734,11 @@ async function read(service, request, response, owner) {
       url.searchParams.has('status')
         ? projectAssetStorageStatus(service, url.searchParams.get('refresh') === 'true')
         : projectAssetStorage(service),
+    '/api/project-asset-reference': () =>
+      s3ReferenceStatus(service, {
+        sha256: url.searchParams.get('sha256'),
+        bytes: Number(url.searchParams.get('bytes') ?? NaN),
+      }),
     '/api/project-preferences': () => readProjectPreferences(service.root),
     '/api/project-home': () => projectHome(service).view(),
     '/api/investigation-reports': () => {
@@ -811,7 +814,11 @@ async function read(service, request, response, owner) {
     },
     '/api/github-calls': readGitHubCalls,
     '/api/diagnostic-activity': readDiagnosticActivity,
-    '/api/codex-quota': () => readCodexQuota({ force: url.searchParams.has('refresh') }),
+    '/api/codex-quota': async () => {
+      if (!providerIsActive(service.root, 'codex')) return { status: 'disabled' };
+      const quota = await readCodexQuota({ force: url.searchParams.has('refresh') });
+      return providerIsActive(service.root, 'codex') ? quota : { status: 'disabled' };
+    },
     '/api/server-actions': () => service.serverControl.actions(),
     '/api/document': () => service.readPlan(url.searchParams.get('path')),
     '/api/shown-file': async () => {
@@ -883,8 +890,7 @@ function issueResponse(service, owner, id) {
 
 function isPage(request) {
   return (
-    request.method === 'GET' &&
-    ['/', '/flow', '/classic', '/native-chat', '/project-issues'].includes(request.url.split('?')[0])
+    request.method === 'GET' && ['/', '/flow', '/native-chat', '/project-issues'].includes(request.url.split('?')[0])
   );
 }
 

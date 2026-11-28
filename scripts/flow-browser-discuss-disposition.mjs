@@ -67,7 +67,8 @@ async function answerDeletion(page, expectedTitle, accepted) {
   const approval = page.locator('#discuss-approvals').getByRole('button', { name: 'Delete permanently' });
   const dialog = page.waitForEvent('dialog').then(async (dialog) => {
     const warning = dialog.message();
-    assert.match(warning, /Permanently delete .* exclusively owned evidence/);
+    assert.match(warning, /Permanently delete .* evidence Factory verifies is no longer referenced/);
+    assert.match(warning, /Evidence still in use is kept/);
     assert.ok(warning.includes(expectedTitle), warning);
     await (accepted ? dialog.accept() : dialog.dismiss());
     return warning;

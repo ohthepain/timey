@@ -174,7 +174,7 @@ export async function recoverPendingIntegration(service, record, explicit = fals
     return 'blocked';
   }
 }
-export function retryIntegrationRecovery(service, input, after) {
+export function retryIntegrationRecovery(service, input) {
   service.ownServer();
   const record = service.lifecycleRuns[input.issueId];
   requireThat(
@@ -196,7 +196,6 @@ export function retryIntegrationRecovery(service, input, after) {
         const paused =
           record.pauseRequested || (service.serverControl && service.serverControl.status().phase !== 'idle');
         saveLifecycle(service, record, { status: paused ? 'paused' : 'blocked' });
-        if (!paused) after(input.issueId);
       } else if (!result)
         saveLifecycle(service, record, {
           status: 'blocked',

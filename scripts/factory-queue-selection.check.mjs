@@ -108,39 +108,3 @@ test('optional queue discussion receives compact facts without plans or historie
   assert.doesNotMatch(text, /SECRET_/);
   assert.equal(compactQueue(service, queue)[0].priority, 2);
 });
-
-test('failed workers stop with retained evidence and never invoke AI recovery or resume', async (t) => {
-  const { deliveryScenario } = await import('./issue-delivery-scenario.mjs');
-  const { handleLifecycleFailure } = await import('./factory-ui/lifecycle-work.mjs');
-  const f = await deliveryScenario(t);
-  const service = {
-    root: f.root,
-    lifecycleRuns: {},
-    resume: () => {
-      throw Error('Must not resume failed work');
-    },
-    codex: {
-      turn: () => {
-        throw Error('Must not review failures with AI');
-      },
-    },
-  };
-  const record = {
-    issueId: f.issueId,
-    events: [],
-    attempts: [],
-    retriedRuns: [],
-  };
-  const run = {
-    id: 'failed-worker',
-    kind: 'worker',
-    threadId: 'existing-chat',
-    summary: 'Supporting artifact rejected',
-    result: { revision: 'saved-candidate' },
-  };
-  assert.equal(await handleLifecycleFailure(service, record, run), false);
-  assert.equal(record.status, 'blocked');
-  assert.equal(record.summary, run.summary);
-  assert.equal(run.result.revision, 'saved-candidate');
-  assert.equal(record.replan, undefined);
-});

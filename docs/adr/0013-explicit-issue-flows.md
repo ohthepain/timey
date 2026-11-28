@@ -9,9 +9,9 @@ planned route. A person can run one block or use Start and Resume to run the rou
 This addresses the strategy runner's coupling of work, target synchronization,
 verification, publication, and readiness.
 
-Flow is the Factory workspace. Legacy `/classic` links route to a saved issue in
-Flow or to Project Home. This decision supersedes ADR 0009’s bundled browser
-execution. Existing records, human-input obligations, protected merge checks,
+Flow is the Factory workspace. The Classic browser route, role-by-role lifecycle,
+and execution snapshot import are retired. This decision supersedes ADR 0009’s
+bundled browser execution. Existing records, human-input obligations, protected merge checks,
 and explicit acceptance retain their meaning. Reading or refreshing an issue
 starts no work.
 

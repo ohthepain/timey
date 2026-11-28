@@ -80,6 +80,23 @@ function collectReferences(assets, projectId, snapshots) {
   for (const { assetKey, label } of new Map(entries).values()) assets.get(assetKey)?.references.push(label);
 }
 
+async function savedReferences(project, assets) {
+  const registry = project.assetUploadRegistry?.();
+  if (!registry) return;
+  const rows = await registry.list('asset-references/').catch(() => []);
+  const labels = new Map();
+  for (const { value } of rows) {
+    const object = identity(value.object);
+    if (!assets.has(object)) continue;
+    const { owner } = value;
+    const recordKey = owner[0] === 'record' ? owner[1] : owner[0] === 'receipt' ? owner[2] : '';
+    const label = value.label || sourceTypes.get(recordKey.split('/')[0]) || 'Restricted reference';
+    if (!labels.has(object)) labels.set(object, []);
+    labels.get(object).push(label);
+  }
+  for (const [object, references] of labels) assets.get(object).references = references;
+}
+
 async function scanReferences(store) {
   let incomplete = false;
   const snapshot = await store.retainedPayloads({
@@ -115,6 +132,7 @@ async function assetInventory(project, configs, onListed) {
       ];
   collectReferences(assets, project.projectId, shared.snapshots);
   for (const ref of retained.refs) assets.get(identity(ref))?.references.push(ref.label);
+  if (assets.size) await savedReferences(project, assets);
   return {
     assets: [...assets.values()],
     stores: results.map(({ config, refs }) => ({

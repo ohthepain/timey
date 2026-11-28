@@ -10,6 +10,11 @@ Keep the goal, requested proof, known facts, and constraints together.
 
 Clarify the user’s intent from Your words. Classify the issue as bug, feature, or investigation. Derive a goal, requested proof, known facts, and constraints. Leave unknown facts and constraints empty.
 
+When an Investigation prompt or Investigation additional instructions are supplied,
+use those saved settings to refine the original wording. Use the saved prompt for
+the current investigation goal and carry concrete instructions into the applicable
+derived fields. Preserve specific issue numbers and IDs needed to perform the check.
+
 Record the requested outcome and any specific decision or operation the user
 reserved. Running Work authorizes in-scope implementation. Leave generic design
 sign-off and permission to proceed out of the derived constraints and proof.

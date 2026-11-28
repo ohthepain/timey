@@ -1,14 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, mkdirSync } from 'node:fs';
-import vm from 'node:vm';
 import { join } from 'node:path';
 import { deliveryFixture } from './factory-workflow-fixture.mjs';
 import { addAction } from './issue-delivery-scenario.mjs';
 import { FactoryUI } from './factory-test-service.mjs';
 import { writeJson, digest } from './factory-ui/common.mjs';
-import { runLifecycle } from './factory-ui/lifecycle-loop.mjs';
-import { lifecycleWorkBasis, canResumeLifecycle } from './factory-ui/lifecycle-stop.mjs';
+import { lifecycleWorkBasis } from './factory-ui/lifecycle-stop.mjs';
 
 function fixture(t, answer = 'dev') {
   const { queue } = deliveryFixture(t),
@@ -67,25 +65,6 @@ function fixture(t, answer = 'dev') {
   return { queue, root, issueId, service, record };
 }
 
-test('saved dev answer repairs missing setup and reaches the existing operation despite unchanged stop basis', async (t) => {
-  const f = fixture(t),
-    snapshot = f.service.snapshot();
-  assert.equal(canResumeLifecycle(f.service, f.record, snapshot, snapshot.issues[0]), true);
-  f.record.status = 'running';
-  f.service.guard = () => [];
-  await assert.rejects(runLifecycle(f.service, f.record), /Reached the existing operation/);
-  assert.equal(f.record.replan, false);
-});
-
-test('missing or unrelated answer asks a real target question without starting work', async (t) => {
-  const f = fixture(t, 'please continue');
-  f.record.status = 'running';
-  await runLifecycle(f.service, f.record);
-  assert.equal(f.record.status, 'waiting');
-  assert.equal(f.record.input.type, 'delivery-setup');
-  assert.match(f.record.input.question, /Which branch.*fixture\/timey/);
-});
-
 test('existing config is preserved and configuration changes count as relevant retry inputs', async (t) => {
   const f = fixture(t),
     snapshot = f.service.snapshot();
@@ -99,65 +78,6 @@ test('existing config is preserved and configuration changes count as relevant r
   const { ensureDeliverySetup } = await import('./factory-ui/delivery-setup.mjs');
   assert.equal(ensureDeliverySetup(f.service, f.record), true);
   assert.equal(JSON.parse(readFileSync(join(f.root, '.issues/issue-delivery-config.json'))).target, 'main');
-});
-
-test('a failed assembly exposes the real reason and stale-safe retry without a repeated review', async (t) => {
-  const f = fixture(t);
-  f.service.ownServer = () => {};
-  const { retryAssembly, assemblyRecoveryView } = await import('./factory-ui/assembly-recovery.mjs');
-  const view = assemblyRecoveryView(f.service, { id: f.issueId }, f.record);
-  assert.match(view.reason, /settings have not been saved/);
-  const input = { issueId: f.issueId, runId: view.runId, updated: f.record.updated };
-  assert.throws(() => retryAssembly(f.service, { ...input, updated: 'stale' }, () => {}), /changed/);
-  let continued = 0;
-  retryAssembly(f.service, input, () => {
-    continued++;
-    f.record.status = 'running';
-  });
-  assert.equal(continued, 1);
-  assert.equal(f.record.replan, false);
-  assert.throws(() => retryAssembly(f.service, input, () => {}), /changed/);
-});
-
-test('public retry applies saved setup and reports progress without duplicate worker or assembly records', async (t) => {
-  const f = fixture(t);
-  f.service.ownServer = () => {};
-  f.service.guard = () => [];
-  const record = f.record;
-  const result = f.service.retryAssembly({ issueId: f.issueId, runId: record.childRunId, updated: record.updated });
-  assert.equal(result.issueId, f.issueId);
-  assert.equal(record.status, 'running');
-  await f.service.lifecycleTasks.get(f.issueId);
-  assert.equal(JSON.parse(readFileSync(join(f.root, '.issues/issue-delivery-config.json'))).target, 'dev');
-  assert.equal(record.summary, 'Reached the existing operation');
-  assert.equal(f.service.store.runs.filter((r) => r.kind === 'assembly').length, 1);
-});
-
-for (const field of ['actor', 'issueId', 'repository'])
-  test('setup never borrows an answer with a different ' + field, async (t) => {
-    const f = fixture(t);
-    const path = f.record.latestAnswer.path,
-      answer = JSON.parse(readFileSync(path));
-    if (field === 'repository')
-      answer.questions[0].question = 'Should issue pull requests in other/project target dev or main?';
-    else answer[field] = 'other';
-    writeJson(path, answer);
-    f.record.status = 'running';
-    await runLifecycle(f.service, f.record);
-    assert.equal(f.record.input.type, 'delivery-setup');
-  });
-
-test('answering the concrete setup question saves the setting and receipt without a model review', async (t) => {
-  const f = fixture(t, 'not a target');
-  f.record.status = 'running';
-  await runLifecycle(f.service, f.record);
-  const { respondLifecycle } = await import('./factory-ui/lifecycle-input.mjs');
-  await respondLifecycle(f.service, f.record, { text: 'release/next' });
-  const config = JSON.parse(readFileSync(join(f.root, '.issues/issue-delivery-config.json')));
-  assert.equal(config.target, 'release/next');
-  assert.equal(JSON.parse(readFileSync(config.decision.path)).actor, 'human');
-  assert.equal(digest(readFileSync(config.decision.path)), config.decision.sha256);
-  assert.equal(f.record.replan, false);
 });
 
 test('check failures retain bounded in-project log output and an actionable retry', async (t) => {

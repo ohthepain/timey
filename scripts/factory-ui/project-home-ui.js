@@ -7,15 +7,16 @@
       (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]
     );
   const busy = (session) => ['running', 'starting', 'stopping'].includes(session?.status);
-  function homeMessageAttributes(role, text, key) {
-    if (role === 'user') return '';
+  function homeMessageAttributes(user, text, key) {
+    if (user) return '';
     return ` data-ai-text data-ai-key="${escape(key)}" data-ai-source="${escape(text)}"`;
   }
   function homeMessage(message, index, id, sessionId) {
     const text = message.text || message.content;
     const key = `home-${id}-${sessionId}-${index}`;
-    const attributes = homeMessageAttributes(message.role, text, key);
-    return `<article data-home-message><strong>${message.role === 'user' ? 'You' : 'Assistant'}</strong><div${attributes}>${escape(text)}</div></article>`;
+    const user = message.role === 'user';
+    const attributes = homeMessageAttributes(user, text, key);
+    return `<article data-home-message${user ? ' class="discuss-message user"' : ''}><strong>${user ? 'You' : 'Assistant'}</strong><div${attributes}>${escape(text)}</div></article>`;
   }
   function renderMessages(id, messages, sessionId, working) {
     const markup =

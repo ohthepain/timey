@@ -162,7 +162,7 @@ test('move endpoint refuses a profile that changed after preview and resolves bo
 test('project settings adds and saves a named profile without changing saved project roles', async (t) => {
   const f = configured(t);
   const dom = new JSDOM(
-    '<dialog id="project-settings-dialog"><nav id="settings-navigation"></nav><div class="settings-body"><h2 id="settings-page-title"></h2><p id="project-settings-error"></p><div id="project-settings-content"></div></div></dialog><dialog id="settings-unsaved-dialog"></dialog>',
+    '<header class="factory-header"></header><div id="app"></div><section id="project-settings-view" hidden><button data-settings-close>Close</button><nav id="settings-navigation"></nav><div class="settings-body"><h2 id="settings-page-title"></h2><p id="project-settings-error"></p><div id="project-settings-content"></div></div></section><dialog id="settings-unsaved-dialog"></dialog>',
     { url: 'http://localhost', runScripts: 'outside-only' }
   );
   t.after(() => dom.window.close());

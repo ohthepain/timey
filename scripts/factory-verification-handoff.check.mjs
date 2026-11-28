@@ -101,30 +101,6 @@ test('implementation cannot borrow the verification-only handoff', async (t) => 
   assert.throws(() => f.api.bindVerification(code.id, d.candidate), /Only verification/);
 });
 
-test('the exact handoff reaches launch without another planning review', async (t) => {
-  const f = await fixture(t),
-    { runLifecycle } = await import('./factory-ui/lifecycle-loop.mjs');
-  f.record.status = 'running';
-  f.record.assessed = true;
-  f.record.replan = true;
-  f.service.guard = () => [];
-  let scopeReviews = 0;
-  f.service.codex.start = async () => 'scope-check';
-  f.service.codex.turn = async (_thread, _cwd, _prompt, schema) => {
-    assert.ok(schema.properties.within_plan, 'Only the launch scope guard may call the model');
-    scopeReviews++;
-    return JSON.stringify({ within_plan: true, summary: 'Covered by the approved plan', question: '' });
-  };
-  f.service.preflight = (id, kind) => {
-    assert.equal(id, f.action.id);
-    assert.equal(kind, 'launch');
-    assert.ok(f.api.inspect().registry.actions.find((a) => a.id === id).start);
-    throw Error('Reached verification launch');
-  };
-  await assert.rejects(runLifecycle(f.service, f.record), /Reached verification launch/);
-  assert.equal(scopeReviews, 1);
-});
-
 test('changes in the saved issue checkout re-enable Continue without unrelated queue edits', async (t) => {
   const f = await fixture(t),
     { writeFileSync, unlinkSync } = await import('node:fs'),

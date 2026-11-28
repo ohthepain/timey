@@ -266,32 +266,6 @@ test('explicit recovery rejects stale clicks, stays visibly running, and respect
   assert.equal(existsSync(f.lock), false);
 });
 
-test('an old stopped coordinator can Continue into automatic recovery without repeating its previous action', async (t) => {
-  const f = fixture(t, true);
-  const { readQueue } = await import('./factory-ui/data.mjs');
-  const { lifecycleWorkBasis, canResumeLifecycle } = await import('./factory-ui/lifecycle-stop.mjs');
-  const { runLifecycle } = await import('./factory-ui/lifecycle-loop.mjs');
-  const q = readQueue(f.root),
-    issue = q.issues[0];
-  f.record.status = 'blocked';
-  f.record.assessed = true;
-  f.record.stopBasis = lifecycleWorkBasis(q, issue, f.record);
-  assert.equal(canResumeLifecycle(f.service, f.record, q, issue), true);
-  const original = f.service.api.reconcileHistoricalIntegration;
-  f.service.api.reconcileHistoricalIntegration = (...args) => {
-    const result = original(...args);
-    f.record.pauseRequested = true;
-    return result;
-  };
-  f.record.status = 'running';
-  await runLifecycle(f.service, f.record);
-  assert.equal(f.run.status, 'completed');
-  assert.equal(f.record.status, 'paused');
-  assert.equal(existsSync(f.lock), false);
-  assert.equal(f.git('rev-parse', 'HEAD'), f.head);
-  assert.equal(f.service.store.runs.length, 1);
-});
-
 test('an unreadable reservation does not break read-only queue availability or clear the lock', async (t) => {
   const f = fixture(t);
   writeFileSync(join(f.lock, 'owner.json'), '{incomplete');

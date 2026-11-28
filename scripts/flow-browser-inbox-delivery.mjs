@@ -7,6 +7,7 @@ import { initializeProjectLifecycle, readProjectSettings } from './factory-ui/pr
 import { createProjectDiscussTools } from './factory-ui/project-discuss-tools.mjs';
 import { retainBlockingError } from './factory-ui/block-errors.mjs';
 import { importBrowserIssue, installBrowserHumanInput } from './flow-browser-fixture.mjs';
+import { assertUserMessageBox } from './flow-browser-chat-style.mjs';
 
 const manual = (page) => ({ Origin: new URL(page.url()).origin, 'X-Factory-Action': 'manual' });
 async function post(page, path, data) {
@@ -102,6 +103,7 @@ export async function issueDiscussWorkspaceChecks({ page, service, project, poll
   await page.locator('#open-issues [data-issue="' + first + '"]').click();
   await panel.getByText('Reply for ' + first, { exact: true }).waitFor();
   assert.equal(await composer.inputValue(), 'Remember the first draft');
+  const userBox = await assertUserMessageBox(panel.locator('#issue-discuss-messages'), 'Hold this response');
   await screenshot('issue-discuss-expanded');
   await page.locator('#issue-discuss-expand').click();
   assert.equal(await page.getByRole('complementary', { name: 'Block inspector' }).isVisible(), true);
@@ -110,6 +112,7 @@ export async function issueDiscussWorkspaceChecks({ page, service, project, poll
   assert.equal(messages.length, 1);
   proof(output, 'issue-discuss-workspace', {
     messages,
+    userBox,
     restoredDraft: 'Remember the first draft',
     activeResponseCompleted: true,
   });
@@ -353,7 +356,7 @@ async function appStops(poll, url) {
 
 async function verifyAppWorkspace({ page, project, service, output, server, url, poll }) {
   const button = page.locator('#project-app');
-  const menu = page.locator('#project-settings-dialog');
+  const menu = page.locator('#project-settings-view');
   const settings = { command: 'node start.mjs', url, directory: 'sample-app', expected: '', checkUrl: '' };
   mkdirSync(join(project, settings.directory), { recursive: true });
   service.detectProjectApp = async () => ({ ...settings, sources: 'sample-app/start.mjs', undetermined: 'checkUrl' });
@@ -561,14 +564,14 @@ async function exerciseSequentialRun({ page, poll, screenshot, master, rows, cal
 
 function watchBlockerRetries(flowService) {
   const prior = flowService.executor;
-  const gates = Array.from({ length: 3 }, () => Promise.withResolvers());
+  const gates = Array.from({ length: 4 }, () => Promise.withResolvers());
   let attempts = 0;
   flowService.executor = {
     ...prior,
     async run({ block }) {
       if (block.kind !== 'work') return { summary: 'Fixture finished ' + block.label };
       const index = attempts++;
-      if (gates[index - 1]) await gates[index - 1].promise;
+      await gates[index].promise;
       return { status: 'failed', summary: 'Fixture Work failure ' + (index + 1) };
     },
   };
@@ -615,6 +618,7 @@ export async function blockerWorkspaceChecks({ page, project, service, poll, out
   flow.blocks = flow.blocks.filter(({ kind }) => ['request', 'work'].includes(kind));
   flow.blocks[0].data.fields = { type: 'feature', goal: 'Demonstrate the blocker' };
   retainBlockingError(flow, { action: 'update-worktree', error: Error('Unrelated worktree error') });
+  retainBlockingError(flow, { action: 'play', error: Error('Fixture route blocker without a name') });
   await flows.store.save(flow, flow.revision);
   const retry = watchBlockerRetries(flows);
   installRetryChat(service, issueId);
@@ -641,8 +645,17 @@ async function retryInBlock(page) {
 }
 
 async function exerciseBlockerRetries({ page, issueId, flows, poll, gates, screenshot }) {
-  await page.goto('/?issue=' + issueId);
+  await page.goto('/?issue=' + issueId + '&block=work');
+  await assertBlocker(page, 'Fixture route blocker without a name');
+  await page.locator('#tab-conversation').click();
+  const live = page.locator('#playback-status');
   await page.locator('#issue-playback[data-playback-mode="start"]').click();
+  const generic = live.filter({ hasText: /^Retrying blocker$/ });
+  await generic.waitFor();
+  const chatLive = page.locator('#inspector-body .chat-live [role="status"]');
+  const unnamed = await chatLive.filter({ hasText: /^Retrying blocker$/ }).innerText();
+  await screenshot('issue-blocker-retrying-unnamed');
+  gates[0].resolve();
   await assertBlocker(page, 'Fixture Work failure 1');
   const issueTitle = await page.title();
   const observations = [];
@@ -658,13 +671,17 @@ async function exerciseBlockerRetries({ page, issueId, flows, poll, gates, scree
     await start();
     await assertBlocker(page, 'Unrelated worktree error');
     const during = await page.locator('#issue-blocker-message').innerText();
+    const named = live.filter({ hasText: /^Retrying blocker · Work$/ });
+    await named.waitFor();
+    const liveStatus = await named.innerText();
     await screenshot('issue-blocker-retrying-' + entry.toLowerCase());
-    gates[index].resolve();
+    gates[index + 1].resolve();
     await assertBlocker(page, 'Fixture Work failure ' + (index + 2));
     await poll(() => !flows.active.has(issueId), Boolean, 'Previous attempt still owns the issue.');
-    observations.push({ entry, during, after: await page.locator('#issue-blocker-message').innerText() });
+    await named.waitFor({ state: 'hidden' });
+    observations.push({ entry, during, liveStatus, after: await page.locator('#issue-blocker-message').innerText() });
   }
   const chatPrompts = await page.locator('#issue-discuss-recommendations button').allTextContents();
   assert.deepEqual(chatPrompts, ['Inspect the retry outcome']);
-  return { issueTitle, observations, chatPrompts };
+  return { issueTitle, unnamed, observations, chatPrompts };
 }

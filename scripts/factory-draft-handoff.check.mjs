@@ -2,12 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { deliveryScenario, addAction, ready } from './issue-delivery-scenario.mjs';
+import { deliveryScenario, ready } from './issue-delivery-scenario.mjs';
 import { readQueue } from './factory-ui/data.mjs';
 import { defaultRoute, deliveryMode } from './factory-ui/delivery-mode.mjs';
 import { FactoryUI } from './factory-test-service.mjs';
-import { publishIssue } from './factory-ui/pr-publication.mjs';
-import { runLifecycle } from './factory-ui/lifecycle-loop.mjs';
 import { nextProgress } from './factory-ui/next-action.mjs';
 import { GitHubDeliveryProvider } from './issue-delivery-provider.mjs';
 import { checkHandoff } from './factory-ui/handoff-checks.mjs';
@@ -45,73 +43,6 @@ test('default routes skip post-PR work, use mapped states and preserve earlier e
   assert.equal(route[0].reason, 'Explicit');
   assert.equal(route.find((s) => s.state === 'taste').decision, 'skip');
   assert.deepEqual(runs[1].savedRoutes[0].steps[0].decision, 'undecided');
-});
-
-test('a failing, incomplete candidate reaches one draft PR and ends progress without repair or acceptance', async (t) => {
-  const f = await deliveryScenario(t, 'automatic', 'one', 'draft-handoff');
-  const first = f.delivery.inspect(f.issueId);
-  addAction(f.queue, f.issueId, first.candidate, 'partial');
-  const ledgerPath = join(f.root, '.issues/factory.json'),
-    ledger = readJson(ledgerPath);
-  ledger.actions.find((a) => a.id === 'partial').evidence = JSON.stringify({
-    summary: 'Partial UI implemented.',
-    implementation_complete: false,
-    remaining: ['The save button is unfinished.'],
-  });
-  writeJson(ledgerPath, ledger);
-  let checks = 0;
-  f.delivery.check = async (_root, _base, folder) => {
-    checks++;
-    writeFileSync(join(folder, 'failed.log'), 'Typecheck failed: incomplete implementation.\n');
-    throw Error('Typecheck failed; behavior remains incomplete.');
-  };
-  await f.delivery.operate('assemble', {
-    issueId: f.issueId,
-    actionId: 'partial',
-    expectedCandidate: first.candidate,
-    review: f.review,
-  });
-  const service = new FactoryUI(f.root);
-  t.after(() => service.close());
-  service.ownServer = () => {};
-  service.deliveries = f.delivery;
-  service.codex.turn = async () => {
-    throw Error('Handoff must not start another model review or repair loop.');
-  };
-  const record = {
-    ...service.lifecycleRuns[f.issueId],
-    issueId: f.issueId,
-    status: 'running',
-    events: [],
-    attempts: [],
-    assessed: true,
-  };
-  service.lifecycleRuns[f.issueId] = record;
-  const before = readFileSync(join(f.root, '.issues', f.issueId + '.md'), 'utf8');
-  const { runId } = service.prepareCompletion(f.issueId);
-  while (service.store.connected.has(runId)) await new Promise((resolve) => setTimeout(resolve, 10));
-  assert.equal(service.store.runs.find((r) => r.id === runId).status, 'completed');
-  assert.equal(f.delivery.inspect(f.issueId).readiness.report.checks.passed, false);
-  service.requestPublication(f.issueId);
-  await publishIssue(service, record, { decision: 'approve' });
-  await runLifecycle(service, record);
-  assert.equal(record.status, 'finished');
-  assert.equal(record.deliveryWaiting, false);
-  const d = f.delivery.inspect(f.issueId);
-  assert.equal(d.state, 'handed-off');
-  assert.equal(d.pr.draft, true);
-  assert.equal(checks, 1);
-  assert.match(f.delivery.request(d).body, /Typecheck failed; behavior remains incomplete/);
-  assert.match(f.delivery.request(d).body, /Implementation is incomplete/);
-  assert.match(f.delivery.request(d).body, /The save button is unfinished/);
-  assert.equal(f.provider.state().creates, 1);
-  assert.equal(f.provider.state().mergeCalls, 0);
-  assert.equal(readFileSync(join(f.root, '.issues', f.issueId + '.md'), 'utf8'), before);
-  const queue = readQueue(f.root);
-  assert.equal(nextProgress(queue, queue.issues[0], []).disabled, true);
-  await assert.rejects(f.delivery.operate('merge', { issueId: f.issueId }), /manual repair and merge/);
-  await f.delivery.operate('reconcile', { issueId: f.issueId });
-  assert.equal(f.provider.state().creates, 1);
 });
 
 test('failed check attempts retain raw summary and command failures and are reused unchanged', async (t) => {

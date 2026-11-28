@@ -1,0 +1,12 @@
+{
+  "version": 2,
+  "name": "Issue and project chats retain semantic progress",
+  "command": ["node", "scripts/flow-browser.mjs", "--ci-part=1b", "--activity-indicators", "--chat-progress"],
+  "timeoutMs": 240000,
+  "source": {
+    "runId": "46140976414",
+    "jobId": "140968713030",
+    "checkout": "0e7d146f79da769eef6921b2eb1ba5ae94a5a7af",
+    "tree": "ee271ce9235dc86ef70bc72532db5e362eccc1a4"
+  }
+}

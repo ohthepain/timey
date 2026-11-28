@@ -166,8 +166,7 @@ The default browser page opens [Project home](../plans/project-home.md) in the
 [explicit flow workspace](../adr/0013-explicit-issue-flows.md). Its project menu
 offers Investigate and Automate me. Selecting an issue opens its existing flow.
 Run blocks individually or use the issue’s **Start** and **Resume** controls.
-Refreshing the page reads saved state without starting work. Legacy browser
-links at `/classic` open the selected Flow issue or Project Home.
+Refreshing the page reads saved state without starting work.
 
 Run `pnpm run factory:ui -- --project /absolute/project` to serve the workspace
 for a local project. Scope, ownership, human gates and verification still apply

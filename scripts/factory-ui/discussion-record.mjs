@@ -1,7 +1,5 @@
 import { appendMessage } from './conversation-store.mjs';
-import { readQueue } from './data.mjs';
-import { progressBasis } from './next-action.mjs';
-import { retainAnswer, saveLifecycle } from './lifecycle-store.mjs';
+import { saveLifecycle } from './lifecycle-store.mjs';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { appendReview } from './review-result.mjs';
@@ -9,8 +7,8 @@ import { digest, requireThat } from './common.mjs';
 import { afterReportWrite } from './stores/report-access.mjs';
 
 // The existing append path locks the report, compares exact original bytes and
-// preserves lifecycle metadata. Only the separate Save and continue choice invokes Progress.
-export function recordDiscussion(service, queue, issue, intent, continueWork = false) {
+// preserves lifecycle metadata.
+export function recordDiscussion(service, queue, issue, intent) {
   service.ownServer();
   requireThat(
     !existsSync(join(service.root, '.issues/factory-integration.lock')),
@@ -47,7 +45,6 @@ export function recordDiscussion(service, queue, issue, intent, continueWork = f
     () => {
       recordGeneralDecision(service, queue, issue, intent);
       refreshGrillingAssessment(service, issue, intent.stage);
-      if (continueWork) return continueAfterGrilling(service, issue, result.stage_grilling);
       return { recorded: true };
     }
   );
@@ -84,27 +81,6 @@ function stageGrillingResult(queue, intent) {
     skill: intent.skill,
     summary: intent.text,
   };
-}
-function continueAfterGrilling(service, issue, result) {
-  try {
-    const record = service.lifecycleRuns[issue.id];
-    if (record) {
-      retainAnswer(service, record, {
-        type: 'stage-grilling',
-        state: result.state,
-        summary: result.summary,
-        answerQuotes: result.answerQuotes,
-        humanConfirmed: true,
-      });
-      if (result.role === 'ready-for-grilling') saveLifecycle(service, record, { assessed: false });
-    }
-    const queue = readQueue(service.root);
-    const fresh = queue.issues.find((item) => item.id === issue.id);
-    service.startLifecycle({ issueId: issue.id, state: fresh.state, issueBasis: progressBasis(queue, issue.id) });
-    return { recorded: true, continuing: true };
-  } catch (error) {
-    return { recorded: true, continuing: false, continueError: error.message };
-  }
 }
 
 function refreshGrillingAssessment(service, issue, stage) {

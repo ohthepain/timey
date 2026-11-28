@@ -22,12 +22,6 @@ function fixture(t) {
     },
     lifecycleTasks: new Map(),
     ownServer() {},
-    pauseLifecycle({ issueId }) {
-      calls.push(['pause', issueId]);
-    },
-    continueCoordinatorIssue(id) {
-      calls.push(['continue', id]);
-    },
     store: {
       runs,
       connected,
@@ -116,10 +110,9 @@ test('queue operations share one conversation, serialize and retain issue-linked
   assert.equal(state.threads[0].messages.filter((m) => m.role === 'Coordinator').length, 2);
   assert.equal(state.threads[0].messages.at(-1).issueId, 'two');
 });
-test('Stop interrupts only coordination, blocks next operations, and Continue uses existing issue handlers', async (t) => {
+test('Stop interrupts only coordination, blocks next operations, and Continue reattaches the coordinator', async (t) => {
   const f = fixture(t);
   let reject;
-  f.service.lifecycleTasks.set('one', Promise.resolve());
   const worker = { id: 'worker', kind: 'worker', issueId: 'one', status: 'running' };
   f.service.store.runs.push(worker);
   f.service.store.connected.add(worker.id);
@@ -141,12 +134,9 @@ test('Stop interrupts only coordination, blocks next operations, and Continue us
   assert.equal(worker.status, 'running');
   assert.equal(f.owner.view().workers.length, 1);
   await assert.rejects(f.owner.turn(f.run, 'No implicit resume'), /paused/);
-  f.service.lifecycleTasks.clear();
   await f.owner.continue();
-  assert.equal(
-    f.calls.some((call) => call[0] === 'pause' || call[0] === 'continue'),
-    false
-  );
+  assert.equal(worker.status, 'running');
+  assert.deepEqual(f.calls.at(-1), ['attach', 'native-1']);
 });
 test('Send waits for the next response, Steer requires the exact current turn, and messages confer no authority', async (t) => {
   const f = fixture(t);
@@ -207,7 +197,11 @@ test('renewal retains history and current questions; restart pauses without repl
   assert.equal(restarted.view().interrupted.runId, 'old-operation');
   await restarted.continue();
   assert.equal(restarted.view().paused, false);
-  assert.ok(f.calls.some((c) => c[0] === 'continue' && c[1] === 'one'));
+  assert.equal(restarted.view().interrupted, null);
+  assert.equal(
+    f.calls.slice(before).some(([kind]) => kind === 'turn'),
+    false
+  );
 });
 
 test('native RPC fixture exercises shared read-only transport, steering and interruption without live models', async (t) => {

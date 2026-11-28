@@ -6,9 +6,11 @@ import {
   providerForModel,
   quotaAvailability,
   saveProviderConfig,
+  saveProviderEnabled,
   initializeProviderConfig,
 } from './provider-config.mjs';
 import { writeJson } from './common.mjs';
+import { readCodexQuota } from './codex-quota.mjs';
 
 const runtimes = new Map();
 const observationPath = (root) => join(root, '.issues/factory-ui/provider-observations.json');
@@ -24,23 +26,38 @@ function runtime(root) {
 export function providerCatalogs(root) {
   return runtime(root).catalogs;
 }
-export function observeProvider(root, id, patch) {
+export function providerIsActive(root, id) {
+  return !root || readProviderConfig(root)?.providers[id]?.active !== false;
+}
+export function assertProviderActive(root, id) {
+  if (!providerIsActive(root, id))
+    throw Object.assign(Error(`${providerNames[id]} is disabled in Factory settings.`), {
+      code: 'PROVIDER_PAUSED',
+      turnRejected: true,
+    });
+}
+function observedModels(advertised, previous = []) {
+  return [
+    ...advertised.map((model) => ({ ...model, advertised: true })),
+    ...previous
+      .filter((model) => !advertised.some((entry) => entry.id === model.id))
+      .map((model) => ({ ...model, advertised: false })),
+  ];
+}
+function providerObservation(root, id, { quota, ...patch }) {
+  if (quota && providerIsActive(root, id)) patch.quota = quota;
+  return patch;
+}
+function mergeObservation(previous = {}, patch) {
+  if (patch.accountKey && patch.accountKey !== previous.accountKey) patch.quota = { windows: [] };
+  if (patch.models) patch.models = observedModels(patch.models, previous.models);
+  return { ...previous, ...patch };
+}
+export function observeProvider(root, id, observation) {
+  const patch = providerObservation(root, id, observation);
+  if (!Object.keys(patch).length) return;
   const state = runtime(root);
-  if (patch.accountKey && patch.accountKey !== state.catalogs[id]?.accountKey)
-    patch = { ...patch, quota: { windows: [] } };
-  if (patch.models) {
-    const previous = state.catalogs[id]?.models || [];
-    patch = {
-      ...patch,
-      models: [
-        ...patch.models.map((model) => ({ ...model, advertised: true })),
-        ...previous
-          .filter((model) => !patch.models.some((entry) => entry.id === model.id))
-          .map((model) => ({ ...model, advertised: false })),
-      ],
-    };
-  }
-  state.catalogs[id] = { ...state.catalogs[id], ...patch };
+  state.catalogs[id] = mergeObservation(state.catalogs[id], patch);
   mkdirSync(join(root, '.issues/factory-ui'), { recursive: true });
   writeJson(observationPath(root), state.catalogs);
   enforce(state);
@@ -50,16 +67,20 @@ export function modelAvailability(root, model, now = Date.now()) {
   if (!config) return { status: 'available', reason: 'Legacy configuration' };
   const id = providerForModel(model),
     policy = config.providers[id];
+  if (!policy.active) return { status: 'disabled', reason: `${providerNames[id]} is disabled in Factory settings.` };
   if (!policy.enabled.includes(model)) return { status: 'disabled', reason: 'Model is disabled in Factory settings.' };
   const catalog = runtime(root).catalogs[id];
-  if (!catalog?.ready)
-    return { status: 'unavailable', reason: catalog?.message || 'Set up this provider in Factory settings.' };
-  if (!catalog.models?.some((entry) => entry.id === model && entry.advertised !== false))
+  return catalogAvailability(catalog, policy, model, now);
+}
+function catalogAvailability(catalog = {}, policy, model, now) {
+  const { ready, message = 'Set up this provider in Factory settings.', models = [], quota } = catalog;
+  if (!ready) return { status: 'unavailable', reason: message };
+  if (!models.some((entry) => entry.id === model && entry.advertised !== false))
     return {
       status: 'unavailable',
       reason: 'Model is no longer advertised by the native agent. Refresh available models.',
     };
-  return quotaAvailability(policy, catalog.quota, model, now);
+  return quotaAvailability(policy, quota, model, now);
 }
 const usableModel = (value) => ['available', 'warning', 'unmonitored'].includes(value.status);
 export function providerModelChoices(root) {
@@ -87,7 +108,7 @@ export function providerSettings(root, { initialize = true } = {}) {
             providers: Object.fromEntries(
               Object.keys(providerNames).map((id) => [
                 id,
-                { enabled: [], warning: 5, disable: 2, allowUnmonitored: false },
+                { active: false, enabled: [], warning: 5, disable: 2, allowUnmonitored: false },
               ])
             ),
           }),
@@ -137,9 +158,15 @@ export function saveProviderSettings(root, input) {
   enforce(runtime(root));
   return providerSettings(root);
 }
+
+export function changeProviderEnabled(root, input) {
+  saveProviderEnabled(root, input);
+  if (!input.active)
+    for (const watch of runtime(root).watches) if (watch.provider === input.provider) watch.allowCompletion = true;
+  return providerSettings(root);
+}
 async function fetchQuota(root, id) {
   if (id !== 'codex') return;
-  const { readCodexQuota } = await import('./codex-quota.mjs');
   const value = await readCodexQuota({ force: true });
   // Named Codex allowance pools are not necessarily shared across all models.
   // Use only the documented default Codex pool; unknown pools cannot be assigned.
@@ -151,6 +178,7 @@ async function fetchQuota(root, id) {
   if (windows.length) observeProvider(root, id, { quota: { windows } });
 }
 export async function refreshProviderQuota(root, id) {
+  if (!providerIsActive(root, id)) return;
   const state = runtime(root);
   if (!state.pending.has(id))
     state.pending.set(
@@ -159,23 +187,27 @@ export async function refreshProviderQuota(root, id) {
     );
   return state.pending.get(id);
 }
+function watchAvailability(root, watch) {
+  try {
+    if (watch.allowCompletion || !providerIsActive(root, watch.provider)) {
+      watch.allowCompletion = true;
+      return null;
+    }
+    return modelAvailability(root, watch.model);
+  } catch {
+    return {
+      status: 'unavailable',
+      reason: 'Provider settings are invalid. Repair Factory settings before continuing.',
+    };
+  }
+}
 function enforce(state) {
   for (const watch of state.watches) {
     if (watch.stopped) continue;
-    let availability;
-    try {
-      availability = modelAvailability(state.root, watch.model);
-    } catch {
-      availability = {
-        status: 'unavailable',
-        reason: 'Provider settings are invalid. Repair Factory settings before continuing.',
-      };
-    }
-    if (!usableModel(availability)) {
+    const availability = watchAvailability(state.root, watch);
+    if (availability && !usableModel(availability)) {
       watch.stopped = Object.assign(
-        Error(
-          `${providerNames[providerForModel(watch.model)]}: ${availability.reason} Resume explicitly when available.`
-        ),
+        Error(`${providerNames[watch.provider]}: ${availability.reason} Resume explicitly when available.`),
         { code: 'PROVIDER_PAUSED' }
       );
       void Promise.resolve()
@@ -188,6 +220,7 @@ export function assertProviderModelReady(root, model) {
   const config = readProviderConfig(root);
   if (!config) return null;
   const provider = providerForModel(model);
+  assertProviderActive(root, provider);
   if (!config.providers[provider].enabled.includes(model))
     throw Object.assign(Error('Model is disabled in Factory settings.'), {
       code: 'PROVIDER_PAUSED',
@@ -209,13 +242,13 @@ export async function guardProviderWork(root, model, stop) {
       code: 'PROVIDER_PAUSED',
       turnRejected: true,
     });
-  const watch = { model, stop, lastRefresh: Date.now() };
+  const watch = { model, provider, stop, lastRefresh: Date.now() };
   state.watches.add(watch);
   const timer = setInterval(() => {
     enforce(state);
     if (Date.now() - watch.lastRefresh < 30000) return;
     watch.lastRefresh = Date.now();
-    void refreshProviderQuota(root, providerForModel(model)).catch(() => {});
+    void refreshProviderQuota(root, provider).catch(() => {});
   }, 1000);
   timer.unref();
   return {

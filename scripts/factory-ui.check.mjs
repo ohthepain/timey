@@ -9,8 +9,6 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { unlinkSync, cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync, symlinkSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { once } from 'node:events';
-import vm from 'node:vm';
 import { factoryGitFixture } from './git-fixture.mjs';
 import { factory, runCommand } from './factory.mjs';
 import { FactoryUI } from './factory-test-service.mjs';
@@ -2566,52 +2564,6 @@ function lifecycleResponse(root, schema, proposal) {
     skipped_steps: [],
   };
 }
-async function finishLifecycle(service) {
-  await Promise.all([...service.lifecycleTasks.values()]);
-  return service.snapshot().issues[0].lifecycle;
-}
-function startIssueLifecycle(service) {
-  const snapshot = service.snapshot();
-  return service.startLifecycle({
-    issueId: '20261022-one',
-    state: snapshot.issues[0].state,
-    basis: snapshot.reviewBasis,
-  });
-}
-async function approveIssuePlan(service) {
-  const record = await finishLifecycle(service);
-  assert.equal(record.input.type, 'plan');
-  return service.answerLifecycle({ issueId: '20261022-one', updated: record.updated, decision: 'approve' });
-}
-
-test('lifecycle recovers saved clarification, displays the exact plan and starts no worker before approval', async (t) => {
-  const { service, calls, api } = lifecycleFixture(t);
-  startIssueLifecycle(service);
-  assert.equal(startIssueLifecycle(service).active, true);
-  const record = await finishLifecycle(service);
-  assert.equal(record.status, 'waiting');
-  assert.equal(record.input.type, 'plan');
-  assert.match(record.input.plan.content, /Read source.js/);
-  assert.equal(service.snapshot().issues[0].state, 'investigate');
-  assert.equal(api.inspect().registry.actions.length, 0);
-  assert.equal(calls.filter((c) => c.start).length, 1);
-  assert.equal(service.snapshot().issues[0].lifecycle.updated, record.updated);
-});
-
-test('one approved lifecycle run saves, launches, reviews and advances to explicit final acceptance', async (t) => {
-  const { service, calls, api } = lifecycleFixture(t);
-  startIssueLifecycle(service);
-  await approveIssuePlan(service);
-  const record = await finishLifecycle(service);
-  assert.equal(record.status, 'finished', record.summary);
-  assert.equal(service.snapshot().issues[0].state, 'final');
-  assert.equal(api.inspect().registry.actions[0].status, 'reconciled');
-  assert.equal(calls.filter((c) => c.resume && c.mode === 'workspace-write').length, 1);
-  assert.equal(calls.filter((c) => c.resume === record.workThreadId && c.mode === 'workspace-write').length, 1);
-  assert.match(readFileSync(join(service.root, '.issues/20261022-one.md'), 'utf8'), /Implementation plan approved/);
-  assert.equal(record.input, null);
-});
-
 async function blockedContinuationFixture(t) {
   const setup = lifecycleFixture(t),
     { service, api, root, threads, proposal } = setup;
@@ -2651,40 +2603,6 @@ async function blockedContinuationFixture(t) {
   saveLifecycle(service, record);
   return { ...setup, action, worker, record };
 }
-
-test('a proposed continuation stops for manual attention without resuming the worker', async (t) => {
-  const { service, api, calls, action, worker } = await blockedContinuationFixture(t);
-  const turn = service.codex.turn;
-  service.codex.turn = async (id, cwd, prompt, schema) => {
-    if (schema.properties.recommendations) {
-      calls.push({ turn: id, prompt });
-      return JSON.stringify({
-        next_action: 'work',
-        summary: 'Apply the answered correction.',
-        continuation: {
-          action_id: action.id,
-          instruction: 'Apply the bounded correction already approved in the issue.',
-          reason: 'The human answered the blocker.',
-        },
-        recommendations: [],
-        routes: [],
-        record_update: null,
-        human_question: null,
-        next_step: 'Continue the existing worker.',
-      });
-    }
-    return turn(id, cwd, prompt, schema);
-  };
-  startIssueLifecycle(service);
-  const result = await finishLifecycle(service);
-  assert.equal(result.status, 'blocked', result.summary);
-  assert.match(result.summary, /manual attention/);
-  assert.equal(api.inspect().registry.actions.length, 1);
-  assert.equal(service.store.runs.filter((r) => r.kind === 'worker').length, 1);
-  assert.equal(worker.threadId, 'existing-worker');
-  assert.ok(!calls.some((c) => c.prompt?.startsWith('Continue only the original saved assignment.')));
-  assert.ok(!calls.some((c) => c.start && c.mode === 'workspace-write'));
-});
 
 test('continuations reject unknown assignments, active workers and changed inputs before resuming', async (t) => {
   const { service, record, action, worker, root } = await blockedContinuationFixture(t);
@@ -2738,216 +2656,6 @@ test('a continuation missing actual scope approval asks a concrete question with
   service.lifecycleTasks.delete(record.issueId);
 });
 
-test('lifecycle pauses at action boundaries and snapshot or restart never resumes it', async (t) => {
-  const { service, root } = lifecycleFixture(t);
-  startIssueLifecycle(service);
-  service.pauseLifecycle({ issueId: '20261022-one' });
-  const record = await finishLifecycle(service);
-  assert.equal(record.status, 'paused');
-  const restarted = new FactoryUI(root);
-  t.after(() => restarted.close());
-  assert.equal(restarted.snapshot().issues[0].lifecycle.status, 'paused');
-  assert.equal(restarted.store.connected.size, 0);
-});
-
-test('answers save while another issue is connected without changing its report or run', async (t) => {
-  const { service, root } = lifecycleFixture(t);
-  startIssueLifecycle(service);
-  await finishLifecycle(service);
-  const record = service.lifecycleRuns['20261022-one'];
-  const report = join(root, '.issues/20261022-one.md');
-  record.input = {
-    type: 'questions',
-    origin: 'next-action',
-    reportHash: digestReport(readFileSync(report, 'utf8')),
-    questions: [{ question: 'Approve the implementation boundary?' }],
-  };
-  const otherReport = join(root, '.issues/20261022-two.md');
-  writeFileSync(otherReport, '---\nid: 20261022-two\nstate: investigate\ngrill_later: false\n---\n# Other issue\n');
-  const other = { id: 'other-work', issueId: '20261022-two', status: 'running', events: [] };
-  service.store.runs.push(other);
-  service.store.connected.add(other.id);
-  const before = readFileSync(otherReport, 'utf8');
-  await service.answerLifecycle({
-    issueId: record.issueId,
-    updated: record.updated,
-    text: 'Use the isolated checkout.',
-  });
-  assert.match(readFileSync(report, 'utf8'), /Use the isolated checkout/);
-  assert.equal(readFileSync(otherReport, 'utf8'), before);
-  assert.equal(other.status, 'running');
-  assert.equal(service.store.connected.has(other.id), true);
-  service.store.connected.delete(other.id);
-  await finishLifecycle(service);
-});
-
-test('same-issue and grouped work block answers before retaining input or approval', async (t) => {
-  const { service, root, api, proposal } = lifecycleFixture(t);
-  startIssueLifecycle(service);
-  await finishLifecycle(service);
-  const record = service.lifecycleRuns['20261022-one'];
-  const report = join(root, '.issues/20261022-one.md');
-  const before = readFileSync(report, 'utf8');
-  const [action] = api.recommend([proposal]);
-  for (const run of [
-    { id: 'own-work', issueId: record.issueId, title: 'Inspect source' },
-    { id: 'group-work', actionId: action.id, title: 'Grouped inspection' },
-  ]) {
-    service.store.runs.push(run);
-    service.store.connected.add(run.id);
-    const previousAnswer = record.latestAnswer;
-    const previousSummary = record.summary;
-    await assert.rejects(
-      service.answerLifecycle({ issueId: record.issueId, updated: record.updated, decision: 'approve' }),
-      /Work on this issue is still running/
-    );
-    assert.deepEqual(record.latestAnswer, previousAnswer);
-    assert.equal(record.summary, previousSummary);
-    assert.match(record.answerError, /Work on this issue is still running/);
-    assert.equal(record.approval, undefined);
-    assert.equal(readFileSync(report, 'utf8'), before);
-    service.store.connected.delete(run.id);
-  }
-});
-
-test('changed plan and stale answer submissions cannot authorize work', async (t) => {
-  const { service, root, api } = lifecycleFixture(t);
-  startIssueLifecycle(service);
-  const record = await finishLifecycle(service);
-  await assert.rejects(
-    service.answerLifecycle({ issueId: '20261022-one', updated: 'old', decision: 'approve' }),
-    /changed/
-  );
-  writeFileSync(join(root, 'docs/plans/inspect.md'), 'Changed plan: modify the authentication system.');
-  await assert.rejects(
-    service.answerLifecycle({ issueId: '20261022-one', updated: record.updated, decision: 'approve' }),
-    /plan changed/
-  );
-  assert.equal(api.inspect().registry.actions.length, 0);
-});
-
-test('a real required decision is answered inside the issue and resolved through its original owner', async (t) => {
-  const { service, root } = lifecycleFixture(t);
-  const report = join(root, '.issues/20261022-one.md');
-  const human = {
-    version: 1,
-    scopes: [{ id: 'main', revision: 1, basis_refs: ['report.md#scope'] }],
-    requests: [
-      {
-        id: 'scope-choice',
-        kind: 'decision',
-        prompt: 'Which export should we inspect?',
-        expected: 'An export name.',
-        scope: { id: 'main', revision: 1 },
-        prerequisites: [],
-        blocks: [{ operation: 'advance', scope_ids: ['main'], target_state: 'investigate' }],
-        status: 'pending',
-        events: [],
-        outcome: null,
-      },
-    ],
-    overlays: [],
-  };
-  writeFileSync(
-    report,
-    readFileSync(report, 'utf8').replace(
-      'grill_later: false',
-      'grill_later: false\nhuman_input: ' + JSON.stringify(human)
-    )
-  );
-  const turn = service.codex.turn;
-  service.codex.turn = async (...args) =>
-    args[3].properties.complete
-      ? JSON.stringify({
-          complete: true,
-          summary: 'The requested export was named.',
-          reason: 'The actual answer names answer, covering the current request in full.',
-        })
-      : turn(...args);
-  startIssueLifecycle(service);
-  const waiting = await finishLifecycle(service);
-  assert.equal(waiting.input.type, 'human', waiting.summary);
-  assert.equal(waiting.input.request.prompt, 'Which export should we inspect?');
-  await service.answerLifecycle({
-    issueId: '20261022-one',
-    updated: waiting.updated,
-    decision: 'answer',
-    text: 'Inspect the answer export.',
-  });
-  const resumed = await finishLifecycle(service);
-  assert.equal(resumed.input.type, 'plan', resumed.summary);
-  assert.equal(readQueue(root).issues[0].human_input.requests[0].status, 'resolved');
-  assert.equal(readQueue(root).issues[0].human_input.requests[0].outcome.actor, 'human');
-});
-
-test('human-first integration pauses inline and refuses approval after the candidate target changes', async (t) => {
-  const { service, api, proposal, git, root } = lifecycleFixture(t);
-  writeFileSync(
-    join(root, '.issues/issue-delivery-config.json'),
-    JSON.stringify({ provider: 'github', repository: 'fixture/timey', remote: 'origin', target: 'main' })
-  );
-  verifiedRoute(service);
-  startIssueLifecycle(service);
-  const initial = await finishLifecycle(service);
-  const [action] = api.recommend([{ ...proposal, kind: 'implement', merge: 'human-first' }]);
-  api.reserve(action.id);
-  api.attach(action.id, { threadId: 'existing-code-worker', hostId: 'local' });
-  api.record(action.id, {
-    status: 'completed',
-    worker_revision: git('rev-parse', 'HEAD'),
-    evidence: 'Finished candidate.',
-  });
-  await service.answerLifecycle({ issueId: '20261022-one', updated: initial.updated, decision: 'approve' });
-  const waiting = await finishLifecycle(service);
-  assert.equal(waiting.input.type, 'integration', waiting.summary);
-  assert.equal(waiting.input.candidate, git('rev-parse', 'HEAD'));
-  writeFileSync(join(root, 'new-file'), 'later target');
-  git('add', 'new-file');
-  git('commit', '-qm', 'later target');
-  await assert.rejects(
-    service.answerLifecycle({ issueId: '20261022-one', updated: waiting.updated, decision: 'approve' }),
-    /candidate or target changed/
-  );
-  assert.equal(api.inspect().registry.actions[0].status, 'completed');
-});
-
-test('an original recorded approval of the current plan allows Progress to continue without asking again', async (t) => {
-  const { service, root } = lifecycleFixture(t);
-  const { digest } = await import('./factory-ui/common.mjs');
-  const report = join(root, '.issues/20261022-one.md');
-  const quote = 'Human decision: I approve docs/plans/inspect.md as written. Proceed with the source inspection.';
-  writeFileSync(report, readFileSync(report, 'utf8') + '\n\n' + quote + '\n');
-  const receipt = join(root, '.issues/original-approval.json');
-  const content = readFileSync(join(root, 'docs/plans/inspect.md'), 'utf8');
-  writeFileSync(
-    receipt,
-    JSON.stringify({
-      actor: 'human',
-      issueId: '20261022-one',
-      type: 'plan-approval',
-      answer: quote,
-      plan: { content, sha256: digest(content) },
-    })
-  );
-  const turn = service.codex.turn;
-  service.codex.turn = async (...args) => {
-    const response = JSON.parse(await turn(...args));
-    if (args[3].properties.clarification_complete)
-      response.prior_approval = {
-        file: receipt,
-        quote,
-        plan_sha256: digest(readFileSync(join(root, 'docs/plans/inspect.md'), 'utf8')),
-      };
-    if (response.prior_approval) response.evidence.push(receipt);
-    return JSON.stringify(response);
-  };
-  startIssueLifecycle(service);
-  const record = await finishLifecycle(service);
-  assert.equal(record.status, 'finished', record.summary);
-  assert.equal(record.approval.origin, 'original-human-plan-approval');
-  assert.equal(service.snapshot().issues[0].state, 'final');
-});
-
 test('a stale no-work review cannot send a later implementation back into reconciliation', async (t) => {
   const { service, root } = await evaluatedIssue(t, {
     summary: 'Implementation is still needed.',
@@ -2973,20 +2681,6 @@ test('permission replies preserve the advertised reusable choice and reject unof
   assert.throws(() => connection.answer('91', 'worker', { decision: 'acceptForSession' }), /offered/);
   connection.answer('91', 'worker', { decision: 'option:1' });
   assert.deepEqual(sent[0].result, { decision: rule });
-});
-
-test('technical retry cannot record a fake human answer or clear the no-progress guard', async (t) => {
-  const { service, root } = lifecycleFixture(t);
-  startIssueLifecycle(service);
-  await finishLifecycle(service);
-  const record = service.lifecycleRuns['20261022-one'];
-  record.input = { type: 'retry', question: 'Implementation is unfinished.' };
-  const before = readFileSync(join(root, '.issues/20261022-one.md'), 'utf8');
-  await assert.rejects(
-    service.answerLifecycle({ issueId: record.issueId, updated: record.updated, text: 'just continue' }),
-    /not a question/
-  );
-  assert.equal(readFileSync(join(root, '.issues/20261022-one.md'), 'utf8'), before);
 });
 
 test('live activity keeps command output and combines streamed messages without duplicating completion', async (t) => {
@@ -3189,114 +2883,6 @@ test('work still running blocks closing without a fix', (t) => {
   assert.equal(service.snapshot().issues[0].state, 'investigate');
 });
 
-test('a real planning question explains the missing decision and resumes planning after the actual answer', async (t) => {
-  const { service, root } = lifecycleFixture(t);
-  startIssueLifecycle(service);
-  await finishLifecycle(service);
-  const original = service.codex.turn;
-  service.codex.turn = async (...args) =>
-    args[3].properties.recommendations
-      ? JSON.stringify({
-          summary: 'A scope choice is needed.',
-          recommendations: [],
-          routes: [],
-          next_step: 'Choose how to handle the related admin work.',
-          record_update: null,
-          next_action: 'question',
-          human_question: {
-            question: 'Should we handle the admin work separately?',
-            why: 'The saved batch includes a second issue outside this selection.',
-            expected: 'Choose separate work or revise the approved batch.',
-          },
-        })
-      : original(...args);
-  await approveIssuePlan(service);
-  const record = await finishLifecycle(service);
-  assert.equal(record.status, 'waiting');
-  assert.equal(record.input.type, 'questions');
-  assert.equal(record.input.origin, 'next-action');
-  assert.match(record.input.questions[0].question, /admin work separately\?/);
-  assert.equal(service.store.runs.filter((r) => r.kind === 'reconciliation').length, 0);
-  assert.equal(readQueue(root).issues[0].state, 'investigate');
-});
-
-test('blocked review stops on the unfinished task without inventing an answer request', async (t) => {
-  const { service } = lifecycleFixture(t);
-  const original = service.codex.turn;
-  let evaluations = 0;
-  service.codex.turn = async (...args) => {
-    const schema = args[3].properties;
-    if (schema.recommendations && ++evaluations > 1)
-      return JSON.stringify({
-        summary: 'A scope decision is needed.',
-        recommendations: [],
-        routes: [],
-        next_step: 'Choose the implementation scope.',
-        next_action: 'question',
-        human_question: {
-          question: 'Should the admin changes be a separate task?',
-          why: 'The original batch spans a second issue.',
-          expected: 'Choose separate work or revise the batch.',
-        },
-        record_update: null,
-      });
-    if (schema.next_state)
-      return JSON.stringify({
-        outcome: 'blocked',
-        summary: 'The larger implementation is unfinished.',
-        notes: 'The investigation is not the application implementation.',
-        evidence: [],
-        remaining: ['Implement the approved plan.'],
-        next_state: null,
-        skipped_steps: [],
-      });
-    return original(...args);
-  };
-  startIssueLifecycle(service);
-  await approveIssuePlan(service);
-  const record = await finishLifecycle(service);
-  assert.equal(record.status, 'blocked', record.summary);
-  assert.match(record.summary, /unfinished/);
-  assert.equal(record.input, null);
-  assert.equal(evaluations, 1);
-  assert.equal(service.store.runs.filter((r) => r.kind === 'worker').length, 1);
-});
-
-test('administrative notes cannot re-enable the same stopped review', async (t) => {
-  const { service, root } = lifecycleFixture(t);
-  const original = service.codex.turn;
-  service.codex.turn = async (...args) =>
-    args[3].properties.recommendations
-      ? JSON.stringify({
-          summary: 'No valid assignment was established.',
-          recommendations: [],
-          routes: [],
-          next_step: 'The saved batch needs a scope decision before work can be assigned.',
-          next_action: 'blocked',
-          human_question: null,
-          record_update: null,
-        })
-      : original(...args);
-  startIssueLifecycle(service);
-  await approveIssuePlan(service);
-  const stopped = await finishLifecycle(service),
-    count = service.store.runs.length;
-  assert.equal(stopped.status, 'blocked');
-  assert.equal(stopped.input, null);
-  assert.equal(stopped.canResume, false);
-  const report = join(root, '.issues/20261022-one.md');
-  writeFileSync(report, readFileSync(report, 'utf8') + '\nAdministrative note: just continue.\n');
-  assert.equal(service.snapshot().issues[0].lifecycle.canResume, false);
-  assert.throws(() => startIssueLifecycle(service), /nothing relevant has changed/);
-  assert.equal(service.store.runs.length, count);
-  const { retainAnswer } = await import('./factory-ui/lifecycle-store.mjs');
-  retainAnswer(service, service.lifecycleRuns['20261022-one'], {
-    type: 'clarification',
-    answer: 'Use the bounded selected scope.',
-  });
-  assert.equal(service.snapshot().issues[0].lifecycle.canResume, true);
-});
-
 test('live output redacts known credentials before storing or displaying events', async (t) => {
   const { service } = fixture(t),
     run = service.store.add({ id: 'redaction' }, 'worker', 'base');
@@ -3315,23 +2901,6 @@ test('live output redacts known credentials before storing or displaying events'
   assert.doesNotMatch(saved, /fixture-private-value/);
   assert.match(saved, /redacted/);
   assert.doesNotMatch(readFileSync(join(service.store.directory, run.id + '.jsonl'), 'utf8'), /fixture-private-value/);
-});
-
-test('an explicit file or checklist decision resumes a stopped lifecycle without treating a status as an answer', async (t) => {
-  const { continueLifecycleAfter } = await import('./factory-ui/lifecycle-control.mjs');
-  const { service } = lifecycleFixture(t);
-  startIssueLifecycle(service);
-  await approveIssuePlan(service);
-  await finishLifecycle(service);
-  const record = service.lifecycleRuns['20261022-one'];
-  record.status = 'blocked';
-  record.input = null;
-  record.attempts = ['old-action'];
-  continueLifecycleAfter(service, record.issueId);
-  assert.equal(record.status, 'running');
-  const finished = await finishLifecycle(service);
-  assert.equal(finished.status, 'finished');
-  assert.equal(service.snapshot().issues[0].state, 'final');
 });
 
 test('a newer task recommendation supersedes an older stopped reconciliation', async (t) => {
@@ -3374,62 +2943,6 @@ test('a newer task recommendation supersedes an older stopped reconciliation', a
   assert.equal(service.snapshot().issues[0].lifecycle.canResume, true);
   service.progressStart(service.progressPreflight(issue.id, issue.state).token);
   assert.equal(service.snapshot().issues[0].progress.kind, 'launch');
-});
-
-test('unsuccessful bookkeeping stops for manual attention without launching another task', async (t) => {
-  const { service, proposal } = lifecycleFixture(t);
-  const original = service.codex.turn;
-  let evaluations = 0;
-  service.codex.turn = async (...args) => {
-    if (args[3].properties.recommendations && ++evaluations === 1)
-      return JSON.stringify({
-        summary: 'Check existing work.',
-        recommendations: [],
-        routes: [],
-        next_action: 'reconcile',
-      });
-    if (unfinishedBookkeeping(args, service)) return JSON.stringify(unfinishedBookkeepingResult());
-    return original(...args);
-  };
-  startIssueLifecycle(service);
-  await approveIssuePlan(service);
-  const record = await finishLifecycle(service);
-  assert.equal(record.status, 'blocked', record.summary);
-  assert.match(record.summary, /unfinished/);
-  assert.equal(service.store.runs.filter((r) => r.kind === 'evaluation').length, 1);
-  assert.equal(service.store.runs.filter((r) => r.kind === 'worker').length, 0);
-  assert.equal(service.store.runs.filter((r) => r.kind === 'reconciliation' && r.status === 'blocked').length, 1);
-  assert.notEqual(service.snapshot().issues[0].state, 'final');
-  assert.equal(proposal.merge, 'none');
-});
-
-function unfinishedBookkeeping(args, service) {
-  return args[3].properties.next_state && !service.store.runs.some((r) => r.kind === 'worker');
-}
-function unfinishedBookkeepingResult() {
-  return {
-    outcome: 'blocked',
-    summary: 'The task is unfinished.',
-    notes: 'Work is needed.',
-    evidence: [],
-    remaining: ['Read source.js'],
-    next_state: null,
-    skipped_steps: [],
-  };
-}
-
-test('native inspection sees the same waiting question and plan approval as the issue coordinator', async (t) => {
-  const { service, root } = lifecycleFixture(t);
-  startIssueLifecycle(service);
-  const record = await finishLifecycle(service);
-  const { execFileSync } = await import('node:child_process');
-  const before = readFileSync(join(root, '.issues/factory-ui/lifecycle.json'), 'utf8');
-  const inspection = JSON.parse(
-    execFileSync(process.execPath, [resolve('scripts/factory.mjs'), '20261022-one'], { cwd: root, encoding: 'utf8' })
-  );
-  assert.equal(inspection.progress['20261022-one'].input.type, 'plan');
-  assert.equal(inspection.progress['20261022-one'].id, record.id);
-  assert.equal(readFileSync(join(root, '.issues/factory-ui/lifecycle.json'), 'utf8'), before);
 });
 
 test('progress writes preserve other issues saved by another coordinator instance', async (t) => {
@@ -3507,26 +3020,6 @@ test('native completion and UI completion write the same stage history and rejec
   const fresh = { ...nativeRecordInput(root), result: { ...input.result, human_check_update: { status: 'passed' } } };
   assert.throws(() => recordCompletion(root, fresh), /human decisions/);
   assert.equal(service.snapshot().issues[0].state, 'investigate');
-});
-
-test('approved lifecycle actions retain plan authorization without claiming a new human click', async (t) => {
-  const { service, calls } = lifecycleFixture(t);
-  startIssueLifecycle(service);
-  await approveIssuePlan(service);
-  await finishLifecycle(service);
-  const worker = service.store.runs.find((r) => r.kind === 'worker');
-  assert.equal(service.store.runs.find((r) => r.id === worker.id).authorization.kind, 'approved-plan');
-  const action = service.api.inspect().registry.actions.find((a) => a.id === worker.actionId);
-  assert.equal(action.authorization.kind, 'approved-plan');
-  assert.equal(action.operations[0].authorization.plan_sha256, worker.authorization.plan_sha256);
-  assert.equal(worker.authorization.plan_sha256, service.lifecycleRuns['20261022-one'].approval.sha256);
-  const prompt = calls.find(
-    (c) => c.turn === worker.threadId && c.prompt?.includes('You are the worker for saved factory action')
-  ).prompt;
-  assert.match(prompt, /under the approved plan/);
-  assert.doesNotMatch(prompt, /human explicitly chose Start worker/i);
-  const note = service.snapshot().issues[0].content;
-  assert.doesNotMatch(note, /Recorded from the issue screen by an explicit user action/);
 });
 
 test('native completion respects the shared active coordinator and unanswered UI request', async (t) => {
@@ -3880,52 +3373,6 @@ test('another issue changing cannot invalidate a selected issue acceptance butto
   assert.equal(selectedIssueView(service).state, 'closed');
 });
 
-const clarificationMutations = {
-  commit({ root, git }) {
-    writeFileSync(join(root, 'unrelated.js'), 'another feature\n');
-    git('add', 'unrelated.js');
-    git('commit', '-qm', 'Unrelated source');
-  },
-  dirty({ root }) {
-    writeFileSync(join(root, 'source.js'), 'unfinished unrelated source\n');
-  },
-  report({ root }) {
-    const path = join(root, '.issues/20261022-one.md');
-    writeFileSync(path, readFileSync(path, 'utf8') + '\nChanged requirements\n');
-  },
-  plan({ root }) {
-    writeFileSync(join(root, 'docs/plans/inspect.md'), '# Changed plan\n');
-  },
-};
-for (const [name, mutate] of Object.entries(clarificationMutations)) {
-  test(`clarification questions handle ${name} changes during the read-only assessment`, async (t) => {
-    const f = lifecycleFixture(t);
-    f.service.codex.turn = async (_id, _cwd, _prompt, schema) => {
-      assert.ok(schema.properties.clarification_complete);
-      mutate(f);
-      return JSON.stringify({
-        ...lifecycleResponse(f.root, schema, f.proposal),
-        clarification_complete: false,
-        prior_approval: null,
-        questions: [{ id: 'placement', question: 'May Retro run before acceptance?' }],
-      });
-    };
-    startIssueLifecycle(f.service);
-    const result = await finishLifecycle(f.service);
-    if (['report', 'plan'].includes(name)) {
-      assert.equal(result.status, 'blocked');
-      assert.match(result.summary, /changed/);
-      assert.equal(result.input, null);
-    } else {
-      assert.equal(result.status, 'waiting', result.summary);
-      assert.equal(result.input.questions[0].id, 'placement');
-      assert.equal(f.service.snapshot().issues[0].state, 'clarify');
-      assert.equal(result.approval, undefined);
-    }
-    assert.equal(f.api.inspect().registry.actions.length, 0);
-  });
-}
-
 test('a queue snapshot projects run history once while dispatch still reads current runs', (t) => {
   const { service, root } = fixture(t);
   const queue = readQueue(root),
@@ -3949,32 +3396,6 @@ test('a queue snapshot projects run history once while dispatch still reads curr
   assert.equal(calls, 1, 'a blocked issue must reuse the snapshot history');
   assert.equal(canResumeLifecycle(service, record, queue, issue), false);
   assert.equal(calls, 2, 'dispatch without a snapshot must still read current runs');
-});
-
-test('a simple approved lifecycle uses its clarification task without another planning conversation', async (t) => {
-  const { service, calls, api, proposal } = lifecycleFixture(t);
-  const turn = service.codex.turn;
-  service.codex.turn = async (...args) => {
-    const result = JSON.parse(await turn(...args));
-    if (args[3].properties.clarification_complete) {
-      result.direct_task = proposal;
-      result.direct_routes = [];
-    }
-    return JSON.stringify(result);
-  };
-  startIssueLifecycle(service);
-  const waiting = await finishLifecycle(service);
-  assert.equal(waiting.status, 'waiting');
-  assert.equal(api.inspect().registry.actions.length, 0);
-  await service.answerLifecycle({ issueId: waiting.issueId, updated: waiting.updated, decision: 'approve' });
-  const done = await finishLifecycle(service);
-  assert.equal(done.status, 'finished', done.summary);
-  assert.equal(api.inspect().registry.actions.length, 1);
-  assert.equal(
-    calls.some((c) => c.prompt?.includes('Perform one read-only factory queue review')),
-    false
-  );
-  assert.equal(calls.filter((c) => c.resume && c.mode === 'workspace-write').length, 1);
 });
 
 test('retryable stops retain the concrete cause and name the next action', async () => {
@@ -4055,29 +3476,6 @@ test('issue Git identity follows unfinished work, assembly and live HEAD without
   assert.equal(issueGit(snapshot, issue), null);
 });
 
-test('a disconnected read-only review stops for manual attention without replanning', async (t) => {
-  const { service, root } = fixture(t);
-  const { waitLifecycleWork } = await import('./factory-ui/lifecycle-work.mjs');
-  const record = { issueId: '20261022-one', status: 'running', events: [], attempts: [], input: { type: 'retry' } };
-  const run = {
-    id: 'lost-review',
-    issueId: record.issueId,
-    kind: 'evaluation',
-    status: 'running',
-    events: [],
-    threadId: 'unavailable-chat',
-  };
-  service.store.runs.push(run);
-  assert.equal(await waitLifecycleWork(service, record, readQueue(root)), true);
-  assert.equal(run.status, 'blocked');
-  assert.equal(record.status, 'blocked');
-  assert.notEqual(record.replan, true);
-  assert.equal(record.input, null);
-  assert.equal(await waitLifecycleWork(service, record, readQueue(root)), false);
-  assert.equal(service.store.runs.length, 1);
-  assert.equal(readQueue(root).actions.length, 0);
-});
-
 test('changed planning inputs stop without another AI revalidation turn', async (t) => {
   const { root, git, service } = fixture(t);
   const { captureInputs } = await import('./factory-ui/input-change.mjs');
@@ -4151,80 +3549,6 @@ test('code merge policy is validated before saving any route or deferred assignm
   assert.throws(() => service.saveReview(run.id, service.snapshot().reviewBasis), /No route or stage change was saved/);
   assert.equal(run.savedRoutes, undefined);
   assert.equal(api.inspect().registry.actions.length, 0);
-});
-
-test('approved issue survives a delivery-scope answer and an unrelated commit, then launches once in its owning chat', async (t) => {
-  const { service, calls, api, proposal, git, root } = lifecycleFixture(t);
-  const originalTurn = service.codex.turn;
-  service.codex.turn = async (...args) => {
-    const result = JSON.parse(await originalTurn(...args));
-    if (args[3].properties.clarification_complete) {
-      result.direct_task = proposal;
-      result.direct_routes = [];
-    }
-    return JSON.stringify(result);
-  };
-  service.coordinator.turn = async () => {
-    throw Error('Issue progress must not enter the queue coordinator');
-  };
-  service.coordinator.state.paused = true;
-  startIssueLifecycle(service);
-  const waiting = await finishLifecycle(service);
-  const record = service.lifecycleRuns[waiting.issueId];
-  const { respondLifecycle } = await import('./factory-ui/lifecycle-input.mjs');
-  await respondLifecycle(service, record, { decision: 'approve' });
-  const approval = structuredClone(record.approval),
-    plan = structuredClone(record.plan);
-  record.input = { type: 'scope', question: 'Stop before publication?' };
-  await respondLifecycle(service, record, { text: 'No, go as far as the existing permissions allow.' });
-  assert.deepEqual(record.approval, approval);
-  assert.deepEqual(record.plan, plan);
-  assert.match(JSON.parse(readFileSync(record.latestAnswer.path, 'utf8')).answer, /Assignment scope answer/);
-  const save = service.saveReview.bind(service);
-  let inserted = false;
-  service.saveReview = (...args) => {
-    const result = save(...args);
-    if (!inserted) {
-      inserted = true;
-      writeFileSync(join(root, 'unrelated.js'), 'export const unrelated = true;\n');
-      git('add', 'unrelated.js');
-      git('commit', '-qm', 'unrelated UI fix');
-    }
-    return result;
-  };
-  startIssueLifecycle(service);
-  const done = await finishLifecycle(service);
-  assert.equal(done.status, 'finished', done.summary);
-  const actions = api.inspect().registry.actions;
-  assert.equal(actions.length, 1);
-  assert.equal(actions[0].status, 'reconciled');
-  assert.equal(actions[0].recommendationHistory.length, 1);
-  assert.deepEqual(record.approval, approval);
-  assert.equal(calls.filter((c) => c.resume && c.mode === 'workspace-write').length, 1);
-  assert.equal(calls.filter((c) => c.resume === record.workThreadId && c.mode === 'workspace-write').length, 1);
-  assert.equal(
-    calls.some((c) => c.prompt?.includes('Does this exact saved assignment fit')),
-    false
-  );
-});
-
-test('an explicit plan revision suspends authority but retains the prior plan and approval receipt', async (t) => {
-  const { service } = lifecycleFixture(t);
-  startIssueLifecycle(service);
-  const waiting = await finishLifecycle(service),
-    record = service.lifecycleRuns[waiting.issueId];
-  const { respondLifecycle } = await import('./factory-ui/lifecycle-input.mjs');
-  await respondLifecycle(service, record, { decision: 'approve' });
-  const previous = structuredClone({ plan: record.plan, approval: record.approval });
-  record.input = { type: 'plan' };
-  await respondLifecycle(service, record, {
-    decision: 'changes',
-    text: 'Add a new feature outside the original scope.',
-  });
-  assert.equal(record.approval, null);
-  assert.equal(record.approvalSuspended, true);
-  assert.deepEqual(record.plan, previous.plan);
-  assert.deepEqual(record.approvalHistory.at(-1), previous);
 });
 
 test('accepting a retained fix closes directly from implementation without fabricating completed stages or model calls', async (t) => {

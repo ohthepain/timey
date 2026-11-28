@@ -25,7 +25,7 @@ function report(root, id) {
   return { text, meta: parse(text.match(/^---\n([\s\S]*?)\n---/)[1]) };
 }
 function forbidWork(service) {
-  for (const name of ['launch', 'startLifecycle', 'progressStart', 'integrate', 'evaluate', 'prepareWorker'])
+  for (const name of ['launch', 'progressStart', 'integrate', 'evaluate', 'prepareWorker'])
     service[name] = () => {
       throw Error('Unexpected work launch: ' + name);
     };

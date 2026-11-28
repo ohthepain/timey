@@ -1,4 +1,4 @@
-import { initializeProviderConfig, readProviderConfig } from './factory-ui/provider-config.mjs';
+import { initializeProviderConfig, readProviderConfig, saveProviderEnabled } from './factory-ui/provider-config.mjs';
 import { observeProvider, saveProviderSettings } from './factory-ui/provider-runtime.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -40,6 +40,7 @@ import { humanGuard } from './factory-ui/guard.mjs';
 import { ViewSources } from './factory-ui/view-sources.mjs';
 import { BlockCatalog, blockExtensions, userBlocks } from './factory-ui/block-catalog.mjs';
 import { moveIssueStorage } from './factory-ui/issue-storage-actions.mjs';
+import { deleteProjectIssues } from './factory-ui/project-issue-deletion.mjs';
 import { FactoryUI } from './factory-ui/service.mjs';
 import { readQueue } from './factory-ui/data.mjs';
 import { decisionBasis } from './factory-ui/recorded-result.mjs';
@@ -49,6 +50,48 @@ import { maximumTextInputLength, oversizedTextInputMessage, validateTextInput } 
 import { runRetro } from './factory-ui/flow-retro.mjs';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
+
+test('Delete selected rejects overlapping batches and stops after a paused deletion', async (t) => {
+  const { root } = gitFixture(t, 'delete-selection-');
+  const service = { root, ownServer() {}, lifecycleTasks: new Map(), store: { runs: [] } };
+  const selected = ['first', 'second', 'third'].map((id) => ({ id, location: 'open' }));
+  const entered = Promise.withResolvers();
+  const resume = Promise.withResolvers();
+  const attempted = [];
+  const workflow = {
+    selected: (id) => ({ id, title: id, content: id, location: 'open', state: 'needs-approval' }),
+    read: ({ id }) => ({ issueId: id, revision: 0 }),
+    async action({ issueId }) {
+      attempted.push(issueId);
+      if (issueId === 'first') throw Error('This proposal has a pending operation.');
+      if (issueId === 'second') {
+        entered.resolve();
+        await resume.promise;
+        throw Object.assign(Error('The deletion was paused.'), { pending: true });
+      }
+      assert.fail('The paused batch advanced to another proposal.');
+    },
+  };
+  const { basis } = await deleteProjectIssues(service, workflow, { action: 'preview', selected });
+  const request = { action: 'delete', selected, basis };
+  const progress = [];
+  const batch = deleteProjectIssues(service, workflow, request, (status) => progress.push(status));
+  try {
+    await Promise.race([entered.promise, batch.then(() => assert.fail('The batch ended before the pause.'))]);
+    await assert.rejects(deleteProjectIssues(service, workflow, request), /selected-issue deletion is already running/);
+    assert.deepEqual(progress.at(-1), { currentId: 'second', processed: 1, deleted: 0, total: 3 });
+  } finally {
+    resume.resolve();
+    await batch;
+  }
+  const { results } = await batch;
+  assert.deepEqual(attempted, ['first', 'second']);
+  assert.deepEqual(
+    results.map(({ status }) => status),
+    ['kept', 'kept', 'kept']
+  );
+  assert.equal(service.issueStorageTasks.size, 0);
+});
 
 test('Markdown block defaults apply to new blocks and user definitions keep the Work operation', (t) => {
   const { root } = gitFixture(t, 'block-catalog-');
@@ -324,7 +367,8 @@ test('flow views wait for the first shared copy of a selected report', async (t)
 
 test('provider disable lets a protected publication finish but pauses the route before the next block', async (t) => {
   const { root, id, service } = fixture(t);
-  initializeProviderConfig(root);
+  const { revision } = initializeProviderConfig(root);
+  saveProviderEnabled(root, { provider: 'google', active: true, revision });
   observeProvider(root, 'google', { ready: true, models: [{ id: 'google:pro', name: 'Gemini Pro' }] });
   let config = readProviderConfig(root);
   config.providers.google.enabled = ['google:pro'];
@@ -2055,6 +2099,8 @@ test('opted-in closure holds the worktree until Retro succeeds and files idle ap
   const pending = await flows.view(keep.id);
   assert.equal(pending.flow.folder, 'Retro items');
   await assert.rejects(submit(pending, 'play'), /Approve/);
+  const branchChoices = await submit(pending, 'destination-branches');
+  assert.ok(branchChoices.branchesUnavailable || Array.isArray(branchChoices.branches));
   const approved = await submit(pending, 'approve-issue');
   assert.equal(approved.issue.state, 'backlog');
   assert.equal(approved.issue.issueNumber, pending.issue.issueNumber);

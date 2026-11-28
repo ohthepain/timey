@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { writeBrowserIssue } from './flow-browser-fixture.mjs';
-import { initializeProviderConfig, readProviderConfig } from './factory-ui/provider-config.mjs';
+import { initializeProviderConfig, readProviderConfig, saveProviderEnabled } from './factory-ui/provider-config.mjs';
 import { observeProvider, saveProviderSettings } from './factory-ui/provider-runtime.mjs';
 
 async function chooseModel(page, current, next, poll) {
@@ -95,7 +95,9 @@ export async function blockModelsBrowserChecks({ page, project, service, poll, s
       },
     ];
     await service.flows.store.save(flow, flow.revision);
-    initializeProviderConfig(project);
+    const { revision } = initializeProviderConfig(project);
+    const openAI = saveProviderEnabled(project, { provider: 'codex', active: true, revision });
+    saveProviderEnabled(project, { provider: 'anthropic', active: true, revision: openAI.revision });
     observeProvider(project, 'codex', {
       ready: true,
       models: [

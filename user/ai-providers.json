@@ -1,17 +1,20 @@
 {
   "codex": {
+    "active": true,
     "enabled": ["gpt-6.2-sol", "gpt-6.2-astra", "gpt-6.1-sol", "gpt-6-luna"],
     "warning": 5,
     "disable": 2,
     "allowUnmonitored": true
   },
   "anthropic": {
-    "enabled": [],
+    "active": false,
+    "enabled": ["anthropic:opus", "anthropic:fable", "anthropic:sonnet", "anthropic:haiku"],
     "warning": 5,
     "disable": 2,
     "allowUnmonitored": false
   },
   "google": {
+    "active": true,
     "enabled": [],
     "warning": 5,
     "disable": 2,

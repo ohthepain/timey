@@ -17,12 +17,119 @@ import {
 import { openRecordStore, openIssueStore } from './factory-ui/stores/providers.mjs';
 import { openArtifactStore } from './factory-ui/stores/artifacts.mjs';
 import { createFactoryPool, ensureFactoryDatabase } from './factory-ui/stores/postgres-connection.mjs';
+import { openPostgresRecords } from './factory-ui/stores/providers/postgres.mjs';
 import { cleanEnvironment } from './factory-ui/common.mjs';
 import { createCoordination, deletionBlockers } from './factory-ui/stores/coordination.mjs';
 
 const providers = (process.env.TIMEY_STORE_TEST_PROVIDERS || 'files,git').split(',');
 const sha = (value) => createHash('sha256').update(value).digest('hex');
 const fails = (code) => (error) => error.code === code;
+
+test('S3 upload registration survives a rejected Git metadata transaction', async (t) => {
+  const f = await fixture(t, 'git');
+  const store = await f.open();
+  const registry = await f.open(0, { id: 'artifact-uploads:' + f.config.id });
+  const peer = await f.open(1, { id: 'artifact-uploads:' + f.config.id });
+  const bucket = 'disposable-fixture';
+  const observed = [];
+  const artifacts = await openArtifactStore(
+    { id: 's3', kind: 's3', bucket, region: 'us-east-1' },
+    {
+      root: f.roots[0],
+      projectId: f.projectId,
+      registerUpload: (upload) => registry.registerArtifactUpload(upload),
+      s3Client: {
+        async send(command) {
+          assert.equal(command.constructor.name, 'PutObjectCommand');
+          const { Key } = command.input;
+          const upload = (await peer.list('artifact-uploads/')).find(({ value }) => value.objectKey === Key);
+          assert.equal(upload.value.bucket, bucket);
+          observed.push(upload.value);
+          return {};
+        },
+      },
+    }
+  );
+  await assert.rejects(
+    store.transaction(async () => {
+      await artifacts.put({ body: 'never published' });
+      throw Error('Abandon the owner transaction.');
+    }),
+    /Abandon the owner transaction/
+  );
+  await store.transaction(async () => {
+    await store.list('');
+    const reference = await artifacts.put({ body: 'published' });
+    await store.commit({
+      operationId: 'owner',
+      expected: [{ key: 'evidence/b', revision: null }],
+      writes: [{ key: 'evidence/b', value: { reference } }],
+    });
+  });
+  assert.ok(await store.get('evidence/b'));
+  await artifacts.put({ body: 'never published' });
+  assert.equal(observed.length, 3);
+  assert.equal(observed[0].objectKey, observed[2].objectKey);
+  assert.ok(Date.parse(observed[2].touchedAt) >= Date.parse(observed[0].touchedAt));
+  assert.equal((await peer.list('artifact-uploads/')).length, 2);
+});
+
+test('reference inventory reads the committed ownership of a large record without fetching its body', async (t) => {
+  const f = await fixture(t, 'files');
+  const nested = { storeId: 's3', key: 'retained-object', sha256: sha('nested'), bytes: 6 };
+  const contents = new Map();
+  const reads = [];
+  const store = await openRecordStore(f.config, {
+    root: f.roots[0],
+    projectId: f.projectId,
+    artifacts: {
+      async put({ body }) {
+        const digest = sha(body);
+        contents.set(digest, Buffer.from(body));
+        return { storeId: 's3', key: digest, sha256: digest, bytes: body.length };
+      },
+      async get(ref) {
+        reads.push(ref.sha256);
+        return contents.get(ref.sha256);
+      },
+    },
+  });
+  t.after(() => store.close());
+  const key = 'flows/fixture';
+  const value = { output: 'x'.repeat(20000), nested };
+  await store.commit({ operationId: 'large-flow', expected: [{ key, revision: null }], writes: [{ key, value }] });
+  const inventory = await store.retainedPayloads({ referencesOnly: true });
+  const record = inventory.records.find((current) => current.key === key);
+  assert.ok(record);
+  assert.ok(record.refs.some((ref) => ref.sha256 === nested.sha256));
+  assert.ok(inventory.receipts[0].records[0].refs.some((ref) => ref.sha256 === nested.sha256));
+  assert.deepEqual(reads, []);
+  const saved = await store.get(key);
+  assert.deepEqual(saved.value, value);
+  assert.equal(reads.length, 1);
+  await store.removeRecords({ operationId: 'remove-flow', expected: [{ key, revision: saved.revision }] });
+  const afterRemoval = await store.retainedPayloads({ referencesOnly: true });
+  assert.equal(
+    afterRemoval.records.some((current) => current.key === key),
+    false
+  );
+  const retained = afterRemoval.receipts.find(({ id }) => id === 'large-flow');
+  assert.ok(retained.records[0].refs.some((ref) => ref.sha256 === nested.sha256));
+  const receipt = (await store.retainedPayloads()).receipts.find(({ id }) => id === 'large-flow');
+  await store.retireReceipts({
+    operationId: 'retire-flow-history',
+    issueId: 'fixture',
+    deletionId: 'delete-fixture',
+    receipts: [{ id: receipt.id, inputDigest: receipt.inputDigest, identity: receipt.identity }],
+  });
+  const afterRetirement = await store.retainedPayloads({ referencesOnly: true });
+  assert.ok(
+    afterRetirement.receipts.every(({ records }) =>
+      records.every(({ refs }) => !refs.some((ref) => ref.sha256 === nested.sha256))
+    )
+  );
+  assert.equal(contents.size, 1, 'Ownership metadata should not create an additional overflow artifact.');
+});
 
 test(
   'git: fresh advertised commits reuse local objects and fetch missing peer commits',
@@ -785,6 +892,75 @@ test('Postgres deletion admission selects pending operations and checks legacy e
   const excluded = await deletionBlockers(coordination, { issueId: 'proposal', operationId: 'legacy' });
   assert.equal(excluded.pending, undefined);
   assert.deepEqual(artifactReads, ['legacy', 'legacy']);
+});
+
+void test('Postgres prepares its deletion index once and can recover an interrupted index build', async (t) => {
+  const sql = [];
+  const query = async (statement) => {
+    sql.push(statement);
+    if (statement.startsWith('SELECT indisvalid')) return { rows: [{ indisvalid: false }] };
+    return { rows: [] };
+  };
+  t.mock.method(pg.Pool.prototype, 'query', query);
+  t.mock.method(pg.Pool.prototype, 'connect', async () => ({ query, release() {} }));
+  const records = await openPostgresRecords(
+    { kind: 'postgres', id: 'index', connectionString: 'postgresql://fixture@localhost/factory_index_fixture' },
+    { root: process.cwd(), projectId: 'index-fixture' }
+  );
+  t.after(() => records.close());
+  await Promise.all([records.listPendingOperations(), records.listPendingOperations()]);
+  const builds = sql.filter((statement) => statement.startsWith('CREATE INDEX CONCURRENTLY'));
+  const reads = sql.filter((statement) => statement.startsWith('SELECT key, revision, value'));
+  assert.equal(builds.length, 1);
+  assert.equal(reads.length, 2);
+  assert.equal(sql.filter((statement) => statement.startsWith('DROP INDEX CONCURRENTLY')).length, 1);
+  assert.ok(sql.indexOf(builds[0]) < sql.indexOf(reads[0]));
+  const predicate = builds[0].split('WHERE ')[1];
+  assert.ok(reads.every((statement) => statement.includes(predicate)));
+});
+
+void test('Postgres reuses verified finished operation status only for the same revision', async (t) => {
+  const remembered = new Map();
+  const reads = [];
+  let record = {
+    key: 'operations/example',
+    revision: 'finished-revision',
+    value: { encoding: 'artifact', ref: { key: 'finished' } },
+  };
+  const query = async (statement, values) => {
+    if (statement.startsWith('SELECT indisvalid')) return { rows: [{ indisvalid: true }] };
+    if (statement.startsWith('INSERT INTO factory.store_finished_operations')) {
+      for (const [index, key] of values[2].entries()) remembered.set(key, values[3][index]);
+    }
+    if (statement.includes('AND NOT EXISTS')) {
+      assert.match(statement, /finished\.revision=store_records\.revision/);
+      return { rows: remembered.get(record.key) === record.revision ? [] : [record] };
+    }
+    return { rows: [] };
+  };
+  t.mock.method(pg.Pool.prototype, 'query', query);
+  t.mock.method(pg.Pool.prototype, 'connect', async () => ({ query, release() {} }));
+  const store = await openRecordStore(
+    { kind: 'postgres', id: 'finished', connectionString: 'postgresql://fixture@localhost/factory_index_fixture' },
+    {
+      root: process.cwd(),
+      projectId: 'index-fixture',
+      artifacts: {
+        async get({ key }) {
+          reads.push(key);
+          return Buffer.from(JSON.stringify({ id: 'example', status: key === 'finished' ? 'confirmed' : 'pending' }));
+        },
+      },
+    }
+  );
+  t.after(() => store.close());
+  const pending = ({ value }) => (value.status === 'pending' ? value.id : undefined);
+  assert.deepEqual(await store.listPendingOperations(pending), []);
+  assert.deepEqual(await store.listPendingOperations(pending), []);
+  assert.deepEqual(reads, ['finished']);
+  record = { ...record, revision: 'new-revision', value: { encoding: 'artifact', ref: { key: 'pending' } } };
+  assert.deepEqual(await store.listPendingOperations(pending), ['example']);
+  assert.deepEqual(reads, ['finished', 'pending']);
 });
 
 test('Postgres rejects the installed application database without a connection or exposed credentials', async () => {

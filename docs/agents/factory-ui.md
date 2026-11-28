@@ -54,7 +54,9 @@ Investigations always cover the project and use a selected branch, defaulting to
 the branch in Project settings. Optional discussion retains goals and codebase
 questions in the investigation conversation. Its ordinary route is Request,
 Investigate, Generate report, and Create Issues. Either output can be removed or
-run independently after a completed inquiry. Create Issues saves uncovered work
+run independently after a completed inquiry. Request shows the saved investigation
+prompt and additional instructions alongside **Your words** and uses them the next
+time Request runs. Create Issues saves uncovered work
 as Needs approval and links matching existing issues without changing them.
 Approval does not start work. Reports retains dated publications and evidence,
 with optional discussion below the reader. Recommended prompts sit above the
@@ -186,8 +188,7 @@ circular plus button adds a step. The center-column Start/Resume/Pause control r
 the route one eligible block at a time. A confirmation link appears in the header
 when the route reaches a protected block. The Run, Retry, Recover, or Stop button
 beside the selected block's name controls that block individually.
-Flow is the Factory workspace. Legacy `/classic` links open the selected issue
-in Flow. Legacy queue links open **Issues**. Other legacy links open Project Home.
+Flow is the Factory workspace.
 In the **Issues** tab,
 you can filter and sort saved issues, edit shared fields across an open selection,
 and archive a closed selection.
@@ -400,6 +401,9 @@ content and lifecycle state. Drag a sidebar issue handle onto a folder to move i
 drop it on another folder to change the assignment. Issues in sidebar folders appear newest first. Select a folder to reorder its issues
 with Implementation order. The ordering is shared with the queue's implementation
 order, and hidden issues keep their positions during a folder-scoped reorder.
+
+Open issues show a checkmark after their flow completes and an X after a terminal
+failure. The sidebar still marks in-progress, paused, and blocked work.
 
 Drag a block by its handle to reorder the issue flow. The graph shows the
 proposed position and connections before drop. With a block focused, use
@@ -661,13 +665,12 @@ heap limit. Both values come from the same server sample. The reading refreshes
 automatically and shows **Heap unavailable** when Factory cannot obtain a reading.
 
 The header counts running actions and open temporary chats. **No new actions** is
-an on/off switch. Turning it on blocks new work and requests that coordinators
-pause after their current action. All chats remain available, including opening
+an on/off switch. Turning it on blocks new work. All chats remain available, including opening
 conversations, sending and queuing prompts, retrying responses, and steering.
 Existing work can finish, permission replies and saving/ending a temporary chat
 remain available. A requested server restart still drains work before restarting
 and blocks new chat responses during that handoff. Turning the switch off restores
-normal dispatch and resumes paused coordinators through their existing guards.
+normal dispatch.
 The switch does not restart the server or start a build. Unknown locks still
 need their existing reconciliation workflow.
 
@@ -880,8 +883,8 @@ repairs. An open PR stays linked to the issue.
 
 ## Issue annotations and blocked sub-issues
 
-Open **Issue annotations** in Flow to add a blocker, readiness concern, or
-comment. Anyone with annotation access can clear an entry. **Cleared history**
+Select the **Annotations** tag button beside Issue Discuss to add a blocker,
+readiness concern, or comment. Select it again to collapse the annotation panel. Anyone with annotation access can clear an entry. **Cleared history**
 retains the original entry and the first clearance. A badge stays visible while
 any active entry reports that label. Filter the issue list by badge or turn on
 **Attention first** to move blockers, readiness concerns, and pending approvals
