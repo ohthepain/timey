@@ -25,6 +25,7 @@ export function ownsDeletedRecord(record, issueId) {
     )
   )
     return true;
+  if (record.key.startsWith('issue-incoming/')) return record.key.split('/')[2] === issueId;
   return operationIssues(record).includes(issueId);
 }
 

@@ -51,9 +51,17 @@
     return `<span class="issue-badge" data-issue-badge="${badge}">${badgeLabels[badge]}</span>`;
   }
 
-  function issueBadges({ badges, isMaster } = {}, compact = false) {
+  function incomingReferenceBadge(count) {
+    if (!Number.isSafeInteger(count) || count < 1) return '';
+    const label = count === 1 ? 'reference' : 'references';
+    return `<span class="issue-badge" data-incoming-reference-count title="Incoming issue references">${count} ${label}</span>`;
+  }
+
+  function issueBadges({ badges, isMaster, incomingReferenceCount } = {}, compact = false) {
     const labels = badges ?? (isMaster ? ['master-issue'] : []);
-    return [...new Set(labels)].map((badge) => badgeMarkup(badge, compact)).join(' ');
+    const markup = [...new Set(labels)].map((badge) => badgeMarkup(badge, compact));
+    markup.push(incomingReferenceBadge(incomingReferenceCount));
+    return markup.filter(Boolean).join(' ');
   }
 
   function badgeControls(badge = '', attentionFirst = false) {

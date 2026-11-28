@@ -234,10 +234,16 @@ An original issue whose work belongs to a master issue. It keeps its own identit
 and report and cannot start work independently while attached.
 
 **Issue annotation**:
-A label or comment on an issue. Saved annotations retain the author, creation
-time, and first clearance in shared history. Active blocked and not-ready
-labels drive the corresponding issue badges. Flow derives the Investigate
-annotation from the issue's current Investigation type.
+A typed record owned by its source issue. Saved annotations retain the author,
+creation time, and first clearance in shared history. Active blocked and
+not-ready labels drive the corresponding issue badges. Flow derives the
+Investigate annotation from the issue’s current Investigation type.
+
+**Incoming issue reference**:
+A hold created by an active retaining annotation on another issue. Each
+retaining annotation contributes one hold. Labels, comments, ordinary
+mentions, and the derived Investigation annotation contribute zero. Archive
+preserves holds. Permanent Delete names the holders that must be cleared.
 
 **Work scope**:
 The attached sub-issues whose requirements and proof obligations a Work attempt

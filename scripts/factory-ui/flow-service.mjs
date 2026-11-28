@@ -76,6 +76,7 @@ import { trashDirectory, whileTrashingDirectory } from './folder-trash.mjs';
 import { FlowGrouping } from './flow-grouping.mjs';
 import { issueRunTools } from './issue-run-tools.mjs';
 import { issueAnnotations } from './issue-annotations.mjs';
+import { namedReference } from './issue-annotation-references.mjs';
 import { issueBadgeIndex, issueBadges } from './issue-badges.mjs';
 import { groupScope, scopedRequest, workScopeIds } from './flow-group-scope.mjs';
 import { FlowFollowups } from './flow-followups.mjs';
@@ -692,6 +693,7 @@ class IssueFlows {
       state: issue.state,
       type: requestData(flow).fields?.type ?? flow.routeType,
       badges: issueBadges(issue, badgeIndex, { masterId, approvals, flow, root: this.service.root }),
+      incomingReferenceCount: badgeIndex.incoming.get(issue.id)?.length,
       masterId,
       isMaster: Boolean(issue.issue_group),
       ...(sequentialMaster(issue) && { subIssueOrder: orderedMasterChildren(issue, flow).map(({ id }) => id) }),
@@ -745,8 +747,8 @@ class IssueFlows {
     return this.executor.approvals ? this.executor.approvals(issueId) : [];
   }
   async badgedList(result, rows = this.issues()) {
-    const { records, warning } = await issueAnnotations(this.service).view();
-    const index = issueBadgeIndex(records, [...rows, ...this.groups.archivedGroups()]);
+    const { records, warning, incoming } = await issueAnnotations(this.service).view(result.issues.map(({ id }) => id));
+    const index = issueBadgeIndex(records, [...rows, ...this.groups.archivedGroups()], incoming);
     const issueById = new Map(rows.map((issue) => [issue.id, issue]));
     return {
       ...result,
@@ -758,6 +760,7 @@ class IssueFlows {
         return {
           ...row,
           badges: issueBadges(issue, index, { masterId: row.masterId, approvals, flow, root: this.service.root }),
+          incomingReferenceCount: incoming.get(row.id)?.length,
         };
       }),
       ...(warning && { annotationsWarning: warning }),
@@ -799,21 +802,33 @@ class IssueFlows {
     return selectedRow;
   }
 
+  visibleAnnotations(issues, selected, requestOnly) {
+    const ids = requestOnly ? [] : issues.map(({ id }) => id);
+    if (selected) ids.push(selected.id, ...groupChildren(selected).map(({ id }) => id));
+    return issueAnnotations(this.service).view(ids);
+  }
+
+  async branchView(requestOnly) {
+    if (requestOnly) return { branches: [] };
+    try {
+      return { branches: await this.codeBranches() };
+    } catch (error) {
+      return { branches: [], branchCatalogError: error.message };
+    }
+  }
+
   async view(id, { requestOnly = false, refresh = false } = {}) {
     const { ownership, ...storage } = await this.storageView(id, { refresh });
     const issues = this.issues();
-    const { records: annotations, warning: annotationsWarning } = await issueAnnotations(this.service).view();
-    const badgeIndex = issueBadgeIndex(annotations, [...issues, ...this.groups.archivedGroups()]);
+    const issue = id ? this.selected(id) : null;
+    const {
+      records: annotations,
+      incoming,
+      warning: annotationsWarning,
+    } = await this.visibleAnnotations(issues, issue, requestOnly);
+    const badgeIndex = issueBadgeIndex(annotations, [...issues, ...this.groups.archivedGroups()], incoming);
     const { entries: catalog, errors: catalogErrors } = this.catalog.read();
-    let branches = [];
-    let branchCatalogError;
-    if (!requestOnly) {
-      try {
-        branches = await this.codeBranches();
-      } catch (error) {
-        branchCatalogError = error.message;
-      }
-    }
+    const branchView = await this.branchView(requestOnly);
     const folderSnapshot = createFolderSettingsSnapshot(this.service.root);
     const assignableFolders = folderSnapshot.folders.filter((folder) => folder.id && !folder.duplicate);
     const folderSettings = requestOnly ? assignableFolders : folderSnapshot.folders;
@@ -834,8 +849,7 @@ class IssueFlows {
       ...(annotationsWarning && { annotationsWarning }),
       project: basename(this.service.root),
       folderMigrationErrors: this.folderMigrationErrors,
-      branches,
-      ...(branchCatalogError ? { branchCatalogError } : {}),
+      ...branchView,
       folders: [
         ...new Set([
           ...folderSettings.map(({ name }) => name),
@@ -860,8 +874,7 @@ class IssueFlows {
         data.defaultFolderError = error.message;
       }
     }
-    if (!id) return data;
-    const issue = this.selected(id);
+    if (!issue) return data;
     const agentApprovals = this.agentApprovals(id);
     const observedFlow = this.read(issue, catalog, assignableFolders, resolveFolder);
     this.service.flowChanges?.checkout(id, flowWorkspace(this.service, observedFlow)?.checkout);
@@ -911,6 +924,7 @@ class IssueFlows {
         status: selectedRow.status,
         isMaster: selectedRow.isMaster,
         badges: selectedRow.badges,
+        incomingReferenceCount: selectedRow.incomingReferenceCount,
         ...mergedIssueState(flow),
         closure: issue.closure,
       },
@@ -931,6 +945,7 @@ class IssueFlows {
       },
       grouping: this.groupingView(issue, flow, issues, index, badgeIndex),
       annotations: annotations.filter(({ issueId }) => issueId === id),
+      incomingReferences: await this.namedIncomingReferences(incoming.get(id) ?? []),
       sharedQueue: this.service.sharedIssues?.view(id),
       closurePreview: this.closurePreview(issue, savedFlow, proofWorkspace?.checkout, requestOnly),
       closureBusy: this.closureBusy(id),
@@ -950,7 +965,7 @@ class IssueFlows {
             : undefined,
       },
       flowDefinitions,
-      startingPointEditable: !branchCatalogError && this.startingPointEditable(issue, flow, environment.pr),
+      startingPointEditable: !branchView.branchCatalogError && this.startingPointEditable(issue, flow, environment.pr),
       environment,
       branchRepair: this.branchRepairs.view(issue, savedFlow, environment.merge),
       artifacts: this.artifacts(flow, { fresh: false }),
@@ -982,12 +997,17 @@ class IssueFlows {
       flow.blocks.splice(1, 0, block);
     }
   }
+  namedIncomingReferences(references) {
+    const project = this.service.projectStores;
+    return Promise.all(references.map((reference) => namedReference((id) => project.readIssue(id), reference)));
+  }
   groupingView(issue, flow, issues, index, badgeIndex) {
     const grouping = this.groups.view(issue, flow, issues);
     if (grouping) {
       const byId = new Map(index.map((row) => [row.id, row.badges]));
       for (const child of grouping.children) {
         child.badges = byId.get(child.id) ?? issueBadges(child, badgeIndex, { masterId: issue.id });
+        child.incomingReferenceCount = badgeIndex.incoming.get(child.id)?.length;
       }
     }
     return grouping;

@@ -8,6 +8,7 @@ import { assertStoreState, deletionBlockers, inputDigest, sealCoordination, stor
 import { planRetirement, redactDeletedMove } from './deletion-retention.mjs';
 import { deletedFilePlanner, removeDeletedFiles } from './deletion-files.mjs';
 import { retainedContentReferences } from '../project-asset-retained-content.mjs';
+import { annotationPrefix, incomingKey, incomingReferences, namedReference } from '../issue-annotation-references.mjs';
 
 const chunks = (values) =>
   Array.from({ length: Math.ceil(values.length / 90) }, (_, i) => values.slice(i * 90, i * 90 + 90));
@@ -43,16 +44,47 @@ async function usedStores(project) {
   return stores;
 }
 
-async function retirementScopes(project, operation, files) {
+async function outgoingAnnotationPairs(coordination, issueId) {
+  const rows = await coordination.list(annotationPrefix(issueId));
+  const pairs = [];
+  for (const row of rows) {
+    const key = incomingKey(row.value);
+    if (!key || row.value.cleared) continue;
+    const reference = await coordination.get(key);
+    assertStoreState(
+      reference?.value.id === row.value.id,
+      'STORE_RETENTION_UNKNOWN',
+      'Reconcile the outgoing issue reference before deleting its source.'
+    );
+    pairs.push([row, reference].map(({ key, revision }) => ({ key, revision })));
+  }
+  return pairs;
+}
+
+async function requireNoIncoming(project, issueId) {
+  const references = await incomingReferences(project.coordination, issueId);
+  if (!references.length) return;
+  const named = await Promise.all(
+    references.map((reference) => namedReference((id) => project.readIssue(id), reference))
+  );
+  const holders = named.map(({ issueId, title, type, id, note }) => {
+    const source = title && title !== issueId ? `${title} (${issueId})` : issueId;
+    return `${source}, ${type} ${id}${note ? ' — ' + note : ''}`;
+  });
+  throw storeFailure('STORE_ISSUE_REFERENCED', 'Active issue references prevent deletion. ' + holders.join('; '));
+}
+
+async function retirementScopes(project, operation, files, annotationPairs) {
   const { issueId } = operation.value.input;
   const options = { operationKey: operation.key };
   const scopes = [];
   const refs = new Map();
   const surviving = new Set();
+  const pairedKeys = new Set(annotationPairs.flat().map(({ key }) => key));
   for (const [id, store] of await usedStores(project)) {
     const scope = { id, records: [], receipts: [], replacements: [] };
     const retainPlan = (plan) => {
-      scope.records.push(...plan.records);
+      scope.records.push(...plan.records.filter(({ key }) => id !== project.records.id || !pairedKeys.has(key)));
       scope.receipts.push(...plan.receipts);
       for (const { key, revision } of plan.replacements) scope.replacements.push({ key, revision });
       for (const value of plan.values) files.own(value);
@@ -143,8 +175,10 @@ async function prepare(project, operation, seal) {
   const { issueId } = operation.value.input;
   const current = await project.readIssue(issueId);
   requireDeletionTarget(current, operation.value.input);
+  await requireNoIncoming(project, issueId);
+  const annotationPairs = await outgoingAnnotationPairs(project.coordination, issueId);
   const files = deletedFilePlanner(project.root, issueId);
-  const { scopes, refs } = await retirementScopes(project, operation, files);
+  const { scopes, refs } = await retirementScopes(project, operation, files, annotationPairs);
   const flowPath = join(project.root, '.issues/flows', issueId, 'flow.json');
   try {
     const bytes = readFileSync(flowPath);
@@ -155,6 +189,7 @@ async function prepare(project, operation, seal) {
   }
   const cleanup = {
     phase: 'prepared',
+    annotationPairs,
     scopes,
     candidates: candidates(refs),
     localFiles: files.finish(),
@@ -174,6 +209,21 @@ async function prepare(project, operation, seal) {
     seal.token
   );
   return saved.records[0];
+}
+
+async function removeAnnotationPairs(coordination, { value, seal }) {
+  for (const [index, expected] of chunks((value.cleanup.annotationPairs ?? []).flat()).entries()) {
+    const remaining = await Promise.all(expected.map(({ key }) => coordination.get(key)));
+    if (!remaining.some(Boolean)) continue;
+    const gate = await coordination.get('project/migration');
+    requireDeletionSeal(gate, seal);
+    await coordination.commit(
+      value.id + '/remove-annotation-pairs/' + index + '/' + seal.token,
+      [...expected, { key: gate.key, revision: gate.revision }],
+      expected.map(({ key }) => ({ key, value: null })),
+      seal.token
+    );
+  }
 }
 
 async function eraseRecords(project, operation, stores) {
@@ -199,6 +249,7 @@ async function eraseRecords(project, operation, stores) {
       operation.seal.token
     );
   }
+  await removeAnnotationPairs(project.coordination, operation);
   for (const scope of operation.value.cleanup.scopes) {
     const store = stores.get(scope.id);
     for (const replacement of scope.replacements) {
@@ -456,6 +507,16 @@ async function deleteFailure(project, operation, error, seal) {
   if (current?.value.status === 'confirmed') return current.value.result;
   requireDeletionSeal(await coordination.get('project/migration'), seal);
   const operationId = operation.value.id;
+  if (error.code === 'STORE_ISSUE_REFERENCED') {
+    await releaseDeletionSeal(
+      coordination,
+      current,
+      { ...current.value, status: 'retryable' },
+      'references-blocked',
+      seal
+    );
+    throw Object.assign(error, { operationId, pending: false });
+  }
   const stale = ['STORE_CONFLICT', 'STORE_MERGED'].includes(error.code);
   if (stale && (await needsPreparation(project, current))) {
     await releaseDeletionSeal(

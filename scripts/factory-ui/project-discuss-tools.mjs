@@ -353,7 +353,7 @@ async function openIssueList(service, issueId, flows) {
   const { issues, issueFolders, closureReasons } = readQueue(service.root, { issueId });
   const folders = issueFolders.map(({ id, name }) => ({ id, name }));
   if (!issueId || !issues.length) return { folders, issues: issues.map(listedIssue) };
-  const annotations = await issueAnnotations(service).view();
+  const annotations = await issueAnnotations(service).view(issues.map(({ id }) => id));
   return {
     folders,
     issues: issues.map((issue) => issueControlSnapshot(issue, flows().read(issue), annotations, closureReasons)),

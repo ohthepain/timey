@@ -1071,7 +1071,15 @@ against current issue records. `flow-grouping.mjs` owns master issue grouping.
 `flow-group-scope.mjs` projects active child requirements and checks Work
 scope against checkout observations before an authorized detach.
 `issue-annotations.mjs` saves annotations in project coordination records,
-independently of report and Flow revisions. `issue-badges.mjs` combines saved
+independently of report and Flow revisions. Retaining annotations update
+a target-keyed incoming index in the same checked write. The `issue_annotation`
+tool requires a stable annotation ID for a retaining add and accepts one for
+labels and comments.
+`issue-annotation-references.mjs` defines the source and target key layout and
+resolves holder names. Issue views batch reads for their displayed IDs.
+`stores/deletion.mjs` checks incoming references under the deletion seal,
+then removes the source’s outgoing annotation and index records in pairs.
+`issue-badges.mjs` combines saved
 annotations with the type-derived `investigate` annotation, pending approvals,
 and attachment history for issue views.
 `folder-strategies.mjs` owns strategy prompt reads, explicit copies to user Markdown,
