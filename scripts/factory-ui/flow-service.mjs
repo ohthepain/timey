@@ -1665,6 +1665,7 @@ class IssueFlows {
       requireThat(
         [
           'open-block',
+          'destination-branches',
           'rename-issue',
           'edit-issue-nickname',
           'edit-request',

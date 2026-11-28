@@ -43,13 +43,20 @@ async function usedStores(project) {
   return stores;
 }
 
-async function retirementScopes(project, operation, files) {
+async function retirementScopes(project, operation, files, seal) {
   const { issueId } = operation.value.input;
   const options = { operationKey: operation.key };
   const scopes = [];
   const refs = new Map();
   const surviving = new Set();
+  let checkAfter = performance.now() + 1000;
+  async function checkPreparation() {
+    if (seal.role !== 'delete-proposal' || performance.now() < checkAfter) return;
+    checkAfter = performance.now() + 1000;
+    requireDeletionSeal(await project.coordination.get('project/migration'), seal);
+  }
   for (const [id, store] of await usedStores(project)) {
+    await checkPreparation();
     const scope = { id, records: [], receipts: [], replacements: [] };
     const retainPlan = (plan) => {
       scope.records.push(...plan.records);
@@ -64,12 +71,14 @@ async function retirementScopes(project, operation, files) {
     };
     await store.retainedPayloads({
       excludeArtifactInventory: true,
-      onRecord(record) {
+      async onRecord(record) {
+        await checkPreparation();
         const plan = planRetirement({ records: [record], receipts: [] }, issueId, options);
         retainPlan(plan);
         if (!plan.records.length) files.retain(plan.replacements[0]?.value || record.value);
       },
-      onReceipt(receipt) {
+      async onReceipt(receipt) {
+        await checkPreparation();
         const plan = planRetirement({ records: [], receipts: [receipt] }, issueId, options);
         retainPlan(plan);
         if (!plan.receipts.length) for (const record of receipt.records) files.retain(record.value);
@@ -144,7 +153,7 @@ async function prepare(project, operation, seal) {
   const current = await project.readIssue(issueId);
   requireDeletionTarget(current, operation.value.input);
   const files = deletedFilePlanner(project.root, issueId);
-  const { scopes, refs } = await retirementScopes(project, operation, files);
+  const { scopes, refs } = await retirementScopes(project, operation, files, seal);
   const flowPath = join(project.root, '.issues/flows', issueId, 'flow.json');
   try {
     const bytes = readFileSync(flowPath);
@@ -287,10 +296,18 @@ async function localArtifactHome(root, store) {
   return directory?.startsWith(root + sep);
 }
 
-async function artifactRemoval(project, root, physical, migratedHomes, [sha256, bytes, mediaType, locations]) {
+async function artifactRemoval(
+  project,
+  root,
+  physical,
+  migratedHomes,
+  removeS3,
+  [sha256, bytes, mediaType, locations]
+) {
   const alias = await project.coordination.get('artifact-locations/' + sha256);
   const ids = new Set([...locations, ...migratedHomes, ...(alias ? [alias.value.ref.storeId] : [])]);
-  const stores = [];
+  const local = [];
+  const s3 = [];
   for (const id of ids) {
     const store = physical.get(id);
     assertStoreState(
@@ -298,15 +315,23 @@ async function artifactRemoval(project, root, physical, migratedHomes, [sha256, 
       'STORE_UNCONFIGURED',
       'Configure the evidence’s retained Artifact home before deleting it.'
     );
-    if (!(await localArtifactHome(root, store))) return null;
-    stores.push(store);
+    if (store.kind === 's3') {
+      if (removeS3) s3.push(store);
+    } else if (await localArtifactHome(root, store)) local.push(store);
   }
-  return { ref: { key: project.projectId + '/sha256/' + sha256, sha256, bytes, mediaType }, stores, alias };
+  const stores = s3.length + local.length === ids.size ? [...s3, ...local] : s3;
+  if (!stores.length) return null;
+  return {
+    ref: { key: project.projectId + '/sha256/' + sha256, sha256, bytes, mediaType },
+    stores,
+    alias: stores.some(({ id }) => id === alias?.value.ref.storeId) ? alias : null,
+  };
 }
 
-async function planArtifactRemovals(project, candidates, retained) {
+async function planArtifactRemovals(project, candidates, retained, seal) {
   const root = await realpath(project.root);
   const physical = artifactHomes(project);
+  const removeS3 = seal.role !== 'delete-proposal' || (await project.coordination.list('claims/')).length === 0;
   const migratedHomes = (
     await project.coordination.list('operations/', ({ value }) =>
       value.kind === 'move-project-store' && value.input.role === 'artifacts'
@@ -319,22 +344,30 @@ async function planArtifactRemovals(project, candidates, retained) {
   const removals = [];
   for (const candidate of candidates) {
     if (retained.hashes.has(candidate[0])) continue;
-    const removal = await artifactRemoval(project, root, physical, migratedHomes, candidate);
+    const removal = await artifactRemoval(project, root, physical, migratedHomes, removeS3, candidate);
     if (removal) removals.push(removal);
   }
   return removals;
 }
 
 async function removeArtifactCopies(project, operationId, removals, token) {
-  for (const { ref, stores, alias } of removals) {
-    for (const store of stores) await store.remove({ ...ref, storeId: store.id });
-    if (alias)
+  for (let offset = 0; offset < removals.length; offset += 8) {
+    const batch = removals.slice(offset, offset + 8);
+    const outcomes = await Promise.allSettled(
+      batch.map(async ({ ref, stores }) => {
+        for (const store of stores) await store.remove({ ...ref, storeId: store.id });
+      })
+    );
+    const failed = outcomes.find(({ status }) => status === 'rejected');
+    if (failed) throw failed.reason;
+    for (const { ref, alias } of batch.filter(({ alias }) => alias)) {
       await project.coordination.commit(
         operationId + '/remove-alias/' + ref.sha256,
         [{ key: alias.key, revision: alias.revision }],
         [{ key: alias.key, value: null }],
         token
       );
+    }
   }
 }
 
@@ -349,7 +382,7 @@ async function eraseArtifacts(project, operation, stores, seal) {
     'STORE_RETENTION_UNKNOWN',
     'Restore access to the retained reference sources before resuming artifact cleanup.'
   );
-  const removals = retained.incomplete ? [] : await planArtifactRemovals(project, cleanup.candidates, retained);
+  const removals = retained.incomplete ? [] : await planArtifactRemovals(project, cleanup.candidates, retained, seal);
   if (removals.length && cleanup.phase !== 'pending')
     await project.coordination.updateOperation(
       operation,
@@ -454,7 +487,11 @@ async function deleteFailure(project, operation, error, seal) {
   const { coordination } = project;
   const current = await coordination.get(operation.key);
   if (current?.value.status === 'confirmed') return current.value.result;
-  requireDeletionSeal(await coordination.get('project/migration'), seal);
+  const gate = await coordination.get('project/migration');
+  if (gate?.value.token !== seal.token && current?.value.pausedAt) {
+    throw Object.assign(storeFailure('STORE_CONFLICT', 'The deletion was paused.'), { pending: true });
+  }
+  requireDeletionSeal(gate, seal);
   const operationId = operation.value.id;
   const stale = ['STORE_CONFLICT', 'STORE_MERGED'].includes(error.code);
   if (stale && (await needsPreparation(project, current))) {

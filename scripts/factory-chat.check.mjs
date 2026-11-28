@@ -310,22 +310,6 @@ test('selected issues keep separate conversations; bounded pages retain full rol
   assert.equal(context.messages.length, 101);
   assert.ok(context.messages.some((message) => message.body === 'Original decision 0'));
 });
-test('question replies use the original freshness guard and actual handler; comments do not answer questions', async (t) => {
-  const f = fixture(t),
-    answers = [];
-  f.service.answerLifecycle = async (input) => {
-    assert.equal(input.updated, 'exact-question');
-    answers.push(input);
-  };
-  await f.send('A comment about this question.');
-  await f.finish();
-  assert.equal(answers.length, 0);
-  await assert.rejects(f.send('yes', 'stale-answer', 'answer', { updated: 'old-question' }), /exact-question/);
-  await f.send('yes', 'actual-answer', 'answer', { updated: 'exact-question' });
-  assert.equal(answers.length, 1);
-  assert.equal((await f.send('yes', 'actual-answer', 'answer', { updated: 'exact-question' })).repeated, true);
-  assert.equal(answers.length, 1);
-});
 test('revision requests revoke plan reuse and wait for current implementation to reach a checkpoint', async (t) => {
   const f = fixture(t),
     record = {
@@ -386,58 +370,6 @@ test('Classic issue conversation restores grouped command output and milestones 
     ['reply']
   );
   assert.equal(JSON.stringify(replies[0].progress), JSON.stringify(active));
-});
-
-test('chat replies retain real human answer provenance through the existing lifecycle handler', async (t) => {
-  const f = fixture(t);
-  const { saveLifecycle } = await import('./factory-ui/lifecycle-store.mjs');
-  const { readQueue } = await import('./factory-ui/data.mjs');
-  const { digest } = await import('./factory-ui/common.mjs');
-  const issue = readQueue(f.queue.root).issues[0];
-  const record = {
-    id: 'lifecycle-chat',
-    issueId: issue.id,
-    status: 'waiting',
-    startHead: readQueue(f.queue.root).head,
-    events: [],
-    attempts: [],
-    retriedRuns: [],
-    assessed: false,
-    input: {
-      type: 'questions',
-      questions: [{ id: 'scope', question: 'Which scope?' }],
-      reportHash: digest(issue.content),
-    },
-  };
-  saveLifecycle(f.service, record);
-  f.service.codex = {
-    requests: new Map(),
-    close() {},
-    ready: async () => {},
-    start: async () => 'clarification-reader',
-    turn: async () =>
-      JSON.stringify({
-        prior_approval: null,
-        clarification_complete: false,
-        summary: 'One remaining question.',
-        evidence: [join(f.queue.root, '.issues', issue.id + '.md')],
-        questions: [{ id: 'follow-up', question: 'Which detail?' }],
-        plan_path: null,
-        plan_summary: 'Pending',
-        proposed_plan: 'Pending',
-      }),
-  };
-  await assert.rejects(f.send('Small scope', 'stale', 'answer', { updated: 'old' }), /question changed/);
-  await f.send('Small scope', 'real-answer', 'answer', { updated: record.updated });
-  await Promise.all([...f.service.lifecycleTasks.values()]);
-  assert.match(readFileSync(join(f.queue.root, '.issues', issue.id + '.md'), 'utf8'), /Small scope/);
-  assert.equal(record.input.questions[0].id, 'follow-up');
-  const human = f.service.issueChats.view(issue.id).messages.filter((message) => message.actor === 'human');
-  assert.ok(human.some((message) => message.kind === 'clarification' && message.source.receipt));
-  assert.equal(
-    human.some((message) => message.id === 'stale'),
-    false
-  );
 });
 
 test('Stop cancels only the selected current response, retains partial output and keeps queued comments', async (t) => {

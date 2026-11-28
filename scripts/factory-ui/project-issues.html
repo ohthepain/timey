@@ -21,6 +21,15 @@
       <div id="archive-progress-result" class="archive-progress-result"></div>
       <form method="dialog" class="actions"><button id="archive-progress-dismiss">Dismiss</button></form>
     </dialog>
+    <dialog id="delete-issues" class="archive-progress" aria-labelledby="delete-issues-title">
+      <h2 id="delete-issues-title">Permanently delete selected issues</h2>
+      <p id="delete-issues-status" class="archive-progress-status" role="status"></p>
+      <div id="delete-issues-details" class="archive-progress-result"></div>
+      <form method="dialog" class="actions">
+        <button id="delete-issues-dismiss" autofocus>Cancel</button>
+        <button id="delete-issues-confirm" class="danger" type="button" hidden>Delete permanently</button>
+      </form>
+    </dialog>
     <script>
       window.addEventListener('DOMContentLoaded', () => {
         let data;
@@ -42,12 +51,12 @@
                 };
           if (onProgress) options.headers.Accept = 'application/x-ndjson';
           const response = await fetch('/api/' + path, options);
-          if (onProgress && response.ok) return readArchiveProgress(response, onProgress);
+          if (onProgress && response.ok) return readIssueProgress(response, onProgress);
           const result = await response.json();
           if (!response.ok) throw Error(result.error);
           return result;
         }
-        async function readArchiveProgress(response, onProgress) {
+        async function readIssueProgress(response, onProgress) {
           let pending = '';
           let result;
           for await (const chunk of response.body.pipeThrough(new TextDecoderStream())) {
@@ -60,7 +69,7 @@
               else onProgress(item.progress);
             }
           }
-          if (!result) throw Error('The server stopped reporting archive results. Refresh to see which issues moved.');
+          if (!result) throw Error('The server stopped reporting results. Refresh to see which issues remain.');
           return result;
         }
         function showArchiveResult(results, titles) {
@@ -116,7 +125,11 @@
           attentionFirst: false,
         };
         const selectedProjectIssueIds = new Set();
-        let projectIssueMode = localStorage.getItem('factory.project-issues.mode') === 'closed' ? 'closed' : 'open';
+        const issueModes = { open: 'Open', closed: 'Closed', archive: 'Archived' };
+        const savedIssueMode = localStorage.getItem('factory.project-issues.mode');
+        let projectIssueMode = Object.hasOwn(issueModes, savedIssueMode) ? savedIssueMode : 'open';
+        let archivedProjectIssues = [];
+        let deletionReview;
         const projectIssueArchive = { saving: false, feedback: '' };
         const projectIssueBulk = {
           idsKey: '',
@@ -149,9 +162,9 @@
         }
         function queueIssues() {
           return queueSortUI.sort(
-            data.issues.filter((issue) => {
+            projectIssues().filter((issue) => {
               const badgeMatches = !queueFilters.badge || issue.badges?.includes(queueFilters.badge);
-              return issueRoleSelected(issue) && matchesQueueSearch(issue) && badgeMatches;
+              return matchesQueueSearch(issue) && badgeMatches;
             }),
             queueFilters
           );
@@ -168,16 +181,102 @@
         function queueRefreshButton() {
           return '<button class="queue-refresh-button" type="button" data-queue-refresh aria-label="Refresh queue" title="Refresh queue"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"></path><path d="M5.6 9a7 7 0 0 1 11.6-2L20 12M4 12l2.8 5a7 7 0 0 0 11.6-2"></path></svg></button>';
         }
+        function projectIssues() {
+          return projectIssueMode === 'archive' ? archivedProjectIssues : data.issues.filter(issueRoleSelected);
+        }
         function selectedProjectIssues() {
-          return data.issues.filter((issue) => selectedProjectIssueIds.has(issue.id));
+          const issues = projectIssueMode === 'archive' ? archivedProjectIssues : data.issues;
+          return issues.filter((issue) => selectedProjectIssueIds.has(issue.id));
         }
         function closedProjectIssueSelection() {
+          if (projectIssueMode !== 'closed') return false;
           const issues = selectedProjectIssues();
           return issues.length > 0 && issues.every((issue) => closedIssueState(issue.state));
         }
-        function projectIssueArchiveButton() {
-          if (!closedProjectIssueSelection()) return '';
-          return `<div class="toolbar"><span>${selectedProjectIssueIds.size} selected</span><button type="button" class="primary" data-archive-project-issues ${projectIssueArchive.saving ? 'disabled' : ''}>${projectIssueArchive.saving ? 'Archiving…' : 'Archive selected'}</button></div>`;
+        function canDeleteSelection(issues = selectedProjectIssues()) {
+          return (
+            issues.length > 0 &&
+            issues.length === selectedProjectIssueIds.size &&
+            (projectIssueMode === 'archive' ||
+              (projectIssueMode === 'open' && issues.every((issue) => issue.state === 'needs-approval')))
+          );
+        }
+        function projectIssueSelectionAction() {
+          const count = `<span>${selectedProjectIssueIds.size} selected</span>`;
+          if (closedProjectIssueSelection())
+            return `<div class="toolbar">${count}<button type="button" class="primary" data-archive-project-issues ${projectIssueArchive.saving ? 'disabled' : ''}>${projectIssueArchive.saving ? 'Archiving…' : 'Archive selected'}</button></div>`;
+          if (canDeleteSelection())
+            return `<div class="toolbar">${count}<button type="button" class="danger" data-delete-project-issues>Delete selected</button></div>`;
+          return '';
+        }
+        async function reviewSelectedIssueDeletion() {
+          const issues = selectedProjectIssues();
+          if (!canDeleteSelection(issues)) return;
+          const location = projectIssueMode === 'archive' ? 'archive' : 'open';
+          const selected = issues.map(({ id }) => ({ id, location }));
+          const dialog = $('delete-issues');
+          const status = $('delete-issues-status');
+          const details = $('delete-issues-details');
+          const dismiss = $('delete-issues-dismiss');
+          const confirm = $('delete-issues-confirm');
+          const review = (deletionReview = Symbol());
+          status.textContent = 'Checking the selected issues…';
+          details.replaceChildren();
+          confirm.hidden = true;
+          dismiss.textContent = 'Cancel';
+          dialog.showModal();
+          try {
+            const preview = await request('project-issue-deletion', { action: 'preview', selected });
+            if (!dialog.open || review !== deletionReview) return;
+            status.textContent =
+              'This permanently deletes the listed issues and any evidence Factory verifies is no longer referenced. Evidence still in use is kept.';
+            const titles = new Map(preview.issues.map(({ id, title }) => [id, title]));
+            details.innerHTML = `<ul>${preview.issues.map(({ title }) => `<li>${esc(title)}</li>`).join('')}</ul>`;
+            confirm.onclick = () => void deleteReviewedIssues(selected, preview.basis, titles);
+            confirm.hidden = false;
+          } catch (error) {
+            if (!dialog.open || review !== deletionReview) return;
+            status.textContent = 'The selection could not be deleted.';
+            details.textContent = error.message;
+          }
+        }
+        async function deleteReviewedIssues(selected, basis, titles) {
+          const dialog = $('delete-issues');
+          const status = $('delete-issues-status');
+          const details = $('delete-issues-details');
+          const dismiss = $('delete-issues-dismiss');
+          $('delete-issues-confirm').hidden = true;
+          dismiss.disabled = true;
+          status.textContent = 'Checking storage and preparing the selected deletions…';
+          dialog.oncancel = (event) => {
+            if (dismiss.disabled) event.preventDefault();
+          };
+          try {
+            const result = await request(
+              'project-issue-deletion',
+              { action: 'delete', selected, basis },
+              (progress) => {
+                const remaining = progress.processed - progress.deleted;
+                status.textContent = `Deleted ${progress.deleted} of ${progress.total}. ${remaining ? `${remaining} kept so far. ` : ''}Checking ${titles.get(progress.currentId)}.`;
+              }
+            );
+            const deleted = result.results.filter(({ status }) => status === 'deleted');
+            const remaining = result.results.filter(({ status }) => status !== 'deleted');
+            status.textContent = `Deleted ${deleted.length} ${deleted.length === 1 ? 'issue' : 'issues'}.`;
+            details.innerHTML = remaining.length
+              ? `<ul>${remaining.map(({ id, reason }) => `<li>${esc(titles.get(id))}. ${esc(reason || 'Deletion is awaiting review.')}</li>`).join('')}</ul>`
+              : '';
+            for (const { id } of deleted) selectedProjectIssueIds.delete(id);
+            await refresh();
+            render();
+          } catch (error) {
+            status.textContent = 'Deletion results unavailable.';
+            details.textContent = error.message;
+          } finally {
+            dismiss.disabled = false;
+            dismiss.textContent = 'Dismiss';
+            dismiss.focus();
+          }
         }
         function applyProjectIssueArchive(results) {
           projectIssueArchive.feedback = results
@@ -216,16 +315,22 @@
           }
         }
         function loadProjectIssueSelection() {
-          if (closedProjectIssueSelection()) return;
+          if (projectIssueMode !== 'open') return;
           const issues = selectedProjectIssues();
           if (issues.length) void ensureProjectIssueBulk(issues);
         }
         function issueSidebarStatus(issue) {
+          if (projectIssueMode === 'archive') return 'Archived';
           if (closedIssueState(issue.state)) return 'Closed';
           return [issue.strategy?.status, issue.stage, 'queued'].find(Boolean);
         }
         function projectIssueModeControls() {
-          return `<div class="toolbar" role="group" aria-label="Issue status">${['open', 'closed'].map((mode) => `<button type="button" data-project-issue-mode="${mode}" class="${projectIssueMode === mode ? 'primary' : ''}" aria-pressed="${projectIssueMode === mode}">${mode === 'open' ? 'Open' : 'Closed'}</button>`).join('')}</div>`;
+          return `<div class="toolbar" role="group" aria-label="Issue status">${Object.entries(issueModes)
+            .map(
+              ([mode, label]) =>
+                `<button type="button" data-project-issue-mode="${mode}" class="${projectIssueMode === mode ? 'primary' : ''}" aria-pressed="${projectIssueMode === mode}">${label}</button>`
+            )
+            .join('')}</div>`;
         }
         function bindProjectIssueModes() {
           document.querySelectorAll('[data-project-issue-mode]').forEach((button) => {
@@ -235,11 +340,12 @@
               selectedProjectIssueIds.clear();
               projectIssueArchive.feedback = '';
               render();
+              if (projectIssueMode === 'archive') void refresh();
             };
           });
         }
         function issueRoleControls() {
-          if (projectIssueMode === 'closed') return '';
+          if (projectIssueMode !== 'open') return '';
           return `<details><summary>Filter by role</summary><div class="rail" role="group" aria-label="Filter by role">${roleFilters()}</div></details>`;
         }
         function selectableLifecycleStage(stage) {
@@ -249,16 +355,17 @@
         function bindProjectIssueSelection() {
           bindProjectIssueModes();
           bindProjectIssueArchive();
+          const deleteButton = document.querySelector('[data-delete-project-issues]');
+          if (deleteButton) deleteButton.onclick = () => void reviewSelectedIssueDeletion();
           const visibleIssues = queueIssues();
           const selectAll = document.querySelector('[data-select-visible-issues]');
           if (selectAll) {
             const selectedCount = visibleIssues.filter((issue) => selectedProjectIssueIds.has(issue.id)).length;
             selectAll.indeterminate = selectedCount > 0 && selectedCount < visibleIssues.length;
             selectAll.onchange = () => {
-              for (const issue of visibleIssues) {
-                if (selectAll.checked) selectedProjectIssueIds.add(issue.id);
-                else selectedProjectIssueIds.delete(issue.id);
-              }
+              if (selectAll.checked) {
+                for (const issue of visibleIssues) selectedProjectIssueIds.add(issue.id);
+              } else selectedProjectIssueIds.clear();
               render();
             };
           }
@@ -593,10 +700,18 @@
           refreshing = true;
           try {
             const updated = await request('queue?includeClosed=true' + (remote ? '&refresh=true' : ''));
+            const archive =
+              projectIssueMode === 'archive'
+                ? (await request('issue-storage?location=archive')).issues
+                : archivedProjectIssues;
             $('error').textContent = updated.sharedQueueWarning || '';
-            if (JSON.stringify(data) !== JSON.stringify(updated)) {
+            if (
+              JSON.stringify(data) !== JSON.stringify(updated) ||
+              JSON.stringify(archive) !== JSON.stringify(archivedProjectIssues)
+            ) {
               data = updated;
-              const existing = new Set(updated.issues.map(({ id }) => id));
+              archivedProjectIssues = archive;
+              const existing = new Set([...updated.issues, ...archive].map(({ id }) => id));
               for (const id of selectedProjectIssueIds) if (!existing.has(id)) selectedProjectIssueIds.delete(id);
               render();
             }
@@ -620,7 +735,7 @@
           const id = esc(item.id);
           const title = esc(item.title || 'Untitled issue');
           const number = esc(item.issueNumber);
-          return `<div class="issue-sidebar-item has-selector" data-issue-row="${id}"${subIssue ? ' data-sub-issue' : ''}${queueFilters.sort === 'implementationOrder' ? ' draggable="true"' : ''}>
+          return `<div class="issue-sidebar-item has-selector" data-issue-row="${id}"${subIssue ? ' data-sub-issue' : ''}${projectIssueMode !== 'archive' && queueFilters.sort === 'implementationOrder' ? ' draggable="true"' : ''}>
       <input type="checkbox" class="project-issue-select" data-select-issue="${id}" aria-label="Select #${number} ${title}" ${selectedProjectIssueIds.has(item.id) ? 'checked' : ''}>
       <a class="issue-sidebar-link" href="/?issue=${encodeURIComponent(item.id)}" target="_top" aria-label="#${number} ${title}${item.isMaster ? ', Master' : ''}" aria-describedby="issue-sidebar-status-${id}">
         <span>#${number} · ${title} ${window.issueGroupUI.issueBadges(item)}</span>
@@ -636,7 +751,7 @@
             .flatMap(({ issue, children }) => [{ item: issue }, ...children.map((item) => ({ item, subIssue: true }))]);
           const allSelected = issues.length > 0 && issues.every((issue) => selectedProjectIssueIds.has(issue.id));
           return `<aside class="issue-sidebar" aria-label="Issues"><div class="issue-sidebar-heading"><h2>Issues</h2>${queueRefreshButton()}</div>
-      ${projectIssueModeControls()}${projectIssueArchiveButton()}${projectIssueArchive.feedback ? `<p role="status">${esc(projectIssueArchive.feedback)}</p>` : ''}
+      ${projectIssueModeControls()}${projectIssueSelectionAction()}${projectIssueArchive.feedback ? `<p role="status">${esc(projectIssueArchive.feedback)}</p>` : ''}
       <div class="issue-sidebar-controls"><form id="queue-search" class="queue-search" role="search">
         <input id="search" type="search" aria-label="Search issues" placeholder="Search issues" value="${esc(queueFilters.search)}">
       </form><div class="toolbar">${queueSortUI.controls(queueFilters)}</div>
@@ -675,7 +790,7 @@
 
         function render() {
           const ids = [...selectedProjectIssueIds];
-          const hasDetail = ids.length > 0 && !closedProjectIssueSelection();
+          const hasDetail = ids.length > 0 && projectIssueMode === 'open';
           const detail = hasDetail
             ? `<div class="project-issue-resizer" role="separator" aria-label="Resize issue detail column" aria-orientation="vertical" aria-valuemin="280" aria-valuemax="680" aria-valuenow="335" tabindex="0" data-project-issue-resizer></div>
       <section class="issue-workspace-content">${projectIssueBulkEditor(ids)}</section>`

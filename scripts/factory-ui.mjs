@@ -1,6 +1,6 @@
 import { monitorProviders } from './factory-ui/provider-runtime.mjs';
 import { initializeProviderConfig } from './factory-ui/provider-config.mjs';
-import { handoffRestart, waitForPrevious, resumeAfterRestart } from './factory-ui/restart-process.mjs';
+import { handoffRestart, waitForPrevious } from './factory-ui/restart-process.mjs';
 import { mkdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -8,6 +8,7 @@ import { FactoryUI } from './factory-ui/service.mjs';
 import { createFactoryServer } from './factory-ui/http.mjs';
 import { recordFactoryFatalErrors } from './factory-ui/heap-crash.mjs';
 import { writeJson } from './factory-ui/common.mjs';
+import { cleanProjectAssetUploads } from './factory-ui/stores/runtime.mjs';
 
 // No chat, worker or integration starts until a reviewed browser action is submitted.
 async function main() {
@@ -27,10 +28,14 @@ async function main() {
     console.log(
       `Factory UI: http://127.0.0.1:${server.address().port}/\nProject: ${service.root}\nOpening or refreshing the page does not launch work.`
     );
-    resumeAfterRestart(service);
   });
   const stopProviderMonitoring = monitorProviders(service.root);
+  const assetCleanup = setInterval(() => {
+    if (service.reviewMode === 'live') void cleanProjectAssetUploads(service).catch(() => {});
+  }, 60_000);
+  assetCleanup.unref();
   const close = () => {
+    clearInterval(assetCleanup);
     stopProviderMonitoring();
     service.close();
     server.closeAllConnections();

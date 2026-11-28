@@ -14,7 +14,6 @@ import { readOnlyReviewTurn } from './review-recovery.mjs';
 import { selectNextIssue } from './queue-selection.mjs';
 import { coordinatorContext } from './coordinator-store.mjs';
 import { createCoordinator } from './coordinator.mjs';
-import { progressBasis } from './next-action.mjs';
 import { queueHumanInput, queueHumanInputReader } from './queue-human-input.mjs';
 import { deliveryMode, draftHandoff, draftAssembly } from './delivery-mode.mjs';
 import { checkHandoff } from './handoff-checks.mjs';
@@ -28,7 +27,7 @@ import { issueWorkChat } from './issue-work-chat.mjs';
 import { beginCompletionReview } from './completion-review.mjs';
 import { requestPublication } from './pr-publication.mjs';
 import { bindVerification } from './verification-handoff.mjs';
-import { assemblyRecoveryView, retryAssembly } from './assembly-recovery.mjs';
+import { assemblyRecoveryView } from './assembly-recovery.mjs';
 import { retryIntegrationRecovery } from './integration-recovery.mjs';
 import { failedVerification, verificationView, retryVerification } from './verification-recovery.mjs';
 import { IssueDelivery } from '../issue-delivery.mjs';
@@ -50,7 +49,6 @@ import { installWorkerHealth } from './worker-health.mjs';
 import { runAuthorization, describeAuthorization } from '../factory-authorization.mjs';
 import { canResumeLifecycle } from './lifecycle-stop.mjs';
 import { loadLifecycles, lifecycleView, approvedLifecyclePlan } from './lifecycle-store.mjs';
-import { startLifecycle, answerLifecycle, pauseLifecycle, continueLifecycleAfter } from './lifecycle-control.mjs';
 import { finishRecordUpdate } from './record-update.mjs';
 import { mkdirSync, existsSync, rmSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -140,9 +138,7 @@ export class FactoryUI {
     this.issueCleanupTasks = new Map();
     cleanupActionRecords(this.root, true);
     this.codex = projectCodexConnection(this);
-    this.coordinator = createCoordinator(this, options.coordinatorConnection, (id) =>
-      this.continueCoordinatorIssue(id)
-    );
+    this.coordinator = createCoordinator(this, options.coordinatorConnection);
     this.check = (root, base, folder, options = {}) => {
       const run = this.store.runs.find((r) => join(this.store.directory, r.id) === folder);
       const event = (method, params) => this.store.event({ method, params: { threadId: run?.threadId, ...params } });
@@ -273,20 +269,13 @@ export class FactoryUI {
     return checkImplementation(this, id, state, path, basis);
   }
   decidePlanCheck(id, state, checkId, status, basis, result) {
-    const recorded = decidePlanCheck(this, id, state, checkId, status, basis, result);
-    continueLifecycleAfter(this, id);
-    return recorded;
+    return decidePlanCheck(this, id, state, checkId, status, basis, result);
   }
   skipPlanChecks(input) {
-    const result = skipPlanChecks(this, input);
-    continueLifecycleAfter(this, input.issueId);
-    return result;
+    return skipPlanChecks(this, input);
   }
   approveReviewFile(input) {
-    const result = approveReviewFile(this, input);
-    const run = this.store.runs.find((r) => r.id === input.runId);
-    if (result.runId) continueLifecycleAfter(this, run.issueId);
-    return result;
+    return approveReviewFile(this, input);
   }
   findConnection(id, state, basis) {
     return findConnection(this, id, state, basis);
@@ -301,29 +290,11 @@ export class FactoryUI {
     return checkReadiness(this, id, state);
   }
   retryIntegrationRecovery(input) {
-    return retryIntegrationRecovery(this, input, (id) => continueLifecycleAfter(this, id));
-  }
-  continueCoordinatorIssue(issueId) {
-    const queue = readQueue(this.root),
-      issue = queue.issues.find((i) => i.id === issueId);
-    requireThat(issue, 'The saved issue no longer exists.');
-    return this.startLifecycle({ issueId, state: issue.state, issueBasis: progressBasis(queue, issueId) });
-  }
-  startLifecycle(input) {
-    return startLifecycle(this, input);
+    return retryIntegrationRecovery(this, input);
   }
   ensureIssueFlows() {
     this.flows ||= createIssueFlows(this);
     return this.flows;
-  }
-  answerLifecycle(input) {
-    return answerLifecycle(this, input);
-  }
-  pauseLifecycle(input) {
-    return pauseLifecycle(this, input);
-  }
-  retryAssembly(input) {
-    return retryAssembly(this, input, (id) => continueLifecycleAfter(this, id));
   }
   prepareCompletion(issueId) {
     return beginCompletionReview(this, issueId);
@@ -588,7 +559,7 @@ export class FactoryUI {
       });
   }
   retryVerification(input) {
-    return retryVerification(this, input, (id) => continueLifecycleAfter(this, id));
+    return retryVerification(this, input);
   }
   async finishWorker(run, action, result, checkOptions = {}) {
     const update = { status: 'completed', evidence: JSON.stringify(result), authorization: run.authorization };

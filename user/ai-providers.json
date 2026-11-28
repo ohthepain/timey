@@ -6,7 +6,7 @@
     "allowUnmonitored": true
   },
   "anthropic": {
-    "enabled": [],
+    "enabled": ["anthropic:opus", "anthropic:fable", "anthropic:sonnet", "anthropic:haiku"],
     "warning": 5,
     "disable": 2,
     "allowUnmonitored": false

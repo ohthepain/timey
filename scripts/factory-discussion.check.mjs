@@ -632,7 +632,7 @@ test('stage grilling binds its configured role, previews selected answers and sa
   const draft = await f.discussion.summarize(f.input, f.owner);
   assert.equal(readFileSync(join(f.root, '.issues/20261025-a.md'), 'utf8'), before);
   assert.match(draft.text, /Your selected answers/);
-  assert.equal(draft.canContinue, true);
+  assert.equal(draft.canContinue, undefined);
   const result = await f.discussion.commit({ ...f.input, token: draft.token, clicked: true }, f.owner);
   assert.equal(result.recorded, true);
   const issue = f.service.snapshot().issues.find((issue) => issue.id === f.input.issueId);
@@ -684,31 +684,6 @@ test('invented answer quotes and changed discussions cannot be saved as grilling
   assert.equal(f.service.snapshot().issues[0].stage_grilling, undefined);
 });
 
-test('save and continue dispatches only the normal workflow after recording; continuation failure preserves results', async (t) => {
-  for (const fails of [false, true]) {
-    const f = await interviewFixture(t);
-    const preview = await f.discussion.summarize(f.input, f.owner);
-    const calls = [];
-    f.service.startLifecycle = (input) => {
-      calls.push(input);
-      if (fails) throw Error('A human decision is still required.');
-    };
-    const result = await f.discussion.commit(
-      { ...f.input, token: preview.token, clicked: true, continue: true },
-      f.owner
-    );
-    assert.equal(result.recorded, true);
-    assert.equal(result.continuing, !fails);
-    assert.equal(calls.length, 1);
-    assert.equal(calls[0].issueId, f.input.issueId);
-    assert.equal(calls[0].state, 'investigate');
-    assert.equal(typeof calls[0].issueBasis, 'string');
-    assert.equal(f.service.snapshot().issues[0].stage_grilling.length, 1);
-    if (fails) assert.match(result.continueError, /human decision/);
-    assert.equal(f.discussion.sessions.size, 0);
-  }
-});
-
 test('grilling skill is sent as native skill input, not a substitute interview prompt', async () => {
   const { CodexConnection } = await import('./factory-ui/codex.mjs');
   const connection = new CodexConnection();
@@ -732,13 +707,13 @@ test('integration discussion has a stable target but never offers lifecycle adva
   const f = await interviewFixture(t, '@integration');
   assert.equal(f.started.stage.name, 'Integrate');
   const preview = await f.discussion.summarize(f.input, f.owner);
-  assert.equal(preview.canContinue, false);
+  assert.equal(preview.canContinue, undefined);
   await f.discussion.commit({ ...f.input, token: preview.token, clicked: true }, f.owner);
   assert.equal(f.service.snapshot().issues[0].stage_grilling[0].state, '@integration');
   assert.equal(f.service.snapshot().issues[0].state, 'investigate');
 });
 
-test('unresolved interview questions keep Save and continue unavailable', async (t) => {
+test('recorded interview questions remain open for follow-up in Flow', async (t) => {
   const f = await interviewFixture(t);
   f.runtimes[0].ask = async () =>
     JSON.stringify({
@@ -751,10 +726,10 @@ test('unresolved interview questions keep Save and continue unavailable', async 
 
 async function assertCannotContinueInterview(f) {
   const preview = await f.discussion.summarize(f.input, f.owner);
-  assert.equal(preview.canContinue, false);
+  assert.equal(preview.canContinue, undefined);
   await assert.rejects(
     f.discussion.commit({ ...f.input, token: preview.token, clicked: true, continue: true }, f.owner),
-    /current unfinished step/
+    /start work from Flow/
   );
 }
 
@@ -776,7 +751,7 @@ test('Clarify interviews save confirmed decisions and offer guarded continuation
   f.runtimes[0].ask = async () =>
     JSON.stringify({ decisions: ['Keep scope bounded.'], questions: [], answerQuotes: ['Only the approved scope.'] });
   const draft = await f.discussion.summarize(f.input, f.owner);
-  assert.equal(draft.canContinue, true);
+  assert.equal(draft.canContinue, undefined);
   await f.discussion.commit({ ...f.input, token: draft.token, clicked: true }, f.owner);
   const issue = f.service.snapshot().issues[0];
   assert.equal(issue.state, 'clarify');

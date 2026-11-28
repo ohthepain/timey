@@ -6,7 +6,6 @@ import { interruptCodexTurn } from '../codex.mjs';
 import { saveLifecycle } from '../lifecycle-store.mjs';
 import { git, requireThat } from '../common.mjs';
 import { redactValue } from '../activity.mjs';
-import { hydrateClassicSnapshot } from './classic-snapshot.mjs';
 
 const bindings = new WeakMap();
 const clone = (value) => JSON.parse(JSON.stringify(value));
@@ -271,7 +270,6 @@ export async function startClassicOperation(
   const task = Promise.resolve()
     .then(async () => {
       try {
-        await hydrateClassicSnapshot(scoped, operation.issueIds, { restoreSource: true, persist: true });
         for (const id of operation.issueIds)
           operation.initialLifecycles.set(id, JSON.stringify(scoped.lifecycleRuns?.[id]));
         const value = await run(scoped);

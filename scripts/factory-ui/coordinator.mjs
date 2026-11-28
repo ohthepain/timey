@@ -17,12 +17,8 @@ import {
 
 // Rotate between operations, well before compaction; cumulative billing is not context.
 const defaultContextBudget = 20000;
-export function createCoordinator(
-  service,
-  create = createIssueChatConnection,
-  resume = (id) => service.continueCoordinatorIssue(id)
-) {
-  return new Coordinator(service, create, resume);
+export function createCoordinator(service, create = createIssueChatConnection) {
+  return new Coordinator(service, create);
 }
 function coordinatorProgress(runs) {
   return new Map(runs.filter((run) => run.chatActivity).map((run) => [run.id, chatProgress(run.chatActivity)]));
@@ -35,8 +31,7 @@ function pendingProgress(state, progress) {
 }
 
 class Coordinator {
-  constructor(service, create, resume) {
-    this.resume = resume;
+  constructor(service, create) {
     this.service = service;
     this.create = create;
     this.state = readCoordinator(service.root);
@@ -46,18 +41,9 @@ class Coordinator {
     if (this.state.active) {
       this.state.paused = true;
       this.state.interrupted = this.state.active;
-      this.state.resumeIssues = [
-        ...new Set(
-          [
-            ...(this.state.resumeIssues || []),
-            this.state.active.issueId,
-            ...(this.state.queuedOperations || []).map((op) => op.issueId),
-          ].filter(Boolean)
-        ),
-      ];
       this.state.active = null;
       this.state.reason =
-        'The coordinator was interrupted. Output is saved. Continue checks the saved conversation and issue work before proceeding.';
+        'The coordinator was interrupted. Output is saved. Continue reconnects to the coordinator conversation.';
     }
   }
   get paused() {
@@ -249,7 +235,6 @@ class Coordinator {
     this.service.ownServer();
     this.state.paused = true;
     this.state.reason = 'Coordination stopped. Existing workers are still running. Continue explicitly when ready.';
-    this.state.resumeIssues = [];
     for (const item of this.waiters.splice(0)) item.reject(Error('Coordination stopped before this operation began.'));
     this.save();
     if (this.state.active && this.connection) await this.connection.interrupt(this.state.threads.at(-1).threadId);
@@ -263,18 +248,10 @@ class Coordinator {
       this.connection ||= this.create();
       await this.attachCurrent();
     }
-    const issueIds = this.state.resumeIssues || [];
-    requireThat(
-      !issueIds.some((id) => this.service.lifecycleTasks.has(id)),
-      'The previous operation is still finishing. Try Continue after it stops.'
-    );
     this.state.paused = false;
     this.state.interrupted = null;
     this.state.reason = '';
-    this.state.resumeIssues = [];
     this.save();
-    // Resume through the existing issue handlers: they inspect saved children and enforce original approvals.
-    for (const id of issueIds) this.resume(id);
     this.drain();
     return { continued: true };
   }

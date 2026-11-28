@@ -41,6 +41,10 @@ button[aria-pressed='true'],
 button.primary {
   background: #254537;
 }
+button.danger {
+  background: #512a2a;
+  border-color: #814343;
+}
 button:focus-visible,
 a:focus-visible,
 input:focus-visible,

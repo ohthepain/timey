@@ -207,6 +207,9 @@ test('real restart changes the listener PID and preserves existing chat and prog
     },
   });
   writeFileSync(progress, ledger);
+  const classicReceipt = join(root, '.issues/factory-ui/server-restart.json');
+  const oldReceipt = JSON.stringify({ resume: ['20261026-one'], previousPid: process.pid });
+  writeFileSync(classicReceipt, oldReceipt);
   const installed = gitFixture(t, 'restart-installed-');
   installed.root = realpathSync(installed.root);
   cpSync(resolve('scripts'), join(installed.root, 'scripts'), { recursive: true });
@@ -264,6 +267,7 @@ test('real restart changes the listener PID and preserves existing chat and prog
   assert.equal(ready.actions, 0);
   assert.equal(readFileSync(history, 'utf8'), saved);
   assert.equal(readFileSync(progress, 'utf8'), ledger);
+  assert.equal(readFileSync(classicReceipt, 'utf8'), oldReceipt);
 });
 test('No new actions pauses dispatch without restarting and can be turned off', async (t) => {
   const service = new FactoryUI(project(t));
@@ -711,15 +715,14 @@ test('action controls pause after the current turn, steer its exact turn, and st
     lifecycleTasks: new Map([[issueId, Promise.resolve()]]),
     lifecycleRuns: { [issueId]: {} },
     api: { inspect: () => ({ registry: { actions: [] } }) },
-    pauseLifecycle: (input) => calls.push(['pause', input]),
     codex: {
       turns: new Map([[run.threadId, turn]]),
       call: async (method, input) => calls.push([method, input]),
     },
-    issueChats: { connections: new Map() },
+    issueChats: { connections: new Map(), control: (input) => calls.push(['pause', input]) },
   };
   await controlServerAction(service, { runId: run.id, operation: 'pause' });
-  assert.deepEqual(calls.pop(), ['pause', { issueId }]);
+  assert.deepEqual(calls.pop(), ['pause', { issueId, operation: 'pause' }]);
   assert.equal(service.store.connected.has(run.id), true, 'pause leaves the current action connected');
   await controlServerAction(service, { runId: run.id, operation: 'steer', text: 'Keep the current scope.' });
   assert.deepEqual(calls.pop(), [

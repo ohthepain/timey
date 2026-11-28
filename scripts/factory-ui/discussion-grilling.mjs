@@ -99,8 +99,6 @@ function summaryIntent(manager, session, issue, result) {
   ].join('\n\n');
   requireThat(text.length <= 8000, 'The summary is too long to save. Ask for a shorter interview summary.');
   const token = randomUUID();
-  const hasIssueStrategy = Boolean(manager.service.lifecycleRuns[issue.id]?.work);
-  const canContinue = !hasIssueStrategy && continuationAvailable(stage, issue, result);
   const intent = {
     kind: 'stage-record',
     interviewBasis: grillingAnswerBasis(manager.service.root, session),
@@ -109,7 +107,6 @@ function summaryIntent(manager, session, issue, result) {
     expires: manager.now() + 120000,
     stage,
     result,
-    canContinue,
     skill: session.skill,
   };
   session.intents.set(token, intent);
@@ -119,17 +116,11 @@ function summaryIntent(manager, session, issue, result) {
     text,
     stage,
     issueId: issue.id,
-    canContinue,
-    effect: `Save only this reviewed summary and selected answers to ${stage.name}. Saving does not approve a plan, pass tests or accept the issue. Save and continue separately asks the normal workflow to check what can proceed.`,
+    effect: `Save only this reviewed summary and selected answers to ${stage.name}. Saving does not approve a plan, pass tests or accept the issue.`,
   };
 }
 function section(title, values) {
   return title + '\n' + (values.map((text) => '- ' + text).join('\n') || 'None recorded.');
-}
-
-function continuationAvailable(stage, issue, result) {
-  if (result.questions.length) return false;
-  return stage.state === issue.state && !['closed', 'ready-to-close'].includes(stage.role);
 }
 
 export function temporaryGrillingSkill(home, skill) {

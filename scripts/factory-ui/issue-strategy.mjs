@@ -818,15 +818,7 @@ async function runOwnerTurn(service, record, run, issue, work, instruction) {
     summary: 'Working toward a merge-ready PR in the issue chat.',
   });
   assertStrategyActive(record, 'Stopped before the next turn. Saved work is retained.');
-  const prompt =
-    strategyPrompt(service.root, issue, work, instruction, conversationContext(service, issue.id)) +
-    (record.classicHistory?.path
-      ? '\nRetained shared execution history: ' +
-        record.classicHistory.path +
-        ' (SHA-256 ' +
-        record.classicHistory.sha256 +
-        '). Read relevant previous results before continuing; transport and workspace paths may belong to another runner.'
-      : '');
+  const prompt = strategyPrompt(service.root, issue, work, instruction, conversationContext(service, issue.id));
   recordClassicInput(service, run, prompt);
   return JSON.parse(
     await withDiagnosticContext(service.root, { issueId: issue.id, step: 'Strategy work' }, () =>

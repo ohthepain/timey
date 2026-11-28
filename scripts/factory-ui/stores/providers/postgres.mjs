@@ -1,6 +1,33 @@
 import { createFactoryPool } from '../postgres-connection.mjs';
 import { checkExpected, verifyReceipt, retireReceipt } from './records.mjs';
 
+const pendingOperations = `key >= 'operations/' AND key < 'operations0' AND starts_with(key,'operations/')
+   AND (value->>'encoding' IS DISTINCT FROM 'json' OR value#>>'{value,status}'='pending')`;
+const pendingIndex = 'store_pending_operations';
+
+async function ensurePendingIndex(pool) {
+  const client = await pool.connect();
+  const lock = "hashtextextended('factory.store_pending_operations', 0)";
+  try {
+    await client.query(`SELECT pg_advisory_lock(${lock})`);
+    const { rows } = await client.query('SELECT indisvalid FROM pg_index WHERE indexrelid = to_regclass($1)', [
+      'factory.' + pendingIndex,
+    ]);
+    if (rows[0]?.indisvalid) return;
+    if (rows.length) await client.query(`DROP INDEX CONCURRENTLY factory.${pendingIndex}`);
+    await client.query(
+      `CREATE INDEX CONCURRENTLY ${pendingIndex} ON factory.store_records (project_id, store_id, key)
+       WHERE ${pendingOperations}`
+    );
+  } finally {
+    try {
+      await client.query(`SELECT pg_advisory_unlock(${lock})`);
+    } finally {
+      client.release();
+    }
+  }
+}
+
 export async function openPostgresRecords(config, { root, projectId, readOnly }) {
   const pool = createFactoryPool(config, { root });
   try {
@@ -11,12 +38,24 @@ export async function openPostgresRecords(config, { root, projectId, readOnly })
         revision text NOT NULL, value jsonb NOT NULL, PRIMARY KEY(project_id, store_id, key));
       CREATE TABLE IF NOT EXISTS factory.store_operations (
         project_id text NOT NULL, store_id text NOT NULL, operation_id text NOT NULL,
-        receipt jsonb NOT NULL, PRIMARY KEY(project_id, store_id, operation_id));`);
+        receipt jsonb NOT NULL, PRIMARY KEY(project_id, store_id, operation_id));
+      CREATE TABLE IF NOT EXISTS factory.store_finished_operations (
+        project_id text NOT NULL, store_id text NOT NULL, key text NOT NULL, revision text NOT NULL,
+        PRIMARY KEY(project_id, store_id, key));`);
   } catch (error) {
     await pool.end();
     throw error;
   }
   const scope = [projectId, config.id];
+  let pendingIndexReady;
+  function preparePendingOperations() {
+    if (readOnly) return;
+    pendingIndexReady ??= ensurePendingIndex(pool).catch((error) => {
+      pendingIndexReady = undefined;
+      throw error;
+    });
+    return pendingIndexReady;
+  }
   function record(row) {
     return row ? { key: row.key, revision: row.revision, value: row.value } : null;
   }
@@ -144,16 +183,34 @@ export async function openPostgresRecords(config, { root, projectId, readOnly })
     },
     get: (key) => get(pool, key),
     list: (prefix) => list(pool, prefix),
+    preparePendingOperations,
     async listPendingOperations() {
+      await preparePendingOperations();
       const { rows } = await pool.query(
         `SELECT key, revision, value FROM factory.store_records
-         WHERE project_id=$1 AND store_id=$2 AND key >= 'operations/' AND key < 'operations0'
-           AND starts_with(key,'operations/')
-           AND (value->>'encoding' IS DISTINCT FROM 'json' OR value#>>'{value,status}'='pending')
+         WHERE project_id=$1 AND store_id=$2 AND ${pendingOperations}
+         ${
+           readOnly
+             ? ''
+             : `AND NOT EXISTS (
+           SELECT 1 FROM factory.store_finished_operations AS finished
+           WHERE finished.project_id=$1 AND finished.store_id=$2 AND finished.key=store_records.key
+             AND finished.revision=store_records.revision
+         )`
+         }
          ORDER BY key`,
         scope
       );
       return rows.map(record);
+    },
+    async rememberFinishedOperations(entries) {
+      if (!entries.length || readOnly) return;
+      await pool.query(
+        `INSERT INTO factory.store_finished_operations(project_id,store_id,key,revision)
+         SELECT $1,$2,entry.key,entry.revision FROM unnest($3::text[],$4::text[]) AS entry(key,revision)
+         ON CONFLICT(project_id,store_id,key) DO UPDATE SET revision=EXCLUDED.revision`,
+        [...scope, entries.map(({ key }) => key), entries.map(({ revision }) => revision)]
+      );
     },
     commit(request) {
       return writeOperation(request, async (client) => {

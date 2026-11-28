@@ -6,7 +6,7 @@ import { createWorkProgress } from './work-progress.mjs';
 import { chatProgressInstructions } from './chat-progress.mjs';
 import { executionPermissionInstructions } from './execution-permissions.mjs';
 import { BlockCatalog } from './block-catalog.mjs';
-import { blockDefinitionId, deliveryTarget, startingPoint, upstreamBlocks } from './flow-block-data.mjs';
+import { blockDefinitionId, deliveryTarget, startingPoint } from './flow-block-data.mjs';
 import { spawn, execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import {
@@ -301,20 +301,9 @@ function assertIdle(service, issueId) {
 
 async function sharedSourceWorkspace(service, ctx, record) {
   if (ctx.flow.reopen && !ctx.flow.sourceCheckpoint) return ctx.flow.workspace;
-  const legacy =
-    service.projectStores && !ctx.flow.sourceCheckpoint
-      ? (await service.projectStores.records.get('classic/' + ctx.issue.id))?.value
-      : null;
-  const checkpoint = ctx.flow.sourceCheckpoint || legacy?.sourceCheckpoint;
-  const unavailable = ctx.flow.sourceUnavailable || legacy?.sourceUnavailable;
-  const sourceRunner = ctx.flow.sourceUnavailableRunnerId || ctx.flow.workspaceRunnerId || legacy?.originRunnerId;
-  let saved = service.projectStores
-    ? ctx.flow.workspace ||
-      legacy?.lifecycle?.work ||
-      legacy?.lifecycle?.chatCheckout ||
-      record.work ||
-      record.chatCheckout
-    : record.work || ctx.flow.workspace || record.chatCheckout;
+  const { sourceCheckpoint: checkpoint, sourceUnavailable: unavailable } = ctx.flow;
+  const sourceRunner = ctx.flow.sourceUnavailableRunnerId || ctx.flow.workspaceRunnerId;
+  let saved = ctx.flow.workspace || record.chatCheckout;
   const outside = saved?.checkout && !resolve(saved.checkout).startsWith(join(service.root, '.issues') + sep);
   const sourceIsLocal = sourceRunner
     ? sourceRunner === service.projectStores?.runnerId
@@ -428,7 +417,7 @@ export async function manualFlowClosureArtifact(service, issue, flow, options) {
     input: { confirmed: true },
     signal: new AbortController().signal,
   };
-  if (usesLegacyDelivery(service, ctx) || !flow.workspace?.checkout) return null;
+  if (!flow.workspace?.checkout) return null;
   const workspace = await workspaceFor(service, ctx, false);
   return flowClosureArtifact(service, ctx, workspace, evidenceDirectory(service, ctx), options);
 }
@@ -954,9 +943,7 @@ function modelConversationBinding(service, ctx, state, savedBlock, basis) {
   const recover =
     previous &&
     !rejectedOversizedAttempt(service, ctx.flow, ctx.block, previous, savedBlock) &&
-    (savedBlock?.threadId
-      ? savedBlock
-      : { threadId: state.threadId || service.lifecycleRuns[ctx.issue.id]?.workThreadId });
+    (savedBlock?.threadId ? savedBlock : { threadId: state.threadId });
   const last = ctx.block.attempts?.findLast((attempt) => attempt.id !== ctx.attempt.id);
   const rejected = last && rejectedOversizedAttempt(service, ctx.flow, ctx.block, last, savedBlock);
   const model = executionModels(service, ctx).model;
@@ -1347,13 +1334,12 @@ async function runCommand(service, ctx, options) {
   ctx.signal.throwIfAborted();
   const kind = ctx.block.kind;
   const record = service.lifecycleRuns[ctx.issue.id];
-  const work = record?.work;
   if (kind === 'retro') {
     const result = await (options.runRetro || runRetro)(service, ctx);
     return commandResult(service, ctx, result, result.summary, result.evidence || []);
   }
   if (kind === 'cleanup') {
-    const saved = work || ctx.flow.workspace || record?.chatCheckout;
+    const saved = ctx.flow.workspace || record?.chatCheckout;
     const workspace = saved && { ...saved };
     if (workspace && !workspace.config) {
       try {
@@ -1391,7 +1377,7 @@ async function runCommand(service, ctx, options) {
   }
   if (kind === 'merge') {
     requireThat(
-      work?.checkout || record?.chatCheckout?.checkout || ctx.flow.workspace?.checkout,
+      ctx.flow.workspace?.checkout || record?.chatCheckout?.checkout,
       'No protected PR candidate or managed issue checkout is recorded. Run an explicit work block first.'
     );
     const workspace = await workspaceFor(service, ctx);
@@ -1403,15 +1389,13 @@ async function runCommand(service, ctx, options) {
     const queue = readQueue(service.root);
     const issue = queue.issues.find((item) => item.id === ctx.issue.id);
     requireThat(issue, 'This issue is no longer open. Refresh its saved closure.');
-    const artifact = usesLegacyDelivery(service, ctx)
-      ? null
-      : await flowClosureArtifact(
-          service,
-          ctx,
-          await workspaceFor(service, ctx),
-          evidenceDirectory(service, ctx),
-          options
-        );
+    const artifact = await flowClosureArtifact(
+      service,
+      ctx,
+      await workspaceFor(service, ctx),
+      evidenceDirectory(service, ctx),
+      options
+    );
     const result = await (options.closeIssue || decideIssue)(
       service,
       issue.id,
@@ -1427,7 +1411,7 @@ async function runCommand(service, ctx, options) {
     return commandResult(service, ctx, result, 'The protected acceptance and closure operation finished.');
   }
   if (kind === 'delete-worktree') {
-    const workspace = record?.work || ctx.flow.workspace || record?.chatCheckout;
+    const workspace = ctx.flow.workspace || record?.chatCheckout;
     requireThat(workspace?.checkout, 'No managed checkout is recorded for this issue.');
     const cleanupService = worktreeCleanupService(service, ctx.issue.id, workspace);
     const remove = options.deleteWorktree || deleteIssueWorktree;
@@ -1480,15 +1464,6 @@ async function runCommand(service, ctx, options) {
 async function flowCleanupConfig(service, ctx, workspace, options) {
   const { flowDeliveryProvider } = await import('./flow-delivery.mjs');
   return flowDeliveryProvider(service, ctx, workspace, options).config;
-}
-
-function usesLegacyDelivery(service, ctx) {
-  const work = ctx.flow.reopen ? null : service.lifecycleRuns[ctx.issue.id]?.work;
-  return (
-    work &&
-    deliveryTarget(ctx.flow).branch === (work.config?.target ?? ctx.flow.target?.branch) &&
-    !upstreamBlocks(ctx.block, ctx.flow.blocks).some((block) => block.attempts.some((attempt) => attempt.invalidatedAt))
-  );
 }
 
 function commandResult(service, ctx, result, summary, evidence = []) {

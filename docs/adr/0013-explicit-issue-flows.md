@@ -10,7 +10,8 @@ This addresses the strategy runner's coupling of work, target synchronization,
 verification, publication, and readiness.
 
 Flow is the Factory workspace. Legacy `/classic` links route to a saved issue in
-Flow or to Project Home. This decision supersedes ADR 0009’s bundled browser
+Flow or to Project Home. Factory does not execute the retired role-by-role
+lifecycle or import Classic execution snapshots. This decision supersedes ADR 0009’s bundled browser
 execution. Existing records, human-input obligations, protected merge checks,
 and explicit acceptance retain their meaning. Reading or refreshing an issue
 starts no work.

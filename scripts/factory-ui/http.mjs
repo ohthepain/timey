@@ -57,6 +57,7 @@ import { ProjectWorktreeCleanup } from './project-worktree-cleanup.mjs';
 import { ProjectRemoteBranchCleanup } from './project-remote-branch-cleanup.mjs';
 import { ProjectLocalBranchCleanup } from './project-local-branch-cleanup.mjs';
 import { ProjectArchiveDeletion } from './project-archive-deletion.mjs';
+import { deleteProjectIssues } from './project-issue-deletion.mjs';
 import { ProjectDiscuss, readClarificationSkills, projectDiscussionSkills } from './project-discuss.mjs';
 import { InvestigationReports } from './investigation-reports.mjs';
 import { investigationCreatedIssues } from './investigation-history.mjs';
@@ -69,6 +70,8 @@ import {
   testStoreConnection,
   closeProjectStores,
   hydrateProjectEvidence,
+  cleanProjectAssetUploads,
+  stageReportDeletionAssets,
 } from './stores/runtime.mjs';
 import { issueStoresView, handleStoreAction } from './stores/routes.mjs';
 import {
@@ -331,6 +334,7 @@ function mutationIssueIds(service, path, value) {
     investigationId,
     ...numberedIssueIds(service, value),
     ...arrayValue(value.issueIds),
+    ...(path === '/api/project-issue-deletion' ? arrayValue(value.selected).map((row) => row?.id) : []),
   ];
   return [...new Set(ids)].filter((id) => typeof id === 'string' && /^[\w-]+$/.test(id));
 }
@@ -413,12 +417,19 @@ async function mutation(service, path, value, onStorageProgress) {
     '/api/night-discuss-action': () => nightDiscussAction(service, value),
     '/api/report-discuss-action': () => reportChatAction(service, value),
     '/api/issue-discuss-action': () => issueDiscussAction(service, value),
-    '/api/investigation-report-delete': () => new InvestigationReports(service.root).deleteReports(value.ids),
+    '/api/investigation-report-delete': async () => {
+      const reports = new InvestigationReports(service.root);
+      await stageReportDeletionAssets(service, value.ids);
+      const result = reports.deleteReports(value.ids);
+      setImmediate(() => void cleanProjectAssetUploads(service).catch(() => {}));
+      return result;
+    },
     '/api/project-home-action': () => projectHome(service).action(value),
     '/api/project-worktree-cleanup': () => worktreeCleanup(service).apply(value),
     '/api/project-remote-branch-cleanup': () => remoteBranchCleanup(service).apply(value),
     '/api/project-local-branch-cleanup': () => localBranchCleanup(service).apply(value),
     '/api/project-archive-deletion': () => archiveDeletion(service).apply(value),
+    '/api/project-issue-deletion': () => deleteProjectIssues(service, flows(service), value, onStorageProgress),
     '/api/folder-settings': () => changeFolderSettings(service, value),
     '/api/folder-strategies': () => {
       service.ownServer();
@@ -617,7 +628,7 @@ async function respond(service, request, response, token, port, accountOrigin) {
   response.end(JSON.stringify({ error: 'Unsupported method' }));
 }
 
-async function streamingArchiveAction(service, request, response) {
+async function streamingIssueStorageAction(service, request, response) {
   response.setHeader('Content-Type', 'application/x-ndjson');
   try {
     const result = await postedAction(service, request, (progress) => {
@@ -634,13 +645,16 @@ const mutationNotifications = new Map([
   ['/api/ui-sources', 'sources'],
   ['/api/flow-action', 'flow'],
   ['/api/issue-storage-move', 'flow'],
+  ['/api/project-issue-deletion', 'flow'],
   ['/api/issue-capture', 'flow'],
 ]);
 
 async function respondToAction(service, request, response, path) {
-  const stream = path === '/api/issue-storage-move' && request.headers.accept === 'application/x-ndjson';
+  const stream =
+    ['/api/issue-storage-move', '/api/project-issue-deletion'].includes(path) &&
+    request.headers.accept === 'application/x-ndjson';
   const content = stream
-    ? await streamingArchiveAction(service, request, response)
+    ? await streamingIssueStorageAction(service, request, response)
     : JSON.stringify(await postedAction(service, request));
   const topic = mutationNotifications.get(path);
   if (topic) service.flowChanges.notify(topic);

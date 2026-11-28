@@ -18,6 +18,7 @@ async function createFixtures(project, root) {
   };
   const closed = Object.keys(titles);
   const open = '20261120-bulk-open';
+  const proposals = ['20261120-bulk-proposal-one', '20261120-bulk-proposal-two'];
   mkdirSync(join(project, '.issues/closed'), { recursive: true });
   writeFileSync(join(project, '.issues/preferences.json'), '{"commit":true}');
   copyFileSync(join(root, '.issues/triage-labels.md'), join(project, '.issues/triage-labels.md'));
@@ -34,7 +35,13 @@ async function createFixtures(project, root) {
     open,
     `---\nid: ${open}\ntitle: Open this normal issue\nstate: backlog\n---\n\nOpen the normal issue view.\n`
   );
-  return { closed, titles, open, configuration };
+  for (const id of proposals)
+    await importBrowserIssue(
+      project,
+      id,
+      `---\nid: ${id}\ntitle: ${id}\nstate: needs-approval\n---\n\nProposal fixture.\n`
+    );
+  return { closed, titles, open, proposals, configuration };
 }
 
 function restoreConfiguration(files) {
@@ -119,14 +126,14 @@ async function verifyClassicRedirects(page, open, number) {
     ['/classic', null],
     ['/classic?issue=missing-issue', null],
   ]) {
-    await page.goto(path);
+    await page.goto(path, { waitUntil: 'domcontentloaded' });
     await page.waitForURL((url) => url.pathname === '/' && url.searchParams.get('issue') === expected);
     if (expected) await page.getByRole('heading', { name: 'Open this normal issue', exact: true }).waitFor();
     else await page.locator('#project-home-content').waitFor();
     legacy.push({ path, destination: page.url() });
   }
   for (const path of ['/classic#queue', '/classic?embed=project-issues#queue']) {
-    await page.goto(path);
+    await page.goto(path, { waitUntil: 'domcontentloaded' });
     await page.waitForURL((url) => url.pathname === '/' && url.searchParams.get('projectTab') === 'issues');
     await page.locator('#project-issues').waitFor();
     legacy.push({ path, destination: page.url() });
@@ -156,10 +163,89 @@ async function verifyClassicRetirement(page) {
   return retired;
 }
 
+async function assertProjectIssueDeletion({ frame, project, open, proposals, archive, deleted }) {
+  const select = (id) => frame.locator(`[data-select-issue="${id}"]`);
+  const button = frame.getByRole('button', { name: 'Delete selected', exact: true });
+  const dialog = frame.getByRole('dialog', { name: 'Permanently delete selected issues' });
+  const confirm = dialog.getByRole('button', { name: 'Delete permanently', exact: true });
+
+  await select(proposals[0]).check();
+  await button.waitFor();
+  await select(open).check();
+  assert.equal(await button.count(), 0);
+  await select(open).uncheck();
+  const rejected = await select(proposals[0]).evaluate(
+    async (_node, { proposal, open }) => {
+      const post = (input) =>
+        fetch('/api/project-issue-deletion', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Factory-Action': 'manual' },
+          body: JSON.stringify(input),
+        });
+      const selected = [{ id: proposal, location: 'open' }];
+      const { basis } = await (await post({ action: 'preview', selected })).json();
+      const response = await post({ action: 'delete', basis, selected: [...selected, { id: open, location: 'open' }] });
+      return { status: response.status, ...(await response.json()) };
+    },
+    { proposal: proposals[0], open }
+  );
+  assert.equal(rejected.status, 400);
+  assert.match(rejected.error, /Only archived issues and proposals awaiting approval/);
+  assert.ok(existsSync(join(project, '.issues', proposals[0] + '.md')));
+  await select(proposals[0]).uncheck();
+  const search = frame.getByRole('searchbox', { name: 'Search issues' });
+  await search.fill('20261120-bulk-proposal');
+  await frame.getByRole('combobox', { name: 'Filter by badge' }).selectOption('needs-approval');
+  const selectAll = frame.getByRole('checkbox', { name: 'Select all', exact: true });
+  await selectAll.check();
+  await search.fill(proposals[0]);
+  await select(proposals[1]).waitFor({ state: 'detached' });
+  await selectAll.uncheck();
+  await search.fill('20261120-bulk-proposal');
+  await select(proposals[1]).waitFor();
+  assert.equal(await select(proposals[0]).isChecked(), false);
+  assert.equal(await select(proposals[1]).isChecked(), false);
+  assert.equal(await button.count(), 0);
+  await selectAll.check();
+  const editor = frame.getByText('Edit shared fields across the selection.', { exact: true });
+  const approvalError = frame.getByText('Approve this issue before starting work.', { exact: true });
+  await editor.or(approvalError).first().waitFor();
+  assert.equal(await approvalError.count(), 0);
+  assert.ok(await select(proposals[1]).isChecked());
+  await search.fill(proposals[0]);
+  await select(proposals[1]).waitFor({ state: 'detached' });
+  await button.click();
+  await dialog.getByText(proposals[1], { exact: true }).waitFor();
+  await dialog.getByText(/Evidence still in use is kept/).waitFor();
+  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+  assert.ok(proposals.every((id) => existsSync(join(project, '.issues', id + '.md'))));
+
+  await button.click();
+  await confirm.click();
+  await dialog.getByText('Deleted 2 issues.', { exact: true }).waitFor();
+  assert.ok(proposals.every((id) => !existsSync(join(project, '.issues', id + '.md'))));
+  for (const id of proposals) deleted.add(id);
+  assert.equal(existsSync(join(project, '.issues', open + '.md')), true);
+  await dialog.getByRole('button', { name: 'Dismiss', exact: true }).click();
+  await search.clear();
+  await frame.getByRole('combobox', { name: 'Filter by badge' }).selectOption('');
+
+  await frame.getByRole('button', { name: 'Archived', exact: true }).click();
+  for (const id of archive) await select(id).check();
+  await button.click();
+  await confirm.click();
+  await dialog.getByText('Deleted 2 issues.', { exact: true }).waitFor();
+  assert.ok(archive.every((id) => !existsSync(join(project, '.issues', 'archive', id + '.md'))));
+  for (const id of archive) deleted.add(id);
+  await dialog.getByRole('button', { name: 'Dismiss', exact: true }).click();
+  await frame.getByRole('button', { name: 'Open', exact: true }).click();
+}
+
 export async function projectIssuesBrowserChecks({ page, project, root, output, service }) {
-  const { closed, titles, open, configuration } = await createFixtures(project, root);
+  const { closed, titles, open, proposals, configuration } = await createFixtures(project, root);
+  const deleted = new Set();
   try {
-    const numbers = ensureIssueNumbers(project, [open, ...closed]);
+    const numbers = ensureIssueNumbers(project, [open, ...closed, ...proposals]);
     const legacy = await verifyClassicRedirects(page, open, numbers[open]);
     const retired = await verifyClassicRetirement(page);
     writeFileSync(join(output, 'classic-retirement.json'), JSON.stringify({ legacy, retired }, null, 2) + '\n');
@@ -185,6 +271,7 @@ export async function projectIssuesBrowserChecks({ page, project, root, output, 
     await frame.locator('[data-project-issue-mode="closed"]').click();
     await frame.locator(`[data-select-issue="${closed[0]}"]`).check();
     await frame.locator(`[data-select-issue="${closed[1]}"]`).check();
+    assert.equal(await frame.getByRole('button', { name: 'Delete selected', exact: true }).count(), 0);
     assert.equal(await frame.locator(`[data-issue-row="${closed[0]}"] small`).textContent(), 'Closed');
     assert.equal(await frame.locator('.issue-workspace-content').count(), 0);
     assert.equal(await frame.locator('[data-project-issue-resizer]').count(), 0);
@@ -227,6 +314,7 @@ export async function projectIssuesBrowserChecks({ page, project, root, output, 
       JSON.stringify({ success, partialFailure }, null, 2) + '\n'
     );
     await frame.locator('[data-project-issue-mode="open"]').click();
+    await assertProjectIssueDeletion({ frame, project, open, proposals, archive: closed.slice(0, 2), deleted });
     await frame.locator(`[data-select-issue="${open}"]`).check();
     await frame.getByText('Edit shared fields across the selection.', { exact: true }).waitFor();
     assert.equal(await frame.locator('.issue-workspace-content').count(), 1);
@@ -237,7 +325,7 @@ export async function projectIssuesBrowserChecks({ page, project, root, output, 
     await page.screenshot({ path: join(output, 'issue-opened-from-issues.png'), fullPage: true });
   } finally {
     await page.goto('about:blank');
-    for (const id of [...closed, open]) await removeBrowserIssue(project, id);
+    for (const id of [...closed, ...proposals, open]) if (!deleted.has(id)) await removeBrowserIssue(project, id);
     restoreConfiguration(configuration);
   }
 }

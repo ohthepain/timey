@@ -164,8 +164,9 @@ these rules.
 
 Stop and upgrade older Factory runners on connected machines before activating
 canonical stores. Older binaries cannot honor the new shared ownership records.
-The first canonical bootstrap imports verified legacy reports, numbers, flows,
-and evidence. Active legacy attempts or claims require explicit recovery first.
+The first canonical bootstrap copies verified local reports, display numbers,
+saved flows, and Flow evidence. Active Flow attempts and existing shared queue
+claims require explicit recovery first.
 After bootstrap, the old shared-queue writer and refresh path stop. The catalog
 owns issue routing; local Markdown and flow files become display projections.
 Unconfirmed local edits are retained as drafts. Status changes, claims, and
@@ -204,16 +205,42 @@ Permanent Delete removes the issue and evidence whose exclusive ownership it can
 verify. Files shared with retained issues stay available. Archive retains the
 report and history.
 
-Postgres filters completed inline operations before Factory checks deletion
-admission. Factory still reads older external operation payloads whose status is
-unavailable in Postgres. The proposal Delete button waits for confirmation while
-the store checks admitted work and shared evidence.
+Postgres uses a partial index to find pending operations before Factory checks
+deletion admission. The first admission builds the index concurrently on an
+existing database. Other storage operations can continue while it builds.
+Factory verifies older external payloads and records the revision of each
+finished operation, so later checks can skip it. A changed revision is checked
+again. The proposal Delete button waits for confirmation while the store checks
+admitted work and shared evidence.
 
-Factory scans publications and Discuss attachments in the current project
-checkout. Other runners can retain their own copies of these references. Until
-Factory can check those references across runners, it keeps candidate artifacts
-in shared stores and file stores outside the current checkout. It also keeps
-copies and routing records for candidates that have a shared storage home.
+Permanent Delete now removes S3 objects tied to the deleted issue after checking
+surviving shared records and receipts. It also checks publications and Discuss
+attachments in the current checkout. Publications and attachments on another
+runner have their own local copies. If a reference source is unavailable,
+Factory keeps the candidate artifacts. Deleting an unopened proposal during
+another active claim keeps the proposal's S3 evidence. Files in stores outside
+the checkout retain their existing policy.
+
+Factory records an S3 object's bucket, key, and digest in a separate
+Coordination namespace before uploading it. This entry survives a failed
+metadata write and identifies the attempted upload. Reference-only inventory
+can use a bounded projection saved with new overflow records and operation
+receipts. Older and larger records fall back to reading the original payload.
+The upload catalog records physical locations. Current records and retained
+receipts supply recorded ownership.
+
+Deleting a published report queues its matching S3 copies for cleanup. Factory
+checks remaining reports, Discuss attachments, shared records, and retained
+receipts before removing a copy. It also checks registered uploads once per
+minute while idle. A new upload has a 30-minute window to acquire an owner.
+Expired uploads and objects whose last recorded reference has gone are checked
+against the same sources. The cleanup uses the existing storage seal and
+processes a bounded batch on each pass. An unavailable reference source pauses
+cleanup for that pass. Retained receipts keep their references until retired.
+The sweep uses registered object keys and the keys derived from deleted reports.
+It also reclaims their history in versioned buckets. The S3 role needs
+`s3:GetBucketVersioning`, and versioned buckets also need
+`s3:ListBucketVersions` and `s3:DeleteObjectVersion`.
 
 1. Finish running project work before deleting an issue. Deletion holds shared
    changes while Factory checks retained references and removes unused evidence.
@@ -222,16 +249,17 @@ copies and routing records for candidates that have a shared storage home.
    reference and file checks for the selected issue.
 2. If a proposal deletion still holds shared changes before Factory saves its
    cleanup plan, choose **Pause deletion** in **Project settings → Issue Storage**.
-   This keeps the proposal and evidence and releases shared changes. To continue
-   later, retry Delete from the proposal.
+   This keeps the proposal and evidence, releases shared changes, and stops the
+   current selection before it starts another proposal. To continue later, retry
+   Delete from the proposal.
 3. If the issue is already absent, open **Project settings → Issue Storage** and
    click **Resume deletion**. The action resumes its original deletion command.
 4. Restore an unavailable store, then retry the same action. Factory releases
    shared changes after authoritative cleanup confirmation.
 
-Deletion leaves source worktrees to their existing cleanup controls. It does not
-rewrite Git history, purge older S3 object versions, or change provider backups.
-This cleanup leaves shared S3 objects and their versions available.
+Deletion leaves source worktrees to their existing cleanup controls. For
+verified unreferenced S3 objects, cleanup removes the current object and its
+versions. Shared objects and their versions stay available.
 
 Run `node --test scripts/store-deletion.check.mjs` to exercise interrupted
 deletion and retention with two disposable runner roots. Set

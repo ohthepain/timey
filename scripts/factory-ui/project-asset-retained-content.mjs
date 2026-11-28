@@ -69,10 +69,10 @@ async function readRetainedDirectory(path) {
   }
 }
 
-async function collectRetained(directory, filename, collect) {
+async function collectRetained(directory, filename, collect, ids) {
   const entries = await readRetainedDirectory(directory);
   const matches = [];
-  for (const entry of entries.filter((entry) => recordId.test(entry.name))) {
+  for (const entry of entries.filter((entry) => recordId.test(entry.name) && (!ids || ids.has(entry.name)))) {
     const folder = join(directory, entry.name);
     try {
       if (!entry.isDirectory()) throw Error('A retained content record must be a project directory.');
@@ -85,11 +85,11 @@ async function collectRetained(directory, filename, collect) {
   return matches;
 }
 
-export async function retainedContentReferences(root) {
+export async function retainedContentReferences(root, { reportIds } = {}) {
   const directory = join(await realpath(root), '.issues/factory-ui');
   const results = await Promise.allSettled([
-    collectRetained(join(directory, 'investigation-reports'), 'report.json', publishedReport),
-    collectRetained(join(directory, 'project-discuss'), 'conversation.json', discussion),
+    collectRetained(join(directory, 'investigation-reports'), 'report.json', publishedReport, reportIds),
+    ...(reportIds ? [] : [collectRetained(join(directory, 'project-discuss'), 'conversation.json', discussion)]),
   ]);
   const matches = results.flatMap((result) => (result.status === 'fulfilled' ? result.value : [result]));
   return {
