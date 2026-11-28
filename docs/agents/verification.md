@@ -122,7 +122,9 @@ a conflict-free update, and target drift after readiness. It checks that each
 candidate is pushed before readiness and that rejected pushes stop Merge.
 It also opens the full logs for a known Merge error and an unfamiliar Update
 Branch error. The scenario saves commit identities, command order, and log
-details in `merge-target-update.json`. GitHub responses are simulated.
+details in `merge-target-update.json`. The fixture simulates GitHub responses
+and supplies a candidate check that verifies a clean worktree containing the
+target commit.
 
 `node scripts/flow-browser.mjs --project-issues` exercises retired Classic
 links and operations, the Flow Issues queue, and archival of saved issues.

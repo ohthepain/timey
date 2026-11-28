@@ -80,10 +80,6 @@
         "--test-name-pattern=^Merge pushes each new candidate, then expires approval if the target moves again$",
         "scripts/flow-executor.check.mjs"
       ]
-    },
-    {
-      "name": "Merge reconciles and publishes the issue before requesting GitHub readiness",
-      "command": ["node", "scripts/flow-browser.mjs", "--merge-target-update"]
     }
   ]
 }
