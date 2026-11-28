@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs';
 import { basename, join } from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { parse } from 'yaml';
 import { readJson, requireThat } from './common.mjs';
 import {
@@ -12,6 +13,7 @@ import {
 import { readSavedReport } from './report-document.mjs';
 import { groupMaster } from './issue-group.mjs';
 import { investigationReport } from './investigation-records.mjs';
+import { backgroundAction } from './server-action-inventory.mjs';
 
 function displayNumbers(root) {
   const path = join(root, '.issues/issue-numbers.json');
@@ -121,6 +123,12 @@ async function moveOne(service, action, id) {
   return finishLocalMove(service.root, action, id, content);
 }
 
+function issueStorageAction(action, ids, issueNumbers) {
+  const title = { archive: 'Archive issues', restore: 'Restore archived issues' }[action];
+  const selected = issueNumbers ? issueNumbers.map((number) => `#${number}`) : ids;
+  return backgroundAction('issue-storage', randomUUID(), title, selected.join(', ') || 'Issue archive');
+}
+
 export async function moveIssueStorage(service, input, onProgress = () => {}) {
   service.ownServer();
   requireThat(['archive', 'restore'].includes(input.action), 'Choose Archive or Restore to closed.');
@@ -142,7 +150,7 @@ export async function moveIssueStorage(service, input, onProgress = () => {}) {
     requireThat(id, `Issue #${value} does not exist. No issues were archived.`);
     return id;
   });
-  const task = Symbol('issue-storage');
+  const task = issueStorageAction(input.action, ids, input.issueNumbers);
   service.issueStorageTasks ||= new Set();
   service.issueStorageTasks.add(task);
   const results = [];

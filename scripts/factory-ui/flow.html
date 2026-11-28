@@ -6,6 +6,7 @@
     <meta name="color-scheme" content="dark" />
     <title>Factory · Flow workspace</title>
     <link rel="stylesheet" href="/flow.css" />
+    <link rel="stylesheet" href="/factory-header.css" />
     <link rel="stylesheet" href="/ai-text.css" />
     <script src="/hotkeys-ui.js" defer></script>
     <script src="/ai-text-ui.js" defer></script>
@@ -134,7 +135,6 @@
           <span class="brand-mark" aria-hidden="true">⌘</span> <span id="project-name">Factory</span>
         </a>
         <button type="button" class="small-button" id="project-app">App</button>
-        <span class="brand-tag">FLOW</span>
         <button type="button" class="small-button" id="project-app-stop" hidden>Stop app</button>
         <span id="project-app-status" role="status"></span>
         <button
@@ -292,6 +292,7 @@
         </button>
       </div>
       <div id="factory-project-account" class="factory-project-account"><!-- project-account --></div>
+      <!-- factory-revision -->
       <small class="project-actions-message" data-server-message role="status"></small>
     </header>
     <div id="app" class="workspace">

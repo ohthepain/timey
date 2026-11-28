@@ -76,7 +76,7 @@ import {
   closeProjectStores,
   hydrateProjectEvidence,
 } from './stores/runtime.mjs';
-import { issueStoresView, handleStoreAction } from './stores/routes.mjs';
+import { issueStoresView, handleStoreAction, postgresDiskUsage } from './stores/routes.mjs';
 import {
   deleteIssueWorktree,
   issueCleanupIdentities,
@@ -665,11 +665,19 @@ function page(service, request, response, token, port, accountOrigin) {
   response.setHeader('Content-Type', 'text/html; charset=utf-8');
   const pages = { '/native-chat': 'native-chat.html', '/project-issues': 'project-issues.html' };
   const name = pages[url.pathname] ?? 'flow.html';
-  const html = readFileSync(join(uiDirectory(service), name), 'utf8');
+  const html = readFileSync(join(uiDirectory(service), name), 'utf8').replace(
+    '<!-- factory-revision -->',
+    revisionButton(service)
+  );
   if (!accountOrigin) return response.end(html);
   const query = new URLSearchParams({ factoryOrigin: `http://127.0.0.1:${port}` });
   const frame = `<iframe title="Timey account" src="${accountOrigin}/auth/factory-account?${query}" height="40" sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"></iframe><script src="/project-account-ui.js" defer></script>`;
   response.end(html.replace('<!-- project-account -->', frame));
+}
+function revisionButton(service) {
+  const revision = service.runtimeIdentity?.revision;
+  if (!/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/.test(revision ?? '')) return '';
+  return `<button class="small-button" id="factory-revision" type="button" data-revision="${revision}" aria-label="Copy Factory revision ${revision}" title="Copy ${revision}">${revision.slice(0, 7)}</button>`;
 }
 function redirectClassic(service, url, response) {
   const selected = url.searchParams.get('issue');
@@ -730,6 +738,7 @@ async function read(service, request, response, owner) {
   const routes = {
     '/api/issue-store-recovery': () => readOwnership(service, Object.fromEntries(url.searchParams)),
     '/api/issue-stores': () => issueStoresView(service, Object.fromEntries(url.searchParams)),
+    '/api/issue-store-disk-usage': () => postgresDiskUsage(service, url.searchParams.get('store')),
     '/api/folder-settings': () => {
       flows(service);
       return folderSettingsView(service.root, Object.fromEntries(url.searchParams));
@@ -1016,6 +1025,7 @@ function readResource(service, request, response, owner) {
     '/investigation-followups-ui.js': 'investigation-followups-ui.js',
     '/view-inspection.js': 'view-inspection.js',
     '/flow.css': 'flow.css',
+    '/factory-header.css': 'factory-header.css',
     '/issue-group-ui.js': 'issue-group-ui.js',
     '/issue-group.css': 'issue-group.css',
     '/native-chat-ui.js': 'native-chat-ui.js',

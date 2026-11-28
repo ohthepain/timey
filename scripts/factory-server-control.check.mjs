@@ -13,6 +13,8 @@ import { runtimeInfo } from './factory-ui/runtime.mjs';
 import { factoryEntry, uiDirectory } from './factory-ui/ui-source.mjs';
 import { JSDOM } from 'jsdom';
 import { createFactoryServer } from './factory-ui/http.mjs';
+import { ProjectArchiveDeletion } from './factory-ui/project-archive-deletion.mjs';
+import { ProjectLocalBranchCleanup } from './factory-ui/project-local-branch-cleanup.mjs';
 
 const delay = (ms) => new Promise((done) => setTimeout(done, ms));
 function loadServerControlDom(html = '<header></header>') {
@@ -72,12 +74,9 @@ function installedDependencies() {
 
 test('restart waits for project operations before stopping the server', async (t) => {
   const service = new FactoryUI(project(t));
-  let activeCount = 1;
   let restarts = 0;
-  service.projectHome = {
-    get activeCount() {
-      return activeCount;
-    },
+  service.projectDiscuss = {
+    active: new Map([['discussion-1', { title: 'A project conversation' }]]),
     close() {},
   };
   const control = serverControl(service, () => {
@@ -88,7 +87,7 @@ test('restart waits for project operations before stopping the server', async (t
     control.request();
     await delay(350);
     assert.equal(restarts, 0);
-    activeCount = 0;
+    service.projectDiscuss.active.clear();
     await delay(350);
     assert.equal(restarts, 1);
   } finally {
@@ -490,7 +489,7 @@ test('running-action status opens linked issue details and exposes guarded contr
     service.store.update(stopped, { issueId, status: 'blocked', summary: 'Waiting to be resumed.' });
     service.store.connected.delete(stopped.id);
     const items = control.actions();
-    assert.equal(items.length, 2);
+    assert.equal(items.length, 4);
     const current = items.find((item) => item.id === run.id);
     const restartable = items.find((item) => item.id === stopped.id);
     assert.equal(current.issues[0].title, 'Running example');
@@ -695,9 +694,75 @@ test('an open Action list drops cleanup when the running count falls', async () 
   now = 2000;
   controls.show({ ...active, actions: 0 }, async () => []);
   await delay(0);
-  assert.match(dialog.textContent, /No issue-linked actions are running/);
+  assert.match(dialog.textContent, /No current actions/);
   assert.doesNotMatch(dialog.textContent, /Cleanup: Example/);
   dom.window.close();
+});
+
+test('the header lists concurrent linked work and unlinked deletion with resumable work', async (t) => {
+  const root = project(t);
+  const issueId = '20261101-running';
+  const archivedId = '20261103-archived';
+  writeFileSync(
+    join(root, '.issues', issueId + '.md'),
+    `---\nid: ${issueId}\ntitle: Linked implementation\nstate: investigate\n---\n`
+  );
+  mkdirSync(join(root, '.issues', 'archive'));
+  writeFileSync(
+    join(root, '.issues', 'archive', archivedId + '.md'),
+    `---\nid: ${archivedId}\ntitle: Disposable archived report\nstate: closed\n---\n`
+  );
+  const service = new FactoryUI(root);
+  const control = serverControl(service);
+  const dom = loadServerControlDom(readFileSync(resolve('scripts/factory-ui/flow.html'), 'utf8'));
+  t.after(() => {
+    dom.window.close();
+    control.close();
+    service.close();
+  });
+  const linked = service.store.add({ id: 'linked-action' }, 'worker', 'base');
+  service.store.update(linked, { issueId, title: 'Implement feature', status: 'running' });
+  const unlinked = service.store.add({ id: 'unlinked-action' }, 'evaluation', 'base');
+  service.store.update(unlinked, { title: 'Evaluate project', status: 'running', checkout: '/evaluation' });
+  const resumable = service.store.add({ id: 'stopped-action' }, 'worker', 'base');
+  service.store.update(resumable, { issueId, title: 'Resume retained work', status: 'blocked' });
+  service.store.connected.delete(resumable.id);
+  const completed = service.store.add({ id: 'completed-action' }, 'worker', 'base');
+  service.store.update(completed, { issueId, title: 'Completed work', status: 'completed' });
+  service.store.connected.delete(completed.id);
+  const deletion = new ProjectArchiveDeletion(service, new ProjectLocalBranchCleanup(service));
+  const preview = await deletion.preview();
+  const deleting = deletion.apply({ id: preview.id, selected: [{ id: archivedId, branches: [] }] });
+
+  const { document, controls } = dom.window;
+  controls.show(control.status(), async () => control.actions());
+  const header = document.getElementById('project-actions');
+  assert.equal(header.textContent, '3 actions running');
+  header.click();
+  await delay(0);
+  const cards = [...document.querySelectorAll('.server-action-card')];
+  const titles = cards.map((card) => card.querySelector('h3').textContent);
+  assert.deepEqual(titles.toSorted(), [
+    'Delete archived issues',
+    'Evaluate project',
+    'Implement feature',
+    'Resume retained work',
+  ]);
+  const archive = cards[titles.indexOf('Delete archived issues')];
+  assert.match(archive.textContent, /running.*Target: Disposable archived report/);
+  assert.equal(archive.querySelector('a'), null);
+  const evaluation = cards[titles.indexOf('Evaluate project')];
+  assert.match(evaluation.textContent, /running.*Target: \/evaluation/);
+  assert.equal(evaluation.querySelector('[data-action-output]').getAttribute('href'), `/api/run?id=${unlinked.id}`);
+  const issue = cards[titles.indexOf('Implement feature')];
+  assert.equal(issue.querySelector('a').getAttribute('href'), `/?issue=${issueId}`);
+  assert.match(cards[titles.indexOf('Resume retained work')].textContent, /blocked/);
+  const { results } = await deleting;
+  assert.equal(results[0].status, 'deleted');
+  assert.equal(control.status().actions, 2);
+  t.diagnostic(
+    JSON.stringify({ header: header.textContent, titles, archive: archive.textContent, deleted: results[0].status })
+  );
 });
 
 test('action controls pause after the current turn, steer its exact turn, and stop it safely', async () => {
@@ -884,7 +949,7 @@ test('editable conversation permission answers reach their owning connection', a
 
 test('restart waits for a storage batch even after its chat response has stopped', async (t) => {
   const service = new FactoryUI(project(t));
-  service.issueStorageTasks = new Set(['archive-batch']);
+  service.issueStorageTasks = new Set([{ id: 'archive-batch', title: 'Archive issues', status: 'running' }]);
   let restarts = 0;
   const control = serverControl(service, () => {
     restarts++;

@@ -90,7 +90,7 @@ export class FlowFollowups {
   constructor(flows, propose = proposeInvestigationFollowups) {
     this.flows = flows;
     this.propose = (context) => propose(context, flows.service.root);
-    this.busy = new Set();
+    this.busy = new Map();
     this.directory = join(flows.store.directory, 'investigation-followups');
   }
 
@@ -102,7 +102,11 @@ export class FlowFollowups {
     const source = sourceSnapshot(this.flows, input);
     const path = this.path(source);
     requireThat(!this.busy.has(path), 'This follow-up review is already busy.');
-    this.busy.add(path);
+    this.busy.set(path, {
+      issueId: source.issueId,
+      title:
+        input.action === 'investigation-followups-preview' ? 'Review follow-up proposals' : 'Create follow-up issues',
+    });
     try {
       if (input.action === 'investigation-followups-preview') return await this.preview(source, path);
       requireThat(input.action === 'investigation-followups-create', 'Choose a follow-up action.');

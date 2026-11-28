@@ -29,6 +29,11 @@ Adding credentials or a configured destination does not move existing data.
    dedicated database. Keep credential values out of `.issues/stores.json` and
    source files.
 
+Opening **Issue Storage** in Settings reads Postgres disk usage for each saved
+Postgres destination. The total covers the whole database. The list shows
+existing Factory storage tables, including their indexes, largest first.
+Select **Refresh** on a destination to read its current sizes again.
+
 ## Prepare S3
 
 1. Use the existing private artifact bucket. Set `FACTORY_ARTIFACTS_BUCKET` to its

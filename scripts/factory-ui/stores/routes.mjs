@@ -3,6 +3,7 @@ import { safeStoreView, writeStoreConfig, readStoreConfig, requireStore } from '
 import { resolveIssueStorage } from './settings.mjs';
 import { readSnapshot } from './snapshots.mjs';
 import { reconcileSupersededFlowSave } from './recovery.mjs';
+import { createFactoryPool } from './postgres-connection.mjs';
 import { parse } from 'yaml';
 const pendingViews = new WeakMap();
 const moveKinds = new Set(['move-issue', 'move-project-store']);
@@ -178,6 +179,33 @@ export async function issueStoresView(service, input = {}) {
     targetStorage,
     ...unavailableStatus(service),
   };
+}
+
+export async function postgresDiskUsage(service, storeId) {
+  const { root } = service;
+  const store = readStoreConfig(root).stores.find(({ id }) => id === storeId);
+  requireThat(store?.kind === 'postgres', 'Choose a configured Postgres store.');
+  const pool = createFactoryPool(store, { root });
+  try {
+    const { rows } = await pool.query(
+      `WITH table_sizes AS (
+        SELECT relname AS name, pg_total_relation_size(pg_class.oid) AS bytes
+        FROM pg_class
+        JOIN pg_namespace ON pg_namespace.oid = pg_class.relnamespace
+        WHERE nspname = $1 AND relkind = 'r'
+          AND relname IN ('store_records', 'store_operations', 'artifact_objects')
+      )
+      SELECT pg_size_pretty(pg_database_size(current_database())) AS total,
+        COALESCE((
+          SELECT json_agg(json_build_object('name', name, 'size', pg_size_pretty(bytes)) ORDER BY bytes DESC, name)
+          FROM table_sizes
+        ), '[]'::json) AS tables`,
+      [store.schema]
+    );
+    return rows[0];
+  } finally {
+    await pool.end();
+  }
 }
 
 function configuredInput(value) {

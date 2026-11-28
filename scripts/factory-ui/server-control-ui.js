@@ -138,8 +138,8 @@ const serverControlUI = (() => {
     const list = dialog.querySelector('[data-server-action-list]');
     const empty = dialog.querySelector('[data-actions-empty]');
     empty.textContent = items.length
-      ? `${items.length} current ${items.length === 1 ? 'action' : 'actions'}.`
-      : 'No issue-linked actions are running.';
+      ? `${items.length} ${items.length === 1 ? 'action' : 'actions'} listed.`
+      : 'No current actions.';
     const signature = JSON.stringify(items);
     if (signature === renderedActions) return;
     renderedActions = signature;
@@ -169,9 +169,8 @@ const serverControlUI = (() => {
     const state = textNode('p', actionStatus(item));
     state.className = 'muted';
     card.append(state);
-    if (item.trigger) card.append(textNode('p', item.trigger));
-    if (item.purpose) card.append(textNode('p', item.purpose));
-    card.append(textNode('p', actionDetails(item)), actionLinks(item));
+    for (const detail of actionDescription(item)) card.append(textNode('p', detail));
+    card.append(actionLinks(item));
   }
   function actionTitle(item) {
     return item.title || item.kind || 'Action';
@@ -179,8 +178,9 @@ const serverControlUI = (() => {
   function actionStatus(item) {
     return `${item.status || 'running'} · ${item.kind || 'action'}`;
   }
-  function actionDetails(item) {
-    return item.details || item.summary || 'Action is running.';
+  function actionDescription(item) {
+    const target = item.target && `Target: ${item.target}`;
+    return [target, item.trigger, item.purpose, item.details || item.summary].filter(Boolean);
   }
   function textNode(tag, text) {
     const node = document.createElement(tag);
@@ -192,18 +192,14 @@ const serverControlUI = (() => {
     link.href = `/?issue=${encodeURIComponent(issue.id)}`;
     return link;
   }
-  function actionLinks(item, issues = item.issues) {
+  function actionLinks(item, issues = item.issues || []) {
     const links = document.createElement('p');
     links.className = 'server-action-links';
-    if (!item.issues?.length) {
-      links.textContent = 'No linked issue';
-      return links;
-    }
     for (const issue of issues) {
       const link = issueLink(issue, `Issue: ${issue.title}${issue.issueNumber ? ` (#${issue.issueNumber})` : ''}`);
       links.append(link, document.createTextNode(' '));
     }
-    links.append(actionOutputLink(item.outputHref || `/api/run?id=${encodeURIComponent(item.id)}`));
+    if (item.outputHref) links.append(actionOutputLink(item.outputHref));
     return links;
   }
   function actionOutputLink(href) {
@@ -262,7 +258,7 @@ const serverControlUI = (() => {
     }
   }
   function firstIssueId(item) {
-    return item.issues.length ? item.issues[0].id : null;
+    return item.issues?.[0]?.id || null;
   }
   function actionFeedback(dialog, id) {
     return [...dialog.querySelectorAll('[data-action-feedback]')].find(

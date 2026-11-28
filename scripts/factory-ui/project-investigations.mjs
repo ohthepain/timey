@@ -101,10 +101,10 @@ export class ProjectInvestigations {
     }
   }
   get activeCount() {
-    return (
-      [...this.active.keys()].filter((id) => !this.flows.active.has(this.sessions.get(id)?.issueId)).length +
-      this.pending.size
-    );
+    return this.activeSessions.length + this.pending.size;
+  }
+  get activeSessions() {
+    return [...this.active.keys()].filter((id) => !this.flows?.active.has(this.sessions.get(id)?.issueId));
   }
   view() {
     if (!this.flows) return [...this.sessions.values()].toReversed().map((session) => structuredClone(session));
@@ -181,7 +181,12 @@ export class ProjectInvestigations {
       return pending.task;
     }
     const task = this.dispatch(input);
-    this.pending.set(key, { fingerprint, task });
+    this.pending.set(key, {
+      fingerprint,
+      task,
+      action: input.action,
+      focus: input.focus,
+    });
     try {
       return await task;
     } finally {

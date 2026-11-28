@@ -3448,7 +3448,7 @@ class IssueFlows {
       return pending.task;
     }
     const task = this.captureIssue(input, identity, folder, grouping, storage);
-    this.captures.set(input.requestId, { identity, task });
+    this.captures.set(input.requestId, { identity, task, folder });
     try {
       return await task;
     } finally {

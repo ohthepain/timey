@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
+import { backgroundAction } from './server-action-inventory.mjs';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { cleanEnvironment, git, requireThat } from './common.mjs';
@@ -192,7 +193,6 @@ function applyBatch(service, preview, entries, providerNames, extraBlocker) {
 
 export class ProjectLocalBranchCleanup {
   previews = new Map();
-  activeCount = 0;
 
   constructor(service, { provider = (config) => new StrategyProvider(service.root, config) } = {}) {
     this.service = service;
@@ -221,7 +221,7 @@ export class ProjectLocalBranchCleanup {
   async apply({ id, selected }, { extraBlocker = () => null } = {}) {
     requireThat(this.service.reviewMode !== 'preview', 'Open the live project to delete local branches.');
     this.service.ownServer();
-    requireThat(!this.activeCount, 'A local branch cleanup is already running.');
+    requireThat(!this.action, 'A local branch cleanup is already running.');
     const preview = this.previews.get(id);
     requireThat(preview?.comparison && Date.now() < preview.expires, 'Review a fresh local branch preview.');
     requireThat(Array.isArray(selected) && selected.length > 0, 'Select branches from the preview.');
@@ -229,12 +229,17 @@ export class ProjectLocalBranchCleanup {
     const entries = preview.entries.filter(({ name, reason }) => names.has(name) && !reason);
     requireThat(entries.length === selected.length, 'The selection includes a branch that cannot be deleted.');
     this.previews.delete(id);
-    this.activeCount = 1;
+    this.action = backgroundAction(
+      'local-branch-cleanup',
+      id,
+      'Delete local branches',
+      entries.map(({ name }) => name).join(', ')
+    );
     try {
       const protection = await providerProtection(this.service.root, this.provider);
       return applyBatch(this.service, preview, entries, protection, extraBlocker);
     } finally {
-      this.activeCount = 0;
+      this.action = null;
     }
   }
 }

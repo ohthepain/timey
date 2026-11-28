@@ -127,7 +127,7 @@ export function createCaptures(service, options = {}) {
       })
       .then((result) => (input.grill ? startCaptureGrilling(service, input, result) : result))
       .finally(() => tasks.delete(input.requestId));
-    tasks.set(input.requestId, { identity: captureIdentity(input), promise });
+    tasks.set(input.requestId, { identity: captureIdentity(input), promise, folder: input.folder });
     return promise;
   }
   async function perform(input) {
@@ -196,6 +196,9 @@ export function createCaptures(service, options = {}) {
     save,
     get active() {
       return tasks.size;
+    },
+    get activeFolders() {
+      return [...tasks].map(([id, { folder }]) => [id, folder]);
     },
   };
 }

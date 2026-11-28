@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { backgroundAction } from './server-action-inventory.mjs';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { readJson, requireThat } from './common.mjs';
@@ -244,7 +245,6 @@ async function applyBatch(provider, config, preview, entries) {
 
 export class ProjectRemoteBranchCleanup {
   previews = new Map();
-  activeCount = 0;
 
   constructor(service, { provider = (config) => new StrategyProvider(service.root, config) } = {}) {
     this.service = service;
@@ -276,7 +276,7 @@ export class ProjectRemoteBranchCleanup {
   async apply({ id, selected }) {
     requireThat(this.service.reviewMode !== 'preview', 'Open the live project to delete remote branches.');
     this.service.ownServer();
-    requireThat(!this.activeCount, 'A remote branch cleanup is already running.');
+    requireThat(!this.action, 'A remote branch cleanup is already running.');
     const preview = this.previews.get(id);
     requireThat(preview && Date.now() < preview.expires, 'Review a fresh remote branch preview.');
     const entries = selectedEntries(preview, selected);
@@ -286,11 +286,16 @@ export class ProjectRemoteBranchCleanup {
       'The project delivery configuration changed. Review a fresh preview.'
     );
     this.previews.delete(id);
-    this.activeCount = 1;
+    this.action = backgroundAction(
+      'remote-branch-cleanup',
+      id,
+      'Delete remote branches',
+      entries.map(({ name }) => `${preview.repository}:${name}`).join(', ')
+    );
     try {
       return await applyBatch(this.provider(config), config, preview, entries);
     } finally {
-      this.activeCount = 0;
+      this.action = null;
     }
   }
 }
