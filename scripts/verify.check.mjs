@@ -179,6 +179,9 @@ test('browser evidence retains declared proof with valid hashes and excludes nes
 
 void test('CI gates the parallel suites on early checks and keeps test as their aggregate', () => {
   const { jobs } = parse(readFileSync('.github/workflows/test.yml', 'utf8'));
+  const action = parse(readFileSync('.github/actions/verify-suite/action.yml', 'utf8'));
+  const repair = action.runs.steps.find(({ run }) => run?.includes('node scripts/pr-repair-tests.mjs --base'));
+  assert.equal(repair?.if, "inputs.suite == 'early'");
   assert.deepEqual(jobs.test.needs, Object.keys(ciSuites));
   assert.equal(jobs.test.if, 'always()');
   for (const [suite, { name }] of Object.entries(ciSuites)) {

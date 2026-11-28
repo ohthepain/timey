@@ -1,6 +1,7 @@
 {
   "version": 2,
   "name": "HTTP retires Classic delivery operations while shared delivery rejects token replay and forgery",
+  "expectedTests": ["HTTP retires Classic delivery operations while shared delivery rejects token replay and forgery"],
   "command": [
     "node",
     "--test",

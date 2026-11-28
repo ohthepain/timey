@@ -57,6 +57,44 @@ void test('a PR repair plan cannot select an aggregate suite as a focused regres
   assert.match(result.stderr, /Record focused test commands/);
 });
 
+void test('named PR repairs require every declared case to pass before marking the manifest passed', (t) => {
+  const { root } = gitFixture(t, 'pr-repair-named-');
+  writeFileSync(
+    join(root, 'named.check.mjs'),
+    `import { test } from 'node:test';
+test('navigation', () => {});
+test('startup', () => {});
+test.skip('skipped', () => {});
+test.todo('todo', () => {});
+test('failing', () => { throw Error('Named assertion failed'); });
+`
+  );
+  for (const [label, pattern, expectedTests, failure] of [
+    ['single', '^navigation$', ['navigation']],
+    ['grouped', '^(?:navigation|startup)$', ['navigation', 'startup']],
+    ['unmatched', '^stale$', ['navigation'], /did not pass: navigation/],
+    ['file wrapper', '^stale$', ['named.check.mjs'], /did not pass: named.check.mjs/],
+    ['partial group', '^navigation$', ['navigation', 'startup'], /did not pass: startup/],
+    ['skip', '^skipped$', ['skipped'], /did not pass: skipped/],
+    ['todo', '^todo$', ['todo'], /did not pass: todo/],
+    ['failure', '^failing$', ['failing'], /Named assertion failed/],
+    ['missing declaration', '^navigation$', undefined, /must declare .*expectedTests/],
+  ]) {
+    plan(root, [
+      {
+        name: label,
+        expectedTests,
+        command: ['node', '--test', '--test-name-pattern', pattern, 'named.check.mjs'],
+      },
+    ]);
+    const result = spawnSync(process.execPath, [runner], { cwd: root, encoding: 'utf8' });
+    assert.equal(result.status, failure ? 1 : 0, result.stderr);
+    if (failure) assert.match(result.stderr, failure);
+    assert.equal(result.stdout.includes('PASS PR repair: ' + label), !failure, result.stdout);
+    t.diagnostic(`${label}: exit ${result.status}, pass marker ${!failure ? 'present' : 'absent'}`);
+  }
+});
+
 void test('concurrent PR repair checks retain independent source snapshots and replay commands', (t) => {
   const { root, git } = gitFixture(t, 'pr-repair-concurrent-');
   mkdirSync(join(root, 'scripts'));
