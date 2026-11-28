@@ -570,6 +570,9 @@ async function screenshot(name) {
         return {
           id: node.dataset.discussMessage,
           classes: node.className,
+          backgroundColor: style.backgroundColor,
+          borderRadius: style.borderRadius,
+          padding: style.padding,
           borderTopStyle: style.borderTopStyle,
           borderTopWidth: style.borderTopWidth,
           borderBottomStyle: style.borderBottomStyle,
@@ -842,7 +845,7 @@ try {
       investigationFlowsBrowserChecks({ page, service, poll, screenshot })
     )
   );
-  await check(discussCheck, () => projectDiscussBrowserChecks({ page, project, service, poll, screenshot }));
+  await check(discussCheck, () => projectDiscussBrowserChecks({ page, project, service, poll, screenshot, output }));
   await check(flowBrowserScenarioNames['--project-night'], () =>
     projectNightBrowserChecks({ page, project, service, poll, screenshot, output })
   );
@@ -932,7 +935,7 @@ try {
     activityBrowserChecks({ page, project, service, poll, screenshot, output })
   );
   await check('Issue and project chats retain semantic progress', () =>
-    chatProgressBrowserChecks({ page, project, service, poll, screenshot, output })
+    chatProgressBrowserChecks({ page, project, service, poll, screenshot, output, clickAction })
   );
   await check('Issue flow scrollbar appears only while scrolling', async () => {
     const id = '20261122-issue-scrollbar-fixture';

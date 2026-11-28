@@ -444,6 +444,28 @@
                   <path d="M21 11a8 8 0 0 1-8 8H5l1-4a8 8 0 0 1 7-12 8 8 0 0 1 8 8Z" />
                 </svg>
               </button>
+              <button
+                class="icon-button issue-annotations-toggle"
+                id="issue-annotations-toggle"
+                type="button"
+                aria-label="Annotations"
+                aria-expanded="false"
+                aria-controls="issue-annotations"
+                title="Annotations"
+              >
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="1.7"
+                  aria-hidden="true"
+                >
+                  <path d="M3 4h8l10 10-7 7L4 11z" stroke-linejoin="round" />
+                  <circle cx="8" cy="8" r="1" fill="currentColor" stroke="none" />
+                </svg>
+              </button>
               <button class="small-button" id="reopen-issue" type="button" hidden>Reopen</button>
               <button class="primary-button" id="issue-playback" type="button">Start</button>
               <span
@@ -477,8 +499,7 @@
             <button class="small-button" type="submit" disabled>Attach sub-issue</button>
             <p id="issue-attach-reason" class="muted" role="status" hidden></p>
           </form>
-          <details id="issue-annotations" class="issue-annotations">
-            <summary>Annotations <span id="issue-annotation-count"></span></summary>
+          <section id="issue-annotations" class="issue-annotations" aria-label="Annotations" hidden>
             <p id="issue-annotation-warning" role="status" hidden></p>
             <ul id="active-issue-annotations" aria-label="Active annotations"></ul>
             <details id="issue-annotation-history" hidden>
@@ -503,7 +524,7 @@
               </fieldset>
               <p id="issue-annotation-error" class="inline-error" role="alert" hidden></p>
             </form>
-          </details>
+          </section>
           <details id="issue-settings" class="issue-settings">
             <summary>Issue settings</summary>
             <form id="issue-settings-form">
@@ -545,10 +566,7 @@
           <p id="merged-issue-notice" class="detail-copy" role="status" hidden></p>
         </section>
         <section id="issue-blocker" class="issue-results issue-blocker" aria-label="Issue blocker" hidden>
-          <div class="folder-controls">
-            <h2 id="issue-blocker-context"></h2>
-            <span id="issue-blocker-retrying" role="status" hidden>Retrying</span>
-          </div>
+          <h2 id="issue-blocker-context"></h2>
           <p id="issue-blocker-message" role="alert"></p>
           <section id="issue-permission" aria-labelledby="issue-permission-title" hidden>
             <h3 id="issue-permission-title">Permission required</h3>

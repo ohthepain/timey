@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { initializeProjectLifecycle, readProjectSettings } from './factory-ui/project-settings.mjs';
 import { ensureProjectStores } from './factory-ui/stores/runtime.mjs';
 import { resolveIssueStorage } from './factory-ui/stores/settings.mjs';
+import { assertUserMessageBox } from './flow-browser-chat-style.mjs';
 
 function command(emit, id, text, output, exitCode = 0) {
   const item = { id, type: 'commandExecution', command: text };
@@ -89,7 +90,7 @@ async function exerciseChat({ page, chat, emit, reopen, waitForApproval, finish,
   };
 }
 
-export async function chatProgressBrowserChecks({ page, service, project, poll, screenshot, output }) {
+export async function chatProgressBrowserChecks({ page, service, project, poll, screenshot, output, clickAction }) {
   initializeProjectLifecycle(service, { digest: readProjectSettings(project).lifecycle.digest });
   await ensureProjectStores(service);
   const previous = service.flows.executor;
@@ -142,6 +143,12 @@ export async function chatProgressBrowserChecks({ page, service, project, poll, 
         flowDone.resolve({ summary: 'Final progress proof reply.' });
       },
     });
+    await poll(() => !service.flows.active.has(issue.id), Boolean, 'Issue work released its claim');
+    const userNote = 'Retain the completed progress with this note.';
+    await page.locator('#comment-form [name="comment"]').fill(userNote);
+    await clickAction(page.locator('#comment-form button[type="submit"]'));
+    results.blockUserBox = await assertUserMessageBox(page.locator('#inspector-body'), userNote);
+    await screenshot('block-conversation-user-message');
   } finally {
     flowDone.resolve({ summary: 'Fixture cleanup.' });
     service.flows.executor = previous;

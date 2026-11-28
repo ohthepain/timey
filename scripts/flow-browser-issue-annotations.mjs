@@ -63,7 +63,7 @@ async function mutation(page, click) {
 
 async function addAnnotation(page, kind, message, relatedIssueId) {
   const panel = page.locator('#issue-annotations');
-  if ((await panel.getAttribute('open')) === null) await panel.locator(':scope > summary').click();
+  if (!(await panel.isVisible())) await page.getByRole('button', { name: 'Annotations', exact: true }).click();
   const form = panel.locator('form');
   await form.locator('select[name="kind"]').selectOption(kind);
   await form.locator('textarea').fill(message);
@@ -146,13 +146,15 @@ async function checkListControls(page, output, poll) {
   await frame
     .getByRole('navigation', { name: 'Issues', exact: true })
     .screenshot({ path: join(output, 'annotation-badge-filter.png') });
+  await frame.locator(`[data-issue-row="${child}"] .issue-sidebar-link`).click();
+  await page.locator('#issue-heading').getByRole('heading', { name: titles[child], exact: true }).waitFor();
   return { normal, ordered, filters: filterObservations };
 }
 
 async function checkHistory(page, first, second, comment, output) {
   await openIssue(page, child);
   const panel = page.locator('#issue-annotations');
-  await panel.locator(':scope > summary').click();
+  await page.getByRole('button', { name: 'Annotations', exact: true }).click();
   await panel.getByText('Cleared history', { exact: true }).click();
   const history = [];
   for (const record of [first, second]) {
@@ -171,6 +173,34 @@ async function checkHistory(page, first, second, comment, output) {
   return history;
 }
 
+async function checkAnnotationToggle(page, output) {
+  const panel = page.locator('#issue-annotations');
+  const button = page.getByRole('button', { name: 'Annotations', exact: true });
+  const height = () => panel.evaluate((element) => element.getBoundingClientRect().height);
+  const closed = async () => {
+    assert.equal(await button.getAttribute('aria-expanded'), 'false');
+    assert.equal(await height(), 0);
+    assert.equal(await panel.isVisible(), false);
+  };
+  await closed();
+  const appearance = await button.evaluate((element) => ({
+    background: getComputedStyle(element).backgroundColor,
+    text: element.textContent.trim(),
+    besideChat: element.previousElementSibling?.id === 'issue-discuss-toggle',
+  }));
+  assert.deepEqual(appearance, { background: 'rgba(0, 0, 0, 0)', text: '', besideChat: true });
+  assert.equal(await button.getAttribute('aria-controls'), 'issue-annotations');
+  await button.press('Enter');
+  assert.equal(await button.getAttribute('aria-expanded'), 'true');
+  assert.ok((await height()) > 0);
+  const expandedHeight = await height();
+  await page.locator('#issue-heading').screenshot({ path: join(output, 'annotations-expanded.png') });
+  await button.press('Enter');
+  await closed();
+  await page.locator('#issue-heading').screenshot({ path: join(output, 'annotations-collapsed.png') });
+  return { name: 'Annotations', appearance, expandedHeight, collapsedHeight: await height() };
+}
+
 export async function issueAnnotationBrowserChecks({ page, project, root, output, poll }) {
   installHumanInput(project, root);
   await withQueueConfiguration({ page, project, root }, async () => {
@@ -181,23 +211,24 @@ export async function issueAnnotationBrowserChecks({ page, project, root, output
         await addAnnotation(page, 'not-ready', '');
       }
       await openIssue(page, child);
+      const toggle = await checkAnnotationToggle(page, output);
+      writeFileSync(join(output, 'annotation-toggle.json'), JSON.stringify(toggle, null, 2) + '\n');
       const first = await addAnnotation(page, 'blocked', 'Waiting on an API decision.', master);
       const second = await addAnnotation(page, 'blocked', 'Missing a fixture.');
       const comment = await addAnnotation(page, 'comment', 'The comment stays active.');
       const both = await badgeCounts(page, 1);
       const list = await checkListControls(page, output, poll);
-      await openIssue(page, child);
-      await page.locator('#issue-annotations > summary').click();
+      await page.getByRole('button', { name: 'Annotations', exact: true }).click();
       const clearedFirst = await clearAnnotation(page, first);
       const remaining = await badgeCounts(page, 1);
       await openIssue(page, child);
-      await page.locator('#issue-annotations > summary').click();
+      await page.getByRole('button', { name: 'Annotations', exact: true }).click();
       const clearedSecond = await clearAnnotation(page, second);
       const neither = await badgeCounts(page, 0);
       const history = await checkHistory(page, clearedFirst, clearedSecond, comment, output);
       writeFileSync(
         join(output, 'issue-annotations.json'),
-        JSON.stringify({ both, remaining, neither, list, history }, null, 2) + '\n'
+        JSON.stringify({ toggle, both, remaining, neither, list, history }, null, 2) + '\n'
       );
     } finally {
       await page.goto('about:blank');

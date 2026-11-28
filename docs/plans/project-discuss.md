@@ -39,6 +39,8 @@ authorizes this documentation update; it does not authorize implementation.
   the tab strip and retain their own entry points. Retain each chat's history,
   drafts, model, effort, and selected skills. A new chat receives the running
   server’s current tool definitions on its first message.
+- Factory chat transcripts use the same right-aligned grey box for each user
+  message, including the Automate me interview.
 - Model, effort, and skill changes apply to subsequent messages. Running and
   already-queued messages retain the settings submitted with them.
 - Voice input is dictation into editable composer text. A final spoken word "go"

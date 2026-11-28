@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { assertUserMessageBox } from './flow-browser-chat-style.mjs';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { importBrowserIssue } from './flow-browser-fixture.mjs';
@@ -230,9 +231,11 @@ export async function projectNightBrowserChecks({ page, service, project, poll, 
     const different = await suggest(page, 'different-blast-radii', 'Check independent execution scope.');
     await page.getByRole('button', { name: 'Save draft' }).click();
     await page.getByRole('tab', { name: 'Discussion' }).click();
-    await page.locator('#night-discuss-draft').fill('Which issue pairs with Repair editor saves in a master?');
+    const prompt = 'Which issue pairs with Repair editor saves in a master?';
+    await page.locator('#night-discuss-draft').fill(prompt);
     await page.locator('#night-discuss-send').click();
     await page.getByText('Both cover persisting editor changes.', { exact: false }).waitFor();
+    const userBox = await assertUserMessageBox(page.locator('#night-discuss-messages'), prompt);
     assert.deepEqual(turns[0].run.run.issueIds, [first, second, standalone]);
     await page.getByRole('button', { name: 'Compare saved scope' }).waitFor();
     await screenshot('night-discussion');
@@ -281,7 +284,7 @@ export async function projectNightBrowserChecks({ page, service, project, poll, 
     await verifyIssueControls({ page, service, master, screenshot, output });
     writeFileSync(
       join(output, 'project-night.json'),
-      JSON.stringify({ approvalGuard, staleDraftGuard, same, different, turns, run }, null, 2)
+      JSON.stringify({ approvalGuard, staleDraftGuard, same, different, turns, run, userBox }, null, 2)
     );
   } finally {
     flows.folderSelection.recommend = before;

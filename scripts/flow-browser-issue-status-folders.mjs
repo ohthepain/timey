@@ -22,11 +22,21 @@ async function setAttempt(service, entry, status, humanInput) {
   await service.flows.store.save(flow, flow.revision);
 }
 
+async function completeRoute(service, entry) {
+  const flow = service.flows.read(service.flows.selected(entry.id));
+  for (const block of flow.blocks) {
+    if (['close', 'retro', 'cleanup'].includes(block.kind)) break;
+    block.attempts = [
+      { id: 'completed-' + block.id, status: 'completed', startedAt: '2026-11-21T15:00:00Z', result: {} },
+    ];
+  }
+  await service.flows.store.save(flow, flow.revision);
+}
+
 async function writeFixture(project, service, folders, reports, entry) {
   const content = `---\nid: ${entry.id}\ntitle: Status ${entry.key}\nstate: ${entry.state || 'backlog'}\nfolder_id: ${folders[entry.folder].id}\n---\n\nStatus fixture.\n`;
   reports.set(entry.id, content);
   await importBrowserIssue(project, entry.id, content);
-  await setAttempt(service, entry, entry.status, entry.humanInput);
   if (entry.active) service.flows.active.set(entry.id, { blockId: 'held-fixture' });
   if (entry.waiting) service.flows.autoplay.set(entry.id, { mode: 'waiting', blockId: 'confirmation' });
 }
@@ -42,9 +52,15 @@ async function createFixtures(project, service) {
     { key: 'uncertain', folder: 1, status: 'uncertain' },
     { key: 'paused', folder: 0, status: 'blocked', humanInput: { kind: 'human-input', message: 'Retained input.' } },
     { key: 'stopped', folder: 1, status: 'stopped' },
+    { key: 'completed', folder: 0 },
+    { key: 'failed', folder: 1, status: 'failed' },
   ].map((entry) => ({ ...entry, id: '20261121-status-' + entry.key }));
   const reports = new Map();
-  for (const entry of fixtures) await writeFixture(project, service, folders, reports, entry);
+  for (const entry of fixtures) {
+    await writeFixture(project, service, folders, reports, entry);
+    if (entry.key === 'completed') await completeRoute(service, entry);
+    else await setAttempt(service, entry, entry.status, entry.humanInput);
+  }
   return { folders, fixtures, reports };
 }
 
@@ -57,7 +73,7 @@ async function removeFixtures(project, service, folders, fixtures) {
   }
 }
 
-async function checkDirectStart(service, paused, running, expectMembers) {
+async function checkDirectStart(service, paused, running, expectMembers, expectIndicator) {
   const executor = service.flows.executor;
   const held = Promise.withResolvers();
   service.flows.executor = { run: () => held.promise, close() {} };
@@ -67,12 +83,35 @@ async function checkDirectStart(service, paused, running, expectMembers) {
     await service.flows.action({ action: 'start', issueId: paused.id, blockId: work.id, revision: flow.revision });
     await expectMembers('in-progress-issues', [running.id, paused.id]);
     assert.equal(Boolean(service.flows.autoplay.get(paused.id)?.userPaused), false);
+    const task = service.flows.active.get(paused.id).task;
+    held.reject(Object.assign(Error('The fixture agent reported a terminal failure.'), { terminalStatus: 'failed' }));
+    await task;
+    await expectIndicator(paused, '×', 'failed');
   } finally {
     const task = service.flows.active.get(paused.id)?.task;
     held.resolve({ summary: 'Focused status fixture finished.' });
-    if (task) await task;
+    await task;
     service.flows.executor = executor;
   }
+}
+
+async function checkStatusIndicators(page, fixtures, expectIndicator, screenshot) {
+  const indicators = [];
+  for (const [key, glyph, label] of [
+    ['completed', '✓', 'completed'],
+    ['failed', '×', 'failed'],
+    ['blocked', '⊘', 'blocked'],
+    ['running', '◌', 'running'],
+    ['paused', 'Ⅱ', 'paused'],
+    ['input', '◇', 'needs input'],
+  ]) {
+    const entry = fixtures.find((candidate) => candidate.key === key);
+    indicators.push({ state: key, ...(await expectIndicator(entry, glyph, label)) });
+  }
+  for (const { id, state } of indicators.filter(({ state }) => ['failed', 'completed'].includes(state)))
+    assert.equal(await page.locator(`#closed-issues [data-issue="${id}"]`).count(), 0, state + ' issue remains open');
+  await screenshot('issue-status-indicators');
+  return indicators;
 }
 
 async function checkStatusCarets(page, screenshot, output, poll) {
@@ -153,6 +192,20 @@ export async function issueStatusFoldersBrowserChecks({ page, project, service, 
       id + ' membership'
     );
   }
+  async function expectIndicator({ id }, glyph, label) {
+    const icon = page.locator(`#open-issues [data-issue="${id}"] > .status-icon`);
+    await icon.waitFor();
+    await poll(
+      () => icon.textContent(),
+      (text) => text === glyph,
+      id + ' status icon'
+    );
+    const visible = await icon.isVisible();
+    const accessibleName = await icon.getAttribute('aria-label');
+    assert.equal(accessibleName, label);
+    assert.equal(visible, true);
+    return { id, glyph: await icon.textContent(), accessibleName };
+  }
   try {
     const paused = fixtures.find(({ key }) => key === 'paused');
     await service.flows.action({ action: 'pause', issueId: paused.id });
@@ -166,7 +219,7 @@ export async function issueStatusFoldersBrowserChecks({ page, project, service, 
     await page.goto('/');
     await expectMembers('in-progress-issues', [fixtures[0].id]);
     const initialBlocked = fixtures
-      .filter(({ key }) => ['blocked', 'input', 'confirmation', 'uncertain'].includes(key))
+      .filter(({ key }) => ['blocked', 'input', 'confirmation', 'uncertain', 'failed'].includes(key))
       .map(({ id }) => id);
     await expectMembers('blocked-status-issues', initialBlocked);
     const approval = fixtures.find(({ key }) => key === 'approval');
@@ -179,7 +232,8 @@ export async function issueStatusFoldersBrowserChecks({ page, project, service, 
     assert.deepEqual(order.slice(0, 3), ['in-progress-issues', 'blocked-status-issues', 'open-issues']);
     assert.equal(await page.locator('#issue-list [data-issue="' + foreignId + '"]').count(), 0);
     const initial = { running: await members('in-progress-issues'), blocked: await members('blocked-status-issues') };
-    await checkDirectStart(service, paused, fixtures[0], expectMembers);
+    const indicators = await checkStatusIndicators(page, fixtures, expectIndicator, screenshot);
+    await checkDirectStart(service, paused, fixtures[0], expectMembers, expectIndicator);
     await setAttempt(service, paused, 'blocked', paused.humanInput);
     await service.flows.action({ action: 'pause', issueId: paused.id });
     await expectMembers('in-progress-issues', [fixtures[0].id]);
@@ -212,8 +266,10 @@ export async function issueStatusFoldersBrowserChecks({ page, project, service, 
           sourceStatus: git(root, 'status', '--porcelain'),
           observedAt: new Date().toISOString(),
           execution:
-            'Disposable project reports and saved Flow attempts, with an injected active registry entry. Status transitions observed through normal browser polling. No live model work.',
+            'Disposable project reports, saved Flow attempts, and a held executor that rejects with a terminal failure. Status transitions observed through normal browser polling.',
           initial,
+          indicators,
+          terminalAgentFailureShownAfterDirectStart: true,
           final: { running: await members('in-progress-issues'), blocked: await members('blocked-status-issues') },
           assignments,
           reportBytesUnchanged: true,
