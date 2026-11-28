@@ -447,7 +447,7 @@ export async function assetStorageBrowserChecks({ page, screenshot, output }) {
     const origin = 'http://127.0.0.1:' + server.address().port;
     const releaseListing = mock.holdListing();
     await page.goto(origin + '/?settings=asset-storage');
-    const dialog = page.locator('#project-settings-dialog');
+    const dialog = page.locator('#project-settings-view');
     await dialog.locator('[data-settings-page="asset-storage"]').waitFor();
     try {
       await dialog.getByText('Listing assets in S3…', { exact: true }).waitFor();

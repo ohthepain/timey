@@ -11,6 +11,7 @@ export const providerForModel = (model = '') =>
 export const providerConfigPath = (root) => join(root, 'user/ai-providers.json');
 const policySchema = z
   .object({
+    active: z.boolean().default(true),
     enabled: z.array(z.string().min(1).max(200)).max(1000),
     warning: z.number().min(0).max(100),
     disable: z.number().min(0).max(100),
@@ -74,11 +75,13 @@ function referencedModels(root) {
 export function initializeProviderConfig(root) {
   const existing = readProviderConfig(root);
   if (existing) return existing;
-  const models = [...referencedModels(root)];
+  const upgrading = existsSync(join(root, '.issues/factory-discovery.json'));
+  const models = upgrading ? [...referencedModels(root)] : [];
   const providers = Object.fromEntries(
     Object.keys(providerNames).map((id) => [
       id,
       {
+        active: upgrading,
         enabled: models.filter((model) => providerForModel(model) === id),
         warning: 5,
         disable: 2,
@@ -96,6 +99,7 @@ export function saveProviderConfig(root, input, catalogs) {
   requireThat(input.revision === previous.revision, 'Factory settings changed. Refresh before saving.');
   const providers = configSchema.parse(input.providers);
   for (const [id, policy] of Object.entries(providers)) {
+    policy.active = previous.providers[id].active;
     const allowed = new Set([
       ...previous.providers[id].enabled,
       ...(catalogs[id]?.models || []).map((model) => model.id),
@@ -108,6 +112,17 @@ export function saveProviderConfig(root, input, catalogs) {
   }
   mkdirSync(join(root, 'user'), { recursive: true });
   writeJson(providerConfigPath(root), providers);
+  return readProviderConfig(root);
+}
+
+export function saveProviderEnabled(root, { provider, active, revision }) {
+  requireThat(Object.hasOwn(providerNames, provider) && typeof active === 'boolean', 'Choose a provider and state.');
+  const config = initializeProviderConfig(root);
+  requireThat(revision === config.revision, 'Factory settings changed. Refresh before saving.');
+  if (config.providers[provider].active !== active) {
+    config.providers[provider].active = active;
+    writeJson(providerConfigPath(root), config.providers);
+  }
   return readProviderConfig(root);
 }
 

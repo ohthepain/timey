@@ -1,4 +1,4 @@
-import { initializeProviderConfig, readProviderConfig } from './factory-ui/provider-config.mjs';
+import { initializeProviderConfig, readProviderConfig, saveProviderEnabled } from './factory-ui/provider-config.mjs';
 import { observeProvider, saveProviderSettings } from './factory-ui/provider-runtime.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -149,7 +149,8 @@ for (const provider of ['anthropic', 'google']) {
   });
   test(`${provider} manual disable interrupts the running native turn and blocks a later prompt`, async (t) => {
     const { root, connection } = setup(t, provider);
-    initializeProviderConfig(root);
+    const { revision } = initializeProviderConfig(root);
+    saveProviderEnabled(root, { provider, active: true, revision });
     const model = provider === 'anthropic' ? 'anthropic:sonnet' : 'google:pro';
     observeProvider(root, provider, { ready: true, models: [{ id: model, name: model }] });
     let config = readProviderConfig(root);

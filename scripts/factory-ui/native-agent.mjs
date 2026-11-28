@@ -1,4 +1,4 @@
-import { guardProviderWork, observeProvider, providerCatalogs } from './provider-runtime.mjs';
+import { assertProviderActive, guardProviderWork, observeProvider, providerCatalogs } from './provider-runtime.mjs';
 import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -104,6 +104,7 @@ export class NativeAgentConnection {
     const settings = this.initialSettings(root, issueId);
     this.selection = agentModel(settings.model);
     requireThat(this.selection.provider !== 'codex', 'Choose a native agent model.');
+    assertProviderActive(this.root, this.selection.provider);
     const id = randomUUID();
     this.session = {
       threadId: `${this.selection.provider}:${id}`,
@@ -202,6 +203,7 @@ export class NativeAgentConnection {
     this.instructions = this.projectInstructions();
     const mcp = await this.tools(dynamicTools);
     try {
+      assertProviderActive(this.root, this.selection.provider);
       requireThat(!this.closed, 'The agent connection closed before startup completed.');
       if (this.selection.provider === 'anthropic') await this.connectClaude(resume, mcp);
       else await this.connectGoogle(resume, mcp);
@@ -405,8 +407,12 @@ export class NativeAgentConnection {
       turn.guard.close();
       return;
     }
+    assertProviderActive(this.root, this.selection.provider);
+    turn.guard.assert();
     await this.changeModel(settings);
     if (this.turns.get(this.session.threadId) !== turn) return;
+    assertProviderActive(this.root, this.selection.provider);
+    turn.guard.assert();
     turn.dispatched = true;
     this.dispatchPrompt(text, turn);
   }

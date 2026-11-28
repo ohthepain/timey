@@ -9,7 +9,7 @@ import { runBranchRepair } from './factory-ui/branch-repair-runner.mjs';
 import { BlockCatalog } from './factory-ui/block-catalog.mjs';
 import { CodexConnection } from './factory-ui/codex.mjs';
 import { git } from './factory-ui/common.mjs';
-import { initializeProviderConfig } from './factory-ui/provider-config.mjs';
+import { initializeProviderConfig, saveProviderEnabled } from './factory-ui/provider-config.mjs';
 import { modelAvailability, observeProvider, saveProviderSettings } from './factory-ui/provider-runtime.mjs';
 import { initializeFolderSettings } from './factory-ui/issue-folder-settings.mjs';
 import { readStoreConfig, writeStoreConfig } from './factory-ui/stores/config.mjs';
@@ -100,7 +100,10 @@ test('branch repair checks provider readiness before checkout and starts one ses
     )
   );
   writeFileSync(join(f.root, 'folder.md'), `---\nmodel: "${model}"\n---\n`);
-  const config = initializeProviderConfig(f.root);
+  const { revision } = initializeProviderConfig(f.root);
+  const config = saveProviderEnabled(f.root, { provider: 'codex', active: true, revision });
+  observeProvider(f.root, 'codex', { ready: false, models: [{ id: model, name: model }] });
+  config.providers.codex.enabled = [model];
   config.providers.codex.allowUnmonitored = true;
   saveProviderSettings(f.root, config);
 

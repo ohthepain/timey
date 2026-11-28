@@ -6,7 +6,7 @@ import { makeBlock } from './factory-ui/flow-store.mjs';
 import { gitFixture } from './git-fixture.mjs';
 import { createIssueFlows } from './factory-ui/flow-service.mjs';
 import { initializeFolderSettings } from './factory-ui/issue-folder-settings.mjs';
-import { initializeProviderConfig, readProviderConfig } from './factory-ui/provider-config.mjs';
+import { initializeProviderConfig, readProviderConfig, saveProviderEnabled } from './factory-ui/provider-config.mjs';
 import { observeProvider, saveProviderSettings } from './factory-ui/provider-runtime.mjs';
 import { saveConversationState } from './factory-ui/conversation-store.mjs';
 import { blockExecutionSettings } from './factory-ui/block-models.mjs';
@@ -60,13 +60,21 @@ function fixture(t) {
   return { root, id, flows, issue, read, action, calls, controller };
 }
 function configure(root, enabled) {
-  initializeProviderConfig(root);
+  let config = initializeProviderConfig(root);
+  for (const provider of ['codex', 'anthropic', 'google'])
+    config = saveProviderEnabled(root, { provider, active: true, revision: config.revision });
+  config.providers.codex.enabled = ['gpt-6-luna', 'gpt-6.1-sol'];
+  observeProvider(root, 'codex', {
+    models: [
+      { id: 'gpt-6-luna', name: 'Codex Luna' },
+      { id: 'gpt-6.1-sol', name: 'Sol' },
+    ],
+  });
   observeProvider(root, 'anthropic', {
     ready: true,
     models: ['sonnet', 'opus'].map((id) => ({ id: 'anthropic:' + id, name: id })),
   });
   observeProvider(root, 'google', { ready: true, models: [{ id: 'google:pro', name: 'Gemini Pro' }] });
-  const config = readProviderConfig(root);
   config.providers.anthropic.enabled = enabled;
   config.providers.anthropic.allowUnmonitored = true;
   config.providers.google.enabled = ['google:pro'];

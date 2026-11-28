@@ -5,7 +5,13 @@ import { issueAnnotations } from './issue-annotations.mjs';
 import { userInfo } from 'node:os';
 import { getHeapStatistics } from 'node:v8';
 import { readProviderConfig } from './provider-config.mjs';
-import { providerSettings, saveProviderSettings } from './provider-runtime.mjs';
+import {
+  assertProviderActive,
+  changeProviderEnabled,
+  providerIsActive,
+  providerSettings,
+  saveProviderSettings,
+} from './provider-runtime.mjs';
 import { refreshProvider, setupProvider, installProvider } from './provider-setup.mjs';
 import { readDiagnosticActivity, resetCodexActivity } from './diagnostic-activity.mjs';
 import { readCodexQuota } from './codex-quota.mjs';
@@ -341,6 +347,7 @@ function mutationIssueIds(service, path, value) {
 }
 
 const independentActions = new Set([
+  '/api/ai-provider-enabled',
   '/api/ai-providers',
   '/api/ai-provider-action',
   '/api/server-pause',
@@ -442,9 +449,14 @@ async function mutation(service, path, value, onStorageProgress) {
       service.ownServer();
       return saveProviderSettings(service.root, value);
     },
+    '/api/ai-provider-enabled': () => {
+      service.ownServer();
+      return changeProviderEnabled(service.root, value);
+    },
     '/api/ai-provider-action': () => {
       service.ownServer();
       requireThat(['setup', 'refresh', 'install'].includes(value.action), 'Choose Install, Sign in, or Check again.');
+      assertProviderActive(service.root, value.provider);
       if (value.action === 'install') return installProvider(service.root, value.provider);
       return value.action === 'setup'
         ? setupProvider(service.root, value.provider)
@@ -802,7 +814,11 @@ async function read(service, request, response, owner) {
     },
     '/api/github-calls': readGitHubCalls,
     '/api/diagnostic-activity': readDiagnosticActivity,
-    '/api/codex-quota': () => readCodexQuota({ force: url.searchParams.has('refresh') }),
+    '/api/codex-quota': async () => {
+      if (!providerIsActive(service.root, 'codex')) return { status: 'disabled' };
+      const quota = await readCodexQuota({ force: url.searchParams.has('refresh') });
+      return providerIsActive(service.root, 'codex') ? quota : { status: 'disabled' };
+    },
     '/api/server-actions': () => service.serverControl.actions(),
     '/api/document': () => service.readPlan(url.searchParams.get('path')),
     '/api/shown-file': async () => {

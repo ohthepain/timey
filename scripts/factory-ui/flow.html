@@ -1210,6 +1210,18 @@
         </div>
       </aside>
     </div>
+    <section id="project-settings-view" aria-labelledby="project-settings-title" hidden>
+      <nav id="settings-navigation" aria-label="Settings categories"></nav>
+      <header class="settings-heading">
+        <h2 id="project-settings-title">Factory settings</h2>
+        <button class="small-button" type="button" data-settings-close>Close</button>
+      </header>
+      <main class="settings-body">
+        <h2 id="settings-page-title"></h2>
+        <p id="project-settings-error" class="inline-error" role="alert" hidden></p>
+        <div id="project-settings-content" aria-live="polite"></div>
+      </main>
+    </section>
     <dialog
       id="investigation-followups-dialog"
       class="modal publish-modal"
@@ -1450,20 +1462,6 @@
       <p id="github-calls-message" role="status">Loading…</p>
       <ol id="github-calls-list"></ol>
     </section>
-    <dialog id="project-settings-dialog" class="modal" aria-labelledby="project-settings-title">
-      <div class="modal-heading">
-        <h2 id="project-settings-title">Factory settings</h2>
-        <button class="icon-button" type="button" data-settings-close aria-label="Close Factory settings">×</button>
-      </div>
-      <div class="settings-layout">
-        <nav id="settings-navigation" aria-label="Settings categories"></nav>
-        <section class="settings-body">
-          <h2 id="settings-page-title"></h2>
-          <p id="project-settings-error" class="inline-error" role="alert" hidden></p>
-          <div id="project-settings-content" aria-live="polite"></div>
-        </section>
-      </div>
-    </dialog>
     <dialog id="settings-unsaved-dialog" class="modal" aria-labelledby="settings-unsaved-title">
       <h2 id="settings-unsaved-title">Unsaved changes</h2>
       <p>Save your changes before leaving this page?</p>

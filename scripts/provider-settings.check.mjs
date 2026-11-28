@@ -4,11 +4,17 @@ import { NativeAgentConnection } from './factory-ui/native-agent.mjs';
 import { readModelSettings } from './factory-ui/model-settings.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { initializeProviderConfig, readProviderConfig, quotaAvailability } from './factory-ui/provider-config.mjs';
 import {
+  initializeProviderConfig,
+  providerConfigPath,
+  readProviderConfig,
+  quotaAvailability,
+} from './factory-ui/provider-config.mjs';
+import {
+  changeProviderEnabled,
   observeProvider,
   providerSettings,
   saveProviderSettings,
@@ -36,6 +42,7 @@ function project(t) {
 function configured(t) {
   const root = project(t);
   initializeProviderConfig(root);
+  enable(root, 'google');
   observeProvider(root, 'google', {
     ready: true,
     models: [
@@ -48,6 +55,10 @@ function configured(t) {
   config.providers.google.allowUnmonitored = true;
   saveProviderSettings(root, config);
   return root;
+}
+
+function enable(root, provider) {
+  return changeProviderEnabled(root, { provider, active: true, revision: readProviderConfig(root).revision });
 }
 
 test('warning and disable thresholds include their boundary and lowest applicable window wins', () => {
@@ -83,6 +94,7 @@ test('migration preserves defaults, folder and issue overrides and frozen execut
   const root = project(t);
   mkdirSync(join(root, 'user/team'), { recursive: true });
   mkdirSync(join(root, '.issues/flows'), { recursive: true });
+  writeFileSync(join(root, '.issues/factory-discovery.json'), '{}');
   writeFileSync(join(root, 'folder.md'), '---\nmodel: anthropic:sonnet\n---\n');
   writeFileSync(join(root, 'user/team/folder.md'), '---\nmodel: google:pro\n---\n');
   writeFileSync(
@@ -94,11 +106,43 @@ test('migration preserves defaults, folder and issue overrides and frozen execut
     JSON.stringify({ executionSettings: { values: { model: 'google:flash' } } })
   );
   const config = initializeProviderConfig(root);
+  assert.ok(Object.values(config.providers).every((provider) => provider.active));
   assert.deepEqual(config.providers.anthropic.enabled.sort(), ['anthropic:opus', 'anthropic:sonnet']);
   assert.deepEqual(config.providers.google.enabled.sort(), ['google:flash', 'google:pro']);
   assert.equal(config.providers.google.warning, 5);
   assert.equal(config.providers.google.disable, 2);
   assert.equal(initializeProviderConfig(root).revision, config.revision);
+});
+
+test('fresh installs disable every provider before opening Settings even with packaged model defaults', async (t) => {
+  const root = project(t);
+  writeFileSync(join(root, 'folder.md'), '---\nmodel: google:pro\n---\n');
+  const config = initializeProviderConfig(root);
+  assert.ok(Object.values(config.providers).every((provider) => !provider.active && !provider.enabled.length));
+  assert.deepEqual(providerModelChoices(root), []);
+  await assert.rejects(
+    guardProviderWork(root, 'google:pro', () => {}),
+    /Google is disabled/
+  );
+});
+
+test('saved provider policies load with their previous availability and choices on upgrade', (t) => {
+  const root = project(t);
+  mkdirSync(join(root, 'user'));
+  const legacy = {
+    codex: { ...policy, enabled: [] },
+    anthropic: { ...policy, enabled: [] },
+    google: { warning: 15, disable: 3, allowUnmonitored: true, enabled: ['google:pro'] },
+  };
+  const source = JSON.stringify(legacy);
+  writeFileSync(providerConfigPath(root), source);
+  observeProvider(root, 'google', { ready: true, models: [{ id: 'google:pro', name: 'Gemini Pro' }] });
+  assert.deepEqual(
+    initializeProviderConfig(root).providers,
+    Object.fromEntries(Object.entries(legacy).map(([id, provider]) => [id, { active: true, ...provider }]))
+  );
+  assert.equal(readFileSync(providerConfigPath(root), 'utf8'), source);
+  assert.equal(modelAvailability(root, 'google:pro').status, 'unmonitored');
 });
 test('discovered models start unchecked, enablement populates choices, missing selected models remain visible', (t) => {
   const root = configured(t);
@@ -147,6 +191,7 @@ test('manual disable interrupts affected work once, preserves other providers, a
 test('a provider pause preserves Codex’s confirmed interruption and partial output', async (t) => {
   const root = project(t);
   initializeProviderConfig(root);
+  enable(root, 'codex');
   const model = 'gpt-6.2-sol';
   observeProvider(root, 'codex', { ready: true, models: [{ id: model, name: model }] });
   const config = readProviderConfig(root);
@@ -192,6 +237,63 @@ test('a provider pause preserves Codex’s confirmed interruption and partial ou
     params: { threadId, turn: { id: 'repair-turn', status: 'interrupted' } },
   });
   await rejected;
+});
+
+test('disabling a provider clears warnings, blocks new turns and retains an in-flight quota failure', async (t) => {
+  const root = project(t);
+  initializeProviderConfig(root);
+  enable(root, 'codex');
+  const model = 'gpt-6.2-sol';
+  observeProvider(root, 'codex', { ready: true, models: [{ id: model, name: model }] });
+  const config = readProviderConfig(root);
+  config.providers.codex.enabled = [model];
+  config.providers.codex.warning = 8;
+  config.providers.codex.allowUnmonitored = true;
+  saveProviderSettings(root, config);
+  t.mock.method(CodexAccountConnection.prototype, 'ready', async () => {});
+  t.mock.method(CodexAccountConnection.prototype, 'call', async (method) => {
+    if (method === 'account/read') return { account: { type: 'chatgpt' } };
+    assert.equal(method, 'account/rateLimits/read');
+    return { rateLimits: { limitId: 'codex', primary: { usedPercent: 95 } } };
+  });
+  const connection = new CodexConnection({ root });
+  t.after(() => connection.close());
+  const started = Promise.withResolvers();
+  const requests = [];
+  connection.call = async (method) => {
+    requests.push(method);
+    started.resolve();
+    return { turn: { id: 'original' } };
+  };
+  const original = connection.turn('thread', root, 'Original request', undefined, [], { model });
+  await started.promise;
+  assert.equal(modelAvailability(root, model).status, 'warning');
+  const enabled = readProviderConfig(root);
+  const disabled = changeProviderEnabled(root, { provider: 'codex', active: false, revision: enabled.revision });
+  assert.deepEqual(disabled.providers.find((provider) => provider.id === 'codex').models[0].availability, {
+    status: 'disabled',
+    reason: 'OpenAI is disabled in Factory settings.',
+  });
+  assert.deepEqual(providerModelChoices(root), []);
+  await assert.rejects(connection.turn('later', root, 'New request', undefined, [], { model }), /OpenAI is disabled/);
+  const failed = assert.rejects(original, (error) => {
+    assert.equal(error.terminalStatus, 'failed');
+    assert.match(error.message, /quota exhausted/i);
+    return true;
+  });
+  observeProvider(root, 'codex', { quota: { windows: [{ remainingPercent: 0, checkedAt: Date.now() }] } });
+  connection.event({
+    method: 'turn/completed',
+    params: { threadId: 'thread', turn: { id: 'original', status: 'failed', error: { message: 'Quota exhausted' } } },
+  });
+  await failed;
+  assert.deepEqual(requests, ['turn/start']);
+  assert.equal(modelAvailability(root, model).status, 'disabled');
+  const reopened = providerSettings(root);
+  assert.equal(reopened.providers.find((provider) => provider.id === 'codex').active, false);
+  changeProviderEnabled(root, { provider: 'codex', active: true, revision: reopened.revision });
+  assert.deepEqual(readProviderConfig(root).providers.codex, enabled.providers.codex);
+  assert.equal(modelAvailability(root, model).status, 'warning');
 });
 
 test('quota pauses affect all and only models in their scope and stricter saved thresholds interrupt', async (t) => {
@@ -259,6 +361,7 @@ test('an incomplete quota event cannot claim complete monitoring', () => {
 
 test('Claude credits-required rejection blocks the provider even without a utilization or window type', (t) => {
   const root = configured(t);
+  enable(root, 'anthropic');
   const models = ['anthropic:sonnet', 'anthropic:opus'];
   observeProvider(root, 'anthropic', { ready: true, models: models.map((id) => ({ id, name: id })) });
   const config = readProviderConfig(root);
@@ -302,6 +405,7 @@ test('the same installation shares policy watches when opened through a filesyst
 test('Claude utilization preserves the exact warning and disable percentage boundaries', (t) => {
   const root = configured(t),
     model = 'anthropic:sonnet';
+  enable(root, 'anthropic');
   observeProvider(root, 'anthropic', { ready: true, models: [{ id: model, name: model }] });
   const config = readProviderConfig(root);
   config.providers.anthropic.enabled = [model];

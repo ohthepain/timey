@@ -1,6 +1,6 @@
 import { nativeAgentCommand } from './native-agent-command.mjs';
 import { readProviderConfig } from './provider-config.mjs';
-import { guardProviderWork } from './provider-runtime.mjs';
+import { assertProviderActive, guardProviderWork } from './provider-runtime.mjs';
 import { meterCodexTurn } from './codex-diagnostics.mjs';
 import { createChatToolMcp } from './chat-tool-mcp.mjs';
 import { approvalReply } from './approval-options.mjs';
@@ -52,6 +52,13 @@ export class CodexConnection {
   async connect() {
     this.phase('connecting', 'initialize');
     const toolArgs = await this.prepareChatTools();
+    try {
+      assertProviderActive(this.root, 'codex');
+    } catch (failure) {
+      this.starting = null;
+      await this.closeChatTools();
+      throw failure;
+    }
     requireThat(!this.closing, 'This Codex connection closed before startup completed.');
     this.child = spawn(nativeAgentCommand(this.command), [...toolArgs, ...this.args], {
       env: cleanEnvironment(),
@@ -235,7 +242,9 @@ export class CodexConnection {
     dynamicTools
   ) {
     this.root ||= settingsRoot;
+    assertProviderActive(this.root, 'codex');
     await this.ready();
+    assertProviderActive(this.root, 'codex');
     const settings = this.threadModelSettings(settingsRoot, issueId);
     requireThat(
       agentModel(settings.model).provider === 'codex',
@@ -268,7 +277,9 @@ export class CodexConnection {
     return result.thread.id;
   }
   async resume(threadId, cwd, sandbox = 'workspace-write', instructions) {
+    assertProviderActive(this.root, 'codex');
     await this.ready();
+    assertProviderActive(this.root, 'codex');
     const result = await this.call('thread/resume', {
       threadId,
       cwd,
@@ -335,6 +346,8 @@ export class CodexConnection {
       let started;
       for (let attempt = 0; ; attempt++) {
         try {
+          assertProviderActive(root, 'codex');
+          turn.guard?.assert();
           turn.started = request();
           started = await turn.started;
           break;

@@ -33,7 +33,7 @@ async function rejectedSettingsAction({ page, logs }, endpoint, action, method =
 
 async function settingsPage(page, name) {
   await page.goto('/?settings=' + name);
-  const dialog = page.locator('#project-settings-dialog');
+  const dialog = page.locator('#project-settings-view');
   await dialog.waitFor({ state: 'visible' });
   await dialog.locator(`[data-settings-page="${name}"][aria-current="page"]`).waitFor();
   return dialog;
@@ -48,13 +48,13 @@ async function unsavedChoice(page, choice) {
   await prompt.waitFor({ state: 'visible' });
   await prompt.locator(`[data-unsaved-choice="${choice}"]`).click();
   await prompt.waitFor({ state: 'hidden' });
-  await page.locator('#project-settings-dialog:not([inert])').waitFor({ state: 'attached' });
+  await page.locator('#project-settings-view:not([inert])').waitFor({ state: 'attached' });
 }
 
 async function checkDirectPages({ page, screenshot, observations }) {
   await page.goto('/');
   await page.locator('#project-settings').click();
-  const dialog = page.locator('#project-settings-dialog');
+  const dialog = page.locator('#project-settings-view');
   await dialog.waitFor({ state: 'visible' });
   assert.ok((await dialog.boundingBox()).width >= 800, 'Desktop Settings has room for its sidebar and category page.');
   await page.locator('[data-settings-close]').click();

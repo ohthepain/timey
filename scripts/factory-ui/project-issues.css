@@ -169,7 +169,7 @@ summary:focus-visible {
 }
 .archive-progress[open] {
   display: grid;
-  grid-template-rows: auto 4rem minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(4rem, max-content) minmax(0, 1fr) auto;
   height: min(25rem, calc(100dvh - 5rem));
 }
 .archive-progress-status,

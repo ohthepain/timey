@@ -1,22 +1,23 @@
-dialog.modal:where(#project-settings-dialog) {
-  width: min(1000px, calc(100vw - 32px));
-  max-width: 1000px;
-  padding: 0;
-  overflow: hidden;
-}
-:where(#project-settings-dialog) > .modal-heading {
-  padding: 20px 24px;
-  margin: 0;
-  border-bottom: 1px solid #36383f;
-}
-.settings-layout {
+:where(#project-settings-view) {
   display: grid;
-  grid-template-columns: 200px minmax(0, 1fr);
-  height: min(710px, calc(100dvh - 160px));
+  grid-template-columns: var(--sidebar-width, 242px) minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+  background: #212329;
+}
+.settings-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 24px;
+  border-bottom: 1px solid var(--line);
 }
 :where(#settings-navigation) {
   padding: 16px 10px;
-  background: #1b1d22;
+  grid-row: 1 / -1;
+  background: #1d1d1d;
+  border-right: 1px solid var(--line);
   overflow-y: auto;
 }
 :where(#settings-navigation) a {
@@ -108,9 +109,10 @@ dialog.modal:where(#project-settings-dialog) {
   gap: 10px;
 }
 @media (max-width: 650px) {
-  .settings-layout {
+  :where(#project-settings-view) {
     grid-template-columns: 130px minmax(0, 1fr);
   }
+  .settings-heading,
   .settings-body {
     padding: 16px;
   }
@@ -118,47 +120,47 @@ dialog.modal:where(#project-settings-dialog) {
     padding: 10px 6px;
   }
 }
-.provider-card {
+.settings-body [data-provider] {
   border: 1px solid #454850;
   border-radius: 10px;
   padding: 16px;
   margin: 20px 0;
   min-width: 0;
 }
-.provider-card legend {
+[data-provider] legend {
   font-weight: 600;
   padding: 0 8px;
 }
-.provider-actions,
+[data-provider-actions],
 [data-coordination-store-choice] {
   display: flex;
-  gap: 12px;
+  gap: 8px 12px;
   align-items: center;
   flex-wrap: wrap;
 }
-.provider-thresholds {
+[data-provider-thresholds] {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
 }
-.provider-model {
+[data-provider-model] {
   display: flex;
   gap: 12px;
   align-items: start;
   margin: 16px 0;
   overflow-wrap: anywhere;
 }
-.provider-model input[type='checkbox'] {
+[data-provider-model] input[type='checkbox'] {
   width: 18px;
   height: 18px;
   flex: 0 0 18px;
 }
-.provider-model small {
+[data-provider-model] small {
   display: block;
   color: #a5a7b3;
   margin-top: 4px;
 }
-.provider-models {
+[data-provider-models] {
   max-height: 300px;
   overflow-y: auto;
 }
@@ -173,7 +175,7 @@ dialog.modal:where(#project-settings-dialog) {
   margin-left: 10px;
 }
 
-.provider-command {
+[data-provider-command] {
   display: flex;
   align-items: start;
   gap: 10px;
@@ -182,19 +184,19 @@ dialog.modal:where(#project-settings-dialog) {
   background: #181a1f;
   border-radius: 6px;
 }
-.provider-command code {
+[data-provider-command] code {
   flex: 1;
   min-width: 0;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-.provider-command button {
+[data-provider-command] button {
   flex-shrink: 0;
 }
-.provider-setup-guide ol {
+[data-provider-setup-guide] ol {
   padding-left: 22px;
 }
-.provider-setup-guide li {
+[data-provider-setup-guide] li {
   margin: 14px 0;
   line-height: 1.5;
 }
@@ -202,7 +204,18 @@ dialog.modal:where(#project-settings-dialog) {
   overflow-anchor: none;
 }
 @media (max-width: 650px) {
-  .provider-command {
+  [data-provider-command] {
     flex-direction: column;
   }
+}
+
+.provider-enable {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  margin: 8px 0;
+}
+.provider-enable input {
+  width: auto;
 }

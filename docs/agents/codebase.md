@@ -118,7 +118,7 @@ including exact live/replay CSV parity and lifecycle cleanup.
 
 `scripts/factory-ui/project-settings.mjs` presents the trusted human-input policy
 from `guard.mjs` and provides explicit setup of a missing lifecycle file from the
-pinned local-issues template. The Flow header's gear opens the categorized Settings window.
+pinned local-issues template. The Flow header's gear opens Settings with its own category sidebar.
 `project-settings-overview.mjs` projects lifecycle sources, connection references
 and supported storage options without exposing secrets. `project-settings-ui.js`
 owns direct page URLs, draft navigation, and save completion from confirmed write
@@ -1240,7 +1240,7 @@ and the explicitly named Sol reviewer retain their Codex execution path.
 
 ## AI provider settings
 
-`provider-config.mjs` owns project-scoped choices and quota thresholds in
+`provider-config.mjs` owns project-scoped provider enablement, model choices, and quota thresholds in
 `user/ai-providers.json`. Initialization preserves referenced default, issue,
 frozen execution and helper model choices. `provider-runtime.mjs` owns local
 native observations, availability, monitoring and interruption watches; its
@@ -1260,7 +1260,9 @@ exist; the explicit unmonitored-work option governs admission.
 
 `provider-settings-ui.js` renders the provider controls and persistent warning
 banner in Flow. `project-settings-ui.js` retains the shared Factory
-settings Save and unsaved-change handling. The execution adapters check policy
-before turns and interrupt affected work. Flow also checks each block, aborts
+settings Save and unsaved-change handling. Provider enablement saves immediately.
+The execution adapters block dispatch when the provider is off and let sent turns
+finish. Existing model and quota policy checks can still interrupt affected work
+for enabled providers. Flow also checks each block, aborts
 cancellable work, and lets protected Git/publication operations retain an outcome
 before pausing the route. Quota recovery restores eligibility, never autoplay.

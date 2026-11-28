@@ -1406,9 +1406,13 @@ checks a publication already underway: it retains its outcome, receives no abort
 and starts no later merge after provider disablement.
 
 `node scripts/flow-browser.mjs --ai-providers` checks the real Settings form,
-explicit Save, unsaved edits, unchecked discovery, filtered model dropdowns,
-warning banner, and desktop/mobile layout. Its allowance observations are
-fixtures; it launches no live model or vendor login.
+explicit Save, unsaved edits, filtered model dropdowns, and desktop and mobile
+layout. It checks the Settings sidebar and Close, fresh and upgraded provider
+states, and configuration restored after re-enabling. A held fixture turn
+checks that disabling a provider clears the quota warning, rejects a later
+turn without dispatch, and preserves the original turn's quota error without
+restoring the warning. The check saves `factory-provider-enablement-proof.json`
+in its reported evidence directory. Vendor requests and login use fixtures.
 
 Provider setup checks also cover missing Claude/Gemini executables, an installed
 CLI that fails to start, npm prerequisites, recipe-only explicit installation,
