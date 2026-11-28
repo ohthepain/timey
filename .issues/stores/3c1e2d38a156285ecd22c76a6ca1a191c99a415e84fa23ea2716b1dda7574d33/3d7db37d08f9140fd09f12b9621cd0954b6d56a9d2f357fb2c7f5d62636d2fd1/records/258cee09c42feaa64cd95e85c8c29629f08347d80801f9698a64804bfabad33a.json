@@ -1,1 +1,0 @@
-{"key":"project/store-roles","revision":"9fbce3b025664da2af1736f1223ca418fb48ef5417d7326bbf38afb3df830b9d","value":{"encoding":"json","value":{"artifacts":"s3","coordination":"files","migrations":{"artifacts":{"operationId":"install-s3-artifacts-project-fc0c83427e06a7cf55c8609e","token":"d7bbbaac-e130-4901-9f4e-7e473e906a83"}},"version":1}}}
