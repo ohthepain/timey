@@ -187,8 +187,8 @@
     function pendingDeletions(registry) {
       return (registry.pendingDeletions || [])
         .map(
-          ({ operationId }) =>
-            `<section data-pending-deletion><p>Issue deletion needs to finish. Shared changes wait until cleanup completes.</p><button type="button" class="small-button" data-store-resume-delete="${esc(operationId)}"${registry.unavailable ? ' disabled' : ''}>Resume deletion</button></section>`
+          ({ operationId, canPause }) =>
+            `<section data-pending-deletion><p>Issue deletion is holding shared changes. ${canPause ? 'Pause deletion to keep the issue and restore shared changes.' : 'Resume cleanup to restore shared changes.'}</p><button type="button" class="small-button" data-store-resume-delete="${esc(operationId)}"${registry.unavailable ? ' disabled' : ''}>Resume deletion</button>${canPause ? ` <button type="button" class="small-button" data-store-pause-delete="${esc(operationId)}"${registry.unavailable ? ' disabled' : ''}>Pause deletion</button>` : ''}</section>`
         )
         .join('');
     }
@@ -414,16 +414,17 @@
         button.disabled = false;
       }
     }
-    async function resumeDeletion(button) {
+    async function controlDeletion(button) {
+      const { storeResumeDelete, storePauseDelete } = button.dataset;
       button.disabled = true;
       showError();
       try {
         const result = await post('/api/issue-store-action', {
-          action: 'resume-delete',
-          operationId: button.dataset.storeResumeDelete,
+          action: storePauseDelete ? 'pause-proposal-delete' : 'resume-delete',
+          operationId: storePauseDelete || storeResumeDelete,
         });
-        if (result.status !== 'confirmed')
-          throw Error('Issue deletion is still pending. Retry after storage is available.');
+        if (result.status !== (storePauseDelete ? 'paused' : 'confirmed'))
+          throw Error('Factory could not confirm the deletion update. Refresh Issue Storage and try again.');
         Object.assign(data.storeRegistry, await request('/api/issue-stores'));
         render();
       } catch (failure) {
@@ -750,7 +751,7 @@
       ['[data-store-test], [data-store-test-role]', testStore],
       ['[data-store-discover]', discoverStorageMoves],
       ['[data-store-resume-move]', (button) => leave(() => void resumeStorageMove(button))],
-      ['[data-store-resume-delete]', (button) => leave(() => void resumeDeletion(button))],
+      ['[data-store-resume-delete], [data-store-pause-delete]', (button) => leave(() => void controlDeletion(button))],
       ['[data-store-reconcile-flow]', (button) => leave(() => void reconcileFlowSave(button))],
       [
         '[data-settings-admin]',

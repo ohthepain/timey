@@ -144,6 +144,17 @@ export async function openPostgresRecords(config, { root, projectId, readOnly })
     },
     get: (key) => get(pool, key),
     list: (prefix) => list(pool, prefix),
+    async listPendingOperations() {
+      const { rows } = await pool.query(
+        `SELECT key, revision, value FROM factory.store_records
+         WHERE project_id=$1 AND store_id=$2 AND key >= 'operations/' AND key < 'operations0'
+           AND starts_with(key,'operations/')
+           AND (value->>'encoding' IS DISTINCT FROM 'json' OR value#>>'{value,status}'='pending')
+         ORDER BY key`,
+        scope
+      );
+      return rows.map(record);
+    },
     commit(request) {
       return writeOperation(request, async (client) => {
         const rows = await client.query(

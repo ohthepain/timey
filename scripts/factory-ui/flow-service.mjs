@@ -1531,11 +1531,14 @@ class IssueFlows {
       const sequential = sequentialWork(issue, flow, block);
       return sequential ? !sequential.finished : !completedBlock(block, flow);
     });
-    return (await this.checkSuggestedWorkUpdate(flow, next, catalog)) || next;
+    return (await this.checkSuggestedWorkUpdate(flow, next, catalog, { recoverBeforePublish: true })) || next;
   }
-  async checkSuggestedWorkUpdate(flow, block, catalog) {
-    if (!block || !isWorkBlock(block) || !flowWorkspace(this.service, flow)) return null;
-    return suggestTargetUpdate(flow, await this.observer.observe(flow), catalog);
+  async checkSuggestedWorkUpdate(flow, block, catalog, { recoverBeforePublish = false } = {}) {
+    if (!block || !flowWorkspace(this.service, flow)) return null;
+    const work = isWorkBlock(block);
+    if (!work && !(recoverBeforePublish && block.kind === 'publish' && flow.blocks.some(isWorkBlock))) return null;
+    const environment = await this.observer.observe(flow);
+    return work || environment.merge ? suggestTargetUpdate(flow, environment, catalog) : null;
   }
   autoplayFinished(issueId, block, attempt) {
     if (this.autoplay.get(issueId)?.mode !== 'playing') return;

@@ -190,6 +190,9 @@ export function createCoordination(records, { runnerId = randomUUID(), now = () 
       list(prefix, select) {
         return this.records.list(prefix, select);
       },
+      listPendingOperations(select) {
+        return this.records.listPendingOperations?.(select) ?? this.list('operations/', select);
+      },
       async commit(operationId, expected, writes, sealToken) {
         const commit = async () => {
           const gate = await this.get('project/migration');
@@ -350,7 +353,7 @@ export async function deletionBlockers(coordination, { issueId, operationId } = 
     issueId
       ? coordination.get('claims/' + issueId).then(Boolean)
       : coordination.list('claims/').then((rows) => rows.length > 0),
-    coordination.list('operations/', (record) =>
+    coordination.listPendingOperations((record) =>
       record.value.status === 'pending' && record.value.id !== operationId && includes(record)
         ? record.value
         : undefined

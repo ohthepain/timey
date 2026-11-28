@@ -84,6 +84,7 @@ test('Flow navigation loads another issue while an earlier block check is pendin
     'let folderSelection, folderConfig, strategyFolder;\n' +
       section('  function readDestination(', '  const initialDestination') +
       section('  async function waitForFlowResponse(', '  function post(') +
+      section('  function postFlowAction(', '  window.createInvestigationFollowupsUI(') +
       section('  async function readFlowSnapshot(', '  async function loadRepoFiles(') +
       section('  async function action(', '  function updateIssueDecisionControls(') +
       section('  function navigateWorkspace(', "  window.addEventListener('popstate'") +
@@ -108,4 +109,33 @@ test('Flow navigation loads another issue while an earlier block check is pendin
   await action;
   assert.equal($('rename-issue').textContent, 'Issue two');
   assert.equal(state.view.flow.revision, 1, 'The earlier issue result cannot replace the new selection.');
+});
+
+test('proposal deletion waits for confirmation without the ordinary action deadline', async () => {
+  const source = readFileSync('scripts/factory-ui/flow-ui.js', 'utf8');
+  const start = source.indexOf('  function postFlowAction(');
+  const end = source.indexOf('  window.createInvestigationFollowupsUI(', start);
+  const release = Promise.withResolvers();
+  const requests = [];
+  const deadlines = [];
+  const post = (path, input, signal) => {
+    requests.push({ path, action: input.action, signal });
+    return release.promise;
+  };
+  const wait = (request, timeout) => {
+    deadlines.push(timeout);
+    return request(new AbortController().signal);
+  };
+  const send = new Function('post', 'waitForFlowResponse', source.slice(start, end) + '\nreturn postFlowAction;')(
+    post,
+    wait
+  );
+  const deletion = send({ action: 'delete-pending-issue' });
+  const ordinary = send({ action: 'open-block' });
+  assert.deepEqual(deadlines, [30_000]);
+  assert.equal(requests[0].signal, undefined);
+  assert.ok(requests[1].signal instanceof AbortSignal);
+  release.resolve({ confirmed: true });
+  assert.deepEqual(await deletion, { confirmed: true });
+  await ordinary;
 });

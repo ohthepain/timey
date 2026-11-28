@@ -150,7 +150,10 @@ results and evidence. The observer reads Git and PR facts independently of model
 turns. Local Git queries have short timeouts. PR reads run separately and retain
 freshness and failures. An externally merged PR is an observation, not acceptance.
 Factory suggests Update Branch when the cached upstream of Starting point
-contains commits missing from the issue branch. Git fetches remain explicit operations or external Git-tool work.
+contains commits missing from the issue branch. Start and Resume run that
+prerequisite before Work. A pending local merge can also trigger it before
+Publish when Work is already complete. The update fetches the starting branch
+and retains its own result.
 
 The center column shows playback results and closure errors in a Results section
 directly below the issue banner, hidden when empty. Playback status remains visible
@@ -296,9 +299,12 @@ conversations still block the update. This check starts no model turn.
 New oversized inputs fail before dispatch and leave a blocked attempt rather
 than uncertain ownership.
 
-An explicit Update Branch run normally aborts an existing merge in the managed
-issue checkout before fetching. This discards that merge’s partial resolutions.
-Committed issue work remains. Other unfinished Git operations stop the update.
+Update Branch fetches the starting branch before reconciling an existing merge.
+It can finish a merge of that branch and carry its resolutions forward when
+the fetched branch has advanced. If the earlier conflicts are untouched, it can
+instead retry against the new revision directly. A merge outside the fetched
+branch's history, a missing original merge tree, unrelated staged edits, or
+another unfinished Git operation requires review before the update proceeds.
 
 Factory fetches the exact remote branch selected in Starting point, or the
 configured remote upstream of a local starting branch. A local branch without
@@ -328,8 +334,10 @@ when resolution requires a decision. Retry fetches the starting branch and shows
 the saved question with the staged resolutions intact while the issue head,
 target, and conflict match. **Record decision and continue** supplies the answer
 to the conflict resolution turn. A changed head, target, or conflict triggers a
-fresh merge evaluation. Changes outside the recorded conflict require review
-before Factory can restart the merge.
+fresh merge evaluation. If the user fully stages a resolution, Factory can
+finish that merge and carry it forward to a newer starting-branch revision.
+Changes outside the recorded conflict require review before Factory can restart
+the merge.
 
 Factory commits the resolved merge through normal Git hooks. If the attempts
 cannot finish, Factory keeps the local commit and the in-progress merge, lists

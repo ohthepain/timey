@@ -551,10 +551,11 @@ aggregate result while the other required checks still run and report separately
 The Flow **Verify** block can check saved, uncommitted source changes. Its
 verification and step audit must report the same snapshot tree. The source
 check records symlinks by their link targets and accounts for deleted files.
-Update Branch aborts a pending merge before fetching the starting branch, then
+Update Branch fetches the starting branch before recovering a pending merge, then
 checks that the issue branch contains the fetched commit. Its focused executor
-checks cover restarting a conflicted merge against the latest upstream while
-preserving committed issue work and an untracked draft. If conflict resolution
+checks cover retaining staged resolutions as upstream advances and restarting an
+untouched merge against the latest upstream while preserving an untracked draft.
+If conflict resolution
 returns without resolving the files, the error includes the worker’s explanation
 or decision request. Other Git operations
 remain blocked. The issue header shows a red Merge in progress menu while Git
@@ -1263,7 +1264,8 @@ Git hook and an injected conflict worker; they install no dependencies.
 
 Update Branch automatically makes up to three conflict-resolution attempts in the
 same conversation. Each attempt receives the previous failure, retains separate
-evidence, and preserves the target, HEAD, and unrelated staged files. An explicit
+evidence, and preserves the target, HEAD, and unrelated staged files. The repair
+uses Factory's supplied instructions so it can start with a conflicted skill file. An explicit
 `flow-result` blocker of `human-input` or a permission denial stops the loop early.
 Only a fully staged resolution is committed. Failed attempts retain the merge.
 Unresolved conflicts turn Fix Branch red after the operation stops, including
@@ -1271,6 +1273,8 @@ when an older repair record is stale or passed. The dialog offers Retry Update
 Branch after automatic recovery has failed; it reuses the guarded update path.
 `flow-executor.check.mjs` checks recovery on a later attempt, exhaustion, and human
 input. `--branch-repair` checks the red fallback and retry through the real UI.
+`flow.check.mjs` checks that Start and Resume recover a pending branch merge
+before publishing completed Work.
 
 Merge budgets repair attempts per distinct blocker within an explicit run. Each
 blocker receives up to the configured `repairAttempts`; a new failure does not

@@ -147,10 +147,55 @@ test('proposal deletion releases a failed seal and checks newly shared evidence 
     { code: 'STORE_UNAVAILABLE', pending: true }
   );
   assert.equal(await f.records.get('project/migration'), null);
+  await assert.rejects(f.project.pauseProposalDelete({ operationId }), {
+    code: 'STORE_DELETE_PAUSE_UNAVAILABLE',
+  });
   await f.evidence('other', [ref]);
   f.physical.remove = remove;
   assert.equal((await f.project.resumeDelete({ operationId })).deleted, true);
   assert.equal((await f.physical.get(ref)).toString(), 'Evidence shared while deletion stands interrupted.');
+});
+
+void test('pausing proposal deletion releases shared writes and fences the old preparation', async (t) => {
+  const f = await fixture(t);
+  await f.add('proposal', { state: 'needs-approval', location: 'open' });
+  const ref = await f.physical.put({ body: 'Keep this proposal evidence.' });
+  await f.evidence('proposal', [ref]);
+  const { revision } = await f.project.readIssue('proposal');
+  const entered = Promise.withResolvers();
+  const release = Promise.withResolvers();
+  const retainedPayloads = f.records.retainedPayloads.bind(f.records);
+  f.records.retainedPayloads = (input) => {
+    entered.resolve();
+    return release.promise.then(() => retainedPayloads(input));
+  };
+  const operationId = 'delete-paused-proposal';
+  const deleting = f.project.deleteIssue({
+    issueId: 'proposal',
+    expectedRevision: revision,
+    operationId,
+    purpose: 'proposal',
+  });
+  try {
+    await Promise.race([entered.promise, deleting.then(() => assert.fail('Expected deletion to prepare.'))]);
+    assert.deepEqual(await f.project.pauseProposalDelete({ operationId }), { status: 'paused' });
+    assert.equal(await f.records.get('project/migration'), null);
+    await f.project.coordination.commit(
+      'unrelated-shared-change',
+      [{ key: 'evidence/other', revision: null }],
+      [{ key: 'evidence/other', value: { refs: [ref] } }]
+    );
+    release.resolve();
+    await assert.rejects(deleting, { code: 'STORE_CONFLICT' });
+    assert.equal((await f.project.readIssue('proposal')).revision, revision);
+    assert.equal((await f.physical.get(ref)).toString(), 'Keep this proposal evidence.');
+    assert.deepEqual(await f.project.pauseProposalDelete({ operationId }), { status: 'paused' });
+    assert.equal((await f.project.resumeDelete({ operationId })).deleted, true);
+    assert.equal((await f.physical.get(ref)).toString(), 'Keep this proposal evidence.');
+  } finally {
+    release.resolve();
+    await deleting.catch(() => {});
+  }
 });
 
 for (const kind of ['files', 'git'])
@@ -190,6 +235,9 @@ test('Delete resumes the same durable cleanup after partial physical deletion an
   };
   await assert.rejects(f.del('a'), { code: 'STORE_UNAVAILABLE', pending: true });
   assert.equal((await f.records.get('catalog/a')).value.state, 'deleted');
+  await assert.rejects(f.project.pauseProposalDelete({ operationId: 'delete-a' }), {
+    code: 'STORE_DELETE_PAUSE_UNAVAILABLE',
+  });
   assert.equal((await f.records.get('project/migration')).value.operationId, 'delete-a');
   f.physical.remove = remove;
   const unavailable = join(f.root, '.issues/factory-ui/project-discuss/unreadable');

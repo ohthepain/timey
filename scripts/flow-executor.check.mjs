@@ -2659,6 +2659,89 @@ test('Update Branch uses the local starting branch upstream independently of Des
   assert.match(readFileSync(updated.artifacts.files.mergeMessage.path, 'utf8'), /^Fast-forwarded to /);
 });
 
+void test('Update Branch starts repair when a conflicted skill cannot be discovered', async (t) => {
+  const f = fixture(t);
+  const path = 'user/skills/fixture/SKILL.md';
+  mkdirSync(dirname(join(f.root, path)), { recursive: true });
+  writeFileSync(join(f.root, path), '---\nname: fixture\ndescription: Original\n---\n');
+  f.git('add', path);
+  f.git('commit', '-m', 'Add a skill');
+  f.git('remote', 'add', 'origin', f.root);
+  await f.run('understand');
+  const { checkout } = f.flow.workspace;
+  const target = '---\nname: fixture\ndescription: Target\n---\n';
+  writeFileSync(join(f.root, path), target);
+  f.git('commit', '-am', 'Edit target skill');
+  writeFileSync(join(checkout, path), '---\nname: fixture\ndescription: Issue\n---\n');
+  const turn = f.connection.turn.bind(f.connection);
+  f.connection.turn = async (...args) => {
+    assert.match(args[2], /Resolve only these conflicted paths/);
+    assert.deepEqual(args[4], []);
+    assert.match(readFileSync(join(checkout, path), 'utf8'), /<<<<<<< HEAD/);
+    writeFileSync(join(checkout, path), '---\nname: fixture\ndescription: Target and issue\n---\n');
+    f.git('-C', checkout, 'add', path);
+    return turn(...args);
+  };
+  await f.run('update-branch');
+  assert.ok(!f.calls.some(({ method }) => method === 'skills/list'));
+  assert.equal(f.git('-C', checkout, 'show', 'HEAD:' + path).includes('Target and issue'), true);
+});
+
+void test('Update Branch resumes staged conflict work before merging an advanced upstream', async (t) => {
+  const f = await branchUpdateFixture(t, 'source.txt');
+  const firstTarget = f.advance();
+  writeFileSync(join(f.checkout, 'source.txt'), 'Local change.\n');
+  f.connection.turn = async () =>
+    'Choose a default.\n\n```flow-result\n{"failure":"Choose a default.","blocker":"human-input"}\n```';
+  await assert.rejects(f.run('update-branch'), /Choose a default/);
+  assert.equal(f.work('rev-parse', 'MERGE_HEAD'), firstTarget);
+  writeFileSync(join(f.checkout, 'source.txt'), 'Local and incoming change.\n');
+  f.work('add', 'source.txt');
+  writeFileSync(join(f.root, 'later.txt'), 'Later upstream work.\n');
+  f.git('add', 'later.txt');
+  f.git('commit', '-m', 'Advance upstream again');
+  const latest = f.git('rev-parse', 'HEAD');
+  f.connection.turn = async () => assert.fail('The existing staged resolution must be reused.');
+  const result = await f.run('update-branch', { continuing: true });
+  assert.equal(result.result.fetchedCommit, latest);
+  assert.equal(f.work('merge-base', 'HEAD', latest), latest);
+  assert.equal(f.work('show', 'HEAD:source.txt'), 'Local and incoming change.');
+  assert.equal(f.work('status', '--porcelain'), '');
+});
+
+void test('Update Branch leaves unrelated staged work in a pending merge', async (t) => {
+  const f = await branchUpdateFixture(t, 'source.txt');
+  const target = f.advance();
+  writeFileSync(join(f.checkout, 'source.txt'), 'Issue change.\n');
+  f.work('commit', '-am', 'Issue change');
+  assert.throws(() => f.work('merge', '--no-edit', target));
+  writeFileSync(join(f.checkout, 'unrelated.txt'), 'Unrelated staged edit.\n');
+  f.work('add', 'unrelated.txt');
+  const saved = f.work('rev-parse', 'HEAD');
+  f.connection.turn = async () => assert.fail('Do not dispatch repair with unrelated staged edits.');
+  await assert.rejects(f.run('update-branch'), /staged edits outside the merge.*unrelated\.txt/);
+  assert.equal(f.work('rev-parse', 'HEAD'), saved);
+  assert.equal(f.work('rev-parse', 'MERGE_HEAD'), target);
+  assert.equal(f.work('show', ':unrelated.txt'), 'Unrelated staged edit.');
+});
+
+void test('Update Branch preserves a pending merge outside the new upstream history', async (t) => {
+  const f = await branchUpdateFixture(t, 'source.txt');
+  const base = f.work('rev-parse', 'HEAD');
+  const old = f.advance();
+  writeFileSync(join(f.checkout, 'source.txt'), 'Issue change.\n');
+  f.work('commit', '-am', 'Issue change');
+  assert.throws(() => f.work('merge', '--no-edit', old));
+  const oldFile = readFileSync(join(f.checkout, 'source.txt'), 'utf8');
+  f.git('switch', '-qc', 'replacement', base);
+  writeFileSync(join(f.root, 'source.txt'), 'Different upstream history.\n');
+  f.git('commit', '-am', 'Rewrite upstream');
+  f.git('branch', '-f', 'dev', 'HEAD');
+  await assert.rejects(f.run('update-branch'), /outside the fetched starting branch history/);
+  assert.equal(f.work('rev-parse', 'MERGE_HEAD'), old);
+  assert.equal(readFileSync(join(f.checkout, 'source.txt'), 'utf8'), oldFile);
+});
+
 test('Update Branch stops before merging when a normal Git hook rejects the local commit', async (t) => {
   const f = await branchUpdateFixture(t);
   f.advance();
@@ -2969,7 +3052,7 @@ test('unfinished Work continuations leave the full check-repair budget available
   assert.equal(checks, 4);
 });
 
-test('Update Branch aborts a pending merge before fetching and merging the latest starting branch', async (t) => {
+test('Update Branch restarts untouched conflicts against the latest starting branch', async (t) => {
   const f = await branchUpdateFixture(t, 'source.txt');
   const oldTarget = f.advance();
   writeFileSync(join(f.checkout, 'source.txt'), 'Issue implementation.\n');
@@ -3220,6 +3303,59 @@ for (const changed of ['target', 'issue head', 'conflict']) {
     );
   });
 }
+
+test('Update Branch retains a decision from an older merge while the fetched target stays fixed', async (t) => {
+  const f = await branchUpdateFixture(t, 'source.txt');
+  const other = 'other.txt';
+  writeFileSync(join(f.root, other), 'Target version.\n');
+  f.git('add', other);
+  const pending = f.advance();
+  writeFileSync(join(f.checkout, 'source.txt'), 'Issue version.\n');
+  writeFileSync(join(f.checkout, other), 'Issue version.\n');
+  f.work('add', 'source.txt', other);
+  f.work('commit', '-m', 'Change both files on the issue branch');
+  assert.throws(() => f.work('merge', '--no-edit', pending));
+  writeFileSync(join(f.checkout, 'source.txt'), stagedResolution);
+  f.work('add', 'source.txt');
+  writeFileSync(join(f.root, 'later.txt'), 'Later upstream work.\n');
+  f.git('add', 'later.txt');
+  f.git('commit', '-m', 'Advance upstream again');
+  const latest = f.git('rev-parse', 'HEAD');
+
+  const turn = f.connection.turn.bind(f.connection);
+  f.connection.turn = async (...args) => {
+    assert.equal(f.work('rev-parse', 'MERGE_HEAD'), pending);
+    await turn(...args);
+    return '```flow-result\n' + JSON.stringify({ failure: conflictQuestion, blocker: 'human-input' }) + '\n```';
+  };
+  let input;
+  await assert.rejects(f.run('update-branch'), (error) => {
+    input = error.humanInput;
+    assert.equal(input.message, conflictQuestion);
+    return true;
+  });
+
+  f.connection.turn = async () => assert.fail('Retry must show the saved question before dispatch.');
+  await assert.rejects(f.run('update-branch'), (error) => {
+    assert.deepEqual(error.humanInput, input);
+    return true;
+  });
+  assert.equal(f.work('show', ':source.txt'), stagedResolution.trim());
+
+  const answer = { token: input.token, text: 'Keep both fixture changes.' };
+  f.connection.turn = async (_thread, _checkout, prompt) => {
+    assert.equal(f.work('rev-parse', 'MERGE_HEAD'), pending);
+    assert.ok(prompt.includes(JSON.stringify({ question: conflictQuestion, answer: answer.text })));
+    writeFileSync(join(f.checkout, other), 'Issue and target changes.\n');
+    f.work('add', other);
+    return 'Resolved the pending merge as directed.';
+  };
+  const result = await f.run('update-branch', { input: { branchConflictAnswer: answer } });
+  assert.equal(result.result.fetchedCommit, latest);
+  assert.equal(f.work('merge-base', 'HEAD', latest), latest);
+  assert.equal(f.work('show', 'HEAD:source.txt'), stagedResolution.trim());
+  assert.equal(f.work('status', '--porcelain'), '');
+});
 
 test('Update Branch preserves conflict edits when the target changes alongside them', async (t) => {
   const f = await decisionConflictFixture(t);

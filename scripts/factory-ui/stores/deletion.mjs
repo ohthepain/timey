@@ -161,7 +161,19 @@ async function prepare(project, operation, seal) {
     removed: 0,
     retained: 0,
   };
-  return project.coordination.updateOperation(operation, { cleanup }, 'cleanup-plan/' + seal.token, seal.token);
+  const { coordination } = project;
+  const gate = await coordination.get('project/migration');
+  requireDeletionSeal(gate, seal);
+  const saved = await coordination.commit(
+    operation.value.id + '/cleanup-plan/' + seal.token,
+    [
+      { key: operation.key, revision: operation.revision },
+      { key: gate.key, revision: gate.revision },
+    ],
+    [{ key: operation.key, value: { ...operation.value, cleanup } }],
+    seal.token
+  );
+  return saved.records[0];
 }
 
 async function eraseRecords(project, operation, stores) {
@@ -377,8 +389,17 @@ async function needsPreparation(project, operation) {
   return catalog.value.state !== 'deleted';
 }
 
+function requireDeletionSeal(gate, seal) {
+  assertStoreState(
+    gate?.value.token === seal.token,
+    'STORE_CONFLICT',
+    'The deletion lock changed. Review its status before continuing.'
+  );
+}
+
 async function releaseDeletionSeal(coordination, operation, value, stage, seal) {
   const gate = await coordination.get('project/migration');
+  requireDeletionSeal(gate, seal);
   await coordination.commit(
     operation.value.id + '/' + stage + '/' + seal.token,
     [
@@ -433,6 +454,7 @@ async function deleteFailure(project, operation, error, seal) {
   const { coordination } = project;
   const current = await coordination.get(operation.key);
   if (current?.value.status === 'confirmed') return current.value.result;
+  requireDeletionSeal(await coordination.get('project/migration'), seal);
   const operationId = operation.value.id;
   const stale = ['STORE_CONFLICT', 'STORE_MERGED'].includes(error.code);
   if (stale && (await needsPreparation(project, current))) {
@@ -466,6 +488,38 @@ async function sealedDeletion(project, operation) {
     if (current?.value.status === 'confirmed') return { result: current.value.result };
     throw error;
   }
+}
+
+export async function pauseProposalDelete(project, { operationId }) {
+  const { coordination } = project;
+  const [operation, gate] = await Promise.all([
+    coordination.get('operations/' + encodeURIComponent(operationId)),
+    coordination.get('project/migration'),
+  ]);
+  assertStoreState(
+    operation?.value.kind === 'delete-issue' &&
+      operation.value.status === 'pending' &&
+      proposalTarget(operation.value.input) &&
+      !operation.value.cleanup,
+    'STORE_DELETE_PAUSE_UNAVAILABLE',
+    'Only a proposal deletion that has not finished preparing can be paused.'
+  );
+  if (!gate && operation.value.pausedAt) return { status: 'paused' };
+  assertStoreState(
+    gate?.value.role === 'delete-proposal' &&
+      gate.value.operationId === operationId &&
+      gate.value.id === operation.value.token,
+    'STORE_CONFLICT',
+    'The proposal deletion lock changed. Refresh before pausing.'
+  );
+  await releaseDeletionSeal(
+    coordination,
+    operation,
+    { ...operation.value, pausedAt: coordination.now() },
+    'pause-delete',
+    gate.value
+  );
+  return { status: 'paused' };
 }
 
 export async function resumeDelete(project, { operationId }) {

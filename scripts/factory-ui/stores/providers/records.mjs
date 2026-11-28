@@ -366,6 +366,23 @@ export function recordStore(backend, artifacts, { allowInlineLarge = false, stor
         observeActivity('stores', 'List records', { store: storeId }, () => listDecoded(reader(), prefix, select))
       );
     },
+    async listPendingOperations(select) {
+      if (!backend.listPendingOperations) return this.list('operations/', select);
+      return readCurrent(() =>
+        observeActivity('stores', 'List pending operations', { store: storeId }, async () => {
+          const records = await backend.listPendingOperations();
+          const selected = [];
+          for (let offset = 0; offset < records.length; offset += 16) {
+            const page = await Promise.all(records.slice(offset, offset + 16).map(decode));
+            for (const entry of page) {
+              const value = select(entry);
+              if (value !== undefined) selected.push(value);
+            }
+          }
+          return selected;
+        })
+      );
+    },
     async removeRecords({ operationId, expected }) {
       assertStore(Array.isArray(expected), 'Checked record revisions are required for deletion.');
       return this.commit({

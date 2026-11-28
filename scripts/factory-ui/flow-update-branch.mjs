@@ -8,14 +8,15 @@ import { cleanEnvironment, digest, git, requireThat, writeJson } from './common.
 import { permissionFailure } from './strategy-repair.mjs';
 
 const gitOperations = ['MERGE_HEAD', 'CHERRY_PICK_HEAD', 'REVERT_HEAD', 'rebase-merge', 'rebase-apply', 'sequencer'];
-const paths = (checkout, ...args) =>
-  git(checkout, ...args, '-z')
+const paths = (checkout, command, ...args) =>
+  git(checkout, command, '-z', ...args)
     .split('\0')
     .filter(Boolean);
 const conflicts = (checkout) => paths(checkout, 'diff', '--name-only', '--diff-filter=U');
 const head = (checkout) => git(checkout, 'rev-parse', 'HEAD');
 const branch = (checkout) => git(checkout, 'branch', '--show-current');
 const status = (checkout) => git(checkout, 'status', '--porcelain', '--untracked-files=all');
+const gitPath = (checkout, name) => git(checkout, 'rev-parse', '--path-format=absolute', '--git-path', name);
 
 export async function startingBranchUpstream(flow, readGit) {
   const { remote, branch } = flow.target;
@@ -37,17 +38,22 @@ async function localBranchUpstream(ref, readGit) {
   return { remote: match[2], branch: match[3], tracking: match[4] };
 }
 
-function requireIdleCheckout({ checkout, branch: issueBranch }) {
+function checkedMerge({ checkout, branch: issueBranch }, allowMerge = false) {
   requireThat(branch(checkout) === issueBranch, 'The issue branch changed. Open the managed issue branch and retry.');
-  const operation = gitOperations.some((name) =>
-    existsSync(git(checkout, 'rev-parse', '--path-format=absolute', '--git-path', name))
-  );
+  const otherOperation = gitOperations.slice(1).some((name) => existsSync(gitPath(checkout, name)));
+  const mergePath = gitPath(checkout, 'MERGE_HEAD');
+  const merge = existsSync(mergePath) ? readFileSync(mergePath, 'utf8').trim() : '';
   const files = conflicts(checkout);
   requireThat(
-    !operation && files.length === 0,
+    !otherOperation && (!merge ? files.length === 0 : allowMerge && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(merge)),
     'Finish or abort the Git operation already in progress.' +
       (files.length ? ' Conflicted files: ' + files.join(', ') : '')
   );
+  return merge;
+}
+
+function requireIdleCheckout(workspace) {
+  checkedMerge(workspace);
 }
 
 function containsTarget(checkout, target, candidate) {
@@ -129,13 +135,18 @@ function saveDecision(checkout, decision) {
   writeJson(path, decision);
 }
 
-function retainConflictQuestion(checkout, { question, summary }, { files, identity, upstream, evidence }) {
+function retainConflictQuestion(
+  checkout,
+  { question, summary },
+  { files, identity, upstream, fetchedTarget, evidence }
+) {
   const pending = {
     token: randomUUID(),
     question: question ?? summary,
     files,
     identity,
     upstream,
+    fetchedTarget,
     snapshot: conflictSnapshot(checkout, files),
     evidence,
   };
@@ -160,6 +171,10 @@ function requireStagedResolution(checkout, result) {
     conflicts(checkout).length === 0,
     'Codex left unresolved conflicts. ' + (result.summary || 'Inspect the retained worker response.')
   );
+  requireFullyStaged(checkout);
+}
+
+function requireFullyStaged(checkout) {
   requireThat(
     !git(checkout, 'ls-files', '-mo', '--exclude-standard', '-z'),
     'The resolution left unstaged or untracked files.'
@@ -214,7 +229,7 @@ async function resolveConflictAttempts(context) {
 }
 
 async function resolveConflicts({ checkout, branch: issueBranch }, target, files, operations, decision) {
-  const { invoke, repair, signal, upstream } = operations;
+  const { invoke, repair, signal, upstream, fetchedTarget } = operations;
   const allowed = new Set(files);
   const evidence = [];
   try {
@@ -234,6 +249,7 @@ async function resolveConflicts({ checkout, branch: issueBranch }, target, files
       identity,
       evidence,
       upstream,
+      fetchedTarget,
       decision,
     });
   } catch (error) {
@@ -379,9 +395,7 @@ function reportReplayFailure(replay, error) {
 export async function abortPendingMerge(workspace, invoke) {
   const { checkout, branch: issueBranch } = workspace;
   requireThat(branch(checkout) === issueBranch, 'The issue branch changed. Open the managed issue branch and retry.');
-  const active = gitOperations.filter((name) =>
-    existsSync(git(checkout, 'rev-parse', '--path-format=absolute', '--git-path', name))
-  );
+  const active = gitOperations.filter((name) => existsSync(gitPath(checkout, name)));
   if (!active.includes('MERGE_HEAD')) return;
   requireThat(active.length === 1, 'Finish the other Git operation before updating the issue branch.');
   await invoke('git', ['merge', '--abort']);
@@ -413,68 +427,93 @@ function answerConflict(checkout, saved, { token, text } = {}) {
   return { question: saved.question, answer };
 }
 
-function sameConflictSource(saved, identity, target, upstream) {
-  return (
-    JSON.stringify(identity) === JSON.stringify(saved.identity) &&
-    identity.target === target &&
-    upstream === saved.upstream
+function hasMergeProgress(checkout) {
+  requireThat(
+    existsSync(gitPath(checkout, 'AUTO_MERGE')),
+    'Git did not retain the original merge tree. Review the pending merge before updating.'
   );
+  const staged = paths(checkout, 'diff', '--cached', '--name-only', '--diff-filter=ACDMRT', 'AUTO_MERGE', '--');
+  const resolved = new Set(
+    paths(checkout, 'ls-files', '--resolve-undo').map((entry) => entry.slice(entry.indexOf('\t') + 1))
+  );
+  const unrelated = staged.filter((path) => !resolved.has(path));
+  requireThat(!unrelated.length, 'Preserve staged edits outside the merge before updating: ' + unrelated.join(', '));
+  return resolved.size > 0 || Boolean(git(checkout, 'diff', '--name-only', '--diff-filter=ACDMRT', 'AUTO_MERGE', '--'));
 }
 
-async function resumeConflict(workspace, saved, target, operations, answer) {
+async function recoverBranchMerge(workspace, pending, target, operations) {
   const { checkout } = workspace;
+  const { invoke } = operations;
+  requireThat(
+    containsTarget(checkout, pending, target),
+    'The merge in progress is outside the fetched starting branch history. Review the pending merge before updating.'
+  );
+  const files = conflicts(checkout);
+  const started = hasMergeProgress(checkout);
+  if (pending !== target && files.length && !started) {
+    await abortPendingMerge(workspace, invoke);
+    return [];
+  }
+  if (files.length) return resolveConflicts(workspace, pending, files, operations);
+  requireFullyStaged(checkout);
+  await invoke('git', ['commit', '--no-edit']);
+  return [];
+}
+
+async function resumeConflict(workspace, saved, operations, answer) {
+  const { checkout } = workspace;
+  const { invoke, upstream, fetchedTarget } = operations;
   const allowed = new Set(saved.files);
   const identity = mergeIdentity(checkout, allowed);
   requireConflictCheckout(workspace, allowed, identity, saved);
   const sameSnapshot = saved.snapshot === conflictSnapshot(checkout, saved.files);
-  if (!sameConflictSource(saved, identity, target, operations.upstream)) {
-    requireThat(
-      sameSnapshot,
-      'The target or issue head and the conflict changed. Review the local resolutions before updating.'
-    );
-    return;
+  const sameMerge = JSON.stringify(identity) === JSON.stringify(saved.identity) && upstream === saved.upstream;
+  const files = conflicts(checkout);
+  if (sameMerge && fetchedTarget === (saved.fetchedTarget ?? saved.identity.target)) {
+    const decision = sameSnapshot ? answerConflict(checkout, saved, answer) : undefined;
+    if (sameSnapshot || files.length) {
+      return resolveConflicts(workspace, identity.target, files.length ? files : saved.files, operations, decision);
+    }
   }
-  const decision = sameSnapshot ? answerConflict(checkout, saved, answer) : undefined;
-  const remaining = conflicts(checkout);
-  return resolveConflicts(workspace, target, remaining.length ? remaining : saved.files, operations, decision);
+  if (sameMerge && !sameSnapshot && !files.length) {
+    return recoverBranchMerge(workspace, identity.target, fetchedTarget, operations);
+  }
+  requireThat(
+    sameSnapshot,
+    'The target or issue head and the conflict changed. Review the local resolutions before updating.'
+  );
+  await abortPendingMerge(workspace, invoke);
+  return [];
 }
 
-async function retryPendingBranch(workspace, upstream, operations, saved, answer) {
+async function reconcileBranchMerge(workspace, pending, operations, answer) {
   const { checkout } = workspace;
-  const { invoke, signal } = operations;
-  const target = await fetchIssueTarget(checkout, upstream, invoke);
-  signal.throwIfAborted();
-  const before = head(checkout);
-  const resumed = await resumeConflict(workspace, saved, target, operations, answer);
-  if (resumed) {
-    rmSync(conflictDecisionPath(checkout), { force: true });
-    return updatedBranch(checkout, target, before, resumed);
-  }
-  await abortPendingMerge(workspace, invoke);
-  return mergeFetchedTarget(workspace, target, operations);
+  const saved = readDecision(checkout);
+  const evidence = saved
+    ? await resumeConflict(workspace, saved, operations, answer)
+    : await recoverBranchMerge(workspace, pending, operations.fetchedTarget, operations);
+  rmSync(conflictDecisionPath(checkout), { force: true });
+  return evidence;
 }
 
 export async function updateIssueBranch(workspace, upstream, invoke, repair, signal, answer) {
   const { checkout } = workspace;
-  const operations = { invoke, repair, signal, upstream: JSON.stringify(upstream) };
   signal.throwIfAborted();
-  const saved = readDecision(checkout);
-  if (saved) return retryPendingBranch(workspace, upstream, operations, saved, answer ?? undefined);
-  await abortPendingMerge(workspace, invoke);
-  requireIdleCheckout(workspace);
-  rmSync(conflictDecisionPath(checkout), { force: true });
+  const pending = checkedMerge(workspace, true);
+  const current = head(checkout);
   const target = await fetchIssueTarget(checkout, upstream, invoke);
   signal.throwIfAborted();
-  return mergeFetchedTarget(workspace, target, operations);
-}
-
-async function mergeFetchedTarget(workspace, target, operations) {
-  const { checkout } = workspace;
-  const { invoke, signal } = operations;
+  requireThat(
+    checkedMerge(workspace, true) === pending && head(checkout) === current,
+    'The issue checkout changed while fetching the starting branch. Review it before retrying.'
+  );
+  const operations = { invoke, repair, signal, upstream: JSON.stringify(upstream), fetchedTarget: target };
+  const recovered = pending ? await reconcileBranchMerge(workspace, pending, operations, answer ?? undefined) : [];
+  signal.throwIfAborted();
   requireIdleCheckout(workspace);
-  const current = head(checkout);
-  if (containsTarget(checkout, target, current))
-    return { target, head: current, message: 'Already up to date.', evidence: [] };
+  const beforeUpdate = head(checkout);
+  if (containsTarget(checkout, target, beforeUpdate))
+    return updateResult(checkout, current, target, beforeUpdate, recovered);
 
   await saveLocalChanges(checkout, invoke);
   signal.throwIfAborted();
@@ -485,14 +524,15 @@ async function mergeFetchedTarget(workspace, target, operations) {
     signal.throwIfAborted();
     return resolveConflicts(workspace, target, files, operations);
   });
-  return updatedBranch(checkout, target, savedHead, evidence);
-}
-
-function updatedBranch(checkout, target, before, evidence) {
   const result = head(checkout);
   requireThat(containsTarget(checkout, target, result), 'The issue branch does not contain the fetched commit.');
-  requireThat(result !== before, 'Git did not move the issue branch to the updated commit.');
+  requireThat(result !== savedHead, 'Git did not move the issue branch to the updated commit.');
+  return updateResult(checkout, current, target, result, recovered.concat(evidence ?? []));
+}
+
+function updateResult(checkout, original, target, result, evidence) {
+  if (result === original) return { target, head: result, message: 'Already up to date.', evidence };
   const message =
     result === target ? 'Fast-forwarded to ' + target + '.' : git(checkout, 'show', '-s', '--format=%B', result);
-  return { target, head: result, updated: true, message, evidence: evidence ?? [] };
+  return { target, head: result, updated: true, message, evidence };
 }

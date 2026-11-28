@@ -1,4 +1,4 @@
-Fetch the starting branch and merge it into the issue branch. Save local changes in a commit first when there are incoming changes. If there is already a merge in progress, then abort the merge first.
+Fetch the starting branch and merge it into the issue branch. Save local changes in a commit first when there are incoming changes. Resume a compatible merge in progress and keep its resolutions. If the starting branch advanced and the earlier conflicts are untouched, retry against the fetched commit.
 
 # User extensions
 
