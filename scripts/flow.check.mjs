@@ -40,7 +40,9 @@ import { humanGuard } from './factory-ui/guard.mjs';
 import { ViewSources } from './factory-ui/view-sources.mjs';
 import { BlockCatalog, blockExtensions, userBlocks } from './factory-ui/block-catalog.mjs';
 import { moveIssueStorage } from './factory-ui/issue-storage-actions.mjs';
+import { deleteProjectIssues } from './factory-ui/project-issue-deletion.mjs';
 import { FactoryUI } from './factory-ui/service.mjs';
+import { serverControl } from './factory-ui/server-control.mjs';
 import { readQueue } from './factory-ui/data.mjs';
 import { decisionBasis } from './factory-ui/recorded-result.mjs';
 import { issueCleanupIdentities, previewIssueCleanupResource } from './factory-ui/issue-cleanup.mjs';
@@ -49,6 +51,62 @@ import { maximumTextInputLength, oversizedTextInputMessage, validateTextInput } 
 import { runRetro } from './factory-ui/flow-retro.mjs';
 import { randomUUID } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
+
+test('Delete selected rejects overlapping batches and stops after a paused deletion', async (t) => {
+  const { root, git } = gitFixture(t, 'delete-selection-');
+  git('commit', '--allow-empty', '-qm', 'fixture');
+  mkdirSync(join(root, '.issues'));
+  cpSync(new URL('../.issues/triage-labels.md', import.meta.url), join(root, '.issues/triage-labels.md'));
+  const service = new FactoryUI(root);
+  const control = serverControl(service);
+  t.after(() => {
+    control.close();
+    service.close();
+  });
+  const selected = ['first', 'second', 'third'].map((id) => ({ id, location: 'open' }));
+  const entered = Promise.withResolvers();
+  const resume = Promise.withResolvers();
+  const attempted = [];
+  const workflow = {
+    selected: (id) => ({ id, title: id, content: id, location: 'open', state: 'needs-approval' }),
+    read: ({ id }) => ({ issueId: id, revision: 0 }),
+    async action({ issueId }) {
+      attempted.push(issueId);
+      if (issueId === 'first') throw Error('This proposal has a pending operation.');
+      if (issueId === 'second') {
+        entered.resolve();
+        await resume.promise;
+        throw Object.assign(Error('The deletion was paused.'), { pending: true });
+      }
+      assert.fail('The paused batch advanced to another proposal.');
+    },
+  };
+  const { basis } = await deleteProjectIssues(service, workflow, { action: 'preview', selected });
+  const request = { action: 'delete', selected, basis };
+  const progress = [];
+  const batch = deleteProjectIssues(service, workflow, request, (status) => progress.push(status));
+  try {
+    await Promise.race([entered.promise, batch.then(() => assert.fail('The batch ended before the pause.'))]);
+    assert.equal(control.status().actions, 1);
+    const action = control.actions().find(({ title }) => title === 'Delete selected issues');
+    assert.equal(action?.target, 'first, second, third');
+    assert.equal(action.status, 'running');
+    assert.deepEqual(action.issues, []);
+    await assert.rejects(deleteProjectIssues(service, workflow, request), /selected-issue deletion is already running/);
+    assert.deepEqual(progress.at(-1), { currentId: 'second', processed: 1, deleted: 0, total: 3 });
+  } finally {
+    resume.resolve();
+    await batch;
+  }
+  const { results } = await batch;
+  assert.deepEqual(attempted, ['first', 'second']);
+  assert.deepEqual(
+    results.map(({ status }) => status),
+    ['kept', 'kept', 'kept']
+  );
+  assert.equal(service.issueStorageTasks.size, 0);
+  assert.equal(control.status().actions, 0);
+});
 
 test('Markdown block defaults apply to new blocks and user definitions keep the Work operation', (t) => {
   const { root } = gitFixture(t, 'block-catalog-');
@@ -2056,6 +2114,8 @@ test('opted-in closure holds the worktree until Retro succeeds and files idle ap
   const pending = await flows.view(keep.id);
   assert.equal(pending.flow.folder, 'Retro items');
   await assert.rejects(submit(pending, 'play'), /Approve/);
+  const branchChoices = await submit(pending, 'destination-branches');
+  assert.ok(branchChoices.branchesUnavailable || Array.isArray(branchChoices.branches));
   const approved = await submit(pending, 'approve-issue');
   assert.equal(approved.issue.state, 'backlog');
   assert.equal(approved.issue.issueNumber, pending.issue.issueNumber);

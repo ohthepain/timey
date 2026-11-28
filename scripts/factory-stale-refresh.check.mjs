@@ -2,10 +2,9 @@ import { retainAssignmentScope } from './factory-assignment-scope.mjs';
 import { saveLifecycle } from './factory-ui/lifecycle-store.mjs';
 import { refreshRecommendation, recommendationRefresh } from './factory-ui/recommendation-refresh.mjs';
 import { writeJson, digest } from './factory-ui/common.mjs';
-import { runLifecycle } from './factory-ui/lifecycle-loop.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { deliveryScenario } from './issue-delivery-scenario.mjs';
 import { factory } from './factory-ledger.mjs';
@@ -151,31 +150,6 @@ test('a fresh recommendation uses the normal launch path and cannot be retired b
         expected_recommendation: digest(JSON.stringify(fresh)),
       }),
     /stale recommendation changed/
-  );
-});
-
-test('replacement with expanded scope still asks the human before any launch', async (t) => {
-  const f = await fixture(t);
-  f.api.recommend([{ ...f.action, id: undefined, scope: 'Expand the feature beyond the approved plan.' }]);
-  f.record.status = 'running';
-  f.record.replan = false;
-  f.service.codex.start = async () => 'scope-review';
-  f.service.codex.call = async () => ({});
-  f.service.codex.turn = async () =>
-    JSON.stringify({
-      within_plan: false,
-      summary: 'The proposed work expands scope.',
-      question: 'Do you approve the expanded scope?',
-    });
-  f.service.preflight = () => {
-    throw Error('Expanded scope must not reach launch');
-  };
-  await runLifecycle(f.service, f.record);
-  assert.equal(f.record.status, 'waiting');
-  assert.equal(f.record.input.type, 'scope');
-  assert.equal(
-    f.service.store.runs.some((r) => r.kind === 'worker'),
-    false
   );
 });
 

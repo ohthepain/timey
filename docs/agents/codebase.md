@@ -304,16 +304,11 @@ legacy integration records for explicit final acceptance, without inventing hist
 record and retains preservation receipts. `record-update-policy.mjs` limits that
 path to excluded records and configured ordinary stages, ending at Final review.
 
-The issue-level Progress controller is `factory-ui/lifecycle-control.mjs` and
-`lifecycle-loop.mjs`; it composes existing operation handlers rather than replacing
-their guards. `lifecycle-store.mjs` adapts the shared durable progress store.
-`lifecycle-assessment.mjs`, `lifecycle-authorization.mjs` and `lifecycle-review.mjs`
-review saved answers, original plan approval and assignment scope. Inline responses
-route through `lifecycle-input.mjs` and `lifecycle-human.mjs`; native shared requests
-retain guarded owner updates. `lifecycle-work.mjs` waits for child runs and reuses
-existing chats for bounded corrections. The issue screen renders the complete
-“What happened” lifecycle event history with inline timestamps and role-transition
-labels. See the UI guide for consent boundaries.
+Flow dispatches and resumes issue work through `factory-ui/flow-service.mjs` and
+`flow-executor.mjs`. Server restart drains active work and replaces the listener.
+The coordinator reconnects to its own conversation. Neither operation starts
+issue work. `lifecycle-store.mjs` retains local workspace and conversation
+references used by Flow and manual Factory operations.
 
 `factory-ui/output-history.mjs` reads earlier public JSONL events using stable byte
 cursors through the authenticated read-only output-history endpoint.
@@ -543,10 +538,9 @@ cover HTTP/transport/decode failures, identity mismatches, successful readiness,
 bounded retention and failed-recovery lock preservation.
 
 `factory-ui/server-control.mjs` counts live actions, unfinished saved runs, cleanup
-and temporary chats. It blocks new
-UI work while paused or draining and requests coordinator pauses. `restart-process.mjs`
-hands the installed listener to a replacement process and resumes saved paused
-controllers through normal guards. `server-control-ui.js` owns the header controls
+and temporary chats. It blocks new UI work while paused or draining.
+`restart-process.mjs` hands the installed listener to a replacement process.
+`server-control-ui.js` owns the header controls
 and reconnects without replacing the page or its draft. Disposable process and
 transport tests live in `factory-server-control.check.mjs`.
 
@@ -995,6 +989,11 @@ supplies files/Git, Postgres, and S3 bytes. `stores/snapshots.mjs` installs
 validated local display projections and preserves report drafts; report writers
 enter `stores/report-access.mjs` for authoritative checks. `stores/evidence.mjs`
 retains and resolves immutable evidence without rewriting hashed proof JSON.
+The runtime registers S3 uploads in a separate Coordination namespace before
+the S3 write. The record provider includes a bounded reference projection with
+large records and their receipts for reference-only inventory.
+`stores/asset-cleanup.mjs` checks that namespace against surviving references
+and removes verified unused S3 objects under the existing storage seal.
 A view shares its observed folder catalogue and field choices across issue
 settings and folder forms. The next view reads a new snapshot; mutation helpers
 retain fresh discovery. Evidence display metadata is bounded by bytes so large
@@ -1019,13 +1018,11 @@ authoritative read. Cold initialization retains a complete display snapshot.
 operation commits. Opening, updating, and confirming an operation do not reread
 those records over the network; admission reads, revision checks, and recovery
 after an uncertain commit retain their existing authority checks.
-`stores/classic-operation.mjs` admits Classic workers, lifecycle loops, strategy
-jobs, and queued work prompts through the same ownership and journal protocol.
-It acquires every issue claim before grouped work and retains RunStore events
-before display truncation. `stores/classic-snapshot.mjs` projects shared legacy
-history locally, removes foreign transport pointers, and restores committed
-source checkpoints after admission. A storage barrier keeps downstream Classic
-publication and merge waiting when shared confirmation is unavailable.
+`stores/classic-operation.mjs` coordinates manual workers, strategy operations,
+and queued work prompts with the shared ownership and journal protocol. It claims
+every grouped issue before launch and retains RunStore events before display
+truncation. Flow restores source using checkpoints from its saved issue record.
+
 `issue-store-ui.js` shares required profile choices, saved-destination readback,
 and checked moves across creation, follow-up, issue settings, destination, and
 bulk controls. `project-settings-ui.js` edits profile names, pairs, retirement,

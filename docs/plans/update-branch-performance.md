@@ -193,7 +193,7 @@ The strict step audit passed with zero introduced findings and warnings treated
 as failures. Its measured coverage came from this final candidate:
 
 ```sh
-NODE_V8_COVERAGE=/tmp/timey-branch-verified-coverage node --test scripts/store-recovery.check.mjs scripts/store-records.check.mjs scripts/project-stores-flow.check.mjs scripts/project-stores.check.mjs scripts/store-runtime.check.mjs scripts/store-atomic-flow.check.mjs scripts/store-snapshot-scope.check.mjs scripts/store-snapshot-files.check.mjs scripts/store-git-transaction.check.mjs scripts/store-git-github.check.mjs scripts/store-deletion.check.mjs scripts/store-deletion-retention.check.mjs scripts/store-deletion-cache.check.mjs scripts/store-classic-snapshot.check.mjs
+NODE_V8_COVERAGE=/tmp/timey-branch-verified-coverage node --test scripts/store-recovery.check.mjs scripts/store-records.check.mjs scripts/project-stores-flow.check.mjs scripts/project-stores.check.mjs scripts/store-runtime.check.mjs scripts/store-atomic-flow.check.mjs scripts/store-snapshot-scope.check.mjs scripts/store-snapshot-files.check.mjs scripts/store-git-transaction.check.mjs scripts/store-git-github.check.mjs scripts/store-deletion.check.mjs scripts/store-deletion-retention.check.mjs scripts/store-deletion-cache.check.mjs
 FALLOW_COVERAGE=/tmp/timey-branch-verified-coverage FALLOW_COVERAGE_ROOT="$PWD" TIMEY_FALLOW_ENFORCE=1 TIMEY_FALLOW_WARNINGS=error pnpm run audit:step -- --base 3549f7e8afbc52bf724448e74a9d2460f1c1962c
 ```
 

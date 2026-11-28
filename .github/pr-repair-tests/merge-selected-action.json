@@ -1,0 +1,20 @@
+{
+  "version": 2,
+  "name": "Merge preserves Action list entries for linked work and both deletion paths",
+  "expectedTests": [
+    "the header lists concurrent linked work and unlinked deletion with resumable work",
+    "Delete selected rejects overlapping batches and stops after a paused deletion"
+  ],
+  "command": [
+    "node",
+    "--test",
+    "--test-name-pattern=^the header lists concurrent linked work and unlinked deletion with resumable work$|^Delete selected rejects overlapping batches and stops after a paused deletion$",
+    "scripts/factory-server-control.check.mjs",
+    "scripts/flow.check.mjs"
+  ],
+  "source": {
+    "attemptId": "8635902b-959d-4398-b66b-dd0be8288303",
+    "checkout": "91b8b5ebf373ab28c80a0d6aa7a63ce318d980b7",
+    "tree": "0808776edae27c2a70d92f5e99b2e070e8bf5a8e"
+  }
+}

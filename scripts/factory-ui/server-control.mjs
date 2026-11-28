@@ -1,9 +1,7 @@
 import { blockDefinitionId } from './flow-block-data.mjs';
-import { resumeIssue } from './restart-process.mjs';
 import { existsSync } from 'node:fs';
 import { basename, join } from 'node:path';
-import { requireThat, writeJson } from './common.mjs';
-import { saveLifecycle } from './lifecycle-store.mjs';
+import { requireThat } from './common.mjs';
 import { readQueue } from './data.mjs';
 import { openSiblingIssueIds } from './linked-issues.mjs';
 import { cleanupActionRecords } from './issue-cleanup.mjs';
@@ -24,7 +22,6 @@ const finishing = new Set([
   '/api/issue-chat-control',
   '/api/issue-chat-stop',
   '/api/answer',
-  '/api/lifecycle-pause',
   '/api/issue-strategy-stop',
   '/api/server-action',
   '/api/discussion-summary',
@@ -62,8 +59,7 @@ function allowedWhilePaused(phase, path, input) {
 }
 export function serverControl(service, restart) {
   let phase = 'idle',
-    error = null,
-    paused = [];
+    error = null;
   const timer = setInterval(tick, 300);
   timer.unref();
   function activity() {
@@ -100,8 +96,6 @@ export function serverControl(service, restart) {
     service.ownServer();
     phase = 'paused';
     error = null;
-    paused = [...service.lifecycleTasks.keys()];
-    for (const issueId of paused) service.pauseLifecycle({ issueId });
     return status();
   }
   function request() {
@@ -122,8 +116,6 @@ export function serverControl(service, restart) {
     requireThat(phase !== 'restarting', 'Restart has already started.');
     phase = 'idle';
     error = null;
-    for (const issueId of paused) restoreProgress(service, issueId);
-    paused = [];
     return status();
   }
   async function tick() {
@@ -132,9 +124,7 @@ export function serverControl(service, restart) {
     if (!ready(current)) return;
     phase = 'restarting';
     try {
-      const receipt = { resume: paused, requestedAt: new Date().toISOString(), previousPid: process.pid };
-      writeJson(join(service.store.directory, 'server-restart.json'), receipt);
-      await restart(receipt);
+      await restart();
     } catch (failure) {
       phase = 'draining';
       error = failure.message;
@@ -496,12 +486,6 @@ function canSkipActiveWorker(action, connected, turn) {
 
 function canSkipStoppedWorker(action, connected) {
   return ['blocked', 'failed'].includes(action?.status) && !connected;
-}
-function restoreProgress(service, issueId) {
-  const record = service.lifecycleRuns[issueId];
-  if (!record) return;
-  saveLifecycle(service, record, { pauseRequested: false });
-  if (record.status === 'paused') resumeIssue(service, issueId);
 }
 
 function ready(current) {

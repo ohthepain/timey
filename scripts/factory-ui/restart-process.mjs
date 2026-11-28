@@ -1,9 +1,7 @@
 import { spawn } from 'node:child_process';
-import { openSync, closeSync, readFileSync, existsSync, unlinkSync } from 'node:fs';
+import { openSync, closeSync } from 'node:fs';
 import { join } from 'node:path';
-import { cleanEnvironment, requireThat } from './common.mjs';
-import { readQueue } from './data.mjs';
-import { progressBasis } from './next-action.mjs';
+import { cleanEnvironment } from './common.mjs';
 import { factoryEntry } from './ui-source.mjs';
 import { factoryReportFlags } from './heap-crash.mjs';
 
@@ -47,31 +45,7 @@ export async function waitForPrevious(pid) {
   }
   throw Error('Previous server did not stop. No replacement was started.');
 }
-export function resumeAfterRestart(service) {
-  if (service.reviewMode === 'preview') return;
-  const path = join(service.store.directory, 'server-restart.json');
-  if (!existsSync(path)) return;
-  const receipt = JSON.parse(readFileSync(path, 'utf8'));
-  if (receipt.previousPid === process.pid) return;
-  receipt.resume.forEach((id) => resumeIssue(service, id));
-  unlinkSync(path);
-}
-export function resumeIssue(service, issueId) {
-  const record = service.lifecycleRuns[issueId];
-  if (!paused(record)) return;
-  const queue = readQueue(service.root),
-    issue = queue.issues.find((item) => item.id === issueId);
-  try {
-    service.startLifecycle({ issueId, state: issue.state, issueBasis: progressBasis(queue, issueId) });
-  } catch (error) {
-    // Preserve normal workflow guards rather than forcing a new attempt.
-    console.error(`Saved progress for ${issueId} needs attention: ${error.message}`);
-  }
-}
 
-function paused(record) {
-  return record?.status === 'paused' && !record.input;
-}
 function processExists(pid) {
   try {
     process.kill(pid, 0);

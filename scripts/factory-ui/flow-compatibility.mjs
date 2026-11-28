@@ -24,7 +24,6 @@ const surfaces = [
       'scripts/factory-ui/server-control.mjs',
       'scripts/factory-ui/server-control-ui.js',
       'scripts/factory-ui/stores/classic-operation.mjs',
-      'scripts/factory-ui/stores/classic-snapshot.mjs',
       'scripts/factory-server-control.check.mjs',
       'scripts/issue-delivery.check.mjs',
     ],

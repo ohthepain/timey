@@ -2,7 +2,7 @@ import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { isWorkBlock } from '../flow-store.mjs';
 import { createSourceCheckpoint } from './source-checkpoints.mjs';
-import { join, relative, isAbsolute, sep } from 'node:path';
+import { join, relative, resolve, isAbsolute, sep } from 'node:path';
 import { git } from '../common.mjs';
 import { collectEvidence } from './evidence.mjs';
 import { inputDigest } from './coordination.mjs';
@@ -12,12 +12,15 @@ function unique(values, identity) {
 }
 
 export async function retainFlowEvidence(stores, issueId, flow, operationId, owner) {
+  const released = await stores.coordination.list('artifact-releases/' + issueId + '/');
+  const retired = new Set(released.map(({ value }) => JSON.stringify([value.path, value.sha256])));
   const incoming = await collectEvidence({
     root: stores.root,
     flow,
     artifacts: await stores.issueArtifacts(issueId),
     originId: issueId,
     allowedRoots: [join(stores.root, '.issues')],
+    released: retired,
   });
   const key = 'evidence/' + issueId;
   const previous = await stores.coordination.get(key);
@@ -25,6 +28,36 @@ export async function retainFlowEvidence(stores, issueId, flow, operationId, own
   if (sameEvidenceManifest(previous, manifest)) return incoming.gaps;
   await publishEvidenceManifest(stores, issueId, owner, operationId, key, previous, manifest);
   return incoming.gaps;
+}
+
+export async function releaseIssueArtifact(stores, issueId, originalPath, sha256) {
+  const key = 'evidence/' + issueId;
+  const current = await stores.coordination.get(key);
+  if (!Array.isArray(current?.value.files)) return;
+  const path = resolve(current.value.root || stores.root, originalPath);
+  const matches = current.value.files.filter((file) => file.path === path && file.sha256 === sha256);
+  if (!matches.length) return;
+  const marker = 'artifact-releases/' + issueId + '/' + inputDigest([path, sha256]);
+  const registry = stores.assetUploadRegistry?.();
+  if (registry) {
+    for (const store of stores.artifactStores.values()) {
+      if (store.kind !== 's3') continue;
+      await registry.registerArtifactUpload(await store.describeUpload(matches[0].ref), { released: true });
+    }
+  }
+  const previous = await stores.coordination.get(marker);
+  await stores.coordination.commit(
+    'release-issue-artifact/' + inputDigest([marker, current.revision]),
+    [
+      { key, revision: current.revision },
+      { key: marker, revision: previous?.revision ?? null },
+      await evidenceClaim(stores, issueId),
+    ],
+    [
+      { key, value: { ...current.value, files: current.value.files.filter((file) => !matches.includes(file)) } },
+      { key: marker, value: { path, sha256 } },
+    ]
+  );
 }
 
 function sameEvidenceManifest(previous, manifest) {

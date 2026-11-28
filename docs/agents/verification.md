@@ -108,9 +108,7 @@ asynchronous transition.
 When copy is part of the requirement, set up the fixture in the expected
 locale, locate the control by its stable selector, and assert the exact text
 or accessible name. Include the expected and actual values in the diagnostic.
-Keep assertions for issue wording, notes, and other fixture content. The
-Classic closure scenario exercises an English label change and removes the
-control from an already loaded issue to check the missing-control diagnostic.
+Keep assertions for issue wording, notes, and other fixture content.
 
 `node scripts/flow-browser.mjs --inbox-details --manual-close --local-notes`
 uses a disposable project to exercise playback, block Details, the Close menu,
@@ -126,8 +124,8 @@ details in `merge-target-update.json`. The fixture simulates GitHub responses
 and supplies a candidate check that verifies a clean worktree containing the
 target commit.
 
-`node scripts/flow-browser.mjs --project-issues` exercises retired Classic
-links and operations, the Flow Issues queue, and archival of saved issues.
+`node scripts/flow-browser.mjs --project-issues` exercises the Flow Issues queue
+and archival of saved issues.
 
 `node scripts/flow-browser.mjs --request-save` holds Request clarification after
 saving Your words on an existing issue. Rename, Close, Stop, and the editor remain
@@ -1075,7 +1073,7 @@ one PR per complete issue. Historical records retain their original meaning.
 ## Issue capture checks
 
 Run `node --test scripts/issue-creation.check.mjs` for HTTP and direct Flow creation,
-multi-issue Classic capture, retry identity, and peer deletion after capture.
+multi-issue capture, retry identity, and peer deletion after capture.
 The disposable provider refuses unrelated report reads, so these checks detect
 queue-wide refreshes during creation while confirming new report persistence and
 preservation of the existing display snapshot. They measure no cloud latency.
@@ -1298,6 +1296,14 @@ buttons in both directions, verifies that switching clears selection and the
 editor, and archives a closed selection with Archive selected. It also verifies that
 the disabled direction caret is hidden for fixed status ordering and reappears
 for an order whose direction can change.
+
+The same browser check verifies **Delete selected** for archived reports and
+proposals awaiting approval. It confirms both batches in the Issues tab,
+checks that Cancel keeps proposals, and verifies that an ineligible Open issue
+hides the control and prevents the server from deleting any item in that request.
+It exercises Select all on unapproved proposals without a Work approval prompt.
+Unchecking Select all clears hidden selections. A confirmed deletion includes
+selected reports hidden by the current search.
 
 `node scripts/flow-browser.mjs --issue-status-folders` checks the rendered In progress
 and Blocked sidebar collections with disposable reports in multiple folders. Saved

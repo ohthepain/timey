@@ -406,29 +406,6 @@ test('unfinished work and failed evidence still block completion from Implement'
   assert.equal(f.provider.state().creates, 0);
 });
 
-test('resumed Continue reaches completion review and publication approval from a stopped Implement record', async (t) => {
-  const f = await fixture(t);
-  await implementationStage(f, 'in-progress');
-  const { runLifecycle } = await import('./factory-ui/lifecycle-loop.mjs');
-  const { lifecycleWorkBasis } = await import('./factory-ui/lifecycle-stop.mjs');
-  const queue = readQueue(f.root),
-    issue = queue.issues[0];
-  f.record.stopBasis = lifecycleWorkBasis(queue, issue, f.record);
-  f.record.attempts.push(f.record.stopBasis + ':plan');
-  f.record.replan = false;
-  await runLifecycle(f.service, f.record);
-  assert.equal(f.record.status, 'waiting');
-  assert.equal(f.record.input.type, 'publication');
-  assert.equal(f.provider.state().creates, 0);
-  assert.equal(f.queue.git('rev-parse', 'HEAD'), f.base, 'Target remains unchanged');
-  assert.notEqual(f.delivery.inspect(f.issueId).candidate, f.base, 'Review uses the undelivered candidate');
-  assert.equal(readQueue(f.root).issues[0].state, 'in-progress');
-  assert.equal(
-    f.service.store.runs.some((r) => ['worker', 'assembly'].includes(r.kind)),
-    false
-  );
-});
-
 test('legacy mixed evidence is staged and compiled without rerunning completed work or approving publication', async (t) => {
   const f = await fixture(t);
   const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs');
@@ -505,37 +482,6 @@ test('unregistered temporary completion evidence cannot be imported by a reviewe
   assert.match(run.summary, /unregistered-worker-secret.log/);
   assert.equal(f.delivery.inspect(f.issueId).readiness, null);
   assert.equal(f.record.input, undefined);
-  assert.equal(f.provider.state().creates, 0);
-});
-
-test('changed inputs retain diagnostics but do not trigger recovery or replanning', async (t) => {
-  const f = await fixture(t);
-  const { assertCurrentInputs } = await import('./factory-ui/input-change.mjs');
-  const { handleLifecycleFailure } = await import('./factory-ui/lifecycle-work.mjs');
-  const { appendFileSync } = await import('node:fs');
-  const { join } = await import('node:path');
-  const before = readQueue(f.root);
-  appendFileSync(join(f.root, '.issues', f.issueId + '.md'), '\nChanged scope.\n');
-  let recovery;
-  assert.throws(
-    () => assertCurrentInputs(before, readQueue(f.root), f.issueId, 'Review changed.'),
-    (error) => {
-      recovery = error.recovery;
-      assert.deepEqual(recovery.changedInputs, ['reports:' + f.issueId]);
-      assert.equal(recovery.owner, 'coordinator');
-      return true;
-    }
-  );
-  const run = {
-    id: 'changed-input-review',
-    kind: 'completion-review',
-    recovery,
-    summary: 'Review changed.',
-  };
-  assert.equal(await handleLifecycleFailure(f.service, f.record, run), false);
-  assert.notEqual(f.record.replan, true);
-  assert.equal(await handleLifecycleFailure(f.service, f.record, run), false);
-  assert.equal(f.record.status, 'blocked');
   assert.equal(f.provider.state().creates, 0);
 });
 

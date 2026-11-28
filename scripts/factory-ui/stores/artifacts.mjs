@@ -6,9 +6,12 @@ import {
   S3Client,
   PutObjectCommand,
   GetObjectCommand,
+  GetBucketVersioningCommand,
   HeadObjectCommand,
   DeleteObjectCommand,
+  DeleteObjectsCommand,
   ListObjectsV2Command,
+  ListObjectVersionsCommand,
 } from '@aws-sdk/client-s3';
 import { readProjectEnv } from '../project-env.mjs';
 
@@ -63,6 +66,7 @@ function storageFailure(error, action) {
 class ArtifactStore {
   constructor(config, options) {
     this.id = component(config.id, 'Artifact store');
+    this.kind = config.kind;
     this.projectId = component(options.projectId, 'project identity');
     this.config = config;
     this.root = options.root;
@@ -194,16 +198,67 @@ class S3Artifacts extends ArtifactStore {
     requireArtifact(this.bucket && this.region, 'Configure the artifact bucket and its region.');
     this.prefix = String(config.prefix || 'factory/artifacts').replace(/^\/+|\/+$/g, '');
     this.client = options.s3Client || new S3Client({ region: this.region });
+    this.registerUpload = options.registerUpload;
   }
   objectKey(ref) {
     return `${this.prefix}/${ref.key}`;
   }
+  describeUpload(ref) {
+    const key = this.projectId + '/sha256/' + ref.sha256;
+    return {
+      bucket: this.bucket,
+      objectKey: this.objectKey({ key }),
+      sha256: ref.sha256,
+      bytes: ref.bytes,
+    };
+  }
+  async removeRegisteredUpload(upload) {
+    const target = this.describeUpload(upload);
+    if (target.bucket !== upload.bucket || target.objectKey !== upload.objectKey) return false;
+    const head = await this.client
+      .send(new HeadObjectCommand({ Bucket: this.bucket, Key: target.objectKey }))
+      .catch(skipMissingS3);
+    if (head) requireArtifact(Number(head.ContentLength) === upload.bytes, 'The S3 artifact size changed.');
+    this.versioning ??= this.client.send(new GetBucketVersioningCommand({ Bucket: this.bucket })).catch((error) => {
+      this.versioning = null;
+      throw error;
+    });
+    if ((await this.versioning).Status) {
+      await this.removeVersions(target.objectKey);
+    } else if (head) {
+      await this.client.send(
+        new DeleteObjectCommand({ Bucket: this.bucket, Key: target.objectKey, IfMatch: head.ETag })
+      );
+    }
+    return true;
+  }
+  async removeVersions(key) {
+    for (;;) {
+      const page = await this.client.send(
+        new ListObjectVersionsCommand({ Bucket: this.bucket, Prefix: key, MaxKeys: 1000 })
+      );
+      const versions = [...(page.Versions ?? []), ...(page.DeleteMarkers ?? [])]
+        .filter(({ Key }) => Key === key)
+        .map(({ Key, VersionId }) => ({ Key, VersionId }));
+      if (!versions.length) return;
+      requireArtifact(
+        versions.every(({ VersionId }) => typeof VersionId === 'string'),
+        'S3 returned an unverified version.'
+      );
+      const result = await this.client.send(
+        new DeleteObjectsCommand({ Bucket: this.bucket, Delete: { Objects: versions, Quiet: true } })
+      );
+      requireArtifact(!result.Errors?.length, 'S3 could not remove all artifact versions.');
+    }
+  }
   async write(ref, bytes) {
+    const objectKey = this.objectKey(ref);
+    await this.registerUpload?.(this.describeUpload(ref));
     try {
       await this.client.send(
         new PutObjectCommand({
           Bucket: this.bucket,
-          Key: this.objectKey(ref),
+          Key: objectKey,
           Body: bytes,
           ContentType: ref.mediaType,
           ContentLength: ref.bytes,
@@ -228,7 +283,7 @@ class S3Artifacts extends ArtifactStore {
     }
   }
   async delete(ref) {
-    await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: this.objectKey(ref) }));
+    await this.removeRegisteredUpload(this.describeUpload(ref));
   }
   async probe() {
     try {

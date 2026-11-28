@@ -15,22 +15,32 @@ import { readSnapshot } from './snapshots.mjs';
 import { listStoredIssues } from '../issue-report-storage.mjs';
 import { sharedIssueQueueConfig, sharedIssueQueueEnabled } from '../shared-issue-config.mjs';
 import { collectEvidence, hydrateEvidence, registerEvidenceResolver } from './evidence.mjs';
-import { captureClassicSnapshot } from './classic-snapshot.mjs';
-import { readProgress } from '../../factory-progress.mjs';
 import { activateStorageProfiles, persistStorageProfiles } from './profile-activation.mjs';
+import { assetCleanupRole, collectS3Uploads, stageReportAssets } from './asset-cleanup.mjs';
+import { assetIdentity } from './asset-references.mjs';
+import { backgroundAction } from '../server-action-inventory.mjs';
 
 const runtimes = new WeakMap();
 const bootstrapKey = 'project/bootstrap';
 const methods = {
   issue: ['read', 'list', 'commit', 'commitGroup', 'history', 'retainedPayloads', 'retireReceipts', 'removeRecords'],
-  records: ['get', 'list', 'listPendingOperations', 'commit', 'retainedPayloads', 'retireReceipts', 'removeRecords'],
+  records: [
+    'get',
+    'list',
+    'listPendingOperations',
+    'commit',
+    'retainedPayloads',
+    'retireReceipts',
+    'removeRecords',
+    'registerArtifactUpload',
+  ],
   artifact: ['put', 'get', 'inspect', 'list', 'remove', 'open', 'probe'],
 };
 
 const additionalMethods = {
   issue: { files: ['readSnapshot'], git: ['readSnapshot'], postgres: ['readSnapshot'] },
   records: { files: ['readSnapshot'], git: ['readSnapshot', 'transaction'], postgres: ['readSnapshot'] },
-  artifact: { files: ['localDirectory'] },
+  artifact: { files: ['localDirectory'], s3: ['describeUpload', 'removeRegisteredUpload'] },
 };
 function providerMethods(kind, config) {
   return [...methods[kind], ...(additionalMethods[kind]?.[config.kind] || [])];
@@ -47,6 +57,24 @@ function lazyProvider(runtime, kind, config) {
         projectId: runtime.config.projectId,
         artifacts: runtime.artifacts,
         readOnly: runtime.readOnly,
+        ...(config.id.startsWith('artifact-uploads:') && config.kind !== 'dynamodb' && { inlinePayloads: true }),
+        ...(kind === 'artifact' &&
+          config.kind === 's3' &&
+          !runtime.readOnly && {
+            registerUpload: async (upload) => {
+              async function requireIdleCleanup() {
+                const gate = await runtime.project.coordination.get('project/migration');
+                assertStore(
+                  gate?.value.role !== assetCleanupRole,
+                  'STORE_BUSY',
+                  'Factory is cleaning up unused S3 artifacts. Retry the upload.'
+                );
+              }
+              await requireIdleCleanup();
+              await artifactUploadRegistry(runtime).registerArtifactUpload(upload);
+              await requireIdleCleanup();
+            },
+          }),
       };
       const create = { issue: openIssueStore, records: openRecordStore, artifact: openArtifactStore }[kind];
       const provider = await create(config, options);
@@ -58,7 +86,11 @@ function lazyProvider(runtime, kind, config) {
     });
     return pending;
   };
-  const proxy = { id: config.id, ...(kind === 'issue' && { supportsCoordinatedCommit: true }) };
+  const proxy = {
+    id: config.id,
+    ...(kind === 'artifact' && { kind: config.kind }),
+    ...(kind === 'issue' && { supportsCoordinatedCommit: true }),
+  };
   for (const name of providerMethods(kind, config))
     proxy[name] = async (...args) => {
       const provider = await open();
@@ -67,10 +99,97 @@ function lazyProvider(runtime, kind, config) {
         'STORE_UNSUPPORTED',
         'The configured store does not support this operation.'
       );
-      return provider[name](...args);
+      const result = await provider[name](...args);
+      if (
+        kind !== 'artifact' &&
+        ['commit', 'commitGroup', 'removeRecords', 'retireReceipts'].includes(name) &&
+        !config.id.startsWith('artifact-uploads:')
+      )
+        scheduleAssetReconciliation(runtime);
+      return result;
     };
   runtime.providers.set(key, proxy);
   return proxy;
+}
+
+function scheduleAssetReconciliation(runtime) {
+  if (
+    runtime.service.reviewMode !== 'live' ||
+    runtime.assetCleanup ||
+    runtime.assetReconcileTimer ||
+    !runtime.config.stores.some((store) => store.kind === 's3')
+  )
+    return;
+  runtime.assetReconcileTimer = setTimeout(() => {
+    runtime.assetReconcileTimer = null;
+    void cleanProjectAssetUploads(runtime.service).catch(() => {});
+  }, 1000);
+  runtime.assetReconcileTimer.unref();
+}
+
+function artifactUploadRegistry(runtime) {
+  const { coordination, stores } = runtime.config;
+  const config = stores.find(({ id }) => id === coordination);
+  assertStore(config, 'STORE_UNCONFIGURED', 'Configure the Coordination store before uploading S3 artifacts.');
+  return lazyProvider(runtime, 'records', { ...config, id: 'artifact-uploads:' + config.id });
+}
+
+export async function stageReportDeletionAssets(service, ids) {
+  const runtime = runtimes.get(service);
+  if (!runtime?.project || !Array.isArray(ids)) return;
+  await stageReportAssets(runtime.project, artifactUploadRegistry(runtime), ids);
+}
+
+export async function s3ReferenceStatus(service, { sha256, bytes }) {
+  assertStore(
+    /^[a-f0-9]{64}$/.test(sha256) && Number.isSafeInteger(bytes) && bytes >= 0,
+    'STORE_INVALID',
+    'Supply an S3 object digest and size.'
+  );
+  if (service.reviewMode === 'preview') return { object: { sha256, bytes }, refCount: 0, status: 'unknown' };
+  const object = { sha256, bytes };
+  const identity = assetIdentity(object);
+  return inspectProjectStores(service.root, readStoreConfig(service.root), async (project) => {
+    const registry = project.assetUploadRegistry();
+    const [references, registered, deleted] = await Promise.all([
+      registry.list('asset-references/' + identity + '/'),
+      registry.list('artifact-uploads/', ({ value }) => (assetIdentity(value) === identity ? true : undefined)),
+      registry.list('asset-deletions/', ({ value }) => (assetIdentity(value.object) === identity ? true : undefined)),
+    ]);
+    return {
+      object,
+      refCount: references.length,
+      status: registered.length ? 'registered' : deleted.length ? 'deleted' : 'unknown',
+    };
+  });
+}
+
+export async function cleanProjectAssetUploads(service) {
+  const state = service.serverControl?.status();
+  if (state && (state.phase !== 'idle' || state.actions || state.operations || state.chats || state.approvals))
+    return 0;
+  let runtime = runtimes.get(service);
+  if (!runtime?.ready) {
+    if (runtime?.pending || !readStoreConfig(service.root).stores.some((store) => store.kind === 's3')) return 0;
+    await ensureProjectStores(service, { allowPending: true });
+    runtime = runtimes.get(service);
+  }
+  if (!runtime?.ready || runtime.assetCleanup || runtime.pending) return 0;
+  if (![...runtime.project.artifactStores.values()].some((store) => store.kind === 's3')) return 0;
+  service.ownServer();
+  const task = backgroundAction('asset-cleanup', assetCleanupRole, 'Clean up S3 artifacts', basename(service.root));
+  service.issueStorageTasks ||= new Set();
+  service.issueStorageTasks.add(task);
+  const pending = observeActivity('stores', 'Clean up S3 artifacts', diagnosticContext(service.root), () =>
+    collectS3Uploads(runtime.project, artifactUploadRegistry(runtime))
+  );
+  runtime.assetCleanup = pending;
+  try {
+    return await pending;
+  } finally {
+    runtime.assetCleanup = null;
+    service.issueStorageTasks.delete(task);
+  }
 }
 
 function providersFor(runtime, role, kind) {
@@ -114,6 +233,7 @@ function buildProject(runtime, config, runnerId) {
     artifactStores,
     recordStores,
   });
+  runtime.project.assetUploadRegistry = () => artifactUploadRegistry(runtime);
   runtime.service.projectStores = runtime.project;
   runtime.service.artifacts = runtime.artifacts;
 }
@@ -194,7 +314,11 @@ function hasLiveAttempt(flow) {
 
 async function prepareLegacy(runtime) {
   const service = runtime.service;
-  assertStore(!service.flows?.active.size, 'STORE_BUSY', 'Stop active legacy work before enabling shared stores.');
+  assertStore(
+    !service.flows?.active.size && !service.lifecycleTasks?.size,
+    'STORE_BUSY',
+    'Stop active issue work before enabling shared stores.'
+  );
   if (sharedIssueQueueEnabled(service.root)) {
     assertStore(
       service.legacyImportAllowed !== false,
@@ -212,26 +336,6 @@ async function prepareLegacy(runtime) {
     'Recover existing legacy claims before enabling shared stores.'
   );
   const reports = legacyReports(service.root);
-  const classic = legacyClassicService(runtime);
-  for (const report of reports) {
-    const blocks = [...(report.flow?.blocks || []), ...(report.flow?.retiredBlocks || [])];
-    const merged = blocks.some(
-      (block) =>
-        block.kind === 'merge' &&
-        block.attempts?.some(
-          (attempt) => attempt.status === 'completed' && attempt.result?.pr && attempt.result?.revision
-        )
-    );
-    const lifecycle = classic.lifecycleRuns[report.id];
-    const runs = classic.store.runs.filter((run) => run.issueId === report.id);
-    assertStore(
-      merged ||
-        (!['running', 'answering'].includes(lifecycle?.status) &&
-          !runs.some((run) => ['preparing', 'running', 'checking'].includes(run.status))),
-      'STORE_BUSY',
-      'Reconcile active legacy Classic runs before enabling shared stores.'
-    );
-  }
   assertStore(
     !reports.some(({ flow }) => hasLiveAttempt(flow)),
     'STORE_BUSY',
@@ -243,18 +347,6 @@ async function prepareLegacy(runtime) {
     'Recover existing remote claims before enabling shared stores.'
   );
   return reports;
-}
-
-function legacyClassicService(runtime) {
-  const service = Object.create(runtime.service);
-  service.projectStores = runtime.project;
-  service.lifecycleRuns = runtime.service.lifecycleRuns || readProgress(service.root);
-  const path = join(service.root, '.issues/factory-ui/runs.json');
-  service.store = runtime.service.store || {
-    runs: existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')).runs : [],
-    connected: new Set(),
-  };
-  return service;
 }
 
 async function importLegacy(runtime) {
@@ -302,7 +394,6 @@ async function importLegacy(runtime) {
         artifactStoreId: runtime.config.artifacts,
         operationId: 'bootstrap/' + manifest + '/' + source.id,
       });
-    source.classic = await captureClassicSnapshot(legacyClassicService(runtime), source.id);
     await retainLegacyEvidence(runtime, source, manifest);
   }
   verifyLegacyBytes(reports);
@@ -334,19 +425,13 @@ async function importLegacy(runtime) {
 }
 
 async function retainLegacyEvidence(runtime, source, manifest) {
-  if (!source.flow && !source.classic) return;
+  if (!source.flow) return;
   const records = runtime.project.records;
   const key = 'evidence/' + source.id;
   if (await records.get(key)) return;
   const value = await collectEvidence({
     root: runtime.service.root,
-    flow: {
-      flow: source.flow,
-      classic: source.classic,
-      files: (source.classic?.runs || []).map((run) => ({
-        path: join(runtime.service.root, '.issues/factory-ui', run.id + '.jsonl'),
-      })),
-    },
+    flow: source.flow,
     artifacts: await runtime.project.issueArtifacts(source.id),
     originId: 'legacy-' + runtime.config.projectId + '-' + source.id,
     allowedRoots: [join(runtime.service.root, '.issues')],
@@ -591,6 +676,8 @@ function closeProviders(runtime) {
 export async function closeProjectStores(service) {
   const runtime = runtimes.get(service);
   if (!runtime) return;
+  clearTimeout(runtime.assetReconcileTimer);
+  await runtime.assetCleanup?.catch(() => {});
   runtime.unregister?.();
   await closeProviders(runtime);
   for (const evidence of runtime.evidence?.values() || []) evidence.unregister();

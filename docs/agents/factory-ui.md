@@ -186,8 +186,7 @@ circular plus button adds a step. The center-column Start/Resume/Pause control r
 the route one eligible block at a time. A confirmation link appears in the header
 when the route reaches a protected block. The Run, Retry, Recover, or Stop button
 beside the selected block's name controls that block individually.
-Flow is the Factory workspace. Legacy `/classic` links open the selected issue
-in Flow. Legacy queue links open **Issues**. Other legacy links open Project Home.
+Flow is the Factory workspace.
 In the **Issues** tab,
 you can filter and sort saved issues, edit shared fields across an open selection,
 and archive a closed selection.
@@ -664,13 +663,12 @@ heap limit. Both values come from the same server sample. The reading refreshes
 automatically and shows **Heap unavailable** when Factory cannot obtain a reading.
 
 The header counts running actions and open temporary chats. **No new actions** is
-an on/off switch. Turning it on blocks new work and requests that coordinators
-pause after their current action. All chats remain available, including opening
+an on/off switch. Turning it on blocks new work. All chats remain available, including opening
 conversations, sending and queuing prompts, retrying responses, and steering.
 Existing work can finish, permission replies and saving/ending a temporary chat
 remain available. A requested server restart still drains work before restarting
 and blocks new chat responses during that handoff. Turning the switch off restores
-normal dispatch and resumes paused coordinators through their existing guards.
+normal dispatch.
 The switch does not restart the server or start a build. Unknown locks still
 need their existing reconciliation workflow.
 

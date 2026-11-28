@@ -1,5 +1,5 @@
 import { observeActivity } from '../../diagnostic-activity.mjs';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { recordPayload, withRecordPayloads } from './record-payloads.mjs';
 
@@ -122,6 +122,26 @@ async function pack(value, artifacts, allowInlineLarge, inlineLimit) {
   return { encoding: 'artifact', ref: await artifacts.put({ body, mediaType: 'application/json' }) };
 }
 
+function boundedReferenceIndex(index) {
+  return Buffer.byteLength(JSON.stringify(index)) <= 32_768;
+}
+
+function indexRecordReferences(payload, value) {
+  if (payload.encoding !== 'artifact') return payload;
+  const referenceIndex = {
+    version: 1,
+    ...(typeof value?.kind === 'string' && { kind: value.kind }),
+    refs: references(value).map(({ storeId, key, sha256, bytes, mediaType }) => ({
+      storeId,
+      key,
+      sha256,
+      bytes,
+      ...(typeof mediaType === 'string' && { mediaType }),
+    })),
+  };
+  return boundedReferenceIndex(referenceIndex) ? { ...payload, referenceIndex } : payload;
+}
+
 async function unpack(payload, artifacts) {
   if (payload?.encoding === 'json') return JSON.parse(JSON.stringify(payload.value));
   assertStore(payload?.encoding === 'artifact' && artifacts?.get, 'The stored payload requires its Artifact store.');
@@ -140,10 +160,14 @@ function artifactReference(value) {
   );
 }
 
-function references(value, retained = new Map()) {
-  if (!value || typeof value !== 'object') return [...retained.values()];
-  if (artifactReference(value)) retained.set(canonical(value), value);
-  for (const nested of Object.values(value)) references(nested, retained);
+function references(value) {
+  const retained = new Map();
+  function visit(input) {
+    if (!input || typeof input !== 'object') return;
+    if (artifactReference(input)) retained.set(canonical(input), input);
+    for (const nested of Object.values(input)) visit(nested);
+  }
+  visit(value);
   return [...retained.values()];
 }
 
@@ -174,20 +198,35 @@ function artifactReceipt(entry, ref, storeId) {
   });
 }
 
-async function decodedWithRefs(record, decode, onUnreadable) {
+async function decodedWithRefs(record, decode, onUnreadable, referencesOnly, index = record.value?.referenceIndex) {
+  const { encoding, ref } = record.value ?? {};
+  if (
+    referencesOnly &&
+    encoding === 'artifact' &&
+    index?.version === 1 &&
+    Array.isArray(index.refs) &&
+    index.refs.every(artifactReference)
+  ) {
+    return { ...record, value: { kind: index.kind }, payloadRef: ref, refs: [ref, ...index.refs] };
+  }
   const decoded = await retainedEntry(() => decode(record), onUnreadable);
   return {
     ...record,
     value: decoded?.value,
+    ...(encoding === 'artifact' && { payloadRef: ref }),
     refs: references([record.value, decoded?.value]),
   };
 }
 
-async function retainedReceipt(entry, decode, unpackPayload, onUnreadable) {
+async function retainedReceipt(entry, decode, unpackPayload, onUnreadable, referencesOnly) {
   const { receipt } = entry;
   const result = receipt.deleted ? { records: [] } : await unpackPayload(receipt.result);
   assertStore(Array.isArray(result.records), 'The retained operation result is invalid.');
-  const records = await Promise.all(result.records.map((record) => decodedWithRefs(record, decode, onUnreadable)));
+  const records = await Promise.all(
+    result.records.map((record, index) =>
+      decodedWithRefs(record, decode, onUnreadable, referencesOnly, receipt.recordReferenceIndexes?.[index])
+    )
+  );
   return {
     id: entry.id,
     inputDigest: receipt.inputDigest,
@@ -227,8 +266,11 @@ function referenceReceiptDetails({ id, identity, payloadRef, records }) {
 
 const unchanged = (entry) => entry;
 
-async function readRetainedReceipt(entry, decode, unpackPayload, onUnreadable) {
-  const receipt = await retainedEntry(() => retainedReceipt(entry, decode, unpackPayload, onUnreadable), onUnreadable);
+async function readRetainedReceipt(entry, decode, unpackPayload, onUnreadable, referencesOnly) {
+  const receipt = await retainedEntry(
+    () => retainedReceipt(entry, decode, unpackPayload, onUnreadable, referencesOnly),
+    onUnreadable
+  );
   return receipt ?? unreadableReceipt(entry);
 }
 
@@ -245,13 +287,13 @@ async function collectRetained(backend, decode, unpackPayload, settings) {
   const projectRecord = referencesOnly ? referenceDetails : unchanged;
   const projectReceipt = referencesOnly ? referenceReceiptDetails : unchanged;
   const visitRecord = async (record) => {
-    const decoded = await decodedWithRefs(record, decode, onUnreadable);
+    const decoded = await decodedWithRefs(record, decode, onUnreadable, referencesOnly);
     if (excludeArtifactInventory && inventoryRecord(decoded, storeId)) return;
     if (onRecord) await onRecord(decoded);
     else records.push(projectRecord(decoded));
   };
   const visitReceipt = async (entry) => {
-    const receipt = await readRetainedReceipt(entry, decode, unpackPayload, onUnreadable);
+    const receipt = await readRetainedReceipt(entry, decode, unpackPayload, onUnreadable, referencesOnly);
     if (!receipt || (excludeArtifactInventory && isInventoryReceipt(receipt, storeId))) return;
     if (onReceipt) await onReceipt(receipt);
     else receipts.push(projectReceipt(receipt));
@@ -359,6 +401,46 @@ export function recordStore(backend, artifacts, { allowInlineLarge = false, stor
         observeActivity('stores', 'Read record', { store: storeId }, async () => decode(await reader().get(key)))
       );
     },
+    async registerArtifactUpload({ bucket, objectKey, sha256, bytes }, { released = false } = {}) {
+      assertStore(
+        typeof bucket === 'string' &&
+          bucket.length > 0 &&
+          bucket.length <= 255 &&
+          typeof objectKey === 'string' &&
+          Buffer.byteLength(objectKey) <= 1024 &&
+          /^[a-f0-9]{64}$/.test(sha256) &&
+          Number.isSafeInteger(bytes) &&
+          bytes >= 0,
+        'Register a bounded S3 object identity.'
+      );
+      const key = 'artifact-uploads/' + hash(JSON.stringify([bucket, objectKey]));
+      const value = { bucket, objectKey, sha256, bytes };
+      const current = await this.get(key);
+      if (current) {
+        assertStore(
+          Object.keys(value).every((field) => current.value[field] === value[field]),
+          'The S3 artifact identity changed.'
+        );
+        if (released && current.value.released) return;
+      }
+      const next = { ...value, touchedAt: new Date().toISOString(), released };
+      const statusKey = key.replace('artifact-uploads/', 'asset-deletions/');
+      const deleted = await this.get(statusKey);
+      const clear = deleted && !released;
+      try {
+        await this.commit({
+          operationId: key + '/' + randomUUID(),
+          expected: [
+            { key, revision: current?.revision ?? null },
+            ...(clear ? [{ key: statusKey, revision: deleted.revision }] : []),
+          ],
+          writes: [{ key, value: next }, ...(clear ? [{ key: statusKey, value: null }] : [])],
+        });
+      } catch (error) {
+        if (error.code !== 'STORE_CONFLICT') throw error;
+        return this.registerArtifactUpload(value, { released });
+      }
+    },
     async list(prefix = '', select) {
       assertStore(typeof prefix === 'string' && !prefix.includes('\0'), 'A record prefix is required.');
       if (backend.readSnapshot) return readCurrent(() => this.readSnapshot((pinned) => pinned.list(prefix, select)));
@@ -373,11 +455,15 @@ export function recordStore(backend, artifacts, { allowInlineLarge = false, stor
           const records = await backend.listPendingOperations();
           const selected = [];
           for (let offset = 0; offset < records.length; offset += 16) {
-            const page = await Promise.all(records.slice(offset, offset + 16).map(decode));
-            for (const entry of page) {
+            const raw = records.slice(offset, offset + 16);
+            const page = await Promise.all(raw.map(decode));
+            const finished = [];
+            for (const [index, entry] of page.entries()) {
+              if (entry.value.status !== 'pending' && raw[index].value.encoding === 'artifact') finished.push(entry);
               const value = select(entry);
               if (value !== undefined) selected.push(value);
             }
+            if (finished.length) await backend.rememberFinishedOperations?.(finished);
           }
           return selected;
         })
@@ -450,14 +536,29 @@ export function recordStore(backend, artifacts, { allowInlineLarge = false, stor
                 : {
                     key,
                     revision: revisionFor(request.operationId, key),
-                    value: await pack(value, artifacts, allowInlineLarge, inlineLimit),
+                    value: indexRecordReferences(await pack(value, artifacts, allowInlineLarge, inlineLimit), value),
                   },
           }))
         );
         const records = writes.flatMap((item) => (item.record ? [item.record] : []));
+        const recordReferenceIndexes = records.map(({ value }) => value.referenceIndex ?? null);
+        const receiptRecords = records.map(
+          ({ key, revision, value: { referenceIndex: _referenceIndex, ...value } }) => ({
+            key,
+            revision,
+            value,
+          })
+        );
         const receipt = {
           inputDigest: request.inputDigest,
-          result: await pack({ operationId: request.operationId, records }, artifacts, allowInlineLarge, inlineLimit),
+          result: await pack(
+            { operationId: request.operationId, records: receiptRecords },
+            artifacts,
+            allowInlineLarge,
+            inlineLimit
+          ),
+          ...(recordReferenceIndexes.some(Boolean) &&
+            boundedReferenceIndex(recordReferenceIndexes) && { recordReferenceIndexes }),
         };
         const committed = await observeActivity('stores', 'Write records', { store: storeId }, () =>
           backend.commit({ ...request, writes, receipt })

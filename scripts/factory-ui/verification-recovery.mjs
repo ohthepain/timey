@@ -99,7 +99,7 @@ function branches(checkout) {
     })
     .filter((b) => !b.symbolic);
 }
-export function retryVerification(service, input, after) {
+export function retryVerification(service, input) {
   service.ownServer();
   const queue = readQueue(service.root),
     issue = queue.issues.find((i) => i.id === input.issueId);
@@ -158,14 +158,10 @@ export function retryVerification(service, input, after) {
         ? 'Updating from ' + branch.name + ', then checking the combined changes.'
         : 'Retrying verification of the existing implementation.',
     });
-    const task = executeRetry(service, run, action, branch)
-      .finally(() => {
-        service.store.connected.delete(run.id);
-        rmSync(lock, { recursive: true });
-      })
-      .then(() => {
-        if (run.status === 'completed' && !service.lifecycleRuns[issue.id]?.input) after?.(issue.id);
-      });
+    const task = executeRetry(service, run, action, branch).finally(() => {
+      service.store.connected.delete(run.id);
+      rmSync(lock, { recursive: true });
+    });
     service.verificationTasks ||= new Map();
     service.verificationTasks.set(run.id, task);
     void task.then(

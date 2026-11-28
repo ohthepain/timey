@@ -24,6 +24,14 @@ function archiveBlocker(service, id) {
   return null;
 }
 
+export function checkedArchivedReport(service, id) {
+  const reason = archiveBlocker(service, id);
+  requireThat(!reason, reason);
+  const report = readSavedReport(service.root, id, 'archive');
+  requireThat(!git(service.root, 'ls-files', '--cached', '--', report.path), 'The archived report is tracked by Git.');
+  return report;
+}
+
 function archiveRows(service) {
   const { root } = service;
   const tracked = new Set(git(root, 'ls-files', '--cached', '--', '.issues/archive/').split('\n'));
@@ -94,9 +102,7 @@ function approvedRows(preview, selected) {
 async function deleteArchiveRow(service, row) {
   const { id, selectedBranches } = row;
   try {
-    const reason = archiveBlocker(service, id);
-    requireThat(!reason, reason);
-    const report = readSavedReport(service.root, id, 'archive');
+    const report = checkedArchivedReport(service, id);
     requireThat(digest(report.content) === row.basis, 'The archived report changed after preview.');
     const owned = selectedBranches.length ? archivedIssueBranches(service, [row]).get(id) : new Set();
     await deleteArchivedIssueReport(service.root, id, report.content);

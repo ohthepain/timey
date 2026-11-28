@@ -9,7 +9,7 @@
 
   window.confirmProposalDeletion = (title, number) =>
     confirm(
-      `Permanently delete ${number ? '#' + number + ' ' : ''}“${title}” and its exclusively owned evidence? This cannot be undone.`
+      `Permanently delete ${number ? '#' + number + ' ' : ''}“${title}” and any evidence Factory verifies is no longer referenced? Evidence still in use is kept. This cannot be undone.`
     );
 
   window.createIssueClosureDialog = ({ dialog, panel, approve, error, request }) => {

@@ -230,20 +230,7 @@ class IssueChats {
         disposition: 'Reply recorded. Continuing the saved strategy in the owning chat.',
       };
     }
-    await this.service.answerLifecycle({
-      issueId: input.issueId,
-      updated: input.updated,
-      text: input.text,
-      decision: input.decision || 'answer',
-    });
-    appendMessage(this.service.root, input.issueId, {
-      id: input.id,
-      actor: 'human',
-      role: 'You',
-      kind: 'answer',
-      body: input.text || 'Approve the displayed plan/candidate.',
-    });
-    return { saved: true, disposition: 'Answer recorded by the current lifecycle role.' };
+    throw Error('This issue has no saved strategy waiting for a reply.');
   }
   startResponses(issueId) {
     const task = Promise.resolve()
