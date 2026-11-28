@@ -152,7 +152,8 @@ export async function interfaceStateBrowserChecks({ page, service, project, scre
     assert.equal(await wording.inputValue(), draft);
     assert.equal(await wording.evaluate((field) => field.style.height), '310px');
   }
-  await page.goto('/');
+  await page.goto('/', { waitUntil: 'commit' });
+  await page.locator('#project-home-content').waitFor();
   await page.goBack();
   await assertRestoredEditor();
   await page.reload();

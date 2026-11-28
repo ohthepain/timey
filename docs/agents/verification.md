@@ -384,7 +384,8 @@ must not be used by these checks.
 
 `node scripts/flow-browser.mjs --interface-state` checks expanded tool activity,
 editor size, drafts, caret and scroll preservation through refreshes, same-tab
-navigation, and reload. It checks that an idle issue sends no snapshot or UI
+navigation, and reload. Before exercising Back, it waits for the Home panel to
+be visible. It checks that an idle issue sends no snapshot or UI
 source requests after its initial loads and the live stream's catch-up read.
 The idle window keeps the stream open and gates delayed fixture notifications.
 Later edits exercise live notifications. The scenario drags a real selection

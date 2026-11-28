@@ -1,10 +1,10 @@
 {
   "version": 2,
-  "name": "Refresh preserves expanded activity, editor size, drafts and copied selection",
+  "name": "Issues and Local notes use matching text styles after Interface State",
   "command": ["node", "scripts/flow-browser.mjs", "--ci-part=1b", "--interface-state", "--sidebar-labels"],
   "source": {
-    "attemptId": "0f3df17b-f968-47db-b511-2b4dc96e7b59",
-    "checkout": "c9f20ffab12ff46160315234f26dad39bf487335",
-    "tree": "5cae97db6aeea7b79dad98a8914a4907a2a053fa"
+    "attemptId": "c5c8a546-1033-4413-8346-fc2fe59c41f2",
+    "checkout": "aa5af0fa42cfa5f73caf41de5a25741798887504",
+    "tree": "64ed1c0af7716a191552cbe7d4d03f7d5281e42d"
   }
 }
