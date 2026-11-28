@@ -36,6 +36,7 @@ export async function retroReportBrowserChecks({ page, project, service, output,
     const outcomes = new Map();
     flows.executor = createFlowExecutor(service, { runRetro: (_service, { issue }) => outcomes.get(issue.id) });
     const observations = [];
+    await page.goto('/');
     for (const scenario of cases) {
       const { name, title, summary, followups } = scenario;
       const id = '20261127-retro-' + name;
@@ -53,7 +54,10 @@ export async function retroReportBrowserChecks({ page, project, service, output,
       const request = 'Keep the original release request in the report.';
       await writeBrowserIssue(service, { id, title, body: request });
       const checkout = await addCheckout(flows, project, id);
-      await closeWithRetro(page, id);
+      await page.locator('#refresh').click();
+      await page.locator(`#open-issues [data-issue="${id}"]`).click();
+      await page.locator('#issue-heading').getByRole('heading', { name: title, exact: true }).waitFor();
+      await closeWithRetro(page);
       await poll(() => !flows.closureBusy(id), Boolean, 'Closure is still running. ' + id, 30_000);
       const issue = flows.selected(id);
       const { closing } = flows.read(issue);
@@ -61,7 +65,7 @@ export async function retroReportBrowserChecks({ page, project, service, output,
       assert.equal(existsSync(checkout), false, 'Cleanup removed the actual fixture worktree.');
       assert.equal(issue.location, 'closed');
       const screenshot = 'retro-report-' + name + '.png';
-      const report = await openReport(page, id);
+      const report = await openReport(page);
       await report.getByText(request, { exact: true }).waitFor();
       await report.getByText(summary.split('\n\n')[0], { exact: true }).waitFor();
       await report.getByRole('heading', { name: 'Retro', exact: true }).scrollIntoViewIfNeeded();
@@ -69,6 +73,7 @@ export async function retroReportBrowserChecks({ page, project, service, output,
       const renderedSummary = await report.locator('article').innerText();
       await report.screenshot({ path: join(output, screenshot) });
       const linkedIssues = await verifyLinks(page, flows, id, followups, report);
+      await report.getByRole('button', { name: 'Close', exact: true }).click();
       observations.push({ id, title, checkoutRemoved: true, screenshot, renderedSummary, linkedIssues });
     }
     writeFileSync(
@@ -105,8 +110,7 @@ async function addCheckout(flows, project, id) {
   return checkout;
 }
 
-async function closeWithRetro(page, id) {
-  await page.goto('/?issue=' + id);
+async function closeWithRetro(page) {
   await page.locator('#close-with-reason').click();
   const dialog = page.locator('#issue-closure-dialog');
   await dialog.getByRole('combobox', { name: 'Reason' }).selectOption('obsolete');
@@ -115,8 +119,8 @@ async function closeWithRetro(page, id) {
   await dialog.waitFor({ state: 'hidden' });
 }
 
-async function openReport(page, id) {
-  await page.goto('/?issue=' + id);
+async function openReport(page) {
+  await page.locator('#closed-issue-indicator').waitFor();
   await page.getByRole('button', { name: 'Issue report', exact: true }).click();
   const report = page.getByRole('dialog', { name: 'Issue report' });
   await report.getByRole('heading', { name: 'Retro', exact: true }).waitFor();
@@ -140,7 +144,10 @@ async function verifyLinks(page, flows, id, followups, report) {
     await page.getByRole('heading', { name: title, exact: true }).waitFor();
     assert.equal(new URL(page.url()).searchParams.get('issue'), issue.id);
     linkedIssues.push({ title, label, href, state: issue.state });
-    await openReport(page, id);
+    const closed = page.locator('#closed-issues');
+    if ((await closed.getAttribute('open')) === null) await closed.locator('summary').click();
+    await closed.locator(`[data-issue="${id}"]`).click();
+    await openReport(page);
   }
   return linkedIssues;
 }
