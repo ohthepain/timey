@@ -63,27 +63,40 @@ export function priorRepairBrowserProof(root, attempts, candidate) {
 }
 
 export function pausedMergeRepair(root, attempts = [], head) {
-  const index = repairIndexes(attempts.filter(({ status }) => status === 'blocked')).at(-1);
-  const repair = readEvidence(root, index)?.attempts?.at(-1);
-  if (!repair || repair.failedHead !== head) return;
-  return pausedRepairFailure(root, repair);
+  const attempt = attempts.findLast(hasRepairOutcome);
+  if (['blocked', 'stopped'].includes(attempt?.status)) return pausedRepairFromAttempt(root, attempt, head);
+}
+
+function pausedRepairFromAttempt(root, attempt, head) {
+  if (attempt.invalidatedAt) return;
+  const history = readEvidence(root, repairIndexes([attempt]).at(-1));
+  if (history?.attemptId === attempt.id) return pausedRepairFailure(history.attempts.at(-1), head, attempt.id);
+}
+
+function hasRepairOutcome({ status, evidence }) {
+  return status === 'completed' || evidence?.some(({ label }) => label === 'Merge repair index');
 }
 
 function repairIndexes(attempts = []) {
   return attempts.flatMap(({ evidence = [] }) => evidence.filter(({ label }) => label === 'Merge repair index'));
 }
 
-function pausedRepairFailure(root, repair) {
-  if (!repair.conversation?.turnId) return;
-  const result = readEvidence(root, repair.result);
-  if (repairStoppedForProvider(result)) return repair.failure;
+function pausedRepairFailure(repair, head, attemptId) {
+  if (repair && repair.failedHead === head && repair.checkoutFingerprint) return pausedRepairContext(repair, attemptId);
 }
 
-function repairStoppedForProvider(result) {
-  return (
-    result?.status === 'failed' &&
-    (result.code === 'PROVIDER_PAUSED' || /Resume explicitly when available[.]$/.test(result.message))
-  );
+function pausedRepairContext(repair, attemptId) {
+  const resumedFrom = pausedRepairTurn(repair, attemptId) ?? repair.failure.resumedFrom;
+  if (resumedFrom) return { ...repair.failure, checkoutFingerprint: repair.checkoutFingerprint, resumedFrom };
+}
+
+function pausedRepairTurn(repair, attemptId) {
+  const { threadId, turnId } = repair.conversation ?? {};
+  if (threadId && turnId) return { attemptId, round: repair.round, threadId, turnId };
+}
+
+export function repairInterrupted({ code, terminalStatus }) {
+  return code === 'PROVIDER_PAUSED' || terminalStatus === 'interrupted';
 }
 
 export function receiptRepairBrowserProof(root, receipt, candidate) {
@@ -169,7 +182,7 @@ export function mergeRepairHistory(folder, attemptId, log) {
         round,
         failedHead: revision.commit,
         startedAt: new Date().toISOString(),
-        failure: { message: error.message, revision, ciRuns: error.githubRuns ?? [] },
+        failure: { message: error.message, revision, ciRuns: error.githubRuns ?? [], resumedFrom: error.resumeRepair },
         log: existsSync(log) ? retainRepairFile(directory, 'merge.log', readFileSync(log)) : null,
         conversation: {},
       };
@@ -182,6 +195,7 @@ export function mergeRepairHistory(folder, attemptId, log) {
           record.finishedAt = new Date().toISOString();
           record.failure.evidence = outcome.failureEvidence;
           record.failure.checks = outcome.failedChecks;
+          record.checkoutFingerprint = outcome.checkoutFingerprint;
           record.candidate = outcome.candidate;
           record.repairedRevision = outcome.repairedRevision;
           record.browserProof = outcome.browserProof;
@@ -249,7 +263,7 @@ export function retainMergeRepairEvidence(root, checkout, attemptId, error, roun
   }
   const { reports, evidence } = verificationRecords(error);
   for (const file of evidence) retain(file);
-  const failedChecks = failedCheckRecords(reports, retain);
+  const failedChecks = failedCheckRecords(reports, retain, error.retainedChecks);
   return {
     evidence: [...retained.values()].map(({ worker }) => worker),
     failedChecks: failedChecks.map((check) => ({ ...check, log: check.log?.worker.path })),
@@ -264,7 +278,8 @@ function verificationRecords(error) {
   return { reports, evidence };
 }
 
-function failedCheckRecords(reports, retain) {
+function failedCheckRecords(reports, retain, retained) {
+  if (retained) return retained.map((check) => ({ ...check, log: check.log && retain(check.log) }));
   return reports.flatMap((path) => {
     const report = JSON.parse(readFileSync(retain({ path }).worker.path, 'utf8'));
     return (report.checks ?? [])

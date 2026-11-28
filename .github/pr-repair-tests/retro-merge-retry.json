@@ -1,0 +1,47 @@
+{
+  "version": 2,
+  "name": "Retro Merge Retry and starting-branch conflict recovery",
+  "command": [
+    "node",
+    "--test",
+    "--test-name-pattern=Update Branch|Merge Retry checks interrupted repair context|a new Merge run preserves and resolves",
+    "scripts/flow-executor.check.mjs"
+  ],
+  "expectedTests": [
+    "Update Branch leaves publication of the updated candidate to Merge",
+    "Work preserves distinct bases after Update Branch and a no-change result through Publish inputs",
+    "Update Branch fetches first and silently saves full local changes only when behind",
+    "Update Branch uses the local starting branch upstream independently of Destination",
+    "Update Branch starts repair when a conflicted skill cannot be discovered",
+    "Update Branch resumes staged conflict work before merging an advanced upstream",
+    "Update Branch leaves unrelated staged work in a pending merge",
+    "Update Branch preserves a pending merge outside the new upstream history",
+    "Update Branch stops before merging when a normal Git hook rejects the local commit",
+    "Update Branch formats local changes before running the save commit hook",
+    "Update Branch commits a resolved conflict",
+    "Update Branch retains the merge after three failed conflict attempts",
+    "Update Branch restarts untouched conflicts against the latest starting branch",
+    "Update Branch leaves an unfinished cherry-pick intact",
+    "a new Merge run preserves and resolves an in-progress merge of the current target",
+    "Update Branch shows the worker decision when its response leaves conflicts unresolved",
+    "Update Branch stops conflict retries when dependency preflight reports installed dependencies do not match the snapshot lockfile.",
+    "Update Branch stops conflict retries when dependency preflight reports installed dependency lock missing: node_modules/.pnpm/lock.yaml.",
+    "Update Branch automatically retries a failed resolution with its diagnostic and then commits",
+    "Update Branch carries its conflict decision and staged paths across Retry",
+    "Update Branch reevaluates a saved conflict decision when the target changes",
+    "Update Branch reevaluates a saved conflict decision when the issue head changes",
+    "Update Branch reevaluates a saved conflict decision when the conflict changes",
+    "Update Branch preserves conflict edits when the target changes alongside them",
+    "Merge Retry checks interrupted repair context: none",
+    "Merge Retry checks interrupted repair context: manual Stop",
+    "Merge Retry checks interrupted repair context: unrelated edit",
+    "Merge Retry checks interrupted repair context: PR head",
+    "Merge Retry checks interrupted repair context: target revision",
+    "Update Branch retains a decision from an older merge while the fetched target stays fixed"
+  ],
+  "source": {
+    "attemptId": "4d671997-dfc8-4d02-9451-4609352be4d9",
+    "checkout": "4fc3d1db6c397b4ef46787558807498bcbf8f90b",
+    "tree": "87701417def3420a468845357523d89bfda0ac48"
+  }
+}

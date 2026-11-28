@@ -9,7 +9,13 @@ import {
   assertBlockModelAvailable,
 } from './block-models.mjs';
 import { commandLogError } from './flow-command-error.mjs';
-import { lastBlockingError, retainBlockingError, resolveBlockingErrors, resolveRetryErrors } from './block-errors.mjs';
+import {
+  lastBlockingError,
+  retainBlockingError,
+  resolveBlockingErrors,
+  resolveRetryErrors,
+  retryingBlocker,
+} from './block-errors.mjs';
 import { guardProviderWork } from './provider-runtime.mjs';
 import { withDiagnosticContext } from './diagnostic-activity.mjs';
 import { storeUnavailable } from './stores/availability.mjs';
@@ -32,7 +38,7 @@ import {
   observedMergeReceipt,
 } from './merged-issue.mjs';
 import { pendingIssueMerge } from './flow-merge-state.mjs';
-import { abortPendingMerge } from './flow-update-branch.mjs';
+import { abortPendingMerge, pendingBranchDecision } from './flow-update-branch.mjs';
 import { BranchRepairs } from './branch-repair.mjs';
 import { observeDisconnectedFlow } from './flow-reconciliation.mjs';
 import {
@@ -256,6 +262,7 @@ function hydrateMergeLiveProof(service, issue, flow, block) {
 
 function retainExecutionFailure(current, error) {
   const { humanInput, liveProofRequirements, input } = error;
+  if (current.status === 'blocked' && error.terminalStatus === 'failed') current.terminalStatus = 'failed';
   if (humanInput || liveProofRequirements)
     current.result = {
       ...current.result,
@@ -311,6 +318,11 @@ const completedBlock = (block, flow) =>
   (flow && historicalInvestigationOutputComplete(block, flow)) ||
   latestCurrentAttempt(block)?.status === 'completed' ||
   (block.kind === 'request' && Boolean(block.data.fields) && !latestCurrentAttempt(block));
+
+function routeBlockComplete(issue, flow, block) {
+  const sequential = sequentialWork(issue, flow, block);
+  return sequential ? sequential.finished : completedBlock(block, flow);
+}
 
 function requireRevisedRequestPrerequisites(flow, block) {
   const delivery = ['publish', 'merge'].includes(block.kind);
@@ -707,7 +719,7 @@ class IssueFlows {
       humanInput: availableHumanInput(issue, flow, approvals[0]),
       paused: Boolean(this.autoplay.get(issue.id)?.userPaused),
       waitingForApproval: this.autoplay.get(issue.id)?.mode === 'waiting',
-      status: masterId && !issue.closed ? 'new' : flowStatus(flow, issue, active),
+      ...(masterId && !issue.closed ? { status: 'new' } : flowIndexState(flow, issue, active)),
     };
   }
   async storageView(id, { refresh = false } = {}) {
@@ -920,7 +932,7 @@ class IssueFlows {
       }),
       blockModels: issueBlockModels(this.service, issue, savedFlow, issueSettings, resolveFolder),
       lastBlockingError: lastBlockingError(savedFlow),
-      humanInput: availableHumanInput(issue, flow, agentApprovals[0]),
+      humanInput: selectedHumanInput(issue, flow, agentApprovals[0], proofWorkspace, this.active.has(id)),
       agentApprovals,
       liveVerificationReviews: liveVerificationReviews(this.service, issue, savedFlow),
       issueSettings: {
@@ -1527,10 +1539,7 @@ class IssueFlows {
     }
   }
   async nextAutoplayBlock(issue, flow, catalog) {
-    const next = flow.blocks.find((block) => {
-      const sequential = sequentialWork(issue, flow, block);
-      return sequential ? !sequential.finished : !completedBlock(block, flow);
-    });
+    const next = flow.blocks.find((block) => !routeBlockComplete(issue, flow, block));
     return (await this.checkSuggestedWorkUpdate(flow, next, catalog, { recoverBeforePublish: true })) || next;
   }
   async checkSuggestedWorkUpdate(flow, block, catalog, { recoverBeforePublish = false } = {}) {
@@ -1842,7 +1851,7 @@ class IssueFlows {
       return this.applyFlowDefinition(issue, flow, catalog, input);
     if (input.action === 'export-flow') return await this.exportFlow(issue, flow, catalog, input);
     if (input.action === 'reveal-flow') return this.revealFlow(issue, flow, catalog);
-    if (input.action === 'update-worktree') return this.updateWorktree(issue, flow, catalog);
+    if (input.action === 'update-worktree') return this.updateWorktree(issue, flow, catalog, input);
     if (input.action === 'delete-worktree') return this.deleteWorktree(issue, flow, input.expected);
     if (input.action === 'starting-point') return this.setStartingPoint(issue, flow, input);
     if (input.action === 'destination' || input.action === 'accept-pr-base')
@@ -2256,7 +2265,7 @@ class IssueFlows {
     }
     return this.view(issue.id);
   }
-  async updateWorktree(issue, flow, catalog) {
+  async updateWorktree(issue, flow, catalog, input) {
     const checkout = flowWorkspace(this.service, flow)?.checkout;
     requireThat(checkout && existsSync(checkout), 'This issue has no available worktree.');
     const scoped = Object.assign(Object.create(this.service), { flowOperationIssueId: issue.id });
@@ -2268,16 +2277,20 @@ class IssueFlows {
         !issueHasActiveWork(scoped, issue.id),
       'Update the branch of an idle open issue.'
     );
-    if (this.service.projectStores) {
-      const outcome = await updateOwnedWorktree(this, issue, flow);
-      return { ...(await this.view(issue.id)), branchUpdateSummary: outcome.summary };
-    }
+    const run = this.service.projectStores
+      ? updateOwnedWorktree(this, issue, flow, input)
+      : this.updateLocalWorktree(issue, flow, catalog, input);
+    const outcome = await run.catch((error) => {
+      if (!error.humanInput) throw error;
+    });
+    return { ...(await this.view(issue.id)), branchUpdateSummary: outcome?.summary };
+  }
+  async updateLocalWorktree(issue, flow, catalog, input) {
     const block = makeBlock('update-branch', [], false, catalog);
     const attempt = this.makeAttempt(flow, issue, block, catalog);
     const controller = new AbortController();
     const queue = this.service.sharedIssues;
     let claim;
-    let outcome;
     this.flowBuilds.add(issue.id);
     try {
       const disconnected = await observeDisconnectedFlow(this.service, flow, this.deliveryOptions.createConnection);
@@ -2296,13 +2309,12 @@ class IssueFlows {
       this.pauseAutoplay(issue.id, 'Updating the branch manually.');
       this.active.set(issue.id, { controller, blockId: block.id, attemptId: attempt.id });
       this.flowBuilds.delete(issue.id);
-      outcome = await this.executor.run({ issue, flow, block, attempt, signal: controller.signal });
+      return await this.executor.run({ issue, flow, block, attempt, signal: controller.signal, input });
     } finally {
       this.flowBuilds.delete(issue.id);
       this.active.delete(issue.id);
       if (claim) queue.releaseFlowBlock(claim);
     }
-    return { ...(await this.view(issue.id)), branchUpdateSummary: outcome.summary };
   }
   async deleteWorktree(issue, flow, expected) {
     requireThat(!issueHasActiveWork(this.service, issue.id), 'An issue operation is still in progress.');
@@ -2973,6 +2985,8 @@ class IssueFlows {
     const owned = { blockId: block.id, attemptId: attempt.id, controller };
     this.active.set(issue.id, owned);
     try {
+      const blocker = retryingBlocker(flow, block, route);
+      if (blocker) attempt.retryingBlocker = blocker;
       resolveRetryErrors(flow, block.id, route);
       if (this.service.projectStores) {
         const admitted = await this.attemptMetadata(block, () =>
@@ -3788,24 +3802,43 @@ function availableHumanInput(issue, flow, agentApproval) {
   return flowHumanInput(flow);
 }
 
-function flowStatus(flow, issue, active) {
-  if (issue.closed) return 'closed';
-  if (mergedDelivery(flow)) return 'merged';
-  if (issue.state === 'needs-approval') return 'needs-approval';
-  if (active) return 'running';
+function selectedHumanInput(issue, flow, agentApproval, workspace, active) {
+  const input = availableHumanInput(issue, flow, agentApproval);
+  if (input && input.kind !== 'branch-conflict') return input;
+  if (active || issue.closed || mergedDelivery(flow)) return null;
+  const pending = pendingBranchDecision(workspace?.checkout);
+  return pending && pending.token === input?.token ? input : (pending ?? null);
+}
+
+function flowIndexState(flow, issue, active) {
+  if (issue.closed) return { status: 'closed' };
+  if (mergedDelivery(flow)) return { status: 'merged' };
+  if (issue.state === 'needs-approval') return { status: 'needs-approval' };
+  if (active) return { status: 'running' };
   const attempts = flow.blocks.flatMap((block) => block.attempts);
-  if (
-    attempts.some((attempt) => !attempt.reconciledAt && ['running', 'stopping', 'uncertain'].includes(attempt.status))
-  )
-    return 'need-input';
+  if (attempts.some(unresolvedAttempt)) return { status: 'need-input' };
   const last = attempts
     .filter((attempt) => !attempt.invalidatedAt)
     .toSorted((a, b) => a.startedAt.localeCompare(b.startedAt))
     .at(-1);
-  if (['running', 'stopping', 'uncertain'].includes(last?.status)) return 'need-input';
-  if (last?.result?.mergeConfirmation) return 'need-input';
+  const status = idleFlowStatus(flow, last);
+  const flowOutcome = sidebarFlowOutcome(flow, issue, status, last);
+  return { status, flowOutcome };
+}
+
+function idleFlowStatus(flow, last) {
+  if (['running', 'stopping', 'uncertain'].includes(last?.status) || last?.result?.mergeConfirmation)
+    return 'need-input';
   if (['blocked', 'failed'].includes(last?.status)) return 'blocked';
   if (last?.status === 'stopped') return 'ready';
   if (flow.blocks.some(flowVerificationHead)) return 'ready-to-merge';
   return last ? 'ready' : 'new';
+}
+
+function sidebarFlowOutcome(flow, issue, status, last) {
+  if (status === 'blocked') return last.status === 'failed' || last.terminalStatus === 'failed' ? 'failed' : undefined;
+  if (status === 'need-input') return;
+  const closure = flow.blocks.findIndex(({ kind }) => ['close', 'retro', 'cleanup'].includes(kind));
+  const blocks = closure < 0 ? flow.blocks : flow.blocks.slice(0, closure);
+  if (blocks.length && blocks.every((block) => routeBlockComplete(issue, flow, block))) return 'completed';
 }

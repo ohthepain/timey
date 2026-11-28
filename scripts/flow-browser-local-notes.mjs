@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { LocalNotes } from './factory-ui/local-notes.mjs';
 import { resolveIssueStorage } from './factory-ui/stores/settings.mjs';
 import { listAvailableSkills } from './factory-ui/skills.mjs';
+import { assertUserMessageBox } from './flow-browser-chat-style.mjs';
 
 export async function localNotesBrowserChecks({ page, service, project, poll, screenshot, output, candidate }) {
   if (await page.locator('#discuss-draft').isVisible())
@@ -343,6 +344,7 @@ async function checkNoteRecommendations({ page, notes, turns, poll, screenshot, 
   );
   assert.equal(turns.length, before);
   const contextual = await checkNotePromptContext(page);
+  await screenshot('local-note-discussion-user-message');
   writeFileSync(
     join(output, 'note-recommendations.json'),
     JSON.stringify(
@@ -370,10 +372,11 @@ async function checkNotePromptContext(page) {
   await draft.fill('How can I clarify this note?');
   await page.locator('#discuss-send').click();
   await suggestions.filter({ hasText: 'Clarify save behavior' }).waitFor();
+  const userBox = await assertUserMessageBox(page.locator('#discuss-messages'), 'How can I clarify this note?');
   assert.deepEqual(await suggestions.allTextContents(), ['Clarify save behavior']);
   await suggestions.first().click();
   await page.getByText('Let’s discuss this note.', { exact: true }).waitFor();
   assert.equal(await suggestions.count(), 0);
   assert.ok(await page.locator('#discuss-note-actions').getByRole('button').count());
-  return { whenOpen: ['Clarify save behavior'], whenFinished: [] };
+  return { whenOpen: ['Clarify save behavior'], whenFinished: [], userBox };
 }

@@ -1,4 +1,5 @@
 import { fixtureRoute } from './flow-browser-routes.mjs';
+import { assertUserMessageBox } from './flow-browser-chat-style.mjs';
 import assert from 'node:assert/strict';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -184,6 +185,7 @@ export async function investigationReportsBrowserChecks({ page, service, project
   await messages.getByText('Retained report answer.', { exact: true }).waitFor();
   assert.equal(calls.length, 1, 'One click sends one prompt.');
   assert.equal(calls[0].text, 'Explain the most important finding in this report.');
+  const userBox = await assertUserMessageBox(messages, calls[0].text);
   await poll(metrics, atLatest, 'Report chat did not follow its latest reply.');
   const followed = await metrics();
   await messages.evaluate((node) => {
@@ -206,11 +208,7 @@ export async function investigationReportsBrowserChecks({ page, service, project
   await poll(metrics, atLatest, 'Reopened report chat did not show its latest message.');
   writeFileSync(
     join(output, 'report-chat-scroll.json'),
-    JSON.stringify(
-      { opened, followed, reading, afterUpdate, reopened: await metrics(), prompt: calls[0].text },
-      null,
-      2
-    ) + '\n'
+    JSON.stringify({ opened, followed, reading, afterUpdate, reopened: await metrics(), userBox }, null, 2) + '\n'
   );
   assert.equal(calls[0].reportContext.reportId, first.id);
   assert.equal(

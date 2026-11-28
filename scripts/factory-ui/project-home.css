@@ -271,7 +271,7 @@ body:has(.workspace[data-home-view='open'][data-project-home-tab='issues']) #new
 .home-messages:empty {
   display: none;
 }
-[data-home-message] {
+[data-home-message]:not(.user) {
   border-left: 2px solid #414c45;
   padding: 3px 14px;
 }
