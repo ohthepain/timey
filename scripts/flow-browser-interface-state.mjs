@@ -138,9 +138,14 @@ export async function interfaceStateBrowserChecks({ page, service, project, scre
   const duringDrag = await selected();
   assert.ok(duringDrag.length > 5, 'The browser must create a real mouse selection.');
   async function changeIssueTitle(title) {
-    const refreshed = page.waitForResponse((response) => new URL(response.url()).pathname === '/api/flow');
+    const refreshed = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return url.pathname === '/api/flow' && url.searchParams.get('refresh') === 'true';
+    });
     await renameStoredIssue(project, service.flows.selected(id), title);
-    await refreshed;
+    await page.clock.fastForward(60_000);
+    await page.clock.runFor(100);
+    assert.equal((await (await refreshed).json()).issue.title, title);
   }
   await changeIssueTitle('Preserve selection while dragging');
   await page.mouse.move(bounds.x + 220, bounds.y + bounds.height / 2, { steps: 4 });

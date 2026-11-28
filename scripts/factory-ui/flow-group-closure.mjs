@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { digest, git } from './common.mjs';
 import { retainedGroupAttempt } from './flow-group-proof.mjs';
-import { receiptBrowserReplay } from './flow-repair-evidence.mjs';
+import { exactDeliveryReceipt, receiptBrowserReplay } from './flow-repair-evidence.mjs';
 import { groupLiveProofStatuses } from './flow-live-proof.mjs';
 import { groupChildren } from './issue-group.mjs';
 import { mergedDelivery } from './merged-issue.mjs';
@@ -130,7 +130,8 @@ export function groupClosureProof(root, issue, flow, checkout, acceptedHead) {
   if (!children.length) return null;
   const delivery = mergedDelivery(flow) ?? {};
   const candidate = closureCandidate(root, delivery, checkout, acceptedHead);
-  const replay = receiptBrowserReplay(root, delivery.deliveryReceipt, candidate);
+  const receipt = exactDeliveryReceipt(root, flow, { ...delivery, ...candidate });
+  const replay = receiptBrowserReplay(root, receipt, candidate);
   const work = workVerdicts(root, flow);
   const live = new Map(groupLiveProofStatuses(issue, flow, candidate, root).map((status) => [status.child.id, status]));
   return {

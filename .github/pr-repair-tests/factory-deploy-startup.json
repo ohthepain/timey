@@ -1,0 +1,16 @@
+{
+  "version": 2,
+  "name": "Factory deployment listener readiness and recovery",
+  "command": [
+    "node",
+    "--test",
+    "--test-name-pattern=^(?:managed deployment drains the real listener and checks replacement identity|deployment refuses dirty candidates and coordinator work without stopping the server|draining rejects new mutations until cancellation|a failed replacement restores the previous listener and records recovery|unsuccessful candidate and recovery waits retain HTTP failures and identity mismatches with the recovery lock intact)$",
+    "scripts/factory-deploy.check.mjs"
+  ],
+  "source": {
+    "runId": "46064634920",
+    "jobId": "140729961042",
+    "checkout": "088763bda1e83407bfd75376b2763e986e8ff5e3",
+    "tree": "23964bedbe6adb2f97190c94a61ba876c6ac458c"
+  }
+}

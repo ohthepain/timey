@@ -26,10 +26,11 @@ const readinessQuery = `
                     __typename
                     ... on CheckRun {
                       isRequired(pullRequestNumber: $number)
-                      name status conclusion detailsUrl startedAt
+                      name status conclusion detailsUrl startedAt completedAt
                       checkSuite {
+                        status
                         app { slug }
-                        workflowRun { workflow { name } }
+                        workflowRun { runAttempt createdAt workflow { name } }
                       }
                     }
                     ... on StatusContext {
@@ -272,6 +273,7 @@ function assertMergeReadiness(live, checks, head, waitForChecks) {
   try {
     assertMergeState(live, checks, waitForChecks);
   } catch (error) {
+    error.observedChecks = checks;
     if (error.code === 'STRATEGY_PENDING' && waitForChecks)
       error.ciProgress = { head, completedSuites: completedVerificationSuites(checks) };
     throw error;

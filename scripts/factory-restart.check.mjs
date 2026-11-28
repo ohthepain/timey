@@ -92,6 +92,7 @@ async function fixture(t) {
     '---\nid: 20261025-one\ntitle: Actual issue\nstate: verify\n---\nActual issue\n'
   );
   cpSync(resolve('scripts'), join(f.source.root, 'scripts'), { recursive: true });
+  cpSync(resolve('.github/pr-repair-tests'), join(f.source.root, '.github/pr-repair-tests'), { recursive: true });
   cpSync(resolve('factory'), join(f.source.root, 'factory'), { recursive: true });
   writeFileSync(join(f.source.root, '.gitignore'), '.issues/\nnode_modules\n');
   writeFileSync(join(f.source.root, 'package.json'), '{"type":"module"}\n');

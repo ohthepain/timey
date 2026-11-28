@@ -230,6 +230,16 @@ proof still block readiness. Publication and acceptance remain separate decision
 
 ### Focused browser evidence
 
+Merge fetches the destination and resolves any conflicts before it pushes a
+combined candidate. When the issue or newly fetched destination changes the
+registered Factory files, Merge runs the matching checks from
+`.github/pr-repair-tests/` before pushing. The workspace retirement checks
+include both standalone sidebar labels and the Interface State sequence. The
+issue header check runs after storage recovery. The preflight report records
+the Work head, tested commit and tree, destination commit, exact commands, and
+logs. A failure goes to Merge repair before the combined candidate starts
+GitHub CI. GitHub still checks the exact candidate before protected merge.
+
 Work runs its focused browser checks. Publish pushes the committed issue branch
 and creates or updates the PR. Merge reruns the declared scenarios on the
 candidate before pushing an updated head. If Work declares either folder

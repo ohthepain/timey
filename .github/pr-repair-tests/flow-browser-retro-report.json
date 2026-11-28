@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "name": "Closed issue reports retain the Retro summary and open every follow-up",
+  "command": ["node", "scripts/flow-browser.mjs", "--ci-part=2", "--retro-report"],
+  "source": {
+    "runId": "46066650303",
+    "jobId": "140734496312",
+    "checkout": "2ab2a4212285c4bae4442e64f100aa00b797513b",
+    "tree": "d3dcfe0c3f38ad27350346a89f26085040106155"
+  }
+}

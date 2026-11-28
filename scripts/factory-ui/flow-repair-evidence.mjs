@@ -68,6 +68,20 @@ export function receiptRepairBrowserProof(root, receipt, candidate) {
   if (matchingRepairBrowserProof(root, proof, candidate)) return proof;
 }
 
+export function exactDeliveryReceipt(root, flow, { head, tree, pr, revision }) {
+  const attempts = [...flow.blocks, ...(flow.retiredBlocks ?? [])]
+    .filter(({ kind }) => kind === 'merge')
+    .flatMap(({ attempts }) => attempts)
+    .filter(({ status }) => status === 'completed');
+  const results = [flow.merged, ...attempts.map(({ result }) => result)]
+    .filter(Boolean)
+    .filter((result) => result.pr === pr && result.head === head && result.revision === revision);
+  const match = results.findLast(({ deliveryReceipt }) =>
+    receiptMatches(readEvidence(root, deliveryReceipt)?.candidate, head, tree)
+  );
+  return match?.deliveryReceipt;
+}
+
 export function receiptBrowserReplay(root, receipt, { head, tree }) {
   const { browser, candidate } = readEvidence(root, receipt) || {};
   if (!receiptMatches(candidate, head, tree)) return;
