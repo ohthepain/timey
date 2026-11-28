@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { stringify } from 'yaml';
 import { importBrowserIssue, removeBrowserIssue } from './flow-browser-fixture.mjs';
 import { withQueueConfiguration } from './flow-browser-queue-configuration.mjs';
+import { fixtureRoute } from './flow-browser-routes.mjs';
 
 const master = '20261124-group-master';
 const children = ['20261124-group-first', '20261124-group-second'];
@@ -214,14 +215,20 @@ async function withIssueGroup({ page, project, root }, group, check) {
 }
 
 export async function masterIssueBrowserChecks({ page, project, root, output }) {
-  await withIssueGroup({ page, project, root }, { master, children, titles }, async () => {
-    const { left, centerWidth } = await checkIssueWorkspace(page, output);
-    const issues = await checkIssuesTab(page, output);
-    const compactWidth = left.find(({ id }) => id === master).badge.width;
-    assert.ok(issues.find(({ id }) => id === master).badge.width > compactWidth);
-    assert.ok(centerWidth > compactWidth);
-    writeFileSync(join(output, 'master-issues.json'), JSON.stringify({ left, issues, centerWidth }, null, 2) + '\n');
-  });
+  // Keep the restart watcher from reloading during this hierarchy check if a health probe times out.
+  const removeHealth = await fixtureRoute(page, '**/api/health', (route) => route.fulfill({ status: 204 }));
+  try {
+    await withIssueGroup({ page, project, root }, { master, children, titles }, async () => {
+      const { left, centerWidth } = await checkIssueWorkspace(page, output);
+      const issues = await checkIssuesTab(page, output);
+      const compactWidth = left.find(({ id }) => id === master).badge.width;
+      assert.ok(issues.find(({ id }) => id === master).badge.width > compactWidth);
+      assert.ok(centerWidth > compactWidth);
+      writeFileSync(join(output, 'master-issues.json'), JSON.stringify({ left, issues, centerWidth }, null, 2) + '\n');
+    });
+  } finally {
+    await removeHealth();
+  }
 }
 
 export async function manualSubIssueRemovalBrowserChecks({ page, project, root, output }) {
