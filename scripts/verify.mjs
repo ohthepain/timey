@@ -29,6 +29,7 @@ const timeoutMs = 15 * 60 * 1000;
 const staged = args.includes('--staged');
 const auditOnly = args.includes('--audit-only');
 const workChecks = args.includes('--work-checks');
+const requiredAudit = staged || workChecks;
 const writeFormat = workChecks && args.includes('--write-format');
 const step = args.includes('--step');
 const baseIndex = args.indexOf('--base');
@@ -76,12 +77,12 @@ process.on('SIGINT', cancel);
 process.on('SIGTERM', cancel);
 function fallowEnforced(env = isolatedEnv) {
   const value = env.TIMEY_FALLOW_ENFORCE;
-  return workChecks || value === '1' || value === 'true';
+  return requiredAudit || value === '1' || value === 'true';
 }
 function checkAssessment(name, result) {
   if (name === 'fallow')
     return assessAudit(result, report.changed_files, {
-      warningsAsErrors: workChecks || isolatedEnv.TIMEY_FALLOW_WARNINGS === 'error',
+      warningsAsErrors: requiredAudit || isolatedEnv.TIMEY_FALLOW_WARNINGS === 'error',
     });
   return { passed: result.status === 0 && !result.error };
 }
@@ -89,7 +90,7 @@ function recordSkippedFallow() {
   const startedAt = new Date().toISOString();
   report.phases.push({ name: 'fallow', startedAt });
   const log = join(reportDir, `${stamp}-fallow.log`);
-  writeFileSync(log, 'Fallow audit skipped. Set TIMEY_FALLOW_ENFORCE=1 to enforce at commit, push, and verify.\n');
+  writeFileSync(log, 'Fallow audit skipped. Set TIMEY_FALLOW_ENFORCE=1 to enforce for this verification command.\n');
   report.checks.push({
     name: 'fallow',
     passed: true,

@@ -87,11 +87,11 @@
     );
   }
 
-  function keepChatScroll(log, update) {
+  function keepChatScroll(log, update, preserve = true) {
     const follow = follows(log, captureSelection(log));
     const top = log.scrollTop;
     update();
-    log.scrollTop = follow ? log.scrollHeight : top;
+    if (preserve && !dragging(log)) log.scrollTop = follow ? log.scrollHeight : top;
   }
 
   function captureElement(element, selected) {

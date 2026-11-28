@@ -20,6 +20,7 @@ const projectTabs = [
   },
   { name: 'Reports', route: 'reports', target: '.reports-heading h1' },
   { name: 'Discuss', route: 'discuss', target: '#discuss-new', screenshot: 'project-navigation-discuss' },
+  { name: 'Work All Night', visibleLabel: '☾', route: 'night', target: 'h2' },
   {
     name: 'Automate me',
     route: 'automate',
@@ -189,8 +190,7 @@ async function checkAutomateAndHome(page, tablist, header) {
 
 export const unavailableNavigationIssue = '20261125-navigation-second';
 
-async function navigationFixtures(project, service, root) {
-  installBrowserHumanInput(project, root);
+async function navigationFixtures(project, service) {
   const first = '20261125-navigation-first';
   const second = unavailableNavigationIssue;
   const investigation = '20261125-navigation-investigation';
@@ -209,16 +209,30 @@ async function navigationFixtures(project, service, root) {
   return { first, second, investigation, request, work };
 }
 
+function expectedTitle(service, destination, title) {
+  if (destination.projectTab === 'discuss') return 'project';
+  if (!destination.issue) return title + ' · Factory';
+  const { issueNumber } = service.flows.selected(destination.issue);
+  return issueNumber == null ? title : `#${issueNumber} - ${title}`;
+}
+
 function observeNavigation(page, poll) {
   const observations = [];
   const expect = async (target, title, locator) => {
-    await page.waitForURL((url) =>
-      ['projectTab', 'folder', 'issue', 'block'].every((key) => url.searchParams.get(key) === (target[key] || null))
+    await poll(
+      () => page.url(),
+      (href) => {
+        const { searchParams } = new URL(href);
+        return ['projectTab', 'folder', 'issue', 'block'].every(
+          (key) => searchParams.get(key) === (target[key] || null)
+        );
+      },
+      `Unexpected browser history URL for ${JSON.stringify(target)}.`
     );
-    await locator.waitFor();
+    await poll(() => locator.isVisible(), Boolean, `Browser history destination did not show ${locator}.`);
     await poll(
       () => page.title(),
-      (value) => value === title + ' · Factory',
+      (value) => value === title,
       'Unexpected browser history title'
     );
     observations.push({ url: page.url(), title: await page.title() });
@@ -260,8 +274,8 @@ async function checkHistoryDraft(page, destinations, wording) {
   return { inApp, browser };
 }
 
-async function checkNativeHistory({ page, poll, tablist, project, service, root, screenshot }) {
-  const fixtures = await navigationFixtures(project, service, root);
+async function checkNativeHistory({ page, poll, tablist, project, service, screenshot }) {
+  const fixtures = await navigationFixtures(project, service);
   const { first, second, investigation, request, work } = fixtures;
   await page.goto('/');
   await page.evaluate(() => {
@@ -271,7 +285,10 @@ async function checkNativeHistory({ page, poll, tablist, project, service, root,
   const { expect, observations } = observeNavigation(page, poll);
   const openIssue = (id) => page.locator(`#open-issues [data-issue="${id}"]`).click();
   const blockCard = (id) => page.locator(`#graph [data-block="${id}"]`);
-  const visit = (open, target, title, locator) => ({ open, check: () => expect(target, title, locator) });
+  const visit = (open, target, title, locator) => ({
+    open,
+    check: () => expect(target, expectedTitle(service, target, title), locator),
+  });
   const byTab = (name, projectTab, title) => {
     const selector = '#project-tab-' + (projectTab ?? 'home');
     const selected = tablist.locator(selector + '[aria-selected="true"]');
@@ -296,13 +313,13 @@ async function checkNativeHistory({ page, poll, tablist, project, service, root,
     request: visit(
       () => blockCard(request.id).click(),
       { issue: first, block: request.id },
-      'Fix login / Request',
+      'Fix login',
       page.locator(`#graph [data-block="${request.id}"][aria-pressed="true"]`)
     ),
     work: visit(
       () => blockCard(work.id).click(),
       { issue: first, block: work.id },
-      'Fix login / Work',
+      'Fix login',
       page.locator(`#graph [data-block="${work.id}"][aria-pressed="true"]`)
     ),
     second: visit(() => openIssue(second), { issue: second }, 'Fix search', issueHeading('Fix search')),
@@ -373,7 +390,11 @@ async function checkNativeHistory({ page, poll, tablist, project, service, root,
     await service.flows.action({ action: 'remove', issueId: first, revision: flow.revision, blockId: work.id });
     await removeBrowserIssue(project, second);
     const unavailable = () =>
-      expect({ issue: second }, 'Issue unavailable', page.getByText('This issue is unavailable.', { exact: false }));
+      expect(
+        { issue: second },
+        'Issue unavailable · Factory',
+        page.getByText('This issue is unavailable.', { exact: false })
+      );
     await page.goBack();
     await unavailable();
     await page.goBack();
@@ -400,6 +421,7 @@ export async function projectNavigationBrowserChecks({
   service,
   root,
 }) {
+  installBrowserHumanInput(project, root);
   const desktop = { width: 1440, height: 960 };
   const narrow = { width: 390, height: 844 };
   const header = page.locator('.factory-header');
@@ -412,10 +434,8 @@ export async function projectNavigationBrowserChecks({
     await tablist.locator('[data-project-tab]').evaluateAll((tabs) => tabs.map((tab) => tab.dataset.projectTab)),
     projectTabs.map(({ route }) => route ?? 'home')
   );
-  for (const { route, name } of projectTabs) {
-    const tab = tablist.locator('#project-tab-' + (route ?? 'home'));
-    await assertControlText(tab, name);
-  }
+  for (const { visibleLabel, name } of projectTabs)
+    await assertControlText(tablist.getByRole('tab', { name, exact: true }), visibleLabel ?? name);
   try {
     const observations = [
       ...(await checkTabsAtViewport(navigation, desktop)),
@@ -430,7 +450,7 @@ export async function projectNavigationBrowserChecks({
       join(output, 'project-header-proof.json'),
       JSON.stringify({ candidate, observations, controls }, null, 2)
     );
-    const native = await checkNativeHistory({ page, poll, tablist, project, service, root, screenshot });
+    const native = await checkNativeHistory({ page, poll, tablist, project, service, screenshot });
     writeFileSync(join(output, 'project-native-history.json'), JSON.stringify({ candidate, ...native }, null, 2));
   } finally {
     await page.setViewportSize(desktop);

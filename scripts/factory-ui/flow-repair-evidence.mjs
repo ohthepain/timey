@@ -57,10 +57,33 @@ function matchingRepairBrowserProof(root, proof = {}, { commit, tree }) {
 }
 
 export function priorRepairBrowserProof(root, attempts, candidate) {
-  return (attempts ?? [])
-    .flatMap(({ evidence = [] }) => evidence.filter(({ label }) => label === 'Merge repair index'))
+  return repairIndexes(attempts)
     .flatMap((index) => readEvidence(root, index)?.attempts ?? [])
     .findLast(({ browserProof }) => matchingRepairBrowserProof(root, browserProof, candidate))?.browserProof;
+}
+
+export function pausedMergeRepair(root, attempts = [], head) {
+  const index = repairIndexes(attempts.filter(({ status }) => status === 'blocked')).at(-1);
+  const repair = readEvidence(root, index)?.attempts?.at(-1);
+  if (!repair || repair.failedHead !== head) return;
+  return pausedRepairFailure(root, repair);
+}
+
+function repairIndexes(attempts = []) {
+  return attempts.flatMap(({ evidence = [] }) => evidence.filter(({ label }) => label === 'Merge repair index'));
+}
+
+function pausedRepairFailure(root, repair) {
+  if (!repair.conversation?.turnId) return;
+  const result = readEvidence(root, repair.result);
+  if (repairStoppedForProvider(result)) return repair.failure;
+}
+
+function repairStoppedForProvider(result) {
+  return (
+    result?.status === 'failed' &&
+    (result.code === 'PROVIDER_PAUSED' || /Resume explicitly when available[.]$/.test(result.message))
+  );
 }
 
 export function receiptRepairBrowserProof(root, receipt, candidate) {

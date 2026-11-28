@@ -12,6 +12,10 @@ Temporary GitHub request failures get up to three retries with 1, 2 and 4 second
 
 Recover from required GitHub check failures within the same run. Use the failed run’s retained logs, repair the candidate, verify it, push it, and check GitHub again. Make up to three different repair attempts per distinct blocker. Stop for a required decision, unavailable permission, an unchanged candidate, or a repeated failing source tree.
 
+If a provider pause interrupted a saved repair, an explicit retry can continue
+that repair before synchronizing a newer destination. Inspect the retained edits,
+preserve unrelated changes, and commit only the verified repair.
+
 Identify the exact failed test names, assertions and errors from the current
 candidate's verification evidence. Reproduce those cases with focused commands
 before editing. Include required predecessor scenarios when failure depends on
@@ -22,8 +26,10 @@ Add or update a dedicated PR repair check that runs those cases before the broad
 suite and reports each result by name. Preserve the behavior and assertions the
 tests protect. Record the focused commands and their actual results.
 
-Commit the repair promptly once its focused checks pass. Factory pushes the
-repair and waits for GitHub. Leave the broad suites to GitHub. Merge as soon as
+Commit the repair through normal Git hooks so staged Fallow findings are fixed
+before it is committed. Factory checks formatting and Fallow against the fetched
+destination before pushing the current candidate. Fix any local findings before
+waiting for GitHub. Leave the broad suites to GitHub. Merge as soon as
 the current candidate satisfies required checks and approvals. Keep unrelated
 cleanup out of the repair.
 

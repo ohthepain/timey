@@ -398,6 +398,8 @@ reloading or resubmitting the action.
 the order and destinations of the Home, Issues, Reports, Discuss, Automate me, and
 Admin tabs, and the relocated Factory controls. It saves desktop and narrow
 screenshots alongside the measured layout and navigation in `project-header-proof.json`.
+The focused server-control test checks that Pause and Restart stay disabled until
+the initial server status initializes the header controls.
 The navigation fixture temporarily initializes queue configuration, waits for a
 successful Issues queue response, and unloads the page before restoring configuration.
 Run `--ci-part=1 --project-navigation --sidebar-labels` together to check sidebar
@@ -555,9 +557,13 @@ requires an idle issue. A new Merge run also aborts a pending local merge once
 before synchronization; subsequent repair steps preserve their own merge state.
 `node scripts/flow-browser.mjs --merge-recovery` checks the control through reload
 and abort using a disposable real conflict. Publish PR requires a clean commit.
-Merge syncs the issue branch with Destination, pushes a changed candidate,
-and waits for the checks and reviews GitHub requires on the exact PR head.
-Work and explicit Verify remain the places for local verification.
+Merge syncs the issue branch with Destination, checks local formatting and Fallow
+against that revision, and pushes the candidate after its focused checks pass.
+GitHub checks and reviews apply to the exact PR head.
+When a provider pause leaves an uncommitted Merge repair, an explicit retry can
+use the retained repair record for the same issue commit. It resumes repair before
+synchronizing a newer destination. The repair worker reviews the checkout and
+commits the verified repair. Ordinary dirty checkouts still require review.
 
 GitHub runs Early checks first. Five jobs then run in parallel: two Non-browser
 jobs and the Flow browser parts. The Non-browser jobs
@@ -579,14 +585,17 @@ Factory preserves the request ID on a GitHub GraphQL query error and marks it
 retryable when GitHub CLI omits the HTTP status. Explicit authentication,
 permission, and validation responses remain terminal.
 
-For a PR repairing failed CI tests or typechecking, add one version 2 JSON file
+For a PR repairing a failed verification check, add one version 2 JSON file
 per check in `.github/pr-repair-tests/`. Record the check's `name`, the full
 `command` argument array in replay order, and a `source` object with string
-`runId`, `jobId`, `checkout`, and `tree` fields. Use the checkout and tree
-that ran in the failed job. Independent files let branches add checks without
-writing over one another's source details. `pnpm run test:pr-repair` runs checks
+`checkout` and `tree` fields from the failed run. Include `runId` and `jobId`
+for a GitHub job or `attemptId` for a Factory attempt. Independent files let
+branches add checks without writing over one another's source details.
+`pnpm run test:pr-repair` runs checks
 by name and stops at the first failure. CI runs changed records before broad
 verification. The version 1 file remains readable for historic entries.
+For a version 2 record that needs a longer browser replay, set `timeoutMs` to
+an integer from 120000 to 240000. The default is 120000.
 Use `node scripts/flow-browser.mjs --timers` for the isolated attempt
 timer scenario. Repair workers reproduce the named failures, include necessary
 predecessor scenarios, and return after focused proof so GitHub can check the repaired commit.
@@ -683,6 +692,8 @@ page, and closes its Discuss service before installing its own injected provider
 Its console assertion catches draft saves that cross that fixture boundary. Run
 `node scripts/flow-browser.mjs --project-discuss --local-notes` to verify the
 Discuss-to-Notes transition; combining focused flags runs those scenarios together.
+Include `--project-night` to check the note link and issue header against the
+number assigned by the shared store after Work All Night creates numbered issues.
 
 The capture-start browser scenario waits for active route handlers before removing
 its mocks. Issue refreshes can still be fetching the fixture queue when capture
@@ -788,19 +799,22 @@ its literal whitespace.
 Before a commit, the pre-commit hook formats staged issue reports and checks
 formatting on other staged files. It updates a working copy of a report only
 when it matches the original staged contents, preserving unstaged edits. It
-then runs `pnpm run audit:staged`, which exports the staged snapshot
-for verification bookkeeping. **Fallow is skipped by default for legacy/local commands.**
-Strategy candidate checks and CI enforce Fallow with
-`TIMEY_FALLOW_ENFORCE=1 TIMEY_FALLOW_WARNINGS=error`. Their new findings, including
-warnings, must be repaired. Skipped or warning-bearing evidence cannot satisfy
-these strategy checks or be reused from the legacy cache. Set
-`TIMEY_FALLOW_ENFORCE=1` when you want the pinned Fallow audit to fail the hook,
-`audit:step`, or full `verify`. Before declaring an implementation step complete,
+then exports and audits the staged snapshot. The pre-merge-commit hook uses the
+same audit for an automatic merge commit. Staged audits reject new findings and
+warnings even when optional Fallow enforcement is disabled. Work also checks the
+issue changes against its saved comparison base. Merge checks formatting and
+Fallow against the fetched destination before pushing each candidate and sends
+failures to the owning repair loop. Publish uses the existing committed candidate.
+Strategy candidate checks and CI also enforce Fallow with
+`TIMEY_FALLOW_ENFORCE=1 TIMEY_FALLOW_WARNINGS=error`. Skipped or warning-bearing
+evidence cannot satisfy these strategy checks or be reused from the legacy cache.
+Set `TIMEY_FALLOW_ENFORCE=1` to enable Fallow in `audit:step` or full `verify`
+outside the required checks. Before declaring an implementation step complete,
 including an uncommitted step, run `pnpm run audit:step -- --base <step-start-commit>`.
 Use the recorded starting revision, not the new HEAD after committing (which could
 hide that step's changes). Full `verify -- --base REF` runs types, tests,
 build, and factory checks after formatting and Fallow pass. Fallow enforcement
-is opt-in outside Flow, strategy, and CI checks. A successful audit
+is opt-in outside staged, Flow, strategy, and CI checks. A successful audit
 does not establish type/build/device success.
 
 A checkpoint fails on a nonzero Fallow process exit, a `fail` or `error` audit
@@ -1185,6 +1199,9 @@ browser errors fail verification.
 Work All Night fixtures create the folders they assign, so execution reaches the
 injected worker through the same settings validation as a real issue. Start/stop
 checks have a 30-second test deadline and retain per-issue failure explanations.
+The focused workspace check in `scripts/flow.check.mjs` verifies that the full
+Flow view includes saved overnight reports and drafts, and that the embedded
+Request view returns empty collections for both.
 The dependency-failure scenario also checks that an independent issue adopts its
 clarified route and records a confirmed automatic merge within the owning run.
 Shared-chat DOM fixtures load the production template. Browser discussion
@@ -1210,6 +1227,9 @@ relative card bounds and viewport height in the polling diagnostic.
 also checks that clicking the selected card reveals it without adding a history entry.
 The `--project-navigation` scenario preloads Chromium history so it checks the
 recorded destinations even when the browser evicts older entries.
+It checks the destination URL, visible content, and title independently after
+history traversal so Playwright does not need to resolve a pending document
+navigation before it can read the visible destination.
 
 `node scripts/flow-browser.mjs --error-recovery` triggers a rejected branch update
 and verifies that a successful explicit Refresh clears its old error banner.

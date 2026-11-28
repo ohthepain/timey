@@ -135,6 +135,9 @@ export async function inboxDiscussBrowserChecks({ page, service, screenshot, out
   const calls = [];
   const prompt = 'Can you accept this prompt?';
   const reply = 'Prompt accepted while work was paused.';
+  const streaming = new Map(
+    ['Stream at the bottom', 'Stream while reading'].map((text) => [text, Promise.withResolvers()])
+  );
   const history = Array.from({ length: 60 }, (_, index) => `Conversation detail ${index + 1}.`).join('\n\n');
   service.projectDiscussOptions = {
     modelSettings: () => ({
@@ -144,8 +147,17 @@ export async function inboxDiscussBrowserChecks({ page, service, screenshot, out
     }),
     skills: async () => [],
     createProvider: () => ({
-      async turn(_session, { text }) {
+      async turn(_session, { text }, { event }) {
         calls.push(text);
+        const gate = streaming.get(text);
+        if (gate) {
+          event({
+            method: 'item/agentMessage/delta',
+            params: { itemId: text, delta: history + '\n\nLive end for ' + text },
+          });
+          await gate.promise;
+          return { text: history + '\n\nCompleted ' + text };
+        }
         return { text: `${reply}\n\n${history}` };
       },
       close() {},
@@ -192,6 +204,7 @@ export async function inboxDiscussBrowserChecks({ page, service, screenshot, out
     const bottom = await scroll('bottom');
     assert.ok(bottom > 0, 'The conversation scrolls.');
     assert.equal(await composerGap(), emptyGap);
+    const scrolling = await checkStreamingScroll({ page, draft, messages, streaming });
     writeFileSync(
       join(output, 'project-discuss-inbox.json'),
       JSON.stringify(
@@ -203,14 +216,75 @@ export async function inboxDiscussBrowserChecks({ page, service, screenshot, out
           emptyGap,
           populatedGap,
           scrollPositions: { top, bottom },
+          scrolling,
         },
         null,
         2
       )
     );
   } finally {
+    for (const gate of streaming.values()) gate.resolve();
     service.store.update(run, { status: 'completed' });
     service.store.connected.delete(run.id);
     service.serverControl.cancel();
   }
+}
+
+async function measureChat(messages) {
+  return messages.evaluate((node) => ({
+    top: node.scrollTop,
+    gap: node.scrollHeight - node.clientHeight - node.scrollTop,
+    lowerEdge: node.getBoundingClientRect().bottom,
+  }));
+}
+
+async function checkStreamingScroll({ page, draft, messages, streaming }) {
+  const stableAtBottom = await messages.evaluate(async (node) => {
+    const positions = [];
+    for (let frame = 0; frame < 8; frame++) {
+      await new Promise(requestAnimationFrame);
+      positions.push(node.scrollTop);
+    }
+    return positions;
+  });
+  assert.equal(new Set(stableAtBottom).size, 1, 'Scrolling to the bottom must settle without jitter.');
+  const send = async (prompt) => {
+    await draft.fill(prompt);
+    await page.locator('#discuss-send').click();
+    await messages.getByText('Live end for ' + prompt, { exact: true }).waitFor();
+  };
+  const atBottom = 'Stream at the bottom';
+  await send(atBottom);
+  const bottom = await measureChat(messages);
+  const latest = await messages.getByText('Live end for ' + atBottom, { exact: true }).boundingBox();
+  const composer = await page.locator('#discuss-draft').boundingBox();
+  assert.ok(Math.abs(bottom.gap) <= 1);
+  assert.ok(latest.y + latest.height <= composer.y);
+  streaming.get(atBottom).resolve();
+  await messages.getByText('Completed ' + atBottom, { exact: true }).waitFor();
+
+  await messages.hover();
+  await page.mouse.wheel(0, -900);
+  await page.waitForFunction(() => {
+    const log = document.getElementById('discuss-messages');
+    return log.scrollHeight - log.clientHeight - log.scrollTop > 100;
+  });
+  const reader = await measureChat(messages);
+  const reading = 'Stream while reading';
+  await send(reading);
+  const during = await measureChat(messages);
+  assert.equal(during.top, reader.top);
+  streaming.get(reading).resolve();
+  await messages.getByText('Completed ' + reading, { exact: true }).waitFor();
+  const after = await measureChat(messages);
+  assert.equal(after.top, reader.top);
+  return {
+    stableAtBottom,
+    bottom,
+    latestBottom: latest.y + latest.height,
+    composerTop: composer.y,
+    reader,
+    during,
+    after,
+  };
 }

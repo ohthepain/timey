@@ -1001,6 +1001,7 @@ function mergeFixture(
     mergeNow,
     respond,
     browser,
+    verifyWork,
   } = {}
 ) {
   const observations = [];
@@ -1023,6 +1024,7 @@ function mergeFixture(
     repair,
     respond,
     mergeNow,
+    ...(verifyWork && { verifyWork }),
     async mergeDelay(interval) {
       await onWait?.(advanceTarget, interval);
     },
@@ -2175,6 +2177,43 @@ test('Merge reports a GitHub conflict immediately when the issue already contain
   await assert.rejects(f.run('merge'), /GitHub reports a merge conflict, but the issue branch already contains/);
 });
 
+test('Merge repairs a failed local Fallow audit against the fetched destination before pushing', async (t) => {
+  const audited = [];
+  const f = mergeFixture(t, {
+    async verifyWork(ctx, workspace) {
+      assert.equal(ctx.block.kind, 'merge');
+      assert.equal(workspace.base, f.git('rev-parse', 'dev'));
+      assert.equal(f.observations.length, 0);
+      audited.push(f.git('-C', workspace.checkout, 'rev-parse', 'HEAD'));
+      if (audited.length === 1) {
+        throw Object.assign(Error('Introduced complexity in the issue candidate.'), { verificationFailure: {} });
+      }
+      return { evidence: [] };
+    },
+  });
+  await f.run('understand');
+  const { checkout } = f.flow.workspace;
+  f.advanceTarget();
+  const turn = f.connection.turn.bind(f.connection);
+  f.connection.turn = async (...args) => {
+    assert.match(args[2], /Local formatting and Fallow checkpoint failed/);
+    assert.equal(f.observations.length, 0);
+    writeFileSync(join(checkout, 'source.txt'), 'Simplified issue candidate.\n');
+    f.git('-C', checkout, 'commit', '-am', 'Repair local Fallow finding');
+    return turn(...args);
+  };
+
+  const result = await f.run('merge');
+
+  assert.equal(result.result.revision, 'actual-merge');
+  assert.equal(audited.length, 2);
+  assert.notEqual(audited[0], audited[1]);
+  assert.deepEqual(
+    f.observations.filter(({ operation }) => operation === 'push').map(({ head }) => head),
+    [audited[1]]
+  );
+});
+
 test('Merge preserves each GitHub browser failure and pushes all three repair candidates in order', async (t) => {
   let failedEvidence;
   let repairs = 0;
@@ -3295,6 +3334,53 @@ test('Merge bounds temporary lookup failures and retains the final reason withou
   assert.equal(requests, 4);
   assert.deepEqual(f.observations, []);
   assert.equal(f.calls.filter(({ method }) => method === 'turn').length, 1);
+});
+
+test('Merge retries a provider-paused repair before synchronizing a newer destination', async (t) => {
+  let checkout;
+  let first;
+  let repairCalls = 0;
+  let original;
+  const f = mergeFixture(t, {
+    async verifyWork() {
+      if (!repairCalls) throw Object.assign(Error('Local verification failed.'), { verificationFailure: {} });
+      return { evidence: [] };
+    },
+    async repair(error, _round, { conversation }) {
+      repairCalls++;
+      const file = join(checkout, 'source.txt');
+      if (repairCalls === 1) {
+        conversation.turnId = 'previous-repair-turn';
+        original = f.git('-C', checkout, 'rev-parse', 'HEAD');
+        writeFileSync(file, 'Repair in progress.\n');
+        throw Object.assign(Error('OpenAI: Allowance exhausted. Resume explicitly when available.'), {
+          code: 'PROVIDER_PAUSED',
+        });
+      }
+      assert.equal(error.resumeRepair, true);
+      assert.match(error.message, /Local verification failed/);
+      assert.equal(f.git('-C', checkout, 'rev-parse', 'HEAD'), original);
+      assert.equal(readFileSync(file, 'utf8'), 'Repair in progress.\n');
+      assert.equal(f.observations.length, 0);
+      f.git('-C', checkout, 'commit', '-am', 'Finish the paused repair');
+      return { evidence: [] };
+    },
+  });
+  await f.run('understand');
+  ({ checkout } = f.flow.workspace);
+  await assert.rejects(f.run('merge'), (error) => {
+    first = { id: 'attempt-2', status: 'blocked', evidence: error.evidence };
+    return /Allowance exhausted/.test(error.message);
+  });
+  f.advanceTarget();
+  await assert.rejects(f.run('merge'), /Preserve checkout changes in a commit/);
+  assert.equal(repairCalls, 1);
+
+  const result = await f.run('merge', { attempts: [first] });
+
+  assert.equal(repairCalls, 2);
+  assert.equal(result.result.revision, 'actual-merge');
+  assert.equal(f.git('-C', checkout, 'merge-base', 'HEAD', 'dev'), f.git('rev-parse', 'dev'));
 });
 
 test('Merge Continue checks GitHub again before merging', async (t) => {
