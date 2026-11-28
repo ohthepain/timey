@@ -1,6 +1,7 @@
 {
   "version": 2,
   "name": "Flow header pause and restart wait for initial server status",
+  "expectedTests": ["Flow header pause and restart wait for initial server status"],
   "command": [
     "node",
     "--test",

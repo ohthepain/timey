@@ -531,6 +531,79 @@ test('running-action status opens linked issue details and exposes guarded contr
   }
 });
 
+test('the Action list keeps issue-linked Flow block rows compact in each state', async (t) => {
+  const dom = loadServerControlDom();
+  t.after(() => dom.window.close());
+  const issue = { id: '20261128-inbox', issueNumber: 319, title: 'Group: Inbox' };
+  const statuses = ['running', 'stopped', 'failed'];
+  const items = statuses.map((status) => ({
+    id: `flow:${issue.id}:${status}`,
+    kind: 'flow',
+    blockId: `work-${status}`,
+    title: 'Work',
+    status,
+    trigger: 'Block: Work',
+    purpose: 'Run Work',
+    details: 'Attempt details',
+    issues: [issue],
+    outputHref: `/?issue=${issue.id}&block=work-${status}`,
+    canStop: status === 'running',
+    canSteer: status === 'running',
+    canRestart: status !== 'running',
+    canSkip: status === 'stopped',
+    canCancel: status === 'failed',
+    canPause: status === 'running',
+  }));
+  const { document, controls } = dom.window;
+  const calls = [];
+  controls.show(idleServerControl({ actions: 3 }), async (path, input) => {
+    if (path === 'server-actions') return items;
+    calls.push([path, { ...input }]);
+    return {};
+  });
+  document.querySelector('[data-server-count]').click();
+  await delay(0);
+  const cards = [...document.querySelectorAll('.server-action-card')];
+  assert.equal(cards.length, items.length);
+  for (const [index, card] of cards.entries()) {
+    const { id, status, outputHref } = items[index];
+    assert.deepEqual(
+      [...card.querySelectorAll('a')].map((link) => [link.textContent, link.getAttribute('href')]),
+      [
+        ['#319: Group: Inbox: Work', '/?issue=20261128-inbox'],
+        ['Action output', outputHref],
+      ]
+    );
+    assert.doesNotMatch(card.textContent, /Block: Work|Run Work|Attempt details|· flow/);
+    assert.equal(card.querySelector('h3'), null);
+    const buttons = [...card.querySelectorAll('button:not(:disabled)')];
+    const expected = {
+      running: ['Stop', 'Pause issue', 'Steer'],
+      stopped: ['Restart', 'Skip'],
+      failed: ['Restart', 'Cancel'],
+    }[status];
+    assert.deepEqual(
+      buttons.map((button) => button.textContent),
+      expected
+    );
+    card.querySelector('[data-steer-text]').value = 'Keep the current scope';
+    for (const button of buttons) button.click();
+    await delay(0);
+    assert.deepEqual(
+      calls.splice(0),
+      expected.map((label) => [
+        'server-action',
+        {
+          runId: id,
+          issueId: issue.id,
+          operation: label === 'Pause issue' ? 'pause' : label.toLowerCase(),
+          text: label === 'Steer' ? 'Keep the current scope' : '',
+        },
+      ])
+    );
+  }
+});
+
 test('old disconnected preparations appear in the count and Action list and can be cancelled individually', async (t) => {
   const root = project(t);
   const issueIds = ['20261110-one', '20261111-two'];

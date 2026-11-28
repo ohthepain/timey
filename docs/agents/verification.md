@@ -122,7 +122,9 @@ a conflict-free update, and target drift after readiness. It checks that each
 candidate is pushed before readiness and that rejected pushes stop Merge.
 It also opens the full logs for a known Merge error and an unfamiliar Update
 Branch error. The scenario saves commit identities, command order, and log
-details in `merge-target-update.json`. GitHub responses are simulated.
+details in `merge-target-update.json`. The fixture simulates GitHub responses
+and supplies a candidate check that verifies a clean worktree containing the
+target commit.
 
 `node scripts/flow-browser.mjs --project-issues` exercises retired Classic
 links and operations, the Flow Issues queue, and archival of saved issues.
@@ -591,6 +593,10 @@ per check in `.github/pr-repair-tests/`. Record the check's `name`, the full
 `checkout` and `tree` fields from the failed run. Include `runId` and `jobId`
 for a GitHub job or `attemptId` for a Factory attempt. Independent files let
 branches add checks without writing over one another's source details.
+For a Node command with a test-name filter, record every expected case's exact
+name in `expectedTests`. This array applies to single and grouped checks. Early
+checks require a passing case result for each name before printing the record's
+pass marker.
 `pnpm run test:pr-repair` runs checks
 by name and stops at the first failure. CI runs changed records before broad
 verification. The version 1 file remains readable for historic entries.

@@ -2,6 +2,7 @@
   "tests": [
     {
       "name": "Flow can approve a Retro item as soon as its proposal PR lands",
+      "expectedTests": ["Flow can approve a Retro item as soon as its proposal PR lands"],
       "command": [
         "node",
         "--test",
@@ -11,6 +12,7 @@
     },
     {
       "name": "moving an unpublished proposal retains its failed publication and retries the new folder",
+      "expectedTests": ["moving an unpublished proposal retains its failed publication and retries the new folder"],
       "command": [
         "node",
         "--test",
@@ -20,6 +22,7 @@
     },
     {
       "name": "two Flow clones share the separate branch without advancing code",
+      "expectedTests": ["two Flow clones share the separate branch without advancing code"],
       "command": [
         "node",
         "--test",
@@ -29,6 +32,7 @@
     },
     {
       "name": "Update Branch block publication failure leaves no local execution or shared claim",
+      "expectedTests": ["Update Branch block publication failure leaves no local execution or shared claim"],
       "command": [
         "node",
         "--test",
