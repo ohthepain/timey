@@ -1,0 +1,19 @@
+{
+  "version": 2,
+  "name": "Project chat stays at the bottom and accepts prompts while work is paused",
+  "command": [
+    "node",
+    "scripts/flow-browser.mjs",
+    "--ci-part=1a",
+    "--project-discuss",
+    "--project-discuss-disposition",
+    "--inbox-discuss"
+  ],
+  "timeoutMs": 180000,
+  "source": {
+    "runId": "46172303171",
+    "jobId": "141065754133",
+    "checkout": "aa37d24e2742b9954e7dee5bfb53ed5dd4fcbfc3",
+    "tree": "1afdc0aee634e5c190ae5e2b4ff3a6e5f05e85b2"
+  }
+}

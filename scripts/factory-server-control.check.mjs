@@ -718,6 +718,8 @@ test('the header lists concurrent linked work and unlinked deletion with resumab
   );
   const service = new FactoryUI(root);
   const control = serverControl(service);
+  service.projectDiscuss = null;
+  service.projectLocalBranchCleanup = null;
   const dom = loadServerControlDom(readFileSync(resolve('scripts/factory-ui/flow.html'), 'utf8'));
   t.after(() => {
     dom.window.close();

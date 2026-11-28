@@ -53,13 +53,13 @@ function flowActionItems({ captures = [], followups = { busy: [] } } = {}) {
 }
 
 export function projectActionItems(
-  { projectHome, projectDiscuss = { active: [] }, projectRemoteBranchCleanup = {}, projectLocalBranchCleanup = {} },
+  { projectHome, projectDiscuss, projectRemoteBranchCleanup, projectLocalBranchCleanup },
   project
 ) {
   return [
     ...homeActionItems(projectHome, project),
-    ...Array.from(projectDiscuss.active, ([id, active]) => discussAction(id, active)),
-    ...[projectRemoteBranchCleanup.action, projectLocalBranchCleanup.action].filter(Boolean),
+    ...Array.from(projectDiscuss?.active ?? [], ([id, active]) => discussAction(id, active)),
+    ...[projectRemoteBranchCleanup, projectLocalBranchCleanup].map((cleanup) => cleanup?.action).filter(Boolean),
   ];
 }
 
