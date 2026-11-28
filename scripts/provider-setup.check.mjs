@@ -4,6 +4,7 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, symlinkSyn
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { refreshProvider, setupProvider, installProvider } from './factory-ui/provider-setup.mjs';
+import { initializeProviderConfig, providerNames, saveProviderEnabled } from './factory-ui/provider-config.mjs';
 
 function fixture(t) {
   const root = mkdtempSync(join(tmpdir(), 'timey-provider-setup-'));
@@ -43,6 +44,9 @@ createInterface({input:process.stdin}).on('line',line=>{
 });
 `;
   for (const name of ['codex', 'claude', 'gemini']) writeFileSync(join(bin, name), source, { mode: 0o700 });
+  let config = initializeProviderConfig(root);
+  for (const provider of Object.keys(providerNames))
+    config = saveProviderEnabled(root, { provider, active: true, revision: config.revision });
   return { root, log };
 }
 

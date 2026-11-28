@@ -13,7 +13,7 @@ import {
 } from './factory-ui/issue-folder-settings.mjs';
 
 async function checkProjectStoreSettings(page, poll) {
-  const settings = page.locator('#project-settings-dialog');
+  const settings = page.locator('#project-settings-view');
   await settings.locator('[data-store-kind]').selectOption('add-files');
   await settings.locator('[data-store-add]').click();
   const added = settings.locator('fieldset').last();
@@ -422,7 +422,7 @@ export async function issueStoresBrowserChecks({ page, project, service, poll, s
   );
   await page.keyboard.press('Escape');
   await page.goto('/?settings=storage');
-  const settings = page.locator('#project-settings-dialog');
+  const settings = page.locator('#project-settings-view');
   await settings.locator('[name="role:coordination"]').waitFor();
   assert.equal(await settings.locator('[name="role:artifacts"]').count(), 1);
   assert.equal(await settings.locator('input[type="password"]').count(), 0);
