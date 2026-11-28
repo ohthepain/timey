@@ -733,6 +733,8 @@ import { reorderedBlocks } from './flow-order.mjs';
       const result = await waitForFlowResponse((signal) => post('flow-action', input, signal), 30_000);
       if (result.error) throw new Error(result.error);
       if (selected === state.issueId && result.flow) applyView(result);
+      if (name === 'update-worktree' && result.humanInput?.kind === 'branch-conflict')
+        $('branch-repair-dialog').close();
       return result;
     } catch (error) {
       const timedOut = error.name === 'TimeoutError';
@@ -810,12 +812,7 @@ import { reorderedBlocks } from './flow-order.mjs';
       (runBlock.dataset.action !== 'stop' &&
         (operationPaused(activeBlock()) || state.view?.flow?.blocks.some(isRunning))) ||
       status(activeBlock()) === 'stopping';
-    const inputBlock = state.view?.flow?.blocks.find((block) => block.id === state.view.humanInput?.blockId);
-    $('issue-input-continue').disabled =
-      busy ||
-      !inputBlock ||
-      (state.view?.humanInput?.kind !== 'agent' &&
-        (state.newActionsPaused || attached || operationPaused(inputBlock) || state.view.flow.blocks.some(isRunning)));
+    setIssueInputAvailability(busy, attached);
     updatePlaybackAvailability(busy);
     $('close-publish').disabled = busy;
     $('move-starting-branch').disabled = busy || frozen;
@@ -3082,11 +3079,37 @@ import { reorderedBlocks } from './flow-order.mjs';
     $('issue-results').classList.toggle('needs-input', Boolean(input));
     $('issue-results-message').textContent = result;
     $('issue-input-actions').hidden = !input;
-    $('issue-input-continue').textContent = input?.kind === 'agent' ? 'Open request' : 'Continue';
+    renderIssueInput(input);
     const url = safeUrl(input?.url);
     $('issue-input-link').hidden = !url;
     $('issue-input-link').href = url || '';
     $('issue-input-link').textContent = input?.actionLabel || 'Review PR';
+  }
+
+  function renderIssueInput(input) {
+    const token = input?.kind === 'branch-conflict' ? input.token : '';
+    const field = $('issue-conflict-answer');
+    $('issue-conflict-decision').hidden = !token;
+    if (token && field.dataset.token !== token) {
+      field.dataset.token = token;
+      field.value = '';
+    }
+    const button = $('issue-input-continue');
+    button.textContent =
+      {
+        agent: 'Open request',
+        'branch-conflict': 'Record decision and continue',
+      }[input?.kind] ?? 'Continue';
+  }
+
+  function setIssueInputAvailability(busy, attached) {
+    const input = state.view?.humanInput;
+    const block = state.view?.flow?.blocks.find(({ id }) => id === input?.blockId);
+    $('issue-input-continue').disabled =
+      busy ||
+      (!block && input?.kind !== 'branch-conflict') ||
+      (input?.kind !== 'agent' &&
+        (state.newActionsPaused || attached || operationPaused(block) || state.view.flow.blocks.some(isRunning)));
   }
 
   function playbackInputTitle(blocks, input) {
@@ -3850,7 +3873,7 @@ import { reorderedBlocks } from './flow-order.mjs';
     return definition?.mergeWorkflow?.policy === 'automatic' ? null : latest(block)?.result?.mergeConfirmation;
   }
 
-  async function startBlock(name, block) {
+  async function startBlock(name, block, branchConflictAnswer) {
     const nativeRecovery =
       name === 'continue' && /^(anthropic|google):/.test(state.view.issueSettings?.values?.model || '');
     if (
@@ -3886,6 +3909,7 @@ import { reorderedBlocks } from './flow-order.mjs';
       blockId: block.id,
       confirmedAgentRecovery: nativeRecovery,
       ...investigationRunInput(block),
+      ...(branchConflictAnswer && { branchConflictAnswer }),
       ...(workIssueIds && { workIssueIds }),
       ...(confirmed ? { confirmed: true } : {}),
       ...(approval ? { mergeToken: approval.token } : {}),
@@ -4316,13 +4340,13 @@ import { reorderedBlocks } from './flow-order.mjs';
     inspectedFile = null;
   });
 
-  async function updateBranch() {
+  async function updateBranch(branchConflictAnswer) {
     const issueId = state.issueId;
     state.updatingBranch = issueId;
     renderEnvironment();
     try {
-      const result = await action('update-worktree');
-      if (result && state.issueId === issueId) toast(result.branchUpdateSummary || 'Branch updated.');
+      const result = await action('update-worktree', branchConflictAnswer && { branchConflictAnswer });
+      if (result?.branchUpdateSummary && state.issueId === issueId) toast(result.branchUpdateSummary);
     } finally {
       state.updatingBranch = null;
       renderEnvironment();
@@ -4859,9 +4883,21 @@ import { reorderedBlocks } from './flow-order.mjs';
     }
   });
   $('issue-input-continue').addEventListener('click', () => {
-    const block = state.view?.flow.blocks.find((block) => block.id === state.view.humanInput?.blockId);
+    const input = state.view?.humanInput;
+    const block = state.view?.flow.blocks.find((block) => block.id === input?.blockId);
+    if (input?.kind === 'branch-conflict') {
+      const field = $('issue-conflict-answer');
+      const text = field.value.trim();
+      if (!text) return field.focus();
+      const answer = { token: input.token, text };
+      if (block) {
+        selectBlock(block.id);
+        void startBlock('start', block, answer);
+      } else void updateBranch(answer);
+      return;
+    }
     if (!block) return;
-    if (state.view.humanInput.kind === 'agent') {
+    if (input.kind === 'agent') {
       state.tab = 'details';
       selectBlock(block.id);
       render();

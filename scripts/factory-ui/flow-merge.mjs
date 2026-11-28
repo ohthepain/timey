@@ -6,16 +6,18 @@ import {
   pausedMergeRepair,
   priorRepairBrowserProof,
   repairBrowserProof,
+  repairInterrupted,
   retainMergeRepairEvidence,
   verificationFailureKey,
   verificationFailureMessage,
 } from './flow-repair-evidence.mjs';
 import { githubCheckRuns, retainGitHubFailure } from './flow-ci-evidence.mjs';
+import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { deliveryTarget, missingMergePR } from './flow-block-data.mjs';
-import { digest, git, requireThat, writeJson } from './common.mjs';
+import { cleanEnvironment, digest, git, requireThat, writeJson } from './common.mjs';
 import {
   assertPublicationIdle,
   assertFlowRemote,
@@ -28,6 +30,7 @@ import { fetchIssueTarget, mergeIssueTarget } from './flow-update-branch.mjs';
 import { queueReportPaths } from './shared-issue-config.mjs';
 import { observeMergeWait, startMergeWait } from './flow-merge-wait.mjs';
 import { mergeTiming } from './flow-merge-timing.mjs';
+import { pendingIssueMerge } from './flow-merge-state.mjs';
 const headOf = (workspace) => git(workspace.checkout, 'rev-parse', 'HEAD');
 const treeOf = (workspace) => git(workspace.checkout, 'rev-parse', 'HEAD^{tree}');
 
@@ -62,6 +65,22 @@ function includesCommit(workspace, head, revision) {
 
 function cleanCheckout(workspace) {
   return !git(workspace.checkout, 'status', '--porcelain', '--untracked-files=all');
+}
+
+function repairCheckoutFingerprint(workspace) {
+  if (pendingIssueMerge(workspace.checkout)) return;
+  const status = git(workspace.checkout, 'status', '--porcelain', '--untracked-files=all');
+  if (status.split('\n').some((line) => line.startsWith('?? '))) return;
+  const changes = [[], ['--cached']].map((stage) =>
+    digest(
+      execFileSync(
+        'git',
+        ['-C', workspace.checkout, 'diff', '--binary', '--no-ext-diff', '--no-textconv', ...stage, '--'],
+        { env: cleanEnvironment(), maxBuffer: 32 * 1024 * 1024, stdio: 'pipe' }
+      )
+    )
+  );
+  return digest(JSON.stringify([headOf(workspace), status, ...changes]));
 }
 
 function requireCleanCandidate(workspace, head) {
@@ -163,7 +182,7 @@ async function repairCandidate(service, ctx, workspace, error, options, state) {
   ctx.onProgress('Repairing this Merge blocker (' + attempt + '/' + state.workflow.repairAttempts + ').\n', true);
   const record = state.repairHistory.start(
     state.repairs,
-    { ...commitIdentity(workspace, before), comparisonTarget: state.comparisonTarget },
+    { ...commitIdentity(workspace, before), comparisonTarget: state.comparisonTarget, pullRequest: state.pullRequest },
     error
   );
   await runRecordedRepair(service, ctx, workspace, error, { before, tree, record }, options, state);
@@ -172,6 +191,7 @@ async function repairCandidate(service, ctx, workspace, error, options, state) {
 async function runRecordedRepair(service, ctx, workspace, error, { before, tree, record }, options, state) {
   const startedAt = new Date().toISOString();
   const outcome = { status: 'failed' };
+  const trackPause = canRecordPausedCheckout(workspace, error);
   try {
     const artifact = await attemptRepair(error, async () => {
       const failure = retainMergeRepairEvidence(
@@ -212,7 +232,9 @@ async function runRecordedRepair(service, ctx, workspace, error, { before, tree,
   } catch (failure) {
     outcome.message = failure.message;
     outcome.code = failure.code;
+    outcome.terminalStatus = failure.terminalStatus;
     outcome.evidence ??= failure.evidence;
+    outcome.checkoutFingerprint = pausedCheckout(workspace, { trackPause, failure, outcome });
     throw failure;
   } finally {
     record.finish(outcome);
@@ -220,39 +242,70 @@ async function runRecordedRepair(service, ctx, workspace, error, { before, tree,
   }
 }
 
-async function resumePausedRepair(service, ctx, workspace, provider, lookup, options, state) {
+function canRecordPausedCheckout(workspace, error) {
+  return error.code === 'ci-failure' && (error.resumeRepair || cleanCheckout(workspace));
+}
+
+function pausedCheckout(workspace, { trackPause, failure, outcome }) {
+  if (!trackPause || failure.uncertain) return;
+  if (!repairInterrupted(outcome)) return;
+  return repairCheckoutFingerprint(workspace);
+}
+
+async function resumePausedRepair(service, ctx, workspace, provider, lookup, invoke, options, state) {
   if (cleanCheckout(workspace)) return;
   const failure = pausedMergeRepair(service.root, ctx.block.attempts, state.originalHead);
   if (!failure) return;
   requireMergeBranch(workspace);
+  const target = await fetchTarget(ctx, workspace, invoke, state.timing, state.originalHead);
   const pr = await lookup();
   if (!pr) return;
-  await continuePausedRepair(service, ctx, workspace, provider, pr, options, state, failure);
+  await continuePausedRepair(service, ctx, workspace, provider, pr, { target, failure }, options, state);
 }
 
-async function continuePausedRepair(service, ctx, workspace, provider, pr, options, state, failure) {
+async function continuePausedRepair(service, ctx, workspace, provider, pr, { target, failure }, options, state) {
   requireMergeTarget(ctx, pr);
-  if (pr.merged_at) return;
+  const observed = requirePausedRepairPR(provider, pr, failure.revision.pullRequest);
   await requireOpenMergePR(workspace, provider, pr);
-  state.comparisonTarget = pausedRepairTarget(workspace, pr, state.originalHead, failure);
+  requirePausedRepairCheckout(workspace, pr, target, failure);
+  state.comparisonTarget = target;
+  state.pullRequest = observed;
   const error = repairableBlocker('ci-failure', failure.message, failure.evidence ?? []);
-  error.resumeRepair = true;
+  error.resumeRepair = failure.resumedFrom;
+  error.failedRevision = failure.revision.commit;
   error.githubRuns = failure.ciRuns;
+  error.retainedChecks = failure.checks;
   await repairCandidate(service, ctx, workspace, error, options, state);
 }
 
-function pausedRepairTarget(workspace, pr, head, failure) {
-  requireThat(headOf(workspace) === head, 'The issue checkout changed after reading the paused repair. Retry Merge.');
+function requirePausedRepairPR(provider, pr, saved) {
+  const observed = repairPullRequest(provider, pr);
   requireThat(
-    includesCommit(workspace, head, pr.head.sha),
-    'The PR branch changed independently. Reconcile it before merging.'
+    saved?.head === observed.head,
+    'The PR head changed since the paused repair. Reconcile it before merging.'
   );
-  const target = failure.revision?.comparisonTarget;
   requireThat(
-    target && includesCommit(workspace, head, target),
-    'The paused repair no longer matches the issue checkout.'
+    saved.number === observed.number && saved.repository === observed.repository && saved.branch === observed.branch,
+    'The PR or its target no longer matches the paused repair.'
   );
-  return target;
+  return observed;
+}
+
+function requirePausedRepairCheckout(workspace, pr, target, failure) {
+  requireThat(
+    target === failure.revision.comparisonTarget && pr.base.sha === target,
+    'The target revision changed since the paused repair. Preserve the repair edits before updating.'
+  );
+  requireMergeBranch(workspace);
+  requireThat(
+    headOf(workspace) === failure.revision.commit &&
+      repairCheckoutFingerprint(workspace) === failure.checkoutFingerprint,
+    'The checkout edits changed since the paused repair. Preserve or reconcile them before retrying.'
+  );
+}
+
+function repairPullRequest(provider, pr) {
+  return { repository: provider.config.repository, number: pr.number, head: pr.head.sha, branch: pr.base.ref };
 }
 
 function recordRepairTiming(state, attempt, error, { before, outcome, record, startedAt }) {
@@ -587,6 +640,7 @@ async function reviewMerge(service, ctx, workspace, provider, pr, invoke, option
   requireMergeTarget(ctx, pr);
   if (pr.merged_at) return observeMergedPR(state, provider, workspace, pr, originalHead);
   await requireOpenMergePR(workspace, provider, pr);
+  state.pullRequest = repairPullRequest(provider, pr);
   const outcome = await advanceMerge(service, ctx, workspace, provider, pr, invoke, options, state);
   if (outcome) return finishMerge(state, provider, workspace, outcome);
 }
@@ -678,7 +732,7 @@ export async function mergeFlowPR(service, ctx, workspace, folder, options) {
     const originalHead = (state.originalHead = headOf(workspace));
     assertFlowRemote(workspace, deliveryTarget(ctx.flow).remote, provider.config.repository, 'fetch');
     service.guard(service.root, { id: ctx.attempt.id, issues: [ctx.issue.id] }, 'implement', workspace.base);
-    await resumePausedRepair(service, ctx, workspace, provider, lookup, options, state);
+    await resumePausedRepair(service, ctx, workspace, provider, lookup, invoke, options, state);
     for (;;) {
       ctx.signal.throwIfAborted();
       try {

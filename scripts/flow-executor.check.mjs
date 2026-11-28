@@ -3027,18 +3027,126 @@ test('Update Branch automatically retries a failed resolution with its diagnosti
   assert.equal(f.work('status', '--porcelain'), '');
 });
 
-test('Update Branch stops its conflict loop for an explicit human decision', async (t) => {
+const conflictUI = 'scripts/factory-ui/flow-ui.js';
+const conflictQuestion = 'Should the issue row show the numbered title or the nickname?';
+const stagedResolution = 'Issue and target source changes.\n';
+
+async function decisionConflictFixture(t) {
   const f = await branchUpdateFixture(t, 'source.txt');
+  for (const checkout of [f.root, f.checkout]) mkdirSync(join(checkout, dirname(conflictUI)), { recursive: true });
+  writeFileSync(join(f.root, conflictUI), 'const issueLabel = issue.nickname;\n');
+  f.git('add', conflictUI);
   const target = f.advance();
-  writeFileSync(join(f.checkout, 'source.txt'), 'Issue edit.\n');
+  writeFileSync(join(f.checkout, conflictUI), 'const issueLabel = issue.number + issue.title;\n');
+  writeFileSync(join(f.checkout, 'source.txt'), 'Issue source change.\n');
+  f.work('add', conflictUI, 'source.txt');
+  f.work('commit', '-m', 'Use the numbered issue title');
+  const issueHead = f.work('rev-parse', 'HEAD');
   let calls = 0;
-  f.connection.turn = async () => {
+  const turn = f.connection.turn.bind(f.connection);
+  f.connection.turn = async (...args) => {
     calls++;
-    return '```flow-result\n{"failure":"Choose which behavior to preserve.","blocker":"human-input"}\n```';
+    await turn(...args);
+    writeFileSync(join(f.checkout, 'source.txt'), stagedResolution);
+    f.work('add', 'source.txt');
+    return '```flow-result\n' + JSON.stringify({ failure: conflictQuestion, blocker: 'human-input' }) + '\n```';
   };
-  await assert.rejects(f.run('update-branch'), /Choose which behavior/);
+  let input;
+  await assert.rejects(f.run('update-branch'), (error) => {
+    input = error.humanInput;
+    assert.equal(input.message, conflictQuestion);
+    return true;
+  });
   assert.equal(calls, 1);
   assert.equal(f.work('rev-parse', 'MERGE_HEAD'), target);
+  assert.equal(f.work('show', ':source.txt'), stagedResolution.trim());
+  return { ...f, input, issueHead, target };
+}
+
+test('Update Branch carries its conflict decision and staged paths across Retry', async (t) => {
+  const f = await decisionConflictFixture(t);
+  const calls = f.calls.filter(({ method }) => method === 'turn').length;
+  await assert.rejects(f.run('update-branch'), (error) => {
+    assert.deepEqual(error.humanInput, f.input);
+    return true;
+  });
+  assert.equal(f.calls.filter(({ method }) => method === 'turn').length, calls);
+  assert.equal(f.work('rev-parse', 'MERGE_HEAD'), f.target);
+  assert.equal(f.work('rev-parse', 'HEAD'), f.issueHead);
+  assert.equal(f.work('show', ':source.txt'), stagedResolution.trim());
+  assert.equal(f.work('diff', '--name-only', '--diff-filter=U'), conflictUI);
+
+  const answer = { token: f.input.token, text: 'Use the numbered title in this fixture.' };
+  f.connection.turn = async (_thread, _checkout, prompt) => {
+    assert.match(
+      prompt,
+      /Resolve only these conflicted paths and stage the resolution: \["scripts\/factory-ui\/flow-ui\.js"\]/
+    );
+    assert.ok(prompt.includes(JSON.stringify({ question: conflictQuestion, answer: answer.text })));
+    assert.equal(f.work('show', ':source.txt'), stagedResolution.trim());
+    f.work('checkout', '--ours', '--', conflictUI);
+    f.work('add', conflictUI);
+    return 'Resolved the issue label as directed.';
+  };
+  await f.run('update-branch', { input: { branchConflictAnswer: answer } });
+  assert.equal(f.work('rev-parse', 'HEAD^1'), f.issueHead);
+  assert.equal(f.work('rev-parse', 'HEAD^2'), f.target);
+  assert.equal(f.work('show', 'HEAD:source.txt'), stagedResolution.trim());
+  assert.equal(f.work('show', 'HEAD:' + conflictUI), 'const issueLabel = issue.number + issue.title;');
+  assert.equal(f.work('status', '--porcelain'), '');
+});
+
+for (const changed of ['target', 'issue head', 'conflict']) {
+  test(`Update Branch reevaluates a saved conflict decision when the ${changed} changes`, async (t) => {
+    const f = await decisionConflictFixture(t);
+    let target = f.target;
+    let changedConflict;
+    if (changed === 'target') {
+      writeFileSync(join(f.root, conflictUI), 'const issueLabel = issue.shortNickname;\n');
+      f.git('commit', '-am', 'Advance the issue label implementation');
+      target = f.git('rev-parse', 'HEAD');
+    }
+    if (changed === 'issue head') {
+      const moved = f.work('commit-tree', f.issueHead + '^{tree}', '-p', f.issueHead, '-m', 'New issue revision');
+      f.work('update-ref', 'HEAD', moved, f.issueHead);
+    }
+    if (changed === 'conflict') {
+      const path = join(f.checkout, conflictUI);
+      changedConflict = readFileSync(path, 'utf8').trimEnd() + ' \n';
+      writeFileSync(path, changedConflict);
+    }
+    const previousAnswer = 'This answer applies only to the original question.';
+    const nextQuestion = 'Which issue label should this revised merge display?';
+    f.connection.turn = async (_thread, _checkout, prompt) => {
+      assert.equal(f.work('rev-parse', 'MERGE_HEAD'), target);
+      if (changed === 'conflict') {
+        assert.equal(f.work('diff', '--name-only', '--diff-filter=U'), conflictUI);
+        assert.equal(f.work('show', ':source.txt'), stagedResolution.trim());
+        assert.equal(readFileSync(join(f.checkout, conflictUI), 'utf8'), changedConflict);
+      } else assert.equal(f.work('diff', '--name-only', '--diff-filter=U'), conflictUI + '\nsource.txt');
+      assert.ok(!prompt.includes(previousAnswer));
+      return '```flow-result\n' + JSON.stringify({ failure: nextQuestion, blocker: 'human-input' }) + '\n```';
+    };
+    await assert.rejects(
+      f.run('update-branch', { input: { branchConflictAnswer: { token: f.input.token, text: previousAnswer } } }),
+      (error) => {
+        assert.equal(error.humanInput.message, nextQuestion);
+        assert.notEqual(error.humanInput.token, f.input.token);
+        return true;
+      }
+    );
+  });
+}
+
+test('Update Branch preserves conflict edits when the target changes alongside them', async (t) => {
+  const f = await decisionConflictFixture(t);
+  writeFileSync(join(f.checkout, conflictUI), 'Unsaved conflict work.\n');
+  writeFileSync(join(f.root, conflictUI), 'const issueLabel = issue.shortNickname;\n');
+  f.git('commit', '-am', 'Advance the issue label implementation');
+  await assert.rejects(f.run('update-branch'), /target or issue head and the conflict changed/);
+  assert.equal(f.work('rev-parse', 'MERGE_HEAD'), f.target);
+  assert.equal(f.work('show', ':source.txt'), stagedResolution.trim());
+  assert.equal(readFileSync(join(f.checkout, conflictUI), 'utf8'), 'Unsaved conflict work.\n');
 });
 
 test('Merge gives a new blocker its own repair budget and keeps pushing changed candidates', async (t) => {
@@ -3253,52 +3361,128 @@ test('Merge bounds temporary lookup failures and retains the final reason withou
   assert.equal(f.calls.filter(({ method }) => method === 'turn').length, 1);
 });
 
-test('Merge retries a provider-paused repair before synchronizing a newer destination', async (t) => {
-  let checkout;
-  let first;
-  let repairCalls = 0;
-  let original;
-  const f = mergeFixture(t, {
-    async verifyWork() {
-      if (!repairCalls) throw Object.assign(Error('Local verification failed.'), { verificationFailure: {} });
-      return { evidence: [] };
-    },
-    async repair(error, _round, { conversation }) {
-      repairCalls++;
-      const file = join(checkout, 'source.txt');
-      if (repairCalls === 1) {
-        conversation.turnId = 'previous-repair-turn';
-        original = f.git('-C', checkout, 'rev-parse', 'HEAD');
+for (const change of ['none', 'manual Stop', 'unrelated edit', 'PR head', 'target revision']) {
+  test('Merge Retry checks interrupted repair context: ' + change, async (t) => {
+    const controller = new AbortController();
+    let checkout;
+    let original;
+    let repairCalls = 0;
+    let first;
+    const runUrl = 'https://github.com/test/fixture/actions/runs/90/job/91';
+    const f = mergeFixture(t, {
+      onReady(_pr, _branch, head) {
+        if (repairCalls) return;
+        original = head;
+        throw Object.assign(Error('Required CI failed.'), {
+          code: 'ci-failure',
+          githubChecks: [{ name: 'Verify', url: runUrl }],
+        });
+      },
+      github(args) {
+        if (args[1].endsWith('/actions/runs/90')) return JSON.stringify({ head_sha: original, run_attempt: 2 });
+        if (args[1] === 'download') {
+          const folder = args.at(-1);
+          writeFileSync(join(folder, 'verify.log'), 'Fixture focused assertion failed.\n');
+          writeFileSync(
+            join(folder, 'ci-summary.json'),
+            JSON.stringify({
+              checks: [{ name: 'focused', command: ['node', '--test', 'verify.mjs'], exit: 1, log: 'verify.log' }],
+            })
+          );
+          return '';
+        }
+        if (args[1] === 'view') return 'Fixture CI assertion failed.';
+        return JSON.stringify({ data: { repository: { pullRequest: {} } } });
+      },
+    });
+    await f.run('understand');
+    ({ checkout } = f.flow.workspace);
+    const file = join(checkout, 'source.txt');
+    const turn = f.connection.turn.bind(f.connection);
+    let recordedTurn;
+    f.connection.turn = async (...args) => {
+      const input = JSON.parse(args[2]);
+      await turn(...args);
+      if (++repairCalls === 1) {
+        const binding = conversationState(f.root, f.issue.id).flowBlocks['block-merge'];
+        recordedTurn = binding.flowReceipt.turnId;
+        writeFileSync(file, 'Repair staged in the original turn.\n');
+        f.git('-C', checkout, 'add', 'source.txt');
         writeFileSync(file, 'Repair in progress.\n');
+        if (change === 'manual Stop') {
+          controller.abort();
+          throw Object.assign(Error('The repair turn was interrupted.'), { terminalStatus: 'interrupted' });
+        }
         throw Object.assign(Error('OpenAI: Allowance exhausted. Resume explicitly when available.'), {
           code: 'PROVIDER_PAUSED',
+          terminalStatus: 'interrupted',
         });
       }
-      assert.equal(error.resumeRepair, true);
-      assert.match(error.message, /Local verification failed/);
+      assert.deepEqual(input.resumedFrom, {
+        attemptId: first.id,
+        round: 1,
+        threadId: args[0],
+        turnId: recordedTurn,
+      });
+      assert.equal(input.failedRevision, original);
       assert.equal(f.git('-C', checkout, 'rev-parse', 'HEAD'), original);
+      assert.deepEqual(input.ciRuns, [
+        {
+          head: original,
+          runId: '90',
+          attempt: 2,
+          checks: [{ runId: '90', jobId: '91', url: runUrl, name: 'Verify' }],
+        },
+      ]);
+      assert.match(readFileSync(input.evidence[0].path, 'utf8'), /Fixture CI assertion failed/);
+      assert.equal(input.failedChecks[0].name, 'focused');
+      assert.match(readFileSync(input.failedChecks[0].log, 'utf8'), /Fixture focused assertion failed/);
+      assert.match(f.git('-C', checkout, 'diff', '--cached'), /Repair staged in the original turn/);
       assert.equal(readFileSync(file, 'utf8'), 'Repair in progress.\n');
-      assert.equal(f.observations.length, 0);
+      assert.deepEqual(f.observations, []);
       f.git('-C', checkout, 'commit', '-am', 'Finish the paused repair');
-      return { evidence: [] };
-    },
-  });
-  await f.run('understand');
-  ({ checkout } = f.flow.workspace);
-  await assert.rejects(f.run('merge'), (error) => {
-    first = { id: 'attempt-2', status: 'blocked', evidence: error.evidence };
-    return /Allowance exhausted/.test(error.message);
-  });
-  f.advanceTarget();
-  await assert.rejects(f.run('merge'), /Preserve checkout changes in a commit/);
-  assert.equal(repairCalls, 1);
+      return 'Repaired the failed CI check.';
+    };
+    await assert.rejects(f.run('merge', { signal: controller.signal }), (error) => {
+      first = { id: 'attempt-2', status: controller.signal.aborted ? 'stopped' : 'blocked', evidence: error.evidence };
+      assert.match(error.message, change === 'manual Stop' ? /was interrupted/ : /Allowance exhausted/);
+      return true;
+    });
 
-  const result = await f.run('merge', { attempts: [first] });
-
-  assert.equal(repairCalls, 2);
-  assert.equal(result.result.revision, 'actual-merge');
-  assert.equal(f.git('-C', checkout, 'merge-base', 'HEAD', 'dev'), f.git('rev-parse', 'dev'));
-});
+    if (change === 'unrelated edit') writeFileSync(file, 'Repair in progress. Unrelated edit.\n');
+    if (change === 'PR head') f.publishHead('moved PR head');
+    if (change === 'target revision') f.advanceTarget();
+    const retry = () => f.run('merge', { attempts: [first] });
+    f.observations.length = 0;
+    if (change === 'none' || change === 'manual Stop') {
+      const result = await retry();
+      const index = result.evidence.find(({ label }) => label === 'Merge repair index');
+      const [record] = JSON.parse(readFileSync(index.path)).attempts;
+      assert.equal(record.failure.resumedFrom.turnId, recordedTurn);
+      assert.equal(result.result.revision, 'actual-merge');
+      assert.equal(repairCalls, 2);
+      assert.ok(f.calls.some(({ method, id }) => method === 'resume' && id === record.failure.resumedFrom.threadId));
+      t.diagnostic(`Resumed ${first.id} / ${recordedTurn}, CI run 90 attempt 2, checkout ${original}.`);
+    } else {
+      const diagnostic = {
+        'unrelated edit': /checkout edits changed/,
+        'PR head': /PR head changed/,
+        'target revision': /target revision changed/,
+      }[change];
+      const status = f.git('-C', checkout, 'status', '--porcelain');
+      const diff = f.git('-C', checkout, 'diff', 'HEAD');
+      await assert.rejects(retry(), (error) => {
+        assert.match(error.message, diagnostic);
+        t.diagnostic(error.message);
+        return true;
+      });
+      assert.equal(repairCalls, 1);
+      assert.equal(f.git('-C', checkout, 'status', '--porcelain'), status);
+      assert.equal(f.git('-C', checkout, 'diff', 'HEAD'), diff);
+      assert.deepEqual(f.observations, []);
+    }
+  });
+}
 
 test('Merge Continue checks GitHub again before merging', async (t) => {
   const f = mergeFixture(t);

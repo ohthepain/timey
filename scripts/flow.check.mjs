@@ -34,6 +34,7 @@ import {
 import { FlowStore, newFlow, editFlow, makeBlock } from './factory-ui/flow-store.mjs';
 import { createIssueFlows } from './factory-ui/flow-service.mjs';
 import { createFlowObserver } from './factory-ui/flow-observer.mjs';
+import { updateIssueBranch } from './factory-ui/flow-update-branch.mjs';
 import { initializeProjectLifecycle, readProjectSettings } from './factory-ui/project-settings.mjs';
 import { humanGuard } from './factory-ui/guard.mjs';
 import { ViewSources } from './factory-ui/view-sources.mjs';
@@ -2815,6 +2816,71 @@ test('a shared claim timeout retains the original block failure', async (t) => {
     summary: 'Original GitHub request failed',
     message: 'spawnSync git ETIMEDOUT',
   });
+});
+
+test('manual branch update shows the same conflict question on Retry and accepts a decision', async (t) => {
+  const { root, git, id, service } = fixture(t);
+  git('checkout', 'dev');
+  writeFileSync(join(root, '.gitignore'), '.issues/\n');
+  git('add', '.gitignore');
+  git('commit', '-m', 'Ignore fixture evidence');
+  git('remote', 'add', 'origin', root);
+  const base = git('rev-parse', 'HEAD');
+  const checkout = join(root, '.issues', 'checkout');
+  const workspace = { checkout, branch: 'issue-label', base };
+  git('worktree', 'add', '-b', workspace.branch, checkout, base);
+  const work = (...args) => git('-C', checkout, ...args);
+  writeFileSync(join(checkout, 'source.txt'), 'Use the numbered title.\n');
+  work('commit', '-am', 'Issue implementation');
+  writeFileSync(join(root, 'source.txt'), 'Use the nickname.\n');
+  git('commit', '-am', 'Target implementation');
+  const target = git('rev-parse', 'HEAD');
+  const question = 'Should the issue row show the numbered title or the nickname?';
+  let turns = 0;
+  const repair = async (_paths, revision, { decision }) => {
+    turns++;
+    assert.equal(revision, target);
+    if (!decision) return { status: 'blocked', blocker: 'human-input', question };
+    assert.deepEqual(decision, { question, answer: 'Use the numbered title in this fixture.' });
+    work('checkout', '--ours', '--', 'source.txt');
+    work('add', 'source.txt');
+    return {};
+  };
+  const flows = createIssueFlows(service, {
+    executor: executor(async ({ signal, input }) => {
+      await updateIssueBranch(
+        workspace,
+        { remote: 'origin', branch: 'dev' },
+        (_command, args) => work(...args),
+        repair,
+        signal,
+        input.branchConflictAnswer
+      );
+      return { summary: 'Branch updated.' };
+    }),
+  });
+  service.flows = flows;
+  t.after(() => flows.close());
+  const issue = flows.selected(id);
+  const flow = flows.read(issue);
+  flow.workspace = workspace;
+  await flows.store.save(flow, flow.revision);
+  const update = (branchConflictAnswer) =>
+    flows.action({
+      issueId: id,
+      revision: flows.read(issue).revision,
+      action: 'update-worktree',
+      branchConflictAnswer,
+    });
+  const pending = (await update()).humanInput;
+  assert.equal(pending.message, question);
+  assert.deepEqual((await update()).humanInput, pending);
+  assert.equal(turns, 1);
+  const completed = await update({ token: pending.token, text: 'Use the numbered title in this fixture.' });
+  assert.equal(completed.humanInput, null);
+  assert.equal(completed.branchUpdateSummary, 'Branch updated.');
+  assert.equal(turns, 2);
+  assert.equal(work('rev-parse', 'HEAD^2'), target);
 });
 
 test('manual branch update reconciles a disconnected Work only after its provider is observed idle', async (t) => {

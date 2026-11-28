@@ -296,11 +296,9 @@ conversations still block the update. This check starts no model turn.
 New oversized inputs fail before dispatch and leave a blocked attempt rather
 than uncertain ownership.
 
-An explicit Update Branch run aborts an existing merge in the managed issue
-checkout before fetching. This discards that merge’s partial resolutions;
-committed issue work remains. Other unfinished Git operations still stop the
-update. A new conflict receives the existing bounded resolution attempt and
-remains available for review if it cannot be resolved.
+An explicit Update Branch run normally aborts an existing merge in the managed
+issue checkout before fetching. This discards that merge’s partial resolutions.
+Committed issue work remains. Other unfinished Git operations stop the update.
 
 Factory fetches the exact remote branch selected in Starting point, or the
 configured remote upstream of a local starting branch. A local branch without
@@ -324,12 +322,18 @@ fast-forward or already up-to-date result. Merge uses passing verification for
 its committed candidate and fetched destination. A no-op
 update leaves uncommitted changes alone.
 
-If Git reports conflicts from this update, Factory gives Codex one attempt. Codex
+If Git reports conflicts from this update, Factory gives Codex up to three attempts. Codex
 may edit and stage only the conflicted files. It must preserve both sides and stop
-when resolution requires a decision. Factory commits the resolved merge through
-normal Git hooks. If the attempt cannot finish the merge, Factory keeps the local
-commit and the in-progress merge, lists the files that need attention, and pauses
-route. Resolve or abort the merge in the issue worktree before another update.
+when resolution requires a decision. Retry fetches the starting branch and shows
+the saved question with the staged resolutions intact while the issue head,
+target, and conflict match. **Record decision and continue** supplies the answer
+to the conflict resolution turn. A changed head, target, or conflict triggers a
+fresh merge evaluation. Changes outside the recorded conflict require review
+before Factory can restart the merge.
+
+Factory commits the resolved merge through normal Git hooks. If the attempts
+cannot finish, Factory keeps the local commit and the in-progress merge, lists
+the files that need attention, and pauses the route.
 
 ## Issue Start, Resume, and Pause
 
