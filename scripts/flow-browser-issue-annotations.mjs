@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
 import { copyFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { importBrowserIssue, removeBrowserIssue } from './flow-browser-fixture.mjs';
@@ -89,6 +90,48 @@ async function badgeCounts(page, expected) {
   const counts = { detail, sidebar, group };
   assert.deepEqual(counts, { detail: expected, sidebar: expected, group: expected });
   return counts;
+}
+
+async function checkIncomingReference(page, output) {
+  const heading = page.locator('#issue-heading [data-incoming-reference-count]');
+  const sidebar = page.locator(`#open-issues [data-issue="${other}"] [data-incoming-reference-count]`);
+  await openIssue(page, other);
+  assert.equal(await sidebar.count(), 0, 'An ordinary mention does not contribute a reference.');
+  const note = 'Keep the issue while reviewing this change.';
+  const response = await page.request.post('/api/issue-annotation', {
+    headers: { origin: new URL(page.url()).origin, 'x-factory-action': 'manual' },
+    data: {
+      action: 'add',
+      type: 'reference',
+      issueId: master,
+      targetIssueId: other,
+      annotationId: randomUUID(),
+      note,
+    },
+  });
+  assert.ok(response.ok(), await response.text());
+  const record = await response.json();
+
+  await openIssue(page, other);
+  const badges = await Promise.all([heading.innerText(), sidebar.innerText()]);
+  assert.deepEqual(badges, ['1 reference', '1 reference']);
+  const panel = page.locator('#issue-annotations');
+  await page.getByRole('button', { name: 'Annotations', exact: true }).click();
+  const row = panel.locator(`[data-incoming-reference="${record.id}"]`);
+  const title = await row.getByRole('link').innerText();
+  assert.ok(title.includes(titles[master]));
+  const holder = await row.innerText();
+  assert.ok(holder.includes('Reference from') && holder.includes(note));
+  await panel.screenshot({ path: join(output, 'incoming-issue-references.png') });
+
+  await openIssue(page, master);
+  await page.getByRole('button', { name: 'Annotations', exact: true }).click();
+  await clearAnnotation(page, record);
+  await openIssue(page, other);
+  assert.equal(await sidebar.count(), 0);
+  assert.equal(await heading.count(), 0);
+  assert.equal(await row.count(), 0);
+  return { badges, holder, cleared: true };
 }
 
 async function checkListControls(page, output, poll) {
@@ -215,7 +258,8 @@ export async function issueAnnotationBrowserChecks({ page, project, root, output
       writeFileSync(join(output, 'annotation-toggle.json'), JSON.stringify(toggle, null, 2) + '\n');
       const first = await addAnnotation(page, 'blocked', 'Waiting on an API decision.', master);
       const second = await addAnnotation(page, 'blocked', 'Missing a fixture.');
-      const comment = await addAnnotation(page, 'comment', 'The comment stays active.');
+      const comment = await addAnnotation(page, 'comment', 'The comment stays active.', other);
+      const incoming = await checkIncomingReference(page, output);
       const both = await badgeCounts(page, 1);
       const list = await checkListControls(page, output, poll);
       await page.getByRole('button', { name: 'Annotations', exact: true }).click();
@@ -228,7 +272,7 @@ export async function issueAnnotationBrowserChecks({ page, project, root, output
       const history = await checkHistory(page, clearedFirst, clearedSecond, comment, output);
       writeFileSync(
         join(output, 'issue-annotations.json'),
-        JSON.stringify({ toggle, both, remaining, neither, list, history }, null, 2) + '\n'
+        JSON.stringify({ toggle, both, remaining, neither, list, history, incoming }, null, 2) + '\n'
       );
     } finally {
       await page.goto('about:blank');

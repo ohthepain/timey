@@ -20,6 +20,7 @@ import { registerProjectStores } from './factory-ui/stores/report-access.mjs';
 import { createArtifactRouter } from './factory-ui/stores/coordination.mjs';
 import { runMetadataOperation } from './factory-ui/stores/metadata-operation.mjs';
 import { InvestigationReports } from './factory-ui/investigation-reports.mjs';
+import { issueAnnotations } from './factory-ui/issue-annotations.mjs';
 import { collectS3Uploads, stageReportAssets } from './factory-ui/stores/asset-cleanup.mjs';
 import { releaseIssueArtifact } from './factory-ui/stores/flow-evidence.mjs';
 
@@ -86,6 +87,216 @@ async function fixture(t, kind = 'files', s3) {
     });
   return { ...f, records, issues, physical, project, create, add, evidence, del };
 }
+
+function referenceInput(issueId, targetIssueId, annotationId) {
+  return { action: 'add', type: 'reference', issueId, targetIssueId, annotationId, note: 'Keep the review evidence.' };
+}
+
+function annotationRunner(f, project) {
+  const annotations = issueAnnotations({ root: f.root, projectStores: project });
+  return {
+    annotations,
+    mutate: (input) => annotations.mutate(input, { id: 'operator', kind: 'user' }),
+  };
+}
+
+test('annotation references survive archive and release once across two runners', async (t) => {
+  const f = await fixture(t);
+  const peer = f.create(f.root, 'annotation-peer');
+  const left = annotationRunner(f, f.project);
+  const right = annotationRunner(f, peer);
+  await f.add('holder', { location: 'closed' });
+  await f.add('target', { location: 'closed' });
+  await f.add('another-target');
+
+  const link = referenceInput('holder', 'target', 'reference-1');
+  await assert.rejects(left.mutate({ ...link, targetIssueId: 'unknown' }), /not registered/);
+  await assert.rejects(left.mutate({ ...link, targetIssueId: 'holder' }), /another issue/);
+  const [saved, retried] = await Promise.all([left.mutate(link), right.mutate(link)]);
+  assert.deepEqual(retried, saved);
+  await assert.rejects(right.mutate({ ...link, annotationId: 'duplicate' }), /already references/);
+  await assert.rejects(right.mutate({ ...link, note: 'Different purpose' }), /already names different input/);
+  for (const input of [
+    { type: 'comment', text: 'See target' },
+    { type: 'label', label: 'blocked' },
+  ])
+    await left.mutate({ action: 'add', issueId: 'holder', relatedIssueId: 'target', ...input });
+
+  const archive = async (issueId) =>
+    peer.archiveIssue({
+      issueId,
+      expectedRevision: (await peer.readIssue(issueId)).revision,
+      operationId: 'archive-' + issueId,
+    });
+  await archive('holder');
+  const archived = await archive('target');
+  assert.equal(archived.location, 'archive');
+  const originalSnapshot = f.records.readSnapshot.bind(f.records);
+  let reads;
+  const measuredSnapshot = (read) =>
+    originalSnapshot((reader) =>
+      read({
+        ...reader,
+        async list(prefix, select) {
+          const rows = await reader.list(prefix, select);
+          reads.push({ prefix, rows: rows.length });
+          return rows;
+        },
+      })
+    );
+  async function scopedReads() {
+    reads = [];
+    const { records, incoming } = await right.annotations.view(['holder', 'target']);
+    assert.equal(records.length, 3);
+    assert.deepEqual(incoming.get('holder'), []);
+    assert.deepEqual(incoming.get('target'), [{ id: saved.id, type: 'reference', issueId: 'holder', note: link.note }]);
+    return reads.sort((a, b) => a.prefix.localeCompare(b.prefix));
+  }
+  f.records.readSnapshot = measuredSnapshot;
+  const before = await scopedReads();
+  f.records.readSnapshot = originalSnapshot;
+  for (let i = 0; i < 24; i++) {
+    const id = 'unrelated-' + i;
+    await f.add(id);
+    await left.mutate(referenceInput(id, 'another-target', 'extra-' + i));
+  }
+  f.records.readSnapshot = measuredSnapshot;
+  const after = await scopedReads();
+  f.records.readSnapshot = originalSnapshot;
+  assert.equal(before.length, 4);
+  assert.equal(
+    before.reduce((total, { rows }) => total + rows, 0),
+    4
+  );
+  assert.deepEqual(after, before);
+  t.diagnostic(
+    JSON.stringify({ unrelatedIssuesAdded: 24, before, after, measured: 'scoped list calls and decoded records' })
+  );
+
+  const deletion = {
+    issueId: 'target',
+    expectedRevision: archived.revision,
+    operationId: 'delete-target',
+    purpose: 'archive',
+  };
+  await assert.rejects(f.project.deleteIssue(deletion), (error) => {
+    assert.equal(error.code, 'STORE_ISSUE_REFERENCED');
+    assert.match(error.message, /holder.*reference reference-1.*Keep the review evidence/);
+    return true;
+  });
+  const clear = { action: 'clear', issueId: 'holder', annotationId: saved.id };
+  const [cleared, clearRetry] = await Promise.all([left.mutate(clear), right.mutate(clear)]);
+  assert.deepEqual(clearRetry, cleared);
+  assert.deepEqual(await right.mutate(link), cleared);
+  assert.deepEqual((await right.annotations.view(['target'])).incoming.get('target'), []);
+  assert.equal((await peer.deleteIssue(deletion)).deleted, true);
+  assert.deepEqual(await f.project.deleteIssue(deletion), await peer.deleteIssue(deletion));
+
+  const outgoing = referenceInput('holder', 'another-target', 'reference-2');
+  await right.mutate(outgoing);
+  const holderDeletion = {
+    issueId: 'holder',
+    expectedRevision: (await peer.readIssue('holder')).revision,
+    operationId: 'delete-holder',
+    purpose: 'archive',
+  };
+  const commit = f.records.commit.bind(f.records);
+  f.records.commit = (request) => {
+    if (request.operationId.startsWith('delete-holder/complete-delete/'))
+      throw Error('Interrupted after removing the source annotations.');
+    return commit(request);
+  };
+  try {
+    await assert.rejects(peer.deleteIssue(holderDeletion), /Interrupted after removing the source annotations/);
+  } finally {
+    f.records.commit = commit;
+  }
+  assert.equal((await f.project.deleteIssue(holderDeletion)).deleted, true);
+  assert.deepEqual(await left.annotations.list('holder'), []);
+  const remaining = (await left.annotations.view(['another-target'])).incoming.get('another-target');
+  assert.equal(remaining.length, 24);
+  assert.ok(remaining.every(({ issueId }) => issueId.startsWith('unrelated-')));
+  assert.deepEqual(await f.project.deleteIssue(holderDeletion), await peer.deleteIssue(holderDeletion));
+  t.diagnostic(
+    'Archive preserved the incoming hold. Clearing released it. The other runner resumed an interrupted source deletion and retained all 24 unrelated holds.'
+  );
+});
+
+test('interrupted proposal deletion resumes outgoing annotation cleanup with a new seal', async (t) => {
+  const f = await fixture(t);
+  const peer = f.create(f.root, 'annotation-peer');
+  const right = annotationRunner(f, peer);
+  await f.add('proposal', { state: 'needs-approval', location: 'open' });
+  await f.add('target');
+  await right.mutate(referenceInput('proposal', 'target', 'reference-1'));
+  const deletion = {
+    issueId: 'proposal',
+    expectedRevision: (await f.project.readIssue('proposal')).revision,
+    operationId: 'delete-proposal-reference',
+    purpose: 'proposal',
+  };
+  const commit = f.records.commit.bind(f.records);
+  f.records.commit = (request) => {
+    if (request.operationId.startsWith(deletion.operationId + '/complete-delete/'))
+      throw Error('Interrupted after removing the proposal annotations.');
+    return commit(request);
+  };
+  try {
+    await assert.rejects(f.project.deleteIssue(deletion), /Interrupted after removing the proposal annotations/);
+  } finally {
+    f.records.commit = commit;
+  }
+  assert.equal(await f.project.coordination.get('project/migration'), null);
+  assert.equal((await peer.deleteIssue(deletion)).deleted, true);
+  assert.deepEqual((await right.annotations.view(['target'])).incoming.get('target'), []);
+});
+
+test('concurrent annotation add and Permanent Delete honor the Coordination guard in both orders', async (t) => {
+  const f = await fixture(t);
+  const peer = f.create(f.root, 'annotation-peer');
+  const right = annotationRunner(f, peer);
+  await f.add('source');
+  for (const addWins of [true, false]) {
+    const issueId = addWins ? 'add-wins' : 'delete-wins';
+    await f.add(issueId);
+    const deletion = {
+      issueId,
+      expectedRevision: (await f.project.readIssue(issueId)).revision,
+      operationId: 'delete-' + issueId,
+      purpose: 'archive',
+    };
+    const link = referenceInput('source', issueId, issueId);
+    const entered = Promise.withResolvers();
+    const release = Promise.withResolvers();
+    const commit = f.records.commit.bind(f.records);
+    f.records.commit = async (request) => {
+      const matches = addWins
+        ? request.operationId.startsWith(deletion.operationId + '/seal/')
+        : request.operationId.startsWith('annotation-add/');
+      if (matches) {
+        entered.resolve();
+        await release.promise;
+      }
+      return commit(request);
+    };
+    try {
+      const first = addWins
+        ? assert.rejects(f.project.deleteIssue(deletion), { code: 'STORE_ISSUE_REFERENCED' })
+        : assert.rejects(right.mutate(link), { code: 'STORE_CONFLICT' });
+      await entered.promise;
+      const second = addWins ? await right.mutate(link) : await f.project.deleteIssue(deletion);
+      assert.equal(addWins ? second.id : second.deleted, addWins ? link.annotationId : true);
+      release.resolve();
+      await first;
+      const { incoming } = await right.annotations.view([issueId]);
+      assert.equal(incoming.get(issueId).length, addWins ? 1 : 0);
+      t.diagnostic(JSON.stringify({ issueId, incoming: incoming.get(issueId).length, deleted: !addWins }));
+    } finally {
+      release.resolve();
+      f.records.commit = commit;
+    }
+  }
+});
 
 test('proposal deletion lets concurrent Git metadata finish after the evidence seal', async (t) => {
   const f = await fixture(t, 'git');

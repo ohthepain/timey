@@ -3,9 +3,8 @@
   "name": "Closed issue reports retain the Retro summary and open every follow-up",
   "command": ["node", "scripts/flow-browser.mjs", "--ci-part=2", "--retro-report"],
   "source": {
-    "runId": "46066650303",
-    "jobId": "140734496312",
-    "checkout": "2ab2a4212285c4bae4442e64f100aa00b797513b",
-    "tree": "d3dcfe0c3f38ad27350346a89f26085040106155"
+    "attemptId": "5d60b779-532c-49d6-9e18-a29bc5ba62e7",
+    "checkout": "3b2bcb74dd29fe3a207cd4bdb9ab1924bb2dc178",
+    "tree": "564fb4059182a9af405c1eeccdaeaae6f9357095"
   }
 }

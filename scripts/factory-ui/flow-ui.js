@@ -45,6 +45,7 @@ import { reorderedBlocks } from './flow-order.mjs';
     badgeFilter: '',
     attentionFirst: false,
     annotationSaving: false,
+    annotationSubmissions: new Map(),
     draggedIssueId: null,
     collapsedFolders: new Set(view.read('flow-collapsed-folders', [])),
     collapsedCollections: new Set(view.read('flow-collapsed-collections', ['closed-issues', 'archived-issues'])),
@@ -1657,15 +1658,26 @@ import { reorderedBlocks } from './flow-order.mjs';
     return `<li data-group-child="${escape(child.id)}">${issueLink(child)} ${window.issueGroupUI.issueBadges(child)}${reason ? `<p>${escape(reason)}</p>` : ''}${requestedProof ? `<p>Requested proof: ${escape(requestedProof)}</p>` : ''}${proof ? `<p>${proof.status === 'passed' ? 'Passed' : 'Unmet'}: ${escape(proof.observation)}</p>` : ''}${nextAction ? `<p>${escape(nextAction)}</p>` : ''}<div class="folder-controls">${proof?.status === 'failed' ? '<button class="small-button" type="button" data-group-play>Continue on the master</button>' : ''}${(blocked ? child.canDetachBlocked : canDetach) ? `<button class="icon-button sub-issue-remove" type="button" data-detach-action="${detachAction}" data-detach-sub-issue="${escape(child.id)}" aria-label="${escape(detachLabel + ' ' + issueLabel(child))}" title="${escape(detachLabel)}">×</button>` : ''}</div></li>`;
   }
 
+  function annotationTypeLabel(type) {
+    const label = words(type);
+    return label.charAt(0).toUpperCase() + label.slice(1);
+  }
+
   function annotationRow(annotation) {
-    const { id, author, type, label, createdAt, relatedIssueId, cleared } = annotation;
-    const title = type === 'label' ? window.issueGroupUI.badgeLabels[label] : 'Comment';
+    const { id, author, type, label, createdAt, relatedIssueId, targetIssueId, cleared } = annotation;
+    const title = type === 'label' ? window.issueGroupUI.badgeLabels[label] : annotationTypeLabel(type);
     const byline = (actor, at) =>
       `${escape(actor.kind)} ${escape(actor.id)} · <time datetime="${escape(at)}" title="${escape(at)}">${escape(date(at))}</time>`;
     const body = type === 'comment' ? annotation.text : annotation.note;
-    const related =
-      relatedIssueId && (state.index.issues.find(({ id }) => id === relatedIssueId) || { id: relatedIssueId });
-    return `<li data-annotation-id="${escape(id)}"><strong>${escape(title)}</strong> <span>${byline(author, createdAt)}</span>${body ? `<p>${escape(body)}</p>` : ''}${related ? `<p>Related issue ${issueLink(related)}</p>` : ''}${cleared ? `<p>Cleared by ${byline(cleared.by, cleared.at)}</p>` : `<button class="small-button" type="button" data-clear-annotation="${escape(id)}">Clear</button>`}</li>`;
+    const linkedId = targetIssueId || relatedIssueId;
+    const linked = linkedId && (state.index.issues.find(({ id }) => id === linkedId) || { id: linkedId });
+    const linkLabel = targetIssueId ? 'Target issue' : 'Related issue';
+    return `<li data-annotation-id="${escape(id)}"><strong>${escape(title)}</strong> <span>${byline(author, createdAt)}</span>${body ? `<p>${escape(body)}</p>` : ''}${linked ? `<p>${linkLabel} ${issueLink(linked)}</p>` : ''}${cleared ? `<p>Cleared by ${byline(cleared.by, cleared.at)}</p>` : `<button class="small-button" type="button" data-clear-annotation="${escape(id)}">Clear</button>`}</li>`;
+  }
+
+  function incomingReferenceRow({ id, issueId, title, issueNumber, type, note }) {
+    const source = issueLink({ id: issueId, title, issueNumber });
+    return `<li data-incoming-reference="${escape(id)}"><strong>${escape(annotationTypeLabel(type))}</strong> from ${source}${note ? `<p>${escape(note)}</p>` : ''}</li>`;
   }
 
   function syncAnnotationForm() {
@@ -1699,6 +1711,9 @@ import { reorderedBlocks } from './flow-order.mjs';
     const warning = state.view?.annotationsWarning;
     $('issue-annotation-warning').hidden = !warning;
     $('issue-annotation-warning').textContent = warning || '';
+    const incoming = state.view?.incomingReferences || [];
+    $('incoming-issue-references').hidden = !incoming.length;
+    updateFolderMarkup($('incoming-issue-reference-list'), incoming.map(incomingReferenceRow).join(''));
     $('issue-annotation-history').hidden = !history.length;
     updateFolderMarkup(
       $('active-issue-annotations'),
@@ -1716,9 +1731,16 @@ import { reorderedBlocks } from './flow-order.mjs';
     state.annotationSaving = true;
     $('issue-annotation-error').hidden = true;
     renderIssueAnnotations(state.view.issue);
+    const isAdd = fields.action === 'add';
+    const submission = JSON.stringify([issueId, fields]);
     try {
-      await post('issue-annotation', { ...fields, issueId });
-      if (state.issueId === issueId && fields.action === 'add') {
+      if (isAdd && !state.annotationSubmissions.has(submission)) {
+        state.annotationSubmissions.set(submission, crypto.randomUUID());
+      }
+      const annotationId = isAdd ? state.annotationSubmissions.get(submission) : fields.annotationId;
+      await post('issue-annotation', { ...fields, issueId, annotationId });
+      state.annotationSubmissions.delete(submission);
+      if (state.issueId === issueId && isAdd) {
         $('issue-annotation-form').elements.content.value = '';
         $('issue-annotation-form').elements.relatedIssueId.value = '';
       }
@@ -3401,7 +3423,10 @@ import { reorderedBlocks } from './flow-order.mjs';
     $('rename-issue').textContent = issue?.title || '';
     $('issue-master-badge').hidden = !issue?.isMaster;
     const badges = issue?.badges?.filter((badge) => badge !== 'master-issue');
-    updateFolderMarkup($('issue-heading-badges'), window.issueGroupUI.issueBadges({ badges }));
+    updateFolderMarkup(
+      $('issue-heading-badges'),
+      window.issueGroupUI.issueBadges({ badges, incomingReferenceCount: issue?.incomingReferenceCount })
+    );
     renderIssueAnnotations(issue);
     renderBlockingError();
     renderMergedIssueNotice(issue);
@@ -5253,6 +5278,7 @@ import { reorderedBlocks } from './flow-order.mjs';
       const refreshRemote = remoteCheck;
       remoteCheck = false;
       void load(false, false, refreshRemote);
+      if (state.archivedIssues && $('archived-issues')?.open) void loadArchive();
     }, 100);
   }
 

@@ -144,7 +144,7 @@ test('unchanged artifact display reuses verified bytes while fresh calls still v
   assert.ok(count() > afterFirst, 'Action lookup performs fresh integrity validation.');
 });
 
-test('artifact display rejects changed bytes and symbolic links', (t) => {
+test('artifact display rejects changed bytes and symbolic links', async (t) => {
   const f = artifactsFixture(t);
   assert.equal(f.flows.artifacts(f.flow, { fresh: false }).length, 1);
   const initial = fs.statSync(f.path);
@@ -157,7 +157,7 @@ test('artifact display rejects changed bytes and symbolic links', (t) => {
   fs.renameSync(f.path, actual);
   fs.symlinkSync(actual, f.path);
   assert.deepEqual(f.flows.artifacts(f.flow, { fresh: false }), []);
-  assert.throws(
+  await assert.rejects(
     () => f.flows.deleteArtifact(f.flow, { id: f.flow.issueId }, { artifactId: 'missing', confirmed: true }),
     /Confirm deletion/
   );

@@ -7,8 +7,9 @@ function completedDetaches({ id, issue_group: group }) {
   return (group?.children ?? []).filter(wasDetachedByMasterRun).map((child) => ({ issueId: child.id, masterId: id }));
 }
 
-export function issueBadgeIndex(annotations, masters) {
+export function issueBadgeIndex(annotations, masters, incoming = new Map()) {
   return {
+    incoming,
     activeLabels: Map.groupBy(
       annotations.filter(({ type, cleared }) => type === 'label' && !cleared),
       ({ issueId }) => issueId

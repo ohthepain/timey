@@ -1,0 +1,17 @@
+{
+  "version": 2,
+  "name": "artifact display rejects changed bytes and symbolic links",
+  "expectedTests": ["artifact display rejects changed bytes and symbolic links"],
+  "command": [
+    "node",
+    "--test",
+    "--test-name-pattern=^artifact display rejects changed bytes and symbolic links$",
+    "scripts/idle-view-work.check.mjs"
+  ],
+  "source": {
+    "runId": "46171436204",
+    "jobId": "141062866589",
+    "checkout": "8b9c65fe388aea23d8e80f4e4163d1aeee71e229",
+    "tree": "5d3d51de9df04b7faed96cad03a7d60dcffb64fe"
+  }
+}
