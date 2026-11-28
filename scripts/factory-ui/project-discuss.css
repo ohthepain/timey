@@ -605,3 +605,7 @@
   gap: 6px;
   padding-bottom: 6px;
 }
+
+.project-discuss-main {
+  --discuss-chat-background: #171717;
+}

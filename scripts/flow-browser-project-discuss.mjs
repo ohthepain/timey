@@ -87,6 +87,11 @@ export async function projectDiscussBrowserChecks({ page, service, project, poll
   await page.locator('#discuss-messages h2').filter({ hasText: 'Project answer' }).waitFor();
   const messages = page.locator('#discuss-messages');
   const firstUserBox = await assertUserMessageBox(messages, 'First project question');
+  const chatBackground = await page
+    .locator('.project-discuss-main .discuss-chat')
+    .evaluate((chat) => getComputedStyle(chat).backgroundColor);
+  assert.equal(chatBackground, 'rgb(23, 23, 23)');
+  await screenshot('project-discuss-user-message');
   assert.equal(calls.length, 1);
   assert.equal(await page.locator('#discuss-messages [data-discuss-copy-code]').count(), 1);
   const first = service.projectDiscuss.view().selected;
@@ -234,7 +239,7 @@ export async function projectDiscussBrowserChecks({ page, service, project, poll
   await page.emulateMedia({ colorScheme: null });
   writeFileSync(
     join(output, 'project-discuss-user-boxes.json'),
-    JSON.stringify({ firstUserBox, laterUserBox, lightPreference }, null, 2) + '\n'
+    JSON.stringify({ chatBackground, firstUserBox, laterUserBox, lightPreference }, null, 2) + '\n'
   );
   await page.setViewportSize({ width: 640, height: 900 });
   assert.equal(
