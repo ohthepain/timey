@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "name": "Refresh preserves expanded activity, editor size, drafts and copied selection",
+  "command": ["node", "scripts/flow-browser.mjs", "--ci-part=1b", "--interface-state", "--sidebar-labels"],
+  "source": {
+    "attemptId": "0f3df17b-f968-47db-b511-2b4dc96e7b59",
+    "checkout": "c9f20ffab12ff46160315234f26dad39bf487335",
+    "tree": "5cae97db6aeea7b79dad98a8914a4907a2a053fa"
+  }
+}
