@@ -1,0 +1,10 @@
+{
+  "version": 2,
+  "name": "Actions menu lists two running Flow blocks",
+  "command": ["node", "scripts/flow-browser.mjs", "--ci-part=2", "--actions-menu"],
+  "source": {
+    "attemptId": "9ca00eb7-f766-47dd-a9c9-07c944c2fab0",
+    "checkout": "949055d170968338117977eb4a40bfaf4b636137",
+    "tree": "8167b455274e5e98128f20809d3246dc9d9f236d"
+  }
+}

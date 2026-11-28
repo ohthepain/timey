@@ -10,6 +10,7 @@ export async function actionsMenuBrowserChecks({ page, project, service, poll, s
   const previous = service.flows.executor;
   const pending = new Map();
   const ids = ['20261120-actions-first', '20261120-actions-second'];
+  const titles = ['Running action 1', 'Group: Inbox'];
   service.flows.executor = {
     async run({ issue }) {
       const deferred = Promise.withResolvers();
@@ -20,14 +21,16 @@ export async function actionsMenuBrowserChecks({ page, project, service, poll, s
     close() {},
   };
   try {
+    await ensureProjectStores(service);
     for (const [index, id] of ids.entries()) {
       await importBrowserIssue(
         project,
         id,
-        `---\nid: ${id}\ntitle: Running action ${index + 1}\nstate: backlog\ncreated: 2026-11-20T12:00:00Z\n---\n\n## Original request\n\nCheck action visibility.\n`
+        `---\nid: ${id}\ntitle: "${titles[index]}"\nstate: backlog\ncreated: 2026-11-20T12:00:00Z\n---\n\n## Original request\n\nCheck action visibility.\n`,
+        'open',
+        318 + index
       );
     }
-    await ensureProjectStores(service);
     for (const id of ids) {
       const issue = service.flows.selected(id);
       const flow = service.flows.read(issue);
@@ -52,32 +55,8 @@ export async function actionsMenuBrowserChecks({ page, project, service, poll, s
     );
     const feedback = dialog.locator('[data-actions-empty]');
     const feedbackBefore = await feedback.boundingBox();
-    const rows = [];
-    for (const [index, id] of ids.entries()) {
-      const card = dialog.locator('.server-action-card').filter({ hasText: `Running action ${index + 1}` });
-      assert.equal(await card.count(), 1);
-      assert.equal(await card.locator('h3').innerText(), 'Work');
-      assert.match(await card.innerText(), /Block: Work/);
-      assert.equal((await card.innerText()).split(`Running action ${index + 1}`).length - 1, 1);
-      const href = await card.locator('[data-action-output]').getAttribute('href');
-      const url = new URL(href, page.url());
-      assert.equal(url.searchParams.get('issue'), id);
-      assert.equal(url.searchParams.get('block'), service.flows.active.get(id).blockId);
-      rows.push({ issueId: id, text: await card.innerText(), href });
-    }
+    const rows = await Promise.all(ids.map((id) => checkRunningRow(dialog, service.flows, id)));
     await screenshot('actions-menu-two-running');
-    writeFileSync(
-      join(output, 'actions-menu-proof.json'),
-      JSON.stringify(
-        {
-          actions: 2,
-          rows,
-          execution: 'Two held FlowService executions with an injected executor. No live model work.',
-        },
-        null,
-        2
-      )
-    );
     pending.get(ids[0]).resolve();
     await poll(
       () => service.flows.active.size,
@@ -89,13 +68,40 @@ export async function actionsMenuBrowserChecks({ page, project, service, poll, s
       (count) => count === 1,
       'Open menu removes finished work'
     );
-    assert.match(await dialog.innerText(), /Running action 2/);
+    assert.match(await dialog.innerText(), /#319: Group: Inbox: Work/);
     assert.equal((await feedback.boundingBox()).height, feedbackBefore.height);
-    await dialog.locator('[data-actions-close]').click();
+    const navigation = await followActionLinks(page, dialog, rows[1]);
+    writeFileSync(join(output, 'actions-menu-proof.json'), JSON.stringify({ rows, navigation }, null, 2));
   } finally {
     const tasks = ids.map((id) => service.flows.active.get(id)?.task).filter(Boolean);
     for (const deferred of pending.values()) deferred.resolve();
     await Promise.allSettled(tasks);
     service.flows.executor = previous;
   }
+}
+
+async function checkRunningRow(dialog, flows, id) {
+  const { issueNumber, title } = flows.selected(id);
+  const summary = dialog.getByRole('link', { name: `#${issueNumber}: ${title}: Work`, exact: true });
+  const card = summary.locator('xpath=ancestor::article');
+  assert.equal(await card.count(), 1);
+  const issueHref = await summary.getAttribute('href');
+  assert.equal(issueHref, `/?issue=${encodeURIComponent(id)}`);
+  assert.equal(await card.locator('h3').count(), 0);
+  assert.equal(await card.getByRole('link').count(), 2);
+  assert.equal(await card.locator('button:enabled').count(), 0);
+  const href = await card.getByRole('link', { name: 'Action output', exact: true }).getAttribute('href');
+  assert.equal(href, `${issueHref}&block=${encodeURIComponent(flows.active.get(id).blockId)}`);
+  return { summary: await summary.innerText(), issueHref, href };
+}
+
+async function followActionLinks(page, dialog, row) {
+  await dialog.getByRole('link', { name: row.summary, exact: true }).click();
+  await page.waitForURL(new URL(row.issueHref, page.url()).href);
+  await page.locator('#issue-heading').getByRole('heading', { name: 'Group: Inbox', exact: true }).waitFor();
+  const issue = page.url();
+  await page.locator('#project-actions').click();
+  await dialog.getByRole('link', { name: 'Action output', exact: true }).click();
+  await page.waitForURL(new URL(row.href, page.url()).href);
+  return { issue, actionOutput: page.url() };
 }

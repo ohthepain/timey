@@ -1,11 +1,13 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import flowIntegration from './flow-integration-tests.json' with { type: 'json' };
 import { normalizeFocusedTests } from './verify-merge-checks.mjs';
 
 const manifest = '.github/pr-repair-tests.json';
 const records = '.github/pr-repair-tests';
+const caseReporter = fileURLToPath(new URL('./pr-repair-case-reporter.mjs', import.meta.url));
 const args = process.argv.slice(2);
 const base = args[0] === '--base' ? args[1] : undefined;
 const changed =
@@ -63,6 +65,47 @@ function recordedTests() {
     .map(readRecord);
 }
 
+function validateExpectedTests(test, [command, mode, ...args]) {
+  const names = test.expectedTests;
+  const filtered = args.some((arg) => arg.startsWith('--test-name-pattern='));
+  if (names === undefined && !filtered) return;
+  assert.deepEqual([command, mode], ['node', '--test'], 'expectedTests applies to node --test.');
+  const message = `${test.name} must declare distinct, nonempty expectedTests for its named Node cases.`;
+  assert.ok(Array.isArray(names), message);
+  assert.ok(names.length, message);
+  assert.ok(names.every(isCaseName), message);
+  assert.equal(new Set(names).size, names.length, message);
+}
+
+function isCaseName(name) {
+  return typeof name === 'string' && name.trim() && !/[\r\n]/.test(name);
+}
+
+function replay({ expectedTests, timeoutMs: timeout = 120_000 }, [command, ...args]) {
+  const env = { ...process.env };
+  delete env.NODE_TEST_CONTEXT;
+  if (!expectedTests) return spawnSync(command, args, { stdio: 'inherit', timeout, env });
+  const result = spawnSync(
+    command,
+    [
+      '--test-reporter=spec',
+      '--test-reporter-destination=stderr',
+      `--test-reporter=${caseReporter}`,
+      '--test-reporter-destination=stdout',
+      ...args,
+    ],
+    { stdio: ['inherit', 'pipe', 'inherit'], encoding: 'utf8', timeout, env }
+  );
+  if (!result.error && result.status === 0) result.error = missingCases(expectedTests, result.stdout);
+  return result;
+}
+
+function missingCases(expected, output) {
+  const passed = new Set(output.trim().split('\n').filter(Boolean).map(JSON.parse));
+  const missing = expected.filter((name) => !passed.has(name));
+  if (missing.length) return Error(`Expected Node cases did not pass: ${missing.join(', ')}`);
+}
+
 const legacy = selected(manifest) && existsSync(manifest) ? legacyTests() : [];
 const tests = [...legacy, ...recordedTests()];
 if (!tests.length) {
@@ -71,7 +114,8 @@ if (!tests.length) {
   for (const test of tests) {
     if (typeof test.name !== 'string' || !test.name.trim() || /[\r\n]/.test(test.name))
       throw Error('Each PR repair test needs a single-line name.');
-    normalizeFocusedTests([test.command]);
+    [test.command] = normalizeFocusedTests([test.command]);
+    validateExpectedTests(test, test.command);
   }
   for (const test of tests) {
     console.log('RUN PR repair: ' + test.name);
@@ -80,10 +124,7 @@ if (!tests.length) {
       const source = attemptId ? `Factory attempt ${attemptId}` : `run ${runId}, job ${jobId}`;
       console.log(`Source ${source}, checkout ${checkout}, tree ${tree}`);
     }
-    const [command, ...argv] = test.command;
-    const env = { ...process.env };
-    delete env.NODE_TEST_CONTEXT;
-    const result = spawnSync(command, argv, { stdio: 'inherit', timeout: test.timeoutMs ?? 120_000, env });
+    const result = replay(test, test.command);
     if (result.error || result.status !== 0) {
       console.error('FAIL PR repair: ' + test.name);
       if (result.error) console.error(result.error.message);

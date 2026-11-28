@@ -1,6 +1,7 @@
 {
   "version": 2,
   "name": "Flow workspace exposes overnight reports and drafts only in the full view",
+  "expectedTests": ["Flow workspace exposes overnight reports and drafts only in the full view"],
   "command": [
     "node",
     "--test",

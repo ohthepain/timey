@@ -1,6 +1,13 @@
 {
   "version": 2,
   "name": "Factory installed restart listener readiness and recovery",
+  "expectedTests": [
+    "restart replaces a changed installed source using saved evidence and verifies the new PID and hash",
+    "restart runs the current working tree without requiring clean or saved verification",
+    "restart waits for a held integration lock and times out without stopping work or deleting it",
+    "restart discovers matching saved evidence and never reports ready if the replacement exits",
+    "an unknown deployment lock is preserved without pausing or stopping the server"
+  ],
   "command": [
     "node",
     "--test",

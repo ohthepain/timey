@@ -1,6 +1,9 @@
 {
   "version": 2,
   "name": "Flow navigation loads another issue while an earlier block check is pending and rejects stale results",
+  "expectedTests": [
+    "Flow navigation loads another issue while an earlier block check is pending and rejects stale results"
+  ],
   "command": [
     "node",
     "--test",

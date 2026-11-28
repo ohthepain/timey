@@ -1,6 +1,7 @@
 {
   "version": 2,
   "name": "real restart changes the listener PID and preserves existing chat and progress records",
+  "expectedTests": ["real restart changes the listener PID and preserves existing chat and progress records"],
   "command": [
     "node",
     "--test",

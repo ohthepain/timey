@@ -76,21 +76,9 @@ export async function interfaceStateBrowserChecks({ page, service, project, scre
     if (result.issue?.id === id) result.error = error;
     await route.fulfill({ response, json: result });
   });
-  let idleRequests = 0;
-  const countRefreshes = (request) => {
-    if (['/api/flow', '/api/ui-sources'].includes(new URL(request.url()).pathname)) idleRequests++;
-  };
-  page.on('request', countRefreshes);
   await page.clock.install();
-  await page.goto('/?issue=' + id);
   const wording = page.locator('[data-field="wording"]');
-  await wording.waitFor();
-  await page.waitForTimeout(500);
-  const initialRequests = idleRequests;
-  // Cover both former polling intervals.
-  await page.waitForTimeout(2400);
-  assert.equal(idleRequests, initialRequests, 'An idle issue made another snapshot or UI sources request.');
-  page.off('request', countRefreshes);
+  await assertIdleIssue(page, service.flowChanges, id, wording);
   const editor = await wording.elementHandle();
   const remoteCheck = page.waitForResponse((response) => {
     const url = new URL(response.url());
@@ -184,6 +172,47 @@ export async function interfaceStateBrowserChecks({ page, service, project, scre
   await assertRestoredEditor();
   await screenshot('interface-state');
   await removeFlow();
+}
+
+async function assertIdleIssue(page, changes, id, wording) {
+  const subscribe = changes.subscribe;
+  let idle = true;
+  changes.subscribe = (response, issue) => {
+    if (issue === id) {
+      // Keep the connection live while isolating the idle check from delayed
+      // fixture file notifications. The subsequent edit tests real notifications.
+      const write = response.write.bind(response);
+      response.write = (chunk, ...args) => (idle && chunk.startsWith('event: ') ? true : write(chunk, ...args));
+    }
+    subscribe(response, issue);
+  };
+  let idleRequests = 0;
+  const countRefreshes = (request) => {
+    if (['/api/flow', '/api/ui-sources'].includes(new URL(request.url()).pathname)) idleRequests++;
+  };
+  page.on('request', countRefreshes);
+  try {
+    let snapshots = 0;
+    const startupSnapshots = page.waitForEvent('requestfinished', (request) => {
+      const url = new URL(request.url());
+      return url.pathname === '/api/flow' && url.searchParams.get('issue') === id && ++snapshots === 2;
+    });
+    const startupSources = page.waitForEvent(
+      'requestfinished',
+      (request) => new URL(request.url()).pathname === '/api/ui-sources'
+    );
+    // Wait for the initial reads and the snapshot requested when the stream opens.
+    await Promise.all([startupSnapshots, startupSources, page.goto('/?issue=' + id)]);
+    await wording.waitFor();
+    const initialRequests = idleRequests;
+    // Cover both former polling intervals.
+    await page.waitForTimeout(2400);
+    assert.equal(idleRequests, initialRequests, 'An idle issue made another snapshot or UI sources request.');
+  } finally {
+    idle = false;
+    changes.subscribe = subscribe;
+    page.off('request', countRefreshes);
+  }
 }
 
 export async function flowActionTimeoutBrowserChecks({ page, service, project }) {

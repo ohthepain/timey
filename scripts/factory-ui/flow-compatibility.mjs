@@ -7,7 +7,9 @@ import hierarchy from '../../.github/pr-repair-tests/flow-master-hierarchy.json'
 import sidebar from '../../.github/pr-repair-tests/flow-sidebar-labels.json' with { type: 'json' };
 import discussionSkills from '../../.github/pr-repair-tests/temporary-discussion-skills.json' with { type: 'json' };
 import blockModels from '../../.github/pr-repair-tests/flow-block-models.json' with { type: 'json' };
-import { digest, git, writeJson } from './common.mjs';
+import { normalizeFocusedTests } from '../verify-merge-checks.mjs';
+import { candidateBrowserTestPolicy } from './candidate-browser-scenarios.mjs';
+import { digest, git, requireThat, writeJson } from './common.mjs';
 import { browserFailure, runFocusedBrowser } from './flow-browser-evidence.mjs';
 import { commandLogError } from './flow-command-error.mjs';
 import { repairableBlocker } from './strategy-repair.mjs';
@@ -59,7 +61,107 @@ const surfaces = [
   },
 ];
 
-const surfacePaths = surfaces.flatMap(({ paths }) => paths);
+const listenerPaths = [
+  '.github/pr-repair-tests/flow-running-action-output.json',
+  '.github/pr-repair-tests/flow-controls-store-outage.json',
+  '.github/pr-repair-tests/flow-classic-delivery-retirement.json',
+  '.github/pr-repair-tests/flow-master-hierarchy.json',
+  '.github/pr-repair-tests/flow-sidebar-labels.json',
+  '.github/pr-repair-tests/temporary-discussion-skills.json',
+  '.github/pr-repair-tests/flow-block-models.json',
+  'scripts/factory-ui.mjs',
+  'scripts/factory-ui/http.mjs',
+  'scripts/factory-ui/service.mjs',
+  'scripts/factory-ui/runtime.mjs',
+  'scripts/factory-ui/ui-source.mjs',
+  'scripts/factory-ui/restart-process.mjs',
+  'scripts/factory-ui/flow-compatibility.mjs',
+  'scripts/factory-ui/flow-executor.mjs',
+  'scripts/factory-ui/flow-merge.mjs',
+  'scripts/factory-ui/heap-crash.mjs',
+  'scripts/git-fixture.mjs',
+];
+
+const deploymentPaths = [
+  ...listenerPaths,
+  'scripts/factory-deploy-transport.mjs',
+  'scripts/factory-deploy-readiness.mjs',
+  'scripts/factory-workflow-fixture.mjs',
+  'factory/system/flow/',
+  '.agents/skills/issues/scripts/human-input.mjs',
+  '.agents/skills/issues/scripts/human-input-version.json',
+];
+
+const repairSurfaces = [
+  {
+    manifest: 'factory-deploy-startup',
+    paths: [
+      ...deploymentPaths,
+      'scripts/factory-deploy.check.mjs',
+      'scripts/factory-deploy.mjs',
+      'scripts/factory-ui/deployment.mjs',
+      'scripts/verify-process.mjs',
+    ],
+  },
+  {
+    manifest: 'factory-refresh-startup',
+    paths: ['scripts/factory-refresh.check.mjs', 'scripts/factory-ui/flow.html', 'scripts/factory-ui/flow-ui.js'],
+  },
+  {
+    manifest: 'factory-restart-startup',
+    paths: [...deploymentPaths, 'scripts/factory-restart.check.mjs', 'scripts/factory-restart.mjs'],
+  },
+  {
+    manifest: 'factory-server-control-startup',
+    paths: [
+      ...listenerPaths,
+      'scripts/factory-server-control.check.mjs',
+      'scripts/factory-test-service.mjs',
+      'scripts/factory-ui/server-action.mjs',
+      'scripts/factory-ui/server-control.mjs',
+    ],
+  },
+  {
+    manifest: 'flow-browser-retro-report',
+    paths: [
+      'scripts/browser-scenario-policy.mjs',
+      'scripts/flow-browser.mjs',
+      'scripts/flow-browser-fixture.mjs',
+      'scripts/flow-browser-routes.mjs',
+      'scripts/flow-browser-scenario-fixture.mjs',
+      'scripts/flow-browser-retro-report.mjs',
+      'scripts/factory-ui/flow.html',
+      'scripts/factory-ui/flow-ui.js',
+      'scripts/factory-ui/flow.css',
+      'scripts/factory-ui/issue-closure-ui.js',
+      'scripts/factory-ui/project-reports-ui.js',
+      'scripts/factory-ui/project-reports.css',
+      'scripts/factory-ui/flow-service.mjs',
+      'scripts/factory-ui/flow-executor.mjs',
+      'scripts/factory-ui/flow-closure.mjs',
+      'scripts/factory-ui/flow-group-closure.mjs',
+      'scripts/factory-ui/flow-retro.mjs',
+      'scripts/factory-ui/flow-retro-report.mjs',
+      'scripts/factory-ui/strategy-closure.mjs',
+      'scripts/factory-ui/issue-cleanup.mjs',
+      'scripts/factory-ui/issue-report-storage.mjs',
+      'scripts/factory-ui/project-settings.mjs',
+      'factory/system/flow/blocks/cleanup.md',
+      'factory/system/flow/blocks/retro.md',
+    ],
+  },
+].map(({ manifest, paths }) => {
+  const path = `.github/pr-repair-tests/${manifest}.json`;
+  return { path, paths: [path, ...paths] };
+});
+
+const surfacePaths = [...new Set([...surfaces, ...repairSurfaces].flatMap(({ paths }) => paths))];
+
+function matchesChangedPath(changedPaths, paths) {
+  return paths.some((path) =>
+    path.endsWith('/') ? [...changedPaths].some((changed) => changed.startsWith(path)) : changedPaths.has(path)
+  );
+}
 
 function changedSurfacePaths(checkout, from, to) {
   return git(checkout, 'diff', '--name-only', '--no-renames', '-z', from, to, '--', ...surfacePaths)
@@ -67,13 +169,56 @@ function changedSurfacePaths(checkout, from, to) {
     .filter(Boolean);
 }
 
-function compatibilityChecks(checkout, originalHead, { head, target }) {
+function namedNodeCases(args) {
+  const patterns = args.filter((arg) => arg.startsWith('--test-name-pattern='));
+  requireThat(patterns.length === 1, 'Expected one anchored Node test name pattern.');
+  const pattern = /^--test-name-pattern=\^(?:\(\?:(.+)\)|([^|]+))\$/.exec(patterns[0]);
+  requireThat(pattern, 'Expected literal Node test names in an anchored pattern.');
+  const cases = (pattern[1] ?? pattern[2]).split('|');
+  requireThat(
+    cases.every((name) => name.trim() && !/[\\^$.*+?()[\]{}]/.test(name)),
+    'Expected literal Node test names in the saved test name pattern.'
+  );
+  return cases;
+}
+
+function readRepairCheck(checkout, head, manifest) {
+  const record = JSON.parse(git(checkout, 'show', `${head}:${manifest}`));
+  requireThat(
+    typeof record.name === 'string' && /^[^\r\n]*\S[^\r\n]*$/.test(record.name),
+    `${manifest} must declare a single-line check name.`
+  );
+  const [command] = normalizeFocusedTests([record.command], candidateBrowserTestPolicy(checkout, head));
+  const [tool, script, ...args] = command;
+  requireThat(
+    tool === 'node' && ['--test', 'scripts/flow-browser.mjs'].includes(script),
+    `${manifest} must declare a focused Node or Flow browser check.`
+  );
+  const check = { name: record.name, source: record.source, command };
+  if (script === '--test') return { ...check, expectedCases: namedNodeCases(args) };
+  return check;
+}
+
+function selectedRepairChecks(checkout, head, changedPaths) {
+  const selected = repairSurfaces.filter(({ paths }) => matchesChangedPath(changedPaths, paths));
+  if (!selected.length) return [];
+  const manifests = selected.map(({ path }) => path);
+  return git(checkout, 'ls-tree', '--name-only', '-z', head, '--', ...manifests)
+    .split('\0')
+    .filter(Boolean)
+    .map((manifest) => readRepairCheck(checkout, head, manifest));
+}
+
+export function compatibilityChecks(checkout, originalHead, { head, target }) {
   const fork = git(checkout, 'merge-base', originalHead, target);
   const changedPaths = new Set([
     ...changedSurfacePaths(checkout, target, head),
     ...changedSurfacePaths(checkout, fork, target),
   ]);
-  return surfaces.filter(({ paths }) => paths.some((path) => changedPaths.has(path))).flatMap(({ checks }) => checks);
+  const existing = surfaces
+    .filter(({ paths }) => matchesChangedPath(changedPaths, paths))
+    .flatMap(({ checks }) => checks);
+  return [...existing, ...selectedRepairChecks(checkout, head, changedPaths)];
 }
 
 function compatibilityBrowserReasons(result) {
@@ -94,8 +239,14 @@ async function runCompatibilityBrowser(ctx, workspace, folder, candidate, record
   };
 }
 
-function nodeCheckReason(name, log, output, exit) {
-  if (exit) return commandLogError(log).original || `Node check exited with ${exit}.`;
+function nodeCaseReason(expectedCases, output) {
+  const passed = new Set(Array.from(output.matchAll(/^ok \d+ - (.+)$/gm), ([, name]) => name));
+  const missing = expectedCases.filter((test) => !passed.has(test));
+  if (missing.length) return 'Node test output did not confirm passing cases: ' + missing.join(', ');
+}
+
+function nodeOutputReason({ name, expectedCases }, output) {
+  if (expectedCases) return nodeCaseReason(expectedCases, output);
   if (!output.includes(name)) return 'The Node test output did not include the named test.';
 }
 
@@ -110,7 +261,12 @@ async function runCompatibilityNode(ctx, workspace, folder, record, execute) {
     log,
     signal: ctx.signal,
     onProgress: ctx.onProgress,
-    environment: { NODE_TEST_CONTEXT: undefined },
+    environment: {
+      NODE_TEST_CONTEXT: undefined,
+      ...(record.expectedCases && {
+        NODE_OPTIONS: [process.env.NODE_OPTIONS, '--test-reporter=tap'].filter(Boolean).join(' '),
+      }),
+    },
   }).then(
     () => 0,
     (error) => {
@@ -119,7 +275,9 @@ async function runCompatibilityNode(ctx, workspace, folder, record, execute) {
     }
   );
   const output = readFileSync(log, 'utf8');
-  const reason = nodeCheckReason(record.name, log, output, exit);
+  const reason = exit
+    ? commandLogError(log).original || `Node check exited with ${exit}.`
+    : nodeOutputReason(record, output);
   return {
     ...record,
     exit,

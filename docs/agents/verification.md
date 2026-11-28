@@ -122,7 +122,9 @@ a conflict-free update, and target drift after readiness. It checks that each
 candidate is pushed before readiness and that rejected pushes stop Merge.
 It also opens the full logs for a known Merge error and an unfamiliar Update
 Branch error. The scenario saves commit identities, command order, and log
-details in `merge-target-update.json`. GitHub responses are simulated.
+details in `merge-target-update.json`. The fixture simulates GitHub responses
+and supplies a candidate check that verifies a clean worktree containing the
+target commit.
 
 `node scripts/flow-browser.mjs --project-issues` exercises retired Classic
 links and operations, the Flow Issues queue, and archival of saved issues.
@@ -383,12 +385,16 @@ The production closed issues are reserved for the user's own archive test and
 must not be used by these checks.
 
 `node scripts/flow-browser.mjs --interface-state` checks expanded tool activity,
-editor size, drafts, caret and scroll preservation through polling, same-tab
-navigation, and reload. It drags a real selection across an issue poll and checks
-the copied clipboard text. Different requests and new tabs retain independent
-state. The fixture uses disposable conversations and issues and starts no model
-work. `node --test scripts/interface-state.check.mjs` reproduces the original
-Discuss collapse and checks selection through growing and replaced activity.
+editor size, drafts, caret and scroll preservation through refreshes, same-tab
+navigation, and reload. It checks that an idle issue sends no snapshot or UI
+source requests after its initial loads and the live stream's catch-up read.
+The idle window keeps the stream open and gates delayed fixture notifications.
+Later edits exercise live notifications. The scenario drags a real selection
+across an issue refresh and checks the copied clipboard text. Different requests
+and new tabs retain independent state. The fixture uses disposable conversations
+and issues and starts no model work.
+`node --test scripts/interface-state.check.mjs` reproduces the original Discuss
+collapse and checks selection through growing and replaced activity.
 
 `node scripts/flow-browser.mjs --stalled-flow-action` checks that a withheld Flow
 action response refreshes the issue and re-enables its controls without
@@ -595,6 +601,10 @@ per check in `.github/pr-repair-tests/`. Record the check's `name`, the full
 `checkout` and `tree` fields from the failed run. Include `runId` and `jobId`
 for a GitHub job or `attemptId` for a Factory attempt. Independent files let
 branches add checks without writing over one another's source details.
+For a Node command with a test-name filter, record every expected case's exact
+name in `expectedTests`. This array applies to single and grouped checks. Early
+checks require a passing case result for each name before printing the record's
+pass marker.
 `pnpm run test:pr-repair` runs checks
 by name and stops at the first failure. CI runs changed records before broad
 verification. The version 1 file remains readable for historic entries.
@@ -607,9 +617,15 @@ When the PR repair plan includes the `flow-integration` suite, its named repair
 cases run first and the six shared checks follow in their recorded order. The
 shared plan lives at `scripts/flow-integration-tests.json` so it travels with the
 installed Factory server and is also available to the CI runner.
-Factory's compatibility preflight also imports shared records from
-`.github/pr-repair-tests/`. Deployment and restart fixtures that copy the server
-source include this directory so they exercise the same imports as an installed checkout.
+Merge runs focused compatibility checks on the combined candidate before pushing it.
+For the Factory startup and Retro closure checks, Merge reads the saved commands
+from the candidate's `.github/pr-repair-tests/` records. A change to a record or
+its listed dependencies on either side of the merge selects the check when the
+candidate has the record. Grouped Node checks require a passing result for each
+named case. Merge retains the candidate, target, and check results and still
+requires GitHub CI for the pushed commit. Deployment and restart fixtures that
+copy the server source include the manifest directory so they exercise the same
+imports as an installed checkout.
 A named Flow browser check can include one `--ci-part` flag to use the same
 fixture setup as that GitHub job.
 `node scripts/flow-browser.mjs --ci-part=2 --edit-destination --issue-playback --issue-header-close`
