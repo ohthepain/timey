@@ -2033,6 +2033,89 @@ test('Merge runs focused compatibility checks on the combined candidate before p
   assert.equal(result.result.revision, 'actual-merge');
 });
 
+test('Merge gates the candidate push on a saved repair check and then waits for required GitHub CI', async (t) => {
+  const { inspectReadiness } = await import('./factory-ui/strategy-readiness.mjs');
+  const manifest = '.github/pr-repair-tests/factory-refresh-startup.json';
+  const record = JSON.parse(readFileSync(new URL('../' + manifest, import.meta.url), 'utf8'));
+  const candidates = [];
+  let repaired = false;
+  let waiting = true;
+  const f = mergeFixture(t, {
+    async browser({ command, args, cwd, log }) {
+      assert.deepEqual([command, ...args], record.command);
+      assert.deepEqual(f.observations, []);
+      candidates.push(f.git('-C', cwd, 'rev-parse', 'HEAD'));
+      writeFileSync(log, repaired ? 'ok 1 - ' + record.name + '\n' : 'not ok 1 - ' + record.name + '\n');
+      if (!repaired) throw Object.assign(Error('The focused check failed.'), { exitCode: 1 });
+    },
+    onReady(pr, branch, head, settings) {
+      assert.equal(head, candidates.at(-1));
+      if (waiting) assert.equal(settings?.waitForChecks, true);
+      const required = {
+        __typename: 'CheckRun',
+        name: 'test',
+        isRequired: true,
+        status: waiting ? 'IN_PROGRESS' : 'COMPLETED',
+        conclusion: waiting ? null : 'SUCCESS',
+      };
+      const view = {
+        headRefOid: head,
+        baseRefName: 'dev',
+        baseRefOid: f.git('rev-parse', 'dev'),
+        mergeStateStatus: waiting ? 'BLOCKED' : 'CLEAN',
+        commits: { nodes: [{ commit: { statusCheckRollup: { contexts: { nodes: [required] } } } }] },
+      };
+      const provider = {
+        config: { repository: 'test/fixture', target: 'dev' },
+        gh: () => JSON.stringify([{ data: { repository: { pullRequest: view } } }]),
+      };
+      return inspectReadiness(provider, pr, branch, head, undefined, settings?.waitForChecks);
+    },
+    onWait() {
+      assert.equal(f.observations[0].operation, 'push');
+      assert.ok(f.observations.every(({ operation }) => operation !== 'merge'));
+      if (f.observations.some(({ operation }) => operation === 'ready')) waiting = false;
+    },
+  });
+  await f.run('understand');
+  const { checkout } = f.flow.workspace;
+  const commit = (path, contents) => {
+    mkdirSync(dirname(join(checkout, path)), { recursive: true });
+    writeFileSync(join(checkout, path), contents);
+    f.git('-C', checkout, 'add', path);
+    f.git('-C', checkout, 'commit', '-qm', 'Change ' + path);
+  };
+  commit(manifest, JSON.stringify(record));
+  f.advanceTarget();
+  const turn = f.connection.turn.bind(f.connection);
+  f.connection.turn = async (...args) => {
+    assert.match(args[2], /Failed compatibility check/);
+    assert.deepEqual(f.observations, []);
+    commit('source.txt', 'Repaired combined candidate.\n');
+    repaired = true;
+    return turn(...args);
+  };
+  const result = await f.run('merge');
+  const receipt = JSON.parse(readFileSync(result.result.deliveryReceipt.path, 'utf8'));
+  const report = JSON.parse(readFileSync(receipt.compatibility.path, 'utf8'));
+  assert.equal(candidates.length, 2);
+  assert.notEqual(candidates[0], candidates[1]);
+  assert.equal(report.candidate.head, candidates[1]);
+  assert.equal(report.candidate.tree, receipt.candidate.tree);
+  assert.equal(report.target, f.git('rev-parse', 'dev'));
+  assert.deepEqual(
+    report.checks.map(({ command, passed }) => [command, passed]),
+    [[record.command, true]]
+  );
+  assert.ok(f.observations.every(({ head }) => head === candidates[1]));
+  assert.ok(
+    f.observations.findIndex(({ operation }) => operation === 'push') <
+      f.observations.findIndex(({ operation }) => operation === 'ready')
+  );
+  assert.equal(waiting, false);
+  assert.equal(f.observations.at(-1).operation, 'merge');
+});
+
 test('Merge repairs a target conflict before waiting for pending GitHub readiness', async (t) => {
   const { inspectReadiness } = await import('./factory-ui/strategy-readiness.mjs');
   let repaired = false;
