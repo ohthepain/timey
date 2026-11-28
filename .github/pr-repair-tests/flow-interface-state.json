@@ -1,20 +1,10 @@
 {
   "version": 2,
   "name": "Issues and Local notes use matching text styles after Interface State",
-  "command": [
-    "node",
-    "scripts/flow-browser.mjs",
-    "--ci-part=1b",
-    "--ai-text",
-    "--interface-state",
-    "--stalled-flow-action",
-    "--sidebar-labels"
-  ],
-  "timeoutMs": 240000,
+  "command": ["node", "scripts/flow-browser.mjs", "--ci-part=1b", "--interface-state", "--sidebar-labels"],
   "source": {
-    "runId": "46172303171",
-    "jobId": "141065754133",
-    "checkout": "aa37d24e2742b9954e7dee5bfb53ed5dd4fcbfc3",
-    "tree": "1afdc0aee634e5c190ae5e2b4ff3a6e5f05e85b2"
+    "attemptId": "c5c8a546-1033-4413-8346-fc2fe59c41f2",
+    "checkout": "aa5af0fa42cfa5f73caf41de5a25741798887504",
+    "tree": "64ed1c0af7716a191552cbe7d4d03f7d5281e42d"
   }
 }
