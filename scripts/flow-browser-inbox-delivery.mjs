@@ -28,9 +28,9 @@ function proof(output, name, result) {
   writeFileSync(join(output, name + '.json'), JSON.stringify(result, null, 2) + '\n');
 }
 
-function installDiscussionFixture(service) {
-  const messages = [];
-  const hold = Promise.withResolvers();
+function installIssueDiscussProvider(service, createProvider) {
+  service.projectDiscuss?.close();
+  service.projectDiscuss = null;
   service.projectDiscussOptions = {
     skills: async () => [],
     modelSettings: () => ({
@@ -38,18 +38,24 @@ function installDiscussionFixture(service) {
       models: [{ id: 'fixture' }],
       efforts: ['high'],
     }),
-    createProvider: () => ({
-      async turn(session, message, { event }) {
-        messages.push({ issueId: session.ownership.issueId, text: message.text });
-        event({ method: 'item/agentMessage/delta', params: { delta: 'Working on this issue' } });
-        if (message.text === 'Hold this response') await hold.promise;
-        return { text: 'Reply for ' + session.ownership.issueId };
-      },
-      close() {
-        hold.resolve();
-      },
-    }),
+    createProvider,
   };
+}
+
+function installDiscussionFixture(service) {
+  const messages = [];
+  const hold = Promise.withResolvers();
+  installIssueDiscussProvider(service, () => ({
+    async turn(session, message, { event }) {
+      messages.push({ issueId: session.ownership.issueId, text: message.text });
+      event({ method: 'item/agentMessage/delta', params: { delta: 'Working on this issue' } });
+      if (message.text === 'Hold this response') await hold.promise;
+      return { text: 'Reply for ' + session.ownership.issueId };
+    },
+    close() {
+      hold.resolve();
+    },
+  }));
   return { messages, hold };
 }
 
@@ -576,31 +582,21 @@ function watchBlockerRetries(flowService) {
 }
 
 function installRetryChat(service, issueId) {
-  service.projectDiscuss?.close();
-  service.projectDiscuss = null;
-  service.projectDiscussOptions = {
-    skills: async () => [],
-    modelSettings: () => ({
-      defaults: { model: 'fixture', effort: 'high' },
-      models: [{ id: 'fixture' }],
-      efforts: ['high'],
-    }),
-    createProvider: () => ({
-      async turn() {
-        const { flows } = service;
-        const flow = flows.read(flows.selected(issueId));
-        const tools = createProjectDiscussTools(service);
-        await tools.invoke('issue_control', { action: 'continue', issueId, blockId: 'work', revision: flow.revision });
-        return {
-          text: 'Work retry started.',
-          recommendations: [
-            { id: 'context-0', label: 'Inspect the retry outcome', prompt: 'Review the current Work outcome.' },
-          ],
-        };
-      },
-      close() {},
-    }),
-  };
+  installIssueDiscussProvider(service, () => ({
+    async turn() {
+      const { flows } = service;
+      const flow = flows.read(flows.selected(issueId));
+      const tools = createProjectDiscussTools(service);
+      await tools.invoke('issue_control', { action: 'continue', issueId, blockId: 'work', revision: flow.revision });
+      return {
+        text: 'Work retry started.',
+        recommendations: [
+          { id: 'context-0', label: 'Inspect the retry outcome', prompt: 'Review the current Work outcome.' },
+        ],
+      };
+    },
+    close() {},
+  }));
 }
 
 async function assertBlocker(page, text) {
@@ -656,8 +652,8 @@ async function exerciseBlockerRetries({ page, issueId, flows, poll, gates, scree
     ['Block', () => retryInBlock(page)],
     ['Chat', () => retryInChat(page)],
   ];
+  await poll(() => !flows.active.has(issueId), Boolean, 'Initial attempt still owns the issue.');
   for (const [index, [entry, start]] of controls.entries()) {
-    await poll(() => !flows.active.has(issueId), Boolean, 'Previous attempt still owns the issue.');
     await resume.waitFor();
     await start();
     await assertBlocker(page, 'Unrelated worktree error');
@@ -665,6 +661,7 @@ async function exerciseBlockerRetries({ page, issueId, flows, poll, gates, scree
     await screenshot('issue-blocker-retrying-' + entry.toLowerCase());
     gates[index].resolve();
     await assertBlocker(page, 'Fixture Work failure ' + (index + 2));
+    await poll(() => !flows.active.has(issueId), Boolean, 'Previous attempt still owns the issue.');
     observations.push({ entry, during, after: await page.locator('#issue-blocker-message').innerText() });
   }
   const chatPrompts = await page.locator('#issue-discuss-recommendations button').allTextContents();

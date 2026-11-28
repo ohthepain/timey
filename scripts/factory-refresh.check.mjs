@@ -28,7 +28,7 @@ test('Flow navigation loads another issue while an earlier block check is pendin
   let posts = 0;
   let api;
   const render = () => {
-    $('issue-title').textContent = state.view?.issue.title || '';
+    $('rename-issue').textContent = state.view?.issue.title || '';
     api?.setBusy(state.pending);
   };
   const source = readFileSync('scripts/factory-ui/flow-ui.js', 'utf8');
@@ -42,6 +42,7 @@ test('Flow navigation loads another issue while an earlier block check is pendin
     URL: window.URL,
     CustomEvent: window.CustomEvent,
     AbortController: window.AbortController,
+    AbortSignal: window.AbortSignal,
     $,
     serverControlUI: { isWaitingForServer: () => false },
     json: async (path) => {
@@ -81,6 +82,7 @@ test('Flow navigation loads another issue while an earlier block check is pendin
     ...Object.keys(scope),
     'let folderSelection, folderConfig, strategyFolder;\n' +
       section('  function readDestination(', '  const initialDestination') +
+      section('  async function waitForFlowResponse(', '  function post(') +
       section('  async function readFlowSnapshot(', '  async function loadRepoFiles(') +
       section('  async function action(', '  function updateIssueDecisionControls(') +
       section('  function navigateWorkspace(', "  window.addEventListener('popstate'") +
@@ -97,12 +99,12 @@ test('Flow navigation loads another issue while an earlier block check is pendin
   next.click();
   await new Promise((resolve) => setImmediate(resolve));
   assert.deepEqual(requests, ['/api/flow?issue=two']);
-  assert.equal($('issue-title').textContent, 'Issue two');
+  assert.equal($('rename-issue').textContent, 'Issue two');
   assert.equal($('run-block').disabled, true, 'The earlier action still guards mutation controls.');
   assert.equal(await api.action('start', { blockId: 'work' }), null);
   assert.equal(posts, 1, 'Navigation does not permit another mutation while the earlier action is pending.');
   release.resolve({ ...snapshot('one'), flow: { revision: 99, blocks: [] } });
   await action;
-  assert.equal($('issue-title').textContent, 'Issue two');
+  assert.equal($('rename-issue').textContent, 'Issue two');
   assert.equal(state.view.flow.revision, 1, 'The earlier issue result cannot replace the new selection.');
 });

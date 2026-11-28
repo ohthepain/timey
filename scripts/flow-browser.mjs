@@ -1396,7 +1396,7 @@ try {
       };
       await poll(
         async () => ({
-          heading: await page.locator('#issue-title').textContent(),
+          heading: await page.locator('#rename-issue').textContent(),
           tab: await page.title(),
           expected: await expectedTab(),
         }),
@@ -1406,7 +1406,7 @@ try {
       return { label, heading: title, tab: await page.title() };
     };
     const rename = async (title) => {
-      await page.getByRole('button', { name: 'Rename issue', exact: true }).click();
+      await page.locator('#rename-issue').click();
       await page.getByRole('textbox', { name: 'Issue title', exact: true }).fill(title);
       await clickAction(page.locator('#rename-issue-form button[type="submit"]'));
     };
