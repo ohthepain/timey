@@ -98,6 +98,7 @@ async function checkRunningRow(dialog, flows, id) {
 async function followActionLinks(page, dialog, row) {
   await dialog.getByRole('link', { name: row.summary, exact: true }).click();
   await page.waitForURL(new URL(row.issueHref, page.url()).href);
+  await page.locator('#issue-heading').getByRole('heading', { name: 'Group: Inbox', exact: true }).waitFor();
   const issue = page.url();
   await page.locator('#project-actions').click();
   await dialog.getByRole('link', { name: 'Action output', exact: true }).click();
