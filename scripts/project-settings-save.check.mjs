@@ -7,7 +7,7 @@ const tick = () => new Promise((resolve) => setImmediate(resolve));
 
 async function settings(t, request, { hotkeys = {}, page = 'hotkeys' } = {}) {
   const dom = new JSDOM(
-    '<dialog id="project-settings-dialog"><button data-settings-close>Close Factory settings</button><nav id="settings-navigation"></nav><div class="settings-body"><h2 id="settings-page-title"></h2><p id="project-settings-error"></p><div id="project-settings-content"></div></div></dialog><dialog id="settings-unsaved-dialog"><button data-unsaved-choice="save">Save</button></dialog>',
+    '<header class="factory-header"></header><div id="app"></div><section id="project-settings-view" hidden><button data-settings-close>Close Factory settings</button><nav id="settings-navigation"></nav><div class="settings-body"><h2 id="settings-page-title"></h2><p id="project-settings-error"></p><div id="project-settings-content"></div></div></section><dialog id="settings-unsaved-dialog"><button data-unsaved-choice="save">Save</button></dialog>',
     { url: 'http://localhost', runScripts: 'outside-only' }
   );
   t.after(() => dom.window.close());
@@ -59,10 +59,14 @@ test('a confirmed settings save can close without waiting for another settings r
   view.submit();
   await tick();
   assert.equal(saved, true);
-  assert.equal(view.document.querySelector('dialog').inert, false, 'confirmed save must release the settings UI');
+  assert.equal(
+    view.document.querySelector('#project-settings-view').inert,
+    false,
+    'confirmed save must release the settings UI'
+  );
   view.close();
   assert.equal(view.document.querySelector('#settings-unsaved-dialog').open, false);
-  assert.equal(view.document.querySelector('#project-settings-dialog').open, false);
+  assert.equal(view.document.querySelector('#project-settings-view').hidden, true);
 });
 
 test('unchanged settings save closes without writing configuration', async (t) => {
@@ -75,7 +79,7 @@ test('unchanged settings save closes without writing configuration', async (t) =
   await tick();
   view.close();
   assert.equal(posts.length, 0);
-  assert.equal(view.document.querySelector('#project-settings-dialog').open, false);
+  assert.equal(view.document.querySelector('#project-settings-view').hidden, true);
 });
 
 test('hotkey refresh failure cannot turn a confirmed save into an unsaved edit', async (t) => {
@@ -91,7 +95,7 @@ test('hotkey refresh failure cannot turn a confirmed save into an unsaved edit',
   await tick();
   assert.match(view.document.querySelector('[data-settings-status]').textContent, /Saved/);
   view.close();
-  assert.equal(view.document.querySelector('#project-settings-dialog').open, false);
+  assert.equal(view.document.querySelector('#project-settings-view').hidden, true);
   assert.equal(view.document.querySelector('#settings-unsaved-dialog').open, false);
 });
 
@@ -211,5 +215,5 @@ test('a rejected storage configuration is written again on retry before it can b
   assert.equal(registry.profiles[0].label, 'Renamed');
   assert.match(view.document.querySelector('[data-settings-status]').textContent, /Saved/);
   view.close();
-  assert.equal(view.document.querySelector('#project-settings-dialog').open, false);
+  assert.equal(view.document.querySelector('#project-settings-view').hidden, true);
 });

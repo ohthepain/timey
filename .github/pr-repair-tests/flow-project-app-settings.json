@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "name": "The Factory App button configures, recognizes and starts the project server",
+  "command": ["node", "scripts/flow-browser.mjs", "--ci-part=1a", "--project-app"],
+  "source": {
+    "runId": "46153152513",
+    "jobId": "141005907187",
+    "checkout": "e7ac7c6785271cb3fb14c9acc7e9a98063df6ded",
+    "tree": "33991de7221d4151fbe06d80cef5b0d0e23b81ec"
+  }
+}

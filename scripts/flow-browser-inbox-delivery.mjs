@@ -356,7 +356,7 @@ async function appStops(poll, url) {
 
 async function verifyAppWorkspace({ page, project, service, output, server, url, poll }) {
   const button = page.locator('#project-app');
-  const menu = page.locator('#project-settings-dialog');
+  const menu = page.locator('#project-settings-view');
   const settings = { command: 'node start.mjs', url, directory: 'sample-app', expected: '', checkUrl: '' };
   mkdirSync(join(project, settings.directory), { recursive: true });
   service.detectProjectApp = async () => ({ ...settings, sources: 'sample-app/start.mjs', undetermined: 'checkUrl' });

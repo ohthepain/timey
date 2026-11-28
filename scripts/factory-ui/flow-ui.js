@@ -4656,6 +4656,9 @@ import { reorderedBlocks } from './flow-order.mjs';
       void action('cancel-confirmation', { blockId: review.blockId });
   });
   $('project-settings').addEventListener('click', () => projectSettingsUI.open());
+  document
+    .querySelector('[data-provider-settings-open]')
+    .addEventListener('click', () => projectSettingsUI.open('providers'));
   $('empty-new-issue').addEventListener('click', openCapture);
   const closureModal = $('issue-closure-dialog');
   const closureFields = $('issue-closure-fields');

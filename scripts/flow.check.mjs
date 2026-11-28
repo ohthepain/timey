@@ -1,4 +1,4 @@
-import { initializeProviderConfig, readProviderConfig } from './factory-ui/provider-config.mjs';
+import { initializeProviderConfig, readProviderConfig, saveProviderEnabled } from './factory-ui/provider-config.mjs';
 import { observeProvider, saveProviderSettings } from './factory-ui/provider-runtime.mjs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -324,7 +324,8 @@ test('flow views wait for the first shared copy of a selected report', async (t)
 
 test('provider disable lets a protected publication finish but pauses the route before the next block', async (t) => {
   const { root, id, service } = fixture(t);
-  initializeProviderConfig(root);
+  const { revision } = initializeProviderConfig(root);
+  saveProviderEnabled(root, { provider: 'google', active: true, revision });
   observeProvider(root, 'google', { ready: true, models: [{ id: 'google:pro', name: 'Gemini Pro' }] });
   let config = readProviderConfig(root);
   config.providers.google.enabled = ['google:pro'];

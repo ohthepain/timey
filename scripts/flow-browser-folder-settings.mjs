@@ -10,7 +10,7 @@ const metadata = (path) => parse(readFileSync(path, 'utf8').match(/^---\r?\n([\s
 
 async function checkProjectSettings({ page, project, poll }) {
   await page.locator('#project-settings').click();
-  const settings = page.locator('#project-settings-dialog');
+  const settings = page.locator('#project-settings-view');
   await settings.locator('[data-settings-page="issues"]').click();
   const createDefaults = settings.locator('[data-settings-create]');
   if (!existsSync(join(project, 'folder.md'))) await createDefaults.click();

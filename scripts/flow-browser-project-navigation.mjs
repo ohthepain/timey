@@ -73,7 +73,7 @@ async function checkProjectControls(page, header, poll) {
     controls.push({ trigger, result: `Opened and closed ${panel}` });
   }
   for (const [trigger, dialog, close] of [
-    ['#project-settings', '#project-settings-dialog', '[data-settings-close]'],
+    ['#project-settings', '#project-settings-view', '[data-settings-close]'],
     ['[data-project-home="investigate"]', '#home-investigation-dialog', '[data-home-close="investigation"]'],
     ['#new-issue', '#capture-dialog', '.icon-button[data-close-dialog="capture-dialog"]'],
     ['#project-actions', '#server-actions-dialog', '[data-actions-close]'],
