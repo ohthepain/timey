@@ -4,7 +4,6 @@ import { join } from 'node:path';
 import { stringify } from 'yaml';
 import { importBrowserIssue, removeBrowserIssue } from './flow-browser-fixture.mjs';
 import { withQueueConfiguration } from './flow-browser-queue-configuration.mjs';
-import { fixtureRoute } from './flow-browser-routes.mjs';
 
 const master = '20261124-group-master';
 const children = ['20261124-group-first', '20261124-group-second'];
@@ -215,8 +214,12 @@ async function withIssueGroup({ page, project, root }, group, check) {
 }
 
 export async function masterIssueBrowserChecks({ page, project, root, output }) {
-  // Keep the restart watcher from reloading during this hierarchy check if a health probe times out.
-  const removeHealth = await fixtureRoute(page, '**/api/health', (route) => route.fulfill({ status: 204 }));
+  // Answer in the page so a delayed Playwright route cannot trigger restart recovery.
+  const health = await page.addInitScript(() => {
+    const fetch = window.fetch.bind(window);
+    window.fetch = (input, options) =>
+      input === '/api/health' ? Promise.resolve(new Response(null, { status: 204 })) : fetch(input, options);
+  });
   try {
     await withIssueGroup({ page, project, root }, { master, children, titles }, async () => {
       const { left, centerWidth } = await checkIssueWorkspace(page, output);
@@ -227,7 +230,7 @@ export async function masterIssueBrowserChecks({ page, project, root, output }) 
       writeFileSync(join(output, 'master-issues.json'), JSON.stringify({ left, issues, centerWidth }, null, 2) + '\n');
     });
   } finally {
-    await removeHealth();
+    await health.dispose();
   }
 }
 

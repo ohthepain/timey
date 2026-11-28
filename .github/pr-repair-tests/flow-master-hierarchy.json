@@ -3,8 +3,8 @@
   "name": "Master issue hierarchy and badges across the workspace",
   "command": ["node", "scripts/flow-browser.mjs", "--ci-part=1a", "--master-issues"],
   "source": {
-    "attemptId": "9ca00eb7-f766-47dd-a9c9-07c944c2fab0",
-    "checkout": "6b09ba614d865797edc152893acd83e3864bdbc0",
-    "tree": "9e3bec7475853e0e4893c9230d314866643424aa"
+    "attemptId": "c5c8a546-1033-4413-8346-fc2fe59c41f2",
+    "checkout": "36d59ac445307dbfe6159d8f0858aa96e8491b45",
+    "tree": "0a382fb90462dd30ebda7b680085948d37031d28"
   }
 }

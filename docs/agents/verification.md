@@ -1340,6 +1340,10 @@ fixture queue. Run `node scripts/flow-browser.mjs --ci-part=1 --manual-close --s
 to check the sidebar console after the intentional Close and heap errors. Each
 expected failed response accounts for one matching console entry.
 
+`node scripts/flow-browser.mjs --ci-part=1a --master-issues` checks hierarchy,
+badges, and navigation to child issues. The fixture answers health probes in
+the browser to keep restart recovery from interrupting those checks.
+
 `node scripts/flow-browser.mjs --manual-sub-issue-removal` removes sub-issues
 from both the master and child pages. It checks active membership, links,
 and badges after removal and saves `manual-sub-issue-removal.json`. A long
